@@ -1,0 +1,134 @@
+---
+title: "Genomic regions"
+author: Gibran Hemani
+date: "2024-04-18"
+categories: []
+cache: true
+---
+
+## Background
+
+What does it look like to try to cluster traits based on GWAS hits, on a per-region basis?
+
+## Example
+
+Extract all the tophits from UKB GWAS
+
+```{r}
+library(dplyr)
+library(ieugwasr)
+library(ggplot2)
+library(tidyr)
+
+gwasinfo <- gwasinfo()
+ukb_th <- tophits(grep("ukb-b", gwasinfo$id, value = TRUE))
+```
+
+```{r}
+ggplot(ukb_th, aes(y = -log10(p), x = position, color = chr)) +
+  geom_point() +
+  facet_grid(. ~ as.numeric(chr), space="free_x", scale="free_x") +
+  theme(axis.text.x=element_blank(), legend.position = "none")
+```
+
+Get pre-calculated LD regions
+
+```{r}
+load(url("https://github.com/explodecomputer/simulateGP/raw/master/data/ldetect.rdata"))
+
+ldetect <- subset(ldetect, pop == "EUR") %>%
+    mutate(chr = gsub("chr", "", chr), code = paste0(chr, ":", start, "-", stop))
+ldetect %>% head
+```
+
+Group UKB tophits by LD region
+
+```{r}
+ukb_th <- group_by(ldetect, code) %>%
+    do({
+        subset(ukb_th, chr == .$chr & position >= min(.$start) & position <= max(.$stop))
+    })
+```
+
+Number of GWAS hits per LD region
+
+```{r}
+ukb_th %>% group_by(code) %>% summarise(n = n()) %>% {hist(.$n, breaks=100)}
+```
+
+## Example region
+
+Take one region that has hits
+
+```{r}
+a <- lapply(subset(ukb_th, code == unique(ukb_th$code)[3])$id, \(id) {
+    message(id)
+    associations(unique(ukb_th$code)[3], id)
+}) %>% bind_rows()
+str(a)
+```
+
+These are the traits:
+
+```{r}
+unique(a$trait)
+```
+
+We could also search for traits that might have associations in this region that are not quite significant, but let's leave that for another time..
+
+Look at regional plots for some of these:
+
+```{r, fig.height=15}
+ggplot(subset(a, id %in% unique(a$id)[c(1, 3, 6, 7, 8, 13, 17, 29)]), aes(y=-log10(p), x=position)) +
+geom_point(aes(colour=p < 5e-4)) +
+facet_wrap(~ trait, scales = "free_y", ncol=1)
+
+```
+
+So the objective here
+
+-   Fine map each trait to get the marginal associations for each GWAS hit
+
+-   Colocalise marginal regions to find groups of traits that share at least one GWAS hit
+
+-   Output: A list of traits colocalising for every finemapped hit
+
+## Clustering
+
+Try clustering the traits using principal components?
+
+```{r}
+aw <- tidyr::pivot_wider(a %>% select(position, beta, id) %>% filter(!duplicated(paste(position, id))), names_from = id, values_from = beta)
+
+awm <- as.matrix(aw[,-1])
+awm[is.na(awm)] <- 0
+
+awp <- prcomp(t(awm))
+```
+
+PCs 1-2
+
+```{r}
+plot(awp$x[,1], awp$x[,2], col=as.factor(unique(a$id)))
+text(awp$x[,1], awp$x[,2], labels=as.factor(unique(a$trait)), cex=0.4, col="grey")
+```
+
+PCs 3-4
+
+```{r}
+plot(awp$x[,3], awp$x[,4], col=as.factor(unique(a$id)))
+text(awp$x[,3], awp$x[,4], labels=as.factor(unique(a$trait)), cex=0.4, col="grey")
+```
+
+PCs 5-6
+
+```{r}
+plot(awp$x[,5], awp$x[,6], col=as.factor(unique(a$id)))
+text(awp$x[,5], awp$x[,6], labels=as.factor(unique(a$trait)), cex=0.4, col="grey")
+```
+
+------------------------------------------------------------------------
+
+```{r}
+sessionInfo()
+```

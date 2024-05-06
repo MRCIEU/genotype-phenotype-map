@@ -1,0 +1,5 @@
+id_pattern,data_type,data_source,database,data_location_pattern,ancestry
+ukb-b-*,gwas,opengwas,ukb,NA,EUR
+eqtl-a-*,eqtl,opengwas,eqtl_gen,NA,EUR
+bbj-a-*,ukb,opengwas,bbj,NA,EAS
+finn-b-*,ukb,opengwas,finn_gen,NA,EUR

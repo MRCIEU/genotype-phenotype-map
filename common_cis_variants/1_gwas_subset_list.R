@@ -1,9 +1,12 @@
-source("common_cis_variants/constants.R")
-gwas_list <- vroom::vroom("common_cis_variants/data/test_list.csv")
+source("constants.R")
+gwas_list <- vroom::vroom("data/test_list.csv")
 
 calculate_state_opengwas_data <- function(entries) {
+  print(entries)
   expanded_directories <- apply(entries, 1, function(entry) {
-    all_directories <- Sys.glob(entry[['id_pattern']])
+    print(entry)
+    file_regex <- paste0(entry[['data_location']], entry[['id_pattern']])
+    all_directories <- Sys.glob(file_regex)
     return(data.frame(
       data_type = entry[['data_type']],
       directory = all_directories
@@ -39,7 +42,8 @@ calculate_state_opengwas_data <- function(entries) {
   }) |> dplyr::bind_rows()
 }
 
-opengwas_entries <- dplyr::filter(gwas_list, data_source == data_sources$opengwas)
+print(gwas_list)
+opengwas_entries <- dplyr::filter(gwas_list, database == databases$opengwas)
 opengwas_data_current_state <- calculate_state_opengwas_data(opengwas_entries)
 #other state calculated here, then we can dplyr::bind_rows()
 current_state <- dplyr::bind_rows(opengwas_data_current_state)

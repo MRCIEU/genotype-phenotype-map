@@ -1,2 +1,2 @@
-id_pattern,data_type,data_source,database,data_location,ancestry,data_type
-ukb-b-*,gwas,opengwas,ukb,/mnt/storage/private/mrcieu/data/IGD/data/public/,EUR,phenotypes
+id_pattern,data_type,database,data_location,ancestry
+ukb-b-*,phenotype,opengwas,/mnt/storage/private/mrcieu/data/IGD/data/public/,EUR

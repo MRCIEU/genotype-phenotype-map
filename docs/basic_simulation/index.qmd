@@ -1,0 +1,110 @@
+---
+title: "Basic region simulation"
+format: html
+editor: visual
+---
+
+## Background
+
+Simulate GWAS summary data with the following characteristics
+
+-   A single region with realistic LD patterns
+
+-   `t` traits
+
+-   `m` SNPs tested for each trait
+
+-   `n` samples used to generate the summary statistics
+
+-   A given `m x m` LD matrix and allele frequencies for all `m` SNPs
+
+-   A causal matrix of `p` causal variants influencing the `t` traits. For example
+
+    -   SNP 10 influences traits 1 and 2
+
+    -   SNP 20 influences traits 1 and 3
+
+    -   SNP 30 influences trait 4
+
+From the marginal summary statistics for each trait, recapitulate the causal matrix
+
+## Simulation function
+
+```{r}
+# remotes::install_github("jean997/GWASBrewer")
+library(GWASBrewer)
+library(dplyr)
+library(ggplot2)
+data("ld_mat_list")
+data("AF")
+```
+
+```{r}
+#' Simulate summary stats for traits in one region 
+#' 
+#' @param ld LD Matrix
+#' @param af Vector of allele frequencies
+#' @param pi Matrix of which SNPs have causal effects on which traits. First column is the SNP, each subsequent column is the trait, where 0=no effect and 1=effect
+#' @param n Sample size for each trait
+#' @param h2 Heritability of each trait
+sim <- function(ld, af, pi, n, h2) {
+  
+  mat <- matrix(0, length(af), ncol(pi)-1)
+  for(i in 1:nrow(pi)) {
+    mat[pi[i,1],] <- pi[i,-1]
+  }
+
+  o <- sim_mv(G = ncol(mat),
+    J = length(af), 
+    N = n, 
+    h2 = h2, 
+    pi = mat, 
+    R_LD = list(ld), 
+    af = af)
+
+  out <- lapply(1:ncol(mat), \(i) {
+    tibble(
+      trait = i,
+      SNP = 1:length(af),
+      af = af,
+      beta = o$direct_SNP_effects_joint[,i],
+      bhat = o$beta_hat[,i],
+      se = o$se_beta_hat[,i],
+      n = n,
+      pval = pnorm(abs(bhat)/se, low=F)
+    )
+  }) %>% bind_rows()
+  return(out)
+}
+```
+
+## Example run
+
+```{r}
+# Causal matrix
+pi <- matrix(c(
+  10, 0,0,0,0,1,1,
+  50, 0,0,0,0,1,1,
+  80, 1,0,0,0,1,0,
+  100,0,1,1,1,0,0
+), 4, byrow=TRUE)
+
+# Run the simulation
+set.seed(100)
+s <- sim(
+  ld = ld_mat_list[[1]], 
+  af = AF[1:140], 
+  pi = pi, 
+  n = 100000, 
+  h2 = c(0.1, 0.1, 0.05, 0.05, 0.05, 0.08)
+)
+str(s)
+```
+
+Show marginal associations
+
+```{r}
+ggplot(s, aes(x=SNP, y=abs(bhat)/se)) +
+  geom_point() +
+  facet_grid(trait ~ .)
+```

@@ -1,2 +1,4 @@
 id_pattern,data_type,database,data_location,ancestry
-ukb-b-*,phenotype,opengwas,/mnt/storage/private/mrcieu/data/IGD/data/public/,EUR
+ukb-b-*,phenotype,opengwas,/Users/wt23152/Documents/Projects/scratch/011/data/opengwas/,EUR
+ebi-a-*,phenotype,opengwas,/Users/wt23152/Documents/Projects/scratch/011/data/opengwas/,EUR
+eqtl-a-*,eqtl,opengwas,/Users/wt23152/Documents/Projects/scratch/011/data/opengwas/,EUR

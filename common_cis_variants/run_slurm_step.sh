@@ -15,4 +15,3 @@ sudo docker run -v /home/$USER:/home/$USER \
            -v /projects:/projects \
            --env-file .env -w /home/common_cis_variants/ \
            $IMAGE $COMMAND
-

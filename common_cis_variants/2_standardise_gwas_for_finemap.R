@@ -29,5 +29,6 @@ gwas <- gwas[!duplicated(gwas$rsid), ]
 #  gwas$allele1[to_flip] <- temp
 #}
 
-vroom::vroom_write(gwas, args$gwas_filename, delim=" ")
+#TODO: maybe we should standardise the results here...
 
+vroom::vroom_write(gwas, args$gwas_filename, delim=" ")

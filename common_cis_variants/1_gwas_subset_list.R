@@ -5,7 +5,7 @@ extraction_p_value <- 5e-8
 
 calculate_state_opengwas_data <- function(entries) {
   expanded_directories <- apply(entries, 1, function(entry) {
-    file_regex <- paste0(entry[['data_location']], entry[['id_pattern']])
+    file_regex <- paste0(entry[['data_location']], "/", entry[['id_pattern']])
     all_directories <- Sys.glob(file_regex)
     return(data.frame(
       data_type = entry[['data_type']],
@@ -13,7 +13,6 @@ calculate_state_opengwas_data <- function(entries) {
       ancestry = entry[['ancestry']]
     ))
   }) |> dplyr::bind_rows()
-  print(expanded_directories)
 
   processing_information <- apply(expanded_directories, 1, function(entry) {
     directory <- entry[['directory']]
@@ -44,6 +43,7 @@ calculate_state_opengwas_data <- function(entries) {
     ancestry <- study_metadata$population
     sample_size <- study_metadata$sample_size
     category <- study_metadata$category
+    if (is.null(category)) category <- NA
     if (is.null(ancestry) || ancestry != ancestry_map[[entry[['ancestry']]]]) {
       return(data.frame())
     }

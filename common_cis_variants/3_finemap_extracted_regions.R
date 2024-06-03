@@ -27,11 +27,11 @@ parser <- add_argument(parser,
 
 args <- parse_args(parser)
 
-args <- list(gwas_filename="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/EUR_6_32530029.z",
-             snp_list="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.snplist",
-             ld_matrix="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.ld",
-             gwas_n=400000
-)
+#args <- list(gwas_filename="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/EUR_6_32530029.z",
+#             snp_list="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.snplist",
+#             ld_matrix="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.ld",
+#             gwas_n=400000
+#)
 
 snps <- vroom::vroom(args$snp_list, col_names = F, delim=",")$X1
 

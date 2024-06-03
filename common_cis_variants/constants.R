@@ -1,8 +1,7 @@
 options(error = function() traceback(20))
 
-opengwas_dir <- "/mnt/storage/private/mrcieu/data/IGD/data/public/"
-data_dir <- "/Users/wt23152/Documents/Projects/scratch/011/data/"
-results_dir <- "/Users/wt23152/Documents/Projects/scratch/011/results/"
+data_dir <- Sys.getenv('DATA_DIR')
+results_dir <- Sys.getenv('RESULTS_DIR')
 pipeline_metadata_dir <- paste0(data_dir, "pipeline_metadata/")
 ld_block_dir <- paste0(data_dir, "ld_blocks/")
 extracted_study_dir <- paste0(data_dir, "study/")

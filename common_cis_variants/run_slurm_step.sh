@@ -1,15 +1,18 @@
 #!/bin/bash
-#SBATCH --partition=mrcieu
-#SBATCH --job-name=genotype_phenotype_pipeline
+set -e
 
-module add apps/singularity/3.8.3
 USER=$(whoami)
-SIF=/user/work/$USER/test/data/genotype_phenotype_latest.sif
+IMAGE=andrewrrelmore/genotype_phenotype:latest
 
-if [ -z "$COMMAND" ]
+if [ -z "$1" ]
 then
   echo "Error: 'COMMAND' must be set"
   exit 1
 fi
+COMMAND=$1
 
-singularity run -B /mnt/storage/private/mrcieu/data/ -B /user/home/$USER/ -B /user/work/$USER/ $SIF $COMMAND
+sudo docker run -v /home/$USER:/home/$USER \
+           -v /projects:/projects \
+           --env-file .env -w /home/common_cis_variants/ \
+           $IMAGE $COMMAND
+

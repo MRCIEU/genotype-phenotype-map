@@ -1,5 +1,4 @@
 source('constants.R')
-library(argparser, quietly = TRUE)
 
 ld_regions <- vroom::vroom("data/ld_regions.tsv")
 current_state <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/current_state.tsv"), show_col_types = F) |>
@@ -8,7 +7,8 @@ current_state <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/current_state
 updated_ld_blocks <- apply(current_state, 1, function(study) {
   study_name <- study[["study_name"]]
   p_value_threshold <- study[["p_value_threshold"]]
-  study_dir <- study[['extracted_location']]
+  study_dir <- study[["extracted_location"]]
+  category <- study[["category"]]
   extracted_snps <- vroom::vroom(paste0(study_dir, "/extracted_snps.tsv"), show_col_types = F)
 
   if(nrow(extracted_snps) == 0) {
@@ -22,12 +22,18 @@ updated_ld_blocks <- apply(current_state, 1, function(study) {
     ld_block <- dplyr::filter(ld_regions, chr == extracted_chr & start < bp & stop > bp & pop == ancestry)
     if (nrow(ld_block) > 1) stop(paste("Error: More than 1 LD Block associated with", extracted_chr, bp))
 
-    ld_block_dir <- paste0(ld_block_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
-    if(!dir.exists(ld_block_dir)) dir.create(ld_block_dir, recursive = T)
+    ld_block_data <- paste0(ld_block_data_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
+    ld_block_results <- paste0(ld_block_results_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
 
-    extracted_studies_file <- paste0(ld_block_dir, "/extracted_studies.tsv")
-    extracted_studies <- tibble::tribble(~study, ~p_value, ~chr, ~bp,
-                                         study_name, p_value_threshold, extracted_chr, bp
+    study_file <- paste0(study_dir, "_", extracted_chr, "_", bp, ".z")
+    ld_block$data_dir <- ld_block_data
+    ld_block$results_dir <- ld_block_results
+    if(!dir.exists(ld_block_data)) dir.create(ld_block_data, recursive = T)
+    if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive = T)
+
+    extracted_studies_file <- paste0(ld_block_data, "/extracted_studies.tsv")
+    extracted_studies <- tibble::tribble(~study, ~file, ~chr, ~bp, ~p_value, ~category,
+                                         study_name, study_file, extracted_chr, bp, p_value_threshold, category
     )
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)

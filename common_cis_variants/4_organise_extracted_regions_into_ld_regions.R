@@ -11,6 +11,9 @@ updated_ld_blocks <- apply(current_state, 1, function(study) {
   study_dir <- study[['extracted_location']]
   extracted_snps <- vroom::vroom(paste0(study_dir, "/extracted_snps.tsv"), show_col_types = F)
 
+  if(nrow(extracted_snps) == 0) {
+    return(data.frame())
+  }
   updated_ld_blocks <- apply(extracted_snps, 1, function(extracted) {
     bp <- as.numeric(extracted[['BP']])
     extracted_chr <- as.numeric(extracted[['CHR']])
@@ -20,27 +23,26 @@ updated_ld_blocks <- apply(current_state, 1, function(study) {
     if (nrow(ld_block) > 1) stop(paste("Error: More than 1 LD Block associated with", extracted_chr, bp))
 
     ld_block_dir <- paste0(ld_block_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
-    study_in_ld_block <- paste0(ld_block_dir, "/", study_dir, "_", extracted_chr, "_", bp, ".z")
     if(!dir.exists(ld_block_dir)) dir.create(ld_block_dir, recursive = T)
 
     extracted_studies_file <- paste0(ld_block_dir, "/extracted_studies.tsv")
     extracted_studies <- tibble::tribble(~study, ~p_value, ~chr, ~bp,
-                                         study_name, p_value_threshold, chr, bp
+                                         study_name, p_value_threshold, extracted_chr, bp
     )
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
-      extracted_studies <- dplyr::bind_rows(existing_extracted_studies, extracted_studies)
+      extracted_studies <- rbind(existing_extracted_studies, extracted_studies)
     }
     vroom::vroom_write(extracted_studies, extracted_studies_file)
 
     study_file <- paste0(study_dir, ancestry, "_", extracted_chr, "_", bp, ".z")
-
+    study_in_ld_block <- paste0(ld_block_dir, "/", study_name, "_", extracted_chr, "_", bp, ".z")
     file.symlink(study_file, study_in_ld_block)
+
     return(ld_block)
   }) |> dplyr::bind_rows()
   return(updated_ld_blocks)
 })
 
-updated_ld_blocks <- dplyr::bind_rows(updated_ld_blocks) |> dplyr::distinct()
-
+updated_ld_blocks <- dplyr::bind_rows(updated_ld_blocks) |> dplyr::distinct() |> dplyr::arrange(chr)
 vroom::vroom_write(updated_ld_blocks, paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))

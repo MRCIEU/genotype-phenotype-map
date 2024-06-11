@@ -6,7 +6,10 @@ RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRO
 
 RUN wget http://christianbenner.com/finemap_v1.4.2_x86_64.tgz && \
     tar -xf finemap_v1.4.2_x86_64.tgz && \
-    mv finemap_v1.4.2_x86_64/finemap_v1.4.2_x86_64 /bin/finemap
+    mv finemap_v1.4.2_x86_64/finemap_v1.4.2_x86_64 /bin/finemap && \
+    wget https://yanglab.westlake.edu.cn/software/smr/download/smr-1.3.1-linux-x86_64.zip && \
+    unzip smr-1.3.1-linux-x86_64.zip && \
+    mv smr-1.3.1-linux-x86_64/smr /bin/smr
 
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/

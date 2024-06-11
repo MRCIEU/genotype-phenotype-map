@@ -1,10 +1,10 @@
 source('constants.R')
 
-ld_regions <- vroom::vroom("data/ld_regions.tsv")
+ld_regions <- vroom::vroom("data/ld_regions.tsv", show_col_types = F)
 current_state <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/current_state.tsv"), show_col_types = F) |>
   dplyr::filter(extracted == F)
 
-updated_ld_blocks <- apply(current_state, 1, function(study) {
+all_updated_ld_blocks <- apply(current_state, 1, function(study) {
   study_name <- study[["study_name"]]
   p_value_threshold <- study[["p_value_threshold"]]
   study_dir <- study[["extracted_location"]]
@@ -38,11 +38,12 @@ updated_ld_blocks <- apply(current_state, 1, function(study) {
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
       extracted_studies <- rbind(existing_extracted_studies, extracted_studies)
+      extracted_studies <- extracted_studies[!duplicated(extracted_studies), ]
     }
     vroom::vroom_write(extracted_studies, extracted_studies_file)
 
     study_file <- paste0(study_dir, ancestry, "_", extracted_chr, "_", bp, ".z")
-    study_in_ld_block <- paste0(ld_block_dir, "/", study_name, "_", extracted_chr, "_", bp, ".z")
+    study_in_ld_block <- paste0(ld_block_data, "/", study_name, "_", extracted_chr, "_", bp, ".z")
     file.symlink(study_file, study_in_ld_block)
 
     return(ld_block)
@@ -50,5 +51,5 @@ updated_ld_blocks <- apply(current_state, 1, function(study) {
   return(updated_ld_blocks)
 })
 
-updated_ld_blocks <- dplyr::bind_rows(updated_ld_blocks) |> dplyr::distinct() |> dplyr::arrange(chr)
-vroom::vroom_write(updated_ld_blocks, paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))
+all_updated_ld_blocks <- dplyr::bind_rows(all_updated_ld_blocks) |> dplyr::distinct() |> dplyr::arrange(chr)
+vroom::vroom_write(all_updated_ld_blocks, paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))

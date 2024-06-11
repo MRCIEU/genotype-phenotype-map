@@ -2,10 +2,13 @@ options(error = function() traceback(20))
 readRenviron(".Renviron")
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
+
 pipeline_metadata_dir <- paste0(data_dir, "pipeline_metadata/")
 ld_block_data_dir <- paste0(data_dir, "ld_blocks/")
-ld_block_results_dir <- paste0(results_dir, "ld_blocks/")
+ld_block_matrices_dir <- paste0(data_dir, "ld_block_matrices/")
 extracted_study_dir <- paste0(data_dir, "study/")
+
+ld_block_results_dir <- paste0(results_dir, "ld_blocks/")
 
 data_types <- list(phenotype="phenotype", proteomics="proteomics", metabolomics="metabolomics", eqtl="eqtl")
 study_categories <- list(binary="binary", continuous="Continuous")

@@ -8,8 +8,7 @@ parser <- add_argument(parser,
                        help = "Chromosome",
                        type = "numeric"
 )
-
-args <- list(chr=10)
+args <- parse_args(parser)
 
 ld_regions <- vroom::vroom("data/ld_regions.tsv")
 ld_blocks_to_colocalise <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv")) |>
@@ -99,6 +98,15 @@ all_results <- apply(ld_blocks_to_colocalise, 1, function(block) {
     )
   })
   saveRDS(results, paste0(ld_block_results_dir, "/hyprcoloc_results.rds"))
-  print(paste0(ld_block_results_dir, "/hyprcoloc_results.rds"))
-  return(results)
+
+  significant_results <- lapply(results, function(result) {
+    if (is.null(result)) return()
+    dplyr::filter(result$results, posterior_prob >= 0.8)
+  })
+  significant_results <- Filter(function(result) !is.null(result) && nrow(result) != 0, significant_results) |>
+    dplyr::bind_rows()
+  vroom::vroom_write(significant_results, paste0(ld_block_results_dir, "/significant_results.tsv"))
+  print(paste0("LD Block Results: ", ld_block_results_dir, "/hyprcoloc_results.tsv"))
+
+  return(significant_results)
 })

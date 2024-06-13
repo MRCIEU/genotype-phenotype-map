@@ -1,12 +1,12 @@
 #!/bin/bash
+export PIPELINE=common_cis_variants
 
 USER=$(whoami)
 export $(xargs <.env)
 LOGS=$DATA_DIR/pipeline_metadata/logs
 mkdir -p $LOGS
-export PIPELINE=common_cis_variants
 
-./run_pipeline_step.sh 'Rscript 00_format_ld_matrices.R' &> $LOGS/00_format_ld_matrices.log || exit 1
+./run_pipeline_step.sh 'Rscript 2_format_ld_matrices.R' &> $LOGS/00_format_ld_matrices.log || exit 1
 exit 0
 
 #STEP 1:

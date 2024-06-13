@@ -16,4 +16,4 @@ while IFS= read -r LD_REGION; do
 
   plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr $CHR --extract range $RANGE_FILE --r square spaces --out $PLINK_OUTPUT --write-snplist --keep-allele-order
 
-done < data/ld_regions.tsv
+done < ../common_cis_variants/data/ld_regions.tsv

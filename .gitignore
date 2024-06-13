@@ -1,3 +1,4 @@
 */scratch
 .env
 common_cis_variants/R
+*/.Renviron

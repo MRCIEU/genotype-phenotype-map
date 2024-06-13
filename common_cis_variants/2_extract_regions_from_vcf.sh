@@ -68,6 +68,7 @@ while IFS= read -r GWAS_STUDY; do
     SNP_LIST_FILE=${FILE_BASENAME}.snplist
     echo -e $SNP_LIST > $SNP_LIST_FILE
 
+    #TODO: maybe remove this, as were just generating it once per ld region?
     PLINK_FAILED=0
     plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr ${INFO[1]} --extract $SNP_LIST_FILE --r square spaces --out $PLINK_OUTPUT --write-snplist --keep-allele-order || PLINK_FAILED=1
 

@@ -57,6 +57,7 @@ all_results <- apply(ld_blocks_to_colocalise, 1, function(block) {
     study <- extracted_studies[i,]$unique_study_id
     found_grouped_studies <- dplyr::filter(extracted_studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))$unique_study_id
 
+    #TODO: change this to maybe ad all at the beginning, then sort by length and remove subsets
     if (!list(found_grouped_studies) %in% grouped_studies) {
       grouped_studies[study] <- list(found_grouped_studies)
     }

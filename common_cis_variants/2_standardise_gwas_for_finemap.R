@@ -19,6 +19,7 @@ gwas <- vroom::vroom(args$gwas_filename, delim = " ") |>
   dplyr::filter(rsid %in% snps)
 gwas <- gwas[!duplicated(gwas$rsid), ]
 
+#this was needed to format them for the tool 'finemap', leaving here unless we use it again
 #to_flip <- (gwas$maf > 0.5)
 #if (any(to_flip)) {
 #  gwas$maf[to_flip] <- 1 - gwas$maf[to_flip]

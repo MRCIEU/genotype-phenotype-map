@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
-MEGABASE=1000000 # +/- 1 Mega base
+MEGABASE=1000000 # +/- 1 Mega base #TODO not using this anymore, just grabbing whole ld region
 GWASES_TO_EXTRACT=$(cat $DATA_DIR/pipeline_metadata/gwases_to_extract.tsv)
+LD_REGIONS=data/ld_regions.tsv
 
 while IFS= read -r GWAS_STUDY; do
   STUDY_DIR=$(echo $GWAS_STUDY | awk '{print $1}')
@@ -16,7 +17,7 @@ while IFS= read -r GWAS_STUDY; do
 
   mkdir -p $EXTRACTION_DIR
   EXTRACTED_SNPS=$EXTRACTION_DIR/extracted_snps.tsv
-  echo -e "CHR\tBP\tLOG_P\tANCESTRY" > $EXTRACTED_SNPS
+  echo -e "CHR\tBP\tLOG_P\tANCESTRY\tLD_REGION\tFILE" > $EXTRACTED_SNPS
 
   echo "Step 1: Extract regions using bcftools"
 
@@ -31,59 +32,24 @@ while IFS= read -r GWAS_STUDY; do
     if [[ -z $CHR ]] || [[ -z $POS ]] || [[ -z $LOG_P ]]; then
       continue
     fi
-    BEGINNING=$(($POS-$MEGABASE))
 
-    if [[ $BEGINNING -lt 0 ]]; then
-      BEGINNING=0
-    fi
-    END=$(($POS+$MEGABASE))
+    BEGINNING_END=$(awk -v chr=$CHR -v bp=$POS -v an=$ANCESTRY \
+      '{ if ($1 == chr && $2 < bp && bp < $3 && $4 == an) print $2 "-" $3 }' $LD_REGIONS
+    )
 
-    REGION="$CHR:$BEGINNING-$END"
+    REGION="$CHR:$BEGINNING_END"
     echo "Region to extract: $REGION"
     EXTRACTED_FILE=$EXTRACTION_DIR/${ANCESTRY}_${CHR}_${POS}.z
 
     echo -e "rsid chromosome position allele1 allele2 maf beta se lp" > $EXTRACTED_FILE
     /home/bcftools/bcftools query --regions $REGION --format "[%ID] [%CHROM] [%POS] [%REF] [%ALT] [%AF] [%ES] [%SE] [%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
-    echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}" >> $EXTRACTED_SNPS
+
+    SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}}"
+    LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
+    echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}" >> $EXTRACTED_SNPS
+
+    Rscript  /home/common_cis_variants/2_standardise_gwas_for_finemap.R --gwas_filename $EXTRACTED_FILE --snp_list $LD_REGION_SNPLIST
   done <<< $ALL_CHR_POS
-
-  echo "Step 2: Create ld matrix / Finemap extracted regions"
-
-  FINEMAP_DIR=$EXTRACTION_DIR/finemap
-  PLINK_DIR=$EXTRACTION_DIR/plink
-  IN_FILE=$FINEMAP_DIR/finemap_infile.txt
-  mkdir -p $FINEMAP_DIR
-  mkdir -p $PLINK_DIR
-  echo "z;ld;snp;config;cred;n_samples" > $IN_FILE
-
-  cd $EXTRACTION_DIR
-  for FILE in $(ls | grep $ANCESTRY | grep ".z$"); do
-    echo $FILE
-    FILE_BASENAME=$(basename $FILE .z)
-    INFO=(${FILE_BASENAME//_/ })
-    FINEMAP_OUTPUT=$FINEMAP_DIR/$FILE_BASENAME
-    PLINK_OUTPUT=$PLINK_DIR/$FILE_BASENAME
-
-    SNP_LIST=$(grep -v rsid $FILE | awk '{print $1}')
-    SNP_LIST_FILE=${FILE_BASENAME}.snplist
-    echo -e $SNP_LIST > $SNP_LIST_FILE
-
-    #TODO: maybe remove this, as were just generating it once per ld region?
-    PLINK_FAILED=0
-    plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr ${INFO[1]} --extract $SNP_LIST_FILE --r square spaces --out $PLINK_OUTPUT --write-snplist --keep-allele-order || PLINK_FAILED=1
-
-    if [[ $PLINK_FAILED -eq 1 ]] && [[ ! -f $PLINK_OUTPUT.ld ]]; then
-      echo "ERROR: Problem with plink commend, can't make ld, therefore deleting extracted region"
-      rm $FILE
-    else
-      Rscript  /home/common_cis_variants/2_standardise_gwas_for_finemap.R --gwas_filename $FILE --snp_list $PLINK_OUTPUT.snplist
-    fi
-
-    echo "$EXTRACTION_DIR/$FILE;$PLINK_OUTPUT.ld;$FINEMAP_OUTPUT.snp;$FINEMAP_OUTPUT.config;$FINEMAP_OUTPUT.cred;$SAMPLE_SIZE" >> $IN_FILE
-  done
-
-  #TODO: looking at other finemapping options...
-  #finemap --sss --in-files $IN_FILE
 
   jq -n --arg sample_size $SAMPLE_SIZE --arg ancestry $ANCESTRY --arg p_val $P_VALUE \
     '{"ancestry": $ancestry, "sample_size": $sample_size, "p_value_threshold":$p_val}' > $EXTRACTION_DIR/extraction_metadata.json

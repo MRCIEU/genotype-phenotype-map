@@ -6,9 +6,6 @@ export $(xargs <.env)
 LOGS=$DATA_DIR/pipeline_metadata/logs
 mkdir -p $LOGS
 
-./run_pipeline_step.sh 'Rscript 2_format_ld_matrices.R' &> $LOGS/00_format_ld_matrices.log || exit 1
-exit 0
-
 #STEP 1:
 #./run_pipeline_step.sh 'Rscript 1_gwas_subset_list.R' &> $LOGS/1_gwas_subset_list.log || exit 1
 #./run_pipeline_step.sh './2_extract_regions_from_vcf.sh' &> $LOGS/2_extract_regions_from_vcf.log || exit 1

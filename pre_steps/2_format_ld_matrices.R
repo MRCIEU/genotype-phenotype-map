@@ -10,7 +10,6 @@ for (region in seq_len(nrow(ld_regions))) {
   snp_list <- vroom::vroom(paste0(ld_region_string, ".snplist"), delim = " ", col_names = F, show_col_types = F)
   ld_matrix <- vroom::vroom(paste0(ld_region_string, ".ld"), delim = " ", col_names = F, show_col_types = F)
   ld_matrix <- dplyr::bind_cols(snp_list, ld_matrix)
-  rownames(ld_matrix) <- snp_list
 
   vroom::vroom_write(ld_matrix, paste0(ld_region_string, ".tsv.gz"), col_names = F)
 }

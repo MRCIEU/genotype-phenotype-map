@@ -48,6 +48,7 @@ while IFS= read -r GWAS_STUDY; do
     LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
     echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}" >> $EXTRACTED_SNPS
 
+    #TODO: maybe move this to the imputation or finemapping step
     Rscript  /home/common_cis_variants/2_standardise_gwas_for_finemap.R --gwas_filename $EXTRACTED_FILE --snp_list $LD_REGION_SNPLIST
   done <<< $ALL_CHR_POS
 

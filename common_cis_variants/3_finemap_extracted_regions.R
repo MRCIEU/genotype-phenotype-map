@@ -1,51 +1,23 @@
 load("R/gwas_formatting.R")
-library(argparser, quietly = TRUE)
 
-parser <- arg_parser("Finemapping stuff")
-parser <- add_argument(parser,
-                       "--gwas_filename",
-                       help = "GWAS filename",
-                       type = "character"
-)
-parser <- add_argument(parser,
-                       "--ld_block",
-                       help = "LD block that the ",
-                       type = "character"
-)
-
-parser <- add_argument(parser,
-                       "--gwas_n",
-                       help = "Sample size of GWAS",
-                       type = "numeric"
-)
-
+parser <- argparser::arg_parser("Finemapping stuff")
+parser <- argparser::add_argument(parser, "--gwas_filename", help = "GWAS filename", type = "character")
+parser <- argparser::add_argument(parser, "--ld_block", help = "LD block that the ", type = "character")
+parser <- argparser::add_argument(parser, "--gwas_n", help = "Sample size of GWAS", type = "numeric")
 
 args <- parse_args(parser)
 
 args <- list(gwas_filename="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/EUR_6_32530029.z",
             snp_list="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.snplist",
-            ld_matrix="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.ld",
+            ld_region="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz",
             gwas_n=400000
 )
 
-gwas <- vroom::vroom(args$gwas_filename, delim = " ")
-ld <- vroom::vroom(args$ld_matrix, col_names=F)
-gwas <- gwas[match(gwas$rsid , ld$X0), ]
-ld_for_gwas <- ld[match(ld$X0, gwas$rsid), 2:ncol(ld), ]
+args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld_blocks/EUR/10/93335047_95396367/",
+             ld_region="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz",
+             gwas_n=400000
+)
 
-
-ld_matrix <- matrix(as.vector(data.matrix(ld), nrow=nrow(gwas), ncol=nrow(gwas)))
-
-# to_flip <- (gwas$maf > 0.5)
-# if (any(to_flip)) {
-#   gwas$maf[to_flip] <- 1 - gwas$maf[to_flip]
-#   gwas$beta[to_flip] <- -1 * gwas$beta[to_flip]
-#
-#   temp <- gwas$allele2[to_flip]
-#   gwas$allele2[to_flip] <- gwas$allele1[to_flip]
-#   gwas$allele1[to_flip] <- temp
-# }
-# vroom::vroom_write(gwas, args$gwas_filename, delim=" ")
 
 convert_beta_and_se_to_z_score <- function(gwas) {
   gwas$Z <- gwas$BETA / gwas$SE
@@ -72,39 +44,80 @@ lbf_to_z_cont <- function(lbf, n, af, prior_v = 50) {
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
   beta <- z * se
-  return(data.frame(beta, se))
+  p <- 2 * pnorm(z, lower.tail = F)
+  return(data.frame(beta, se, p))
 }
 
-susie <- function() {
-  #L = 3 takes 1.4 minutes, whereas the default L = 10 takes 4.2 minutes.
-  #presumably, L = 3 is sufficient for the small regions were taking
-  start_time <- Sys.time()
-  susie_results <- susieR::susie_rss(bhat=gwas$beta, shat=gwas$se, R=ld_matrix, n=args$gwas_n, L=3)
-  print(Sys.time() - start_time)
-  #to act on a warning, can do a tryCatch(expr={}, warning=function(w){})
+susie <- function(study, gwas, ld_matrix) {
+  tryCatch(expr = {
+    start_time <- Sys.time()
+    susie_results <- susieR::susie_rss(bhat=gwas$beta, shat=gwas$se, R=ld_matrix, n=args$gwas_n, N=5)
+    print(Sys.time() - start_time)
 
-  conditioned_gwases <- apply(susie_results$lbf_variable, 1, function(lbf) {
-    conditioned_gwas <- lbf_to_z_cont(lbf, args$gwas_n, gwas$maf)
-    return(conditioned_gwas)
+    saveRDS(susie_results, paste0(data_dir, 'finemap_tests/susie_', basename(study), '.rds'))
+
+    conditioned_gwases <- apply(susie_results$lbf_variable, 1, function(lbf) {
+      conditioned_gwas <- lbf_to_z_cont(lbf, args$gwas_n, gwas$maf)
+      gwas$beta <- conditioned_gwas$beta
+      gwas$se <- conditioned_gwas$se
+      gwas$p <- conditioned_gwas$p
+      return(gwas)
+    })
+    return(conditioned_gwases)
+
+  }, warning = function(w) {
+    warning(w)
+    return(gwas)
   })
 }
 
-carma <- function() {
+carma <- function(gwas, ld_matrix) {
   input_columns <- list(BETA="beta", SE="se", RSID="rsid", CHR="chromosome", BP="position", EA="allele1", OA="allele2", EAF="maf", LOG_P="lp")
   gwas <- standarise_gwas(gwas, input_columns=input_columns, N=args$gwas_n)
   gwas <- convert_beta_and_se_to_z_score(gwas)
   lambda_list<-list()
   lambda_list[[1]] <- 1
-  #add annotation list data?
-  CARMA::CARMA(gwas$Z, ld_matrix, lamda_list, outlier_switch=TRUE) #outlier_switch=T because of out sample LD matrix
+  #outlier_switch=T because of out sample LD matrix
+  carma_result <- CARMA::CARMA(gwas$Z, ld_matrix, lamda_list, outlier_switch=TRUE)
+  saveRDS(carma_result, paste0(data_dir, '/finemap_tests/carma_', basename(study), '.rds'))
 }
 
-conditioned_gwases <- apply(susie$l3$lbf_variable, 1, function(lbf) {
-  conditioned_gwas <- lbf_to_z_cont(lbf, args$gwas_n, gwas$maf)
-  gwas$beta <- conditioned_gwas$beta
-  gwas$se <- conditioned_gwas$se
-  gwas$p <- 10^-gwas$lp
-  return(gwas)
+
+ld_region <- vroom::vroom(args$ld_region, col_names=F)
+colnames(ld_region) <- ld_region$X1
+ld_region <- ld_region[, 2:(ncol(ld_region)-1)]
+
+all_studies <- list.files(args$ld_block_dir, pattern = "*.z", full.names = T)
+all_studies <- head(all_studies)
+
+all_conditioned_gwases <- lapply(all_studies, function(study) {
+  print(study)
+  gwas <- vroom::vroom(study, delim = " ")
+  if (typeof(gwas$maf) == 'character') {
+    warning('maf is poo, skipping')
+    return(gwas)
+  }
+
+  gwas <- dplyr::filter(gwas, rsid %in% colnames(ld_region))
+  keep <- colnames(ld_region) %in% gwas$rsid
+  ld_for_gwas <- ld_region[keep, keep]
+  ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))
+  conditioned_gwases <- susie(study, gwas, ld_matrix)
 })
 
-lapply(conditioned_gwases, function(gwas) {qqman::manhattan(gwas, p='p', chr = 'chromosome', bp = 'position', snp = 'rsid')})
+flatten_list_of_lists <- function(x) {
+  if (is.data.frame(x)) return(list(x))
+  if (!is.list(x)) return(x)
+  unlist(lapply(x, flattenMixed), FALSE)
+}
+
+aall_conditioned_gwases <- flatten_list_of_lists(all_conditioned_gwases)
+
+lapply(aall_conditioned_gwases, function(gwas) {
+  range <- c(min(gwas$position), max(gwas$position))
+  #yrange <- c(min(gwas$p), max(gwas$p))
+  if(!"p" %in% colnames(gwas)) return()
+  gwas$p[gwas$p == 0] <- .Machine$double.xmin
+  gwas <- gwas[!is.na(gwas$p), ]
+  qqman::manhattan(gwas, p='p', chr = 'chromosome', bp = 'position', snp = 'rsid', xlim=range)
+})

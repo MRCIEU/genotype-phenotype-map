@@ -8,7 +8,7 @@ mkdir -p $LOGS
 
 #STEP 1:
 #./run_pipeline_step.sh 'Rscript 1_gwas_subset_list.R' &> $LOGS/1_gwas_subset_list.log || exit 1
-#./run_pipeline_step.sh './2_extract_regions_from_vcf.sh' &> $LOGS/2_extract_regions_from_vcf.log || exit 1
+#./run_pipeline_step.sh './2_extract_regions_from_opengwas.sh' &> $LOGS/2_extract_regions_from_vcf.log || exit 1
 ./run_pipeline_step.sh 'Rscript 4_organise_extracted_regions_into_ld_regions.R' &> $LOGS/4_organise_extracted_regions_into_ld_regions.log || exit 1
 echo $?
 if [[ $? -ne 0 ]]; then

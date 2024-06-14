@@ -10,6 +10,8 @@ extracted_study_dir <- paste0(data_dir, "study/")
 
 ld_block_results_dir <- paste0(results_dir, "ld_blocks/")
 
+#splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype
+#methylation goes where?
 data_types <- list(phenotype="phenotype", proteomics="proteomics", metabolomics="metabolomics", eqtl="eqtl")
 study_categories <- list(binary="binary", continuous="Continuous")
 databases <- list(opengwas="opengwas")

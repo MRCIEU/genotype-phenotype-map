@@ -1,18 +1,18 @@
-library(argparser, quietly = TRUE)
+source('core/common.R')
 
-parser <- arg_parser("Standardising GWAS for finemap")
-parser <- add_argument(parser,
+parser <- argparser::arg_parser("Standardising GWAS for finemap")
+parser <- argparser::add_argument(parser,
                        "--gwas_filename",
                        help = "GWAS filename",
                        type = "character"
 )
-parser <- add_argument(parser,
+parser <- argparser::add_argument(parser,
                        "--snp_list",
                        help = "List of RSIDs to filter on",
                        type = "character"
 )
 
-args <- parse_args(parser)
+args <- argparser::parse_args(parser)
 snps <- vroom::vroom(args$snp_list, col_names = F, delim=",")$X1
 
 gwas <- vroom::vroom(args$gwas_filename, delim = " ") |>

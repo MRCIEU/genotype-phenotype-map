@@ -1,11 +1,12 @@
-load("R/gwas_formatting.R")
+source("R/gwas_formatting.R")
+source('constants.R')
 
 parser <- argparser::arg_parser("Finemapping stuff")
 parser <- argparser::add_argument(parser, "--gwas_filename", help = "GWAS filename", type = "character")
 parser <- argparser::add_argument(parser, "--ld_block", help = "LD block that the ", type = "character")
 parser <- argparser::add_argument(parser, "--gwas_n", help = "Sample size of GWAS", type = "numeric")
 
-args <- parse_args(parser)
+args <- argparser::parse_args(parser)
 
 args <- list(gwas_filename="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/EUR_6_32530029.z",
             snp_list="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.snplist",
@@ -18,9 +19,8 @@ args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld
              gwas_n=400000
 )
 
-
 convert_beta_and_se_to_z_score <- function(gwas) {
-  gwas$Z <- gwas$BETA / gwas$SE
+  gwas$z <- gwas$beta / gwas$se
   return(gwas)
 }
 
@@ -44,8 +44,7 @@ lbf_to_z_cont <- function(lbf, n, af, prior_v = 50) {
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
   beta <- z * se
-  p <- 2 * pnorm(z, lower.tail = F)
-  return(data.frame(beta, se, p))
+  return(data.frame(beta, se))
 }
 
 susie <- function(study, gwas, ld_matrix) {
@@ -60,7 +59,6 @@ susie <- function(study, gwas, ld_matrix) {
       conditioned_gwas <- lbf_to_z_cont(lbf, args$gwas_n, gwas$maf)
       gwas$beta <- conditioned_gwas$beta
       gwas$se <- conditioned_gwas$se
-      gwas$p <- conditioned_gwas$p
       return(gwas)
     })
     return(conditioned_gwases)
@@ -72,8 +70,6 @@ susie <- function(study, gwas, ld_matrix) {
 }
 
 carma <- function(gwas, ld_matrix) {
-  input_columns <- list(BETA="beta", SE="se", RSID="rsid", CHR="chromosome", BP="position", EA="allele1", OA="allele2", EAF="maf", LOG_P="lp")
-  gwas <- standarise_gwas(gwas, input_columns=input_columns, N=args$gwas_n)
   gwas <- convert_beta_and_se_to_z_score(gwas)
   lambda_list<-list()
   lambda_list[[1]] <- 1
@@ -88,7 +84,6 @@ colnames(ld_region) <- ld_region$X1
 ld_region <- ld_region[, 2:(ncol(ld_region)-1)]
 
 all_studies <- list.files(args$ld_block_dir, pattern = "*.z", full.names = T)
-all_studies <- head(all_studies)
 
 all_conditioned_gwases <- lapply(all_studies, function(study) {
   print(study)
@@ -113,11 +108,11 @@ flatten_list_of_lists <- function(x) {
 
 aall_conditioned_gwases <- flatten_list_of_lists(all_conditioned_gwases)
 
-lapply(aall_conditioned_gwases, function(gwas) {
-  range <- c(min(gwas$position), max(gwas$position))
-  #yrange <- c(min(gwas$p), max(gwas$p))
-  if(!"p" %in% colnames(gwas)) return()
-  gwas$p[gwas$p == 0] <- .Machine$double.xmin
-  gwas <- gwas[!is.na(gwas$p), ]
-  qqman::manhattan(gwas, p='p', chr = 'chromosome', bp = 'position', snp = 'rsid', xlim=range)
-})
+# lapply(aall_conditioned_gwases, function(gwas) {
+#   range <- c(min(gwas$position), max(gwas$position))
+#   #yrange <- c(min(gwas$p), max(gwas$p))
+#   if(!"p" %in% colnames(gwas)) return()
+#   gwas$p[gwas$p == 0] <- .Machine$double.xmin
+#   gwas <- gwas[!is.na(gwas$p), ]
+#   qqman::manhattan(gwas, p='p', chr = 'chromosome', bp = 'position', snp = 'rsid', xlim=range)
+# })

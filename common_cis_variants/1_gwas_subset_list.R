@@ -1,5 +1,5 @@
 source("constants.R")
-gwas_list <- vroom::vroom("data/test_list.csv")
+gwas_list <- vroom::vroom("data/gwas_list.csv")
 if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 extraction_p_value <- 5e-8
 
@@ -68,5 +68,5 @@ opengwas_data_current_state <- calculate_state_opengwas_data(opengwas_entries)
 current_state <- dplyr::bind_rows(opengwas_data_current_state)
 vroom::vroom_write(current_state, paste0(pipeline_metadata_dir, "current_state.tsv"))
 
-gwases_to_extract <- current_state[current_state$extracted == F, c("study_location", "extracted_location", "ancestry", "sample_size", "p_value_threshold")]
+gwases_to_extract <- current_state[current_state$extracted == F, c("study_location", "extracted_location", "ancestry", "sample_size", "p_value_threshold", "data_type")]
 vroom::vroom_write(gwases_to_extract, paste0(pipeline_metadata_dir, "gwases_to_extract.tsv"), col_names = F)

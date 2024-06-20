@@ -2,7 +2,7 @@
 set -e
 MEGABASE=1000000 # +/- 1 Mega base #TODO not using this anymore, just grabbing whole ld region
 GWASES_TO_EXTRACT=$(cat $DATA_DIR/pipeline_metadata/gwases_to_extract.tsv)
-LD_REGIONS=data/ld_regions.tsv
+LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 
 while IFS= read -r GWAS_STUDY; do
   STUDY_DIR=$(echo $GWAS_STUDY | awk '{print $1}')
@@ -36,14 +36,19 @@ while IFS= read -r GWAS_STUDY; do
       '{ if ($1 == chr && $2 < bp && bp < $3 && $4 == an) print $2 "-" $3 }' $LD_REGIONS
     )
 
+    if [[ -z $BEGINNING_END ]]; then
+      echo "Can't find LD region match for $ANCESTRY $CHR:$BP, skipping..."
+      continue
+    fi
+
     REGION="$CHR:$BEGINNING_END"
     echo "Region to extract: $REGION"
     EXTRACTED_FILE=$EXTRACTION_DIR/${ANCESTRY}_${CHR}_${POS}.tsv
 
-    echo -e "RSID\tCHR\TBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
+    echo -e "RSID\tCHR\tBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
     /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
 
-    SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}}"
+    SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}"
     LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
     echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\tNA" >> $EXTRACTED_SNPS
 

@@ -1,21 +1,22 @@
-source("R/gwas_formatting.R")
-source('constants.R')
+#source("R/gwas_formatting.R")
+source("constants.R")
+options(error = function() traceback(20))
 
-parser <- argparser::arg_parser("Finemapping stuff")
-parser <- argparser::add_argument(parser, "--gwas_filename", help = "GWAS filename", type = "character")
-parser <- argparser::add_argument(parser, "--ld_block", help = "LD block that the ", type = "character")
-parser <- argparser::add_argument(parser, "--gwas_n", help = "Sample size of GWAS", type = "numeric")
+#parser <- argparser::arg_parser("Finemapping stuff")
+#parser <- argparser::add_argument(parser, "--gwas_filename", help = "GWAS filename", type = "character")
+#parser <- argparser::add_argument(parser, "--ld_block", help = "LD block that the ", type = "character")
+#parser <- argparser::add_argument(parser, "--gwas_n", help = "Sample size of GWAS", type = "numeric")
+#
+#args <- argparser::parse_args(parser)
 
-args <- argparser::parse_args(parser)
-
-args <- list(gwas_filename="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/EUR_6_32530029.z",
-            snp_list="/Users/wt23152/Documents/Projects/scratch/011/data/study/ukb-b-10003/plink/EUR_6_32530029.snplist",
-            ld_region="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz",
-            gwas_n=400000
-)
 
 args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld_blocks/EUR/10/93335047_95396367/",
              ld_region="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz",
+             gwas_n=400000
+)
+
+args <- list(ld_block_dir=paste0(data_dir, "/ld_blocks/EUR/10/93335047_95396367/"),
+             ld_region=paste0(data_dir, "/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz"),
              gwas_n=400000
 )
 
@@ -69,15 +70,25 @@ susie <- function(study, gwas, ld_matrix) {
   })
 }
 
-carma <- function(gwas, ld_matrix) {
+carma <- function(study, gwas, ld_matrix) {
+  #input_columns <- list(BETA="beta", SE="se", RSID="rsid", CHR="chromosome", BP="position", EA="allele1", OA="allele2", EAF="maf", LOG_P="lp")
+  #gwas <- standardise_gwas(gwas, input_columns=input_columns, N=args$gwas_n)
   gwas <- convert_beta_and_se_to_z_score(gwas)
   lambda_list<-list()
-  lambda_list[[1]] <- 1
+  z.list<-list()
+  ld.list<-list()
+  lambda.list<-list()
+  z.list[[1]] <- gwas$z
+  ld.list[[1]] <- ld_matrix
+  lambda.list[[1]] <- 1
+  print(dim(ld_matrix))
+  print(typeof(ld_matrix))
+
   #outlier_switch=T because of out sample LD matrix
-  carma_result <- CARMA::CARMA(gwas$Z, ld_matrix, lamda_list, outlier_switch=TRUE)
+  carma_result <- CARMA::CARMA(z.list, ld.list, lambda.list=lambda.list, outlier.switch=TRUE)
+  print(paste0(data_dir, '/finemap_tests/carma_', basename(study), '.rds'))
   saveRDS(carma_result, paste0(data_dir, '/finemap_tests/carma_', basename(study), '.rds'))
 }
-
 
 ld_region <- vroom::vroom(args$ld_region, col_names=F)
 colnames(ld_region) <- ld_region$X1
@@ -88,16 +99,17 @@ all_studies <- list.files(args$ld_block_dir, pattern = "*.z", full.names = T)
 all_conditioned_gwases <- lapply(all_studies, function(study) {
   print(study)
   gwas <- vroom::vroom(study, delim = " ")
-  if (typeof(gwas$maf) == 'character') {
-    warning('maf is poo, skipping')
-    return(gwas)
-  }
+  #if (typeof(gwas$maf) == 'character') {
+  #  warning('maf is poo, skipping')
+  #  return(gwas)
+  #}
 
   gwas <- dplyr::filter(gwas, rsid %in% colnames(ld_region))
   keep <- colnames(ld_region) %in% gwas$rsid
   ld_for_gwas <- ld_region[keep, keep]
   ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))
-  conditioned_gwases <- susie(study, gwas, ld_matrix)
+  #conditioned_gwases <- susie(study, gwas, ld_matrix)
+  carma(study, gwas, ld_for_gwas)
 })
 
 flatten_list_of_lists <- function(x) {

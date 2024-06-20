@@ -17,7 +17,6 @@ calculate_state_opengwas_data <- function(entries) {
   processing_information <- apply(expanded_directories, 1, function(entry) {
     directory <- entry[['directory']]
     study_name <- basename(directory)
-    print(study_name)
     data_study_dir <- paste0(data_dir, 'study/', study_name, "/")
     finemap_dir <- paste0(data_study_dir, "finemapped/")
     extracted_dir <- paste0(data_study_dir, "extracted/")

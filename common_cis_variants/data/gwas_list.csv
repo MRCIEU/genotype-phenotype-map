@@ -1,4 +1,4 @@
 id_pattern,data_type,database,data_location,ancestry
 ukb-b-*,phenotype,opengwas,/local-scratch/data/opengwas/igd/,EUR
-ebi-a-*,phenotype,opengwas,/local-scratch/projects/opengwas/igd/,EUR
-eqtl-a-*,gene_expression,opengwas,/local-scratch/projects/opengwas/igd/,EUR
+ebi-a-*,phenotype,opengwas,/local-scratch/data/opengwas/igd/,EUR
+eqtl-a-*,gene_expression,opengwas,/local-scratch/data/opengwas/igd/,EUR

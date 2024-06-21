@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-MEGABASE=1000000 # +/- 1 Mega base #TODO not using this anymore, just grabbing whole ld region
 GWASES_TO_EXTRACT=$(cat $DATA_DIR/pipeline_metadata/gwases_to_extract.tsv)
 LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 
@@ -12,11 +11,11 @@ while IFS= read -r GWAS_STUDY; do
   P_VALUE=$(echo $GWAS_STUDY | awk '{print $5}')
   DATA_TYPE=$(echo $GWAS_STUDY | awk '{print $6}')
 
+  mkdir -p $EXTRACTION_DIR/original $EXTRACTION_DIR/imputed $EXTRACTION_DIR/finemapped
   STUDY=$(basename $STUDY_DIR)
   echo $STUDY_DIR
   cd $STUDY_DIR
 
-  mkdir -p $EXTRACTION_DIR
   EXTRACTED_SNPS=$EXTRACTION_DIR/extracted_snps.tsv
   echo -e "CHR\tBP\tLOG_P\tANCESTRY\tLD_REGION\tFILE\tCIS_TRANS" > $EXTRACTED_SNPS
 

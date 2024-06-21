@@ -51,7 +51,7 @@ lbf_to_z_cont <- function(lbf, n, af, prior_v = 50) {
 susie <- function(study, gwas, ld_matrix) {
   tryCatch(expr = {
     start_time <- Sys.time()
-    susie_results <- susieR::susie_rss(bhat=gwas$beta, shat=gwas$se, R=ld_matrix, n=args$gwas_n, N=5)
+    susie_results <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=args$gwas_n, N=5)
     print(Sys.time() - start_time)
 
     saveRDS(susie_results, paste0(data_dir, 'finemap_tests/susie_', basename(study), '.rds'))
@@ -104,7 +104,8 @@ all_conditioned_gwases <- lapply(all_studies, function(study) {
   #  return(gwas)
   #}
 
-  gwas <- dplyr::filter(gwas, rsid %in% colnames(ld_region))
+  gwas <- dplyr::filter(gwas, rsid %in% colnames(ld_region)) |>
+    dplyr::filter(!duplicated(rsid))
   keep <- colnames(ld_region) %in% gwas$rsid
   ld_for_gwas <- ld_region[keep, keep]
   ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))

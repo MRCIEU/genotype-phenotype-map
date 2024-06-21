@@ -25,7 +25,7 @@ all_updated_ld_blocks <- apply(current_state, 1, function(study) {
     ld_block_data <- paste0(ld_block_data_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
     ld_block_results <- paste0(ld_block_results_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
 
-    study_file <- paste0(study_dir, "_", extracted_chr, "_", bp, ".z")
+    study_file <- paste0(study_dir, 'original/', ancestry, "_", extracted_chr, "_", bp, ".tsv")
     ld_block$data_dir <- ld_block_data
     ld_block$results_dir <- ld_block_results
     if(!dir.exists(ld_block_data)) dir.create(ld_block_data, recursive = T)
@@ -42,8 +42,7 @@ all_updated_ld_blocks <- apply(current_state, 1, function(study) {
     }
     vroom::vroom_write(extracted_studies, extracted_studies_file)
 
-    study_file <- paste0(study_dir, ancestry, "_", extracted_chr, "_", bp, ".z")
-    study_in_ld_block <- paste0(ld_block_data, "/", study_name, "_", extracted_chr, "_", bp, ".z")
+    study_in_ld_block <- paste0(ld_block_data, "/", study_name, "_", extracted_chr, "_", bp, ".tsv")
     file.symlink(study_file, study_in_ld_block)
 
     return(ld_block)

@@ -1,28 +1,75 @@
-"""RAISS summary statstics imputation model."""
-
 from __future__ import annotations
-
 from typing import Any
 
+import click
+import glob
 import os
 import numpy as np
 import pandas as pd
-import pickle
 import scipy.linalg
 
-os.environ["LD_PRELOAD"] = ""
 DATA_DIR = os.getenv("DATA_DIR")
+imputed_r2_threshold = 0.9
+ld_score_threshold = 5
+
+@click.command(name="Impute studies by region")
+@click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
+@click.option('--ld_blocks_dir', help='List of GWAS Summary Statistics file', required=True, multiple=True)
+def main(ld_region_prefix, ld_blocks_dir):
+    ld_matrix = pd.read_csv(ld_region_prefix + '.ld', header=None, delimiter=' ')
+    ld_matrix = np.array(ld_matrix)
+
+    imputed_gwas_data = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
+
+    gwas_list = glob.glob(ld_blocks_dir + '*.tsv')
+    gwas_list = [os.readlink(f) for f in gwas_list]
+
+    for gwas_file in gwas_list:
+        imputed_file = gwas_file.replace('original', 'imputed')
+        if os.path.isfile(imputed_file):
+            continue
+        gwas = pd.read_csv(gwas_file, delimiter='\t')
+        gwas.drop_duplicates(subset=['RSID'], inplace=True)
+        gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
+
+        rsids_in_gwas = np.isin(imputed_gwas_data.RSID, gwas.RSID)
+        rsids_in_ld_block = np.isin(gwas.RSID, imputed_gwas_data.RSID)
+        gwas_filter = np.where(rsids_in_ld_block)[0]
+        known = np.where(rsids_in_gwas)[0]
+        unknown = np.where(rsids_in_gwas is False)[0]
+
+        sig_t = ld_matrix[known, :][:, known]
+        sig_i_t = ld_matrix[unknown, :][:, known]
+        z = np.array(gwas.iloc[:, 3])
+        z = z[gwas_filter]
+
+        imputation_results = SummaryStatisticsImputation.raiss_model(
+            z, sig_t, sig_i_t, lamb=0.01, rtol=0.01
+        )
+
+        #TODO: presumably this is length equal to sig_i_t, ie. the missing values that were? Answer: yes
+        rsids_to_add = (imputation_results["imputation_r2"] >= imputed_r2_threshold) * (
+                imputation_results["ld_score"] >= ld_score_threshold
+        )
+        if sum(rsids_to_add) >= 1:
+            imputed_gwas_data['Z'] = imputation_results['mu']
+            imputed_gwas_data_to_add = imputed_gwas_data[rsids_to_add]
+            gwas = pd.concat([gwas,imputed_gwas_data_to_add], axis=0, ignore_index=True)
+
+        print(f'Imputed {rsids_to_add} SNPs')
+        gwas.to_csv(imputed_file, sep='\t')
+
 
 class SummaryStatisticsImputation:
     """Implementation of RAISS summary statstics imputation model."""
 
     @staticmethod
     def raiss_model(
-        z_scores_known: np.ndarray,
-        ld_matrix_known: np.ndarray,
-        ld_matrix_known_missing: np.ndarray,
-        lamb: float = 0.01,
-        rtol: float = 0.01,
+            z_scores_known: np.ndarray,
+            ld_matrix_known: np.ndarray,
+            ld_matrix_known_missing: np.ndarray,
+            lamb: float = 0.01,
+            rtol: float = 0.01,
     ) -> dict[str, Any]:
         """Compute the imputation of the z-score using the RAISS model.
 
@@ -90,7 +137,7 @@ class SummaryStatisticsImputation:
 
     @staticmethod
     def _compute_mu(
-        sig_i_t: np.ndarray, sig_t_inv: np.ndarray, zt: np.ndarray
+            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, zt: np.ndarray
     ) -> np.ndarray:
         """Compute the estimation of z-score from neighborring snp.
 
@@ -106,7 +153,7 @@ class SummaryStatisticsImputation:
 
     @staticmethod
     def _compute_var(
-        sig_i_t: np.ndarray, sig_t_inv: np.ndarray, lamb: float
+            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, lamb: float
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute the expected variance of the imputed SNPs.
 
@@ -121,7 +168,7 @@ class SummaryStatisticsImputation:
         var = (1 + lamb) - np.einsum(
             "ij,jk,ki->i", sig_i_t, sig_t_inv, sig_i_t.transpose()
         )
-        ld_score = (sig_i_t**2).sum(1)
+        ld_score = (sig_i_t ** 2).sum(1)
 
         return var, ld_score
 
@@ -171,7 +218,6 @@ class SummaryStatisticsImputation:
             np.fill_diagonal(sig_t, (1 + lamb))
             print(sig_t.dtype)
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
-            print('here')
             return sig_t_inv
         except np.linalg.LinAlgError:
             return SummaryStatisticsImputation._invert_sig_t(
@@ -179,34 +225,5 @@ class SummaryStatisticsImputation:
             )
 
 
-ld_region = pd.read_csv(DATA_DIR + '/ld_block_matrices/EUR/6_31571218_32682663.tsv.gz', header=None, compression='gzip', delimiter='\t')
-ld_gwas_data = pd.read_csv(DATA_DIR + '/ld_block_matrices/EUR/6_31571218_32682663.frq', header=None, delimiter='\t')
-gwas = pd.read_csv(DATA_DIR + '/study/ukb-b-10003/EUR_6_32530029.tsv', usecols=['RSID', 'BETA', 'SE'], delimiter='\t')
-gwas.drop_duplicates(subset=['RSID'], inplace=True)
-gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
-z = np.array(gwas.iloc[:, 3])
-
-rsids_in_gwas = np.isin(ld_region[0], gwas.RSID)
-rsids_in_ld_block = np.isin(gwas.RSID, ld_region[0])
-gwas_filter = np.where(rsids_in_ld_block)[0]
-known = np.where(rsids_in_gwas)[0]
-unknown = np.where(rsids_in_gwas == False)[0]
-
-ld_region = np.delete(ld_region, [0], axis=1)
-ld_region = np.array(ld_region)
-ld_region = np.vstack(ld_region).astype(float)
-
-sig_t = ld_region[known, :][:, known]
-sig_i_t = ld_region[unknown, :][:, known]
-z = z[gwas_filter]
-
-imputation_result = SummaryStatisticsImputation.raiss_model(
-    z, sig_t, sig_i_t, lamb=0.01, rtol=0.01
-)
-
-
-
-print(imputation_result)
-
-with open(DATA_DIR + '/study/ukb-b-10003/EUR_6_32530029.pkl', 'r') as output:
-    pickle.dump(imputation_result, output, pickle.HIGHEST_PROTOCOL)
+if __name__ == "__main__":
+    main()

@@ -14,10 +14,11 @@ ld_score_threshold = 5
 
 @click.command(name="Impute studies by region")
 @click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
-@click.option('--ld_blocks_dir', help='List of GWAS Summary Statistics file', required=True, multiple=True)
+@click.option('--ld_blocks_dir', help='List of GWAS Summary Statistics file', required=True)
 def main(ld_region_prefix, ld_blocks_dir):
     ld_matrix = pd.read_csv(ld_region_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
+    #ld_matrix = np.vstack(ld_matrix).astype(float)
 
     imputed_gwas_data = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
 
@@ -27,6 +28,7 @@ def main(ld_region_prefix, ld_blocks_dir):
     for gwas_file in gwas_list:
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
+            print('Imputed file exists, skipping.')
             continue
         gwas = pd.read_csv(gwas_file, delimiter='\t')
         gwas.drop_duplicates(subset=['RSID'], inplace=True)
@@ -36,27 +38,27 @@ def main(ld_region_prefix, ld_blocks_dir):
         rsids_in_ld_block = np.isin(gwas.RSID, imputed_gwas_data.RSID)
         gwas_filter = np.where(rsids_in_ld_block)[0]
         known = np.where(rsids_in_gwas)[0]
-        unknown = np.where(rsids_in_gwas is False)[0]
+        unknown = np.where(rsids_in_gwas == False)[0]
 
         sig_t = ld_matrix[known, :][:, known]
         sig_i_t = ld_matrix[unknown, :][:, known]
-        z = np.array(gwas.iloc[:, 3])
+        z = np.array(gwas.iloc[:, -1])
         z = z[gwas_filter]
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, sig_t, sig_i_t, lamb=0.01, rtol=0.01
         )
 
-        #TODO: presumably this is length equal to sig_i_t, ie. the missing values that were? Answer: yes
         rsids_to_add = (imputation_results["imputation_r2"] >= imputed_r2_threshold) * (
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
+            imputed_gwas_data = imputed_gwas_data.iloc[unknown]
             imputed_gwas_data['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = imputed_gwas_data[rsids_to_add]
             gwas = pd.concat([gwas,imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
-        print(f'Imputed {rsids_to_add} SNPs')
+        print(f'Imputed {sum(rsids_to_add)} SNPs')
         gwas.to_csv(imputed_file, sep='\t')
 
 

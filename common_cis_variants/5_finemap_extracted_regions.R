@@ -1,34 +1,90 @@
-#source("R/gwas_formatting.R")
 source("constants.R")
-options(error = function() traceback(20))
 
-#parser <- argparser::arg_parser("Finemapping stuff")
-#parser <- argparser::add_argument(parser, "--gwas_filename", help = "GWAS filename", type = "character")
-#parser <- argparser::add_argument(parser, "--ld_block", help = "LD block that the ", type = "character")
-#parser <- argparser::add_argument(parser, "--gwas_n", help = "Sample size of GWAS", type = "numeric")
+parser <- argparser::arg_parser("Finemap studies per region")
+parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS filename", type = "character")
+parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
+args <- argparser::parse_args(parser)
+
+# args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld_blocks/EUR/10/93335047_95396367/",
+#              ld_region_prefix="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367"
+# )
 #
-#args <- argparser::parse_args(parser)
+# args <- list(ld_block_dir=paste0(data_dir, "/ld_blocks/EUR/10/93335047_95396367/"),
+#              ld_region_prefix=paste0(data_dir, "/ld_block_matrices/EUR/10_93335047_95396367")
+# )
 
 
-args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld_blocks/EUR/10/93335047_95396367/",
-             ld_region="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz",
-             gwas_n=400000
-)
+main <- function(args) {
+  ld_region_finemap_dir <- paste0(args$ld_block_dir, '/finemapped/')
+  ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld', col_names=F), show_col_types = F)
+  ld_region <- ld_region[, 1:(ncol(ld_region)-1)]
+  ld_region_from_reference_panel <- vroom::vroom(paste0(args$ld_region_prefix, '.tsv'), show_col_types = F)
 
-args <- list(ld_block_dir=paste0(data_dir, "/ld_blocks/EUR/10/93335047_95396367/"),
-             ld_region=paste0(data_dir, "/ld_block_matrices/EUR/10_93335047_95396367.tsv.gz"),
-             gwas_n=400000
-)
+  extracted_study_file <- paste0(args$ld_block_dir, '/extracted_studies.sv')
+  extracted_studies <- vroom::vroom(extracted_study_file)
 
-convert_beta_and_se_to_z_score <- function(gwas) {
-  gwas$z <- gwas$beta / gwas$se
-  return(gwas)
+  finemapping_results <- apply(extracted_studies, 1, function (study) {
+    finemap_info <- data.frame(finemapped=FALSE, number_of_finemap_gwases=1)
+    finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']]) |>
+      stringr::str_sub(end=-5)
+    gwas <- vroom::vroom(study[['study']], show_col_types = F)
+
+    if (typeof(gwas$EAF) == 'character') {
+      warning('EAF is not populated, cant split results.  Skipping.')
+      finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+      file.copy(study[['file']], finemap_file)
+      file.symlink(finemap_file, ld_region_finemap_dir)
+      return(finemap_info)
+    }
+
+    gwas <- dplyr::filter(gwas, RSID %in% ld_region_from_reference_panel$RSID)
+    keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
+    ld_for_gwas <- ld_region[keep, keep]
+    ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))
+
+    tryCatch(expr = {
+      # carma_results <- carma(study, gwas, ld_for_gwas)
+      conditioned_gwases <- susie(study, gwas, ld_matrix)
+      for (i in seq_along(conditioned_gwases)) {
+        finemap_file <- paste0(finemap_file_prefix, '_', i,'.tsv')
+        vroom::vroom_write(conditioned_gwases[i], finemap_file)
+        file.symlink(finemap_file, ld_region_finemap_dir)
+      }
+      finemap_info$finemapped <- T
+      finemap_info$number_of_finemap_results <- length(conditioned_gwases)
+      return(finemap_info)
+    }, warning = function() {
+      finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+      file.copy(study[['file']], finemap_file)
+      file.symlink(finemap_file, ld_region_finemap_dir)
+      return(finemap_info)
+    })
+  })
+
+  extracted_studies <- dplyr::bind_cols(extracted_studies, finemapping_results)
+  vroom::vroom_write(extracted_studies, extracted_study_file)
 }
 
-convert_negative_log_p_to_p <- function(gwas) {
-  gwas$P <- 10^-gwas$LOG_P
-  return(gwas)
+#lapply(all_conditioned_gwases, plot_gwas)
+#TODO: delete later
+plot_gwas <- function(gwas) {
+  range <- c(min(gwas$position), max(gwas$position))
+  if(!"P" %in% colnames(gwas)) return()
+  gwas$P[gwas$P == 0] <- .Machine$double.xmin
+  gwas <- gwas[!is.na(gwas$P), ]
+  qqman::manhattan(gwas, p='P', chr = 'CHR', bp = 'BP', snp = 'RSID', xlim=range)
 }
+
+# flatten_list_of_lists <- function(x) {
+#   if (is.data.frame(x)) return(list(x))
+#   if (!is.list(x)) return(x)
+#   unlist(lapply(x, flattenMixed), FALSE)
+# }
+#
+# convert_negative_log_p_to_p <- function(gwas) {
+#   gwas$P <- 10^-gwas$LOG_P
+#   return(gwas)
+# }
 
 
 #' Convert log Bayes Factor to summary stats
@@ -40,26 +96,26 @@ convert_negative_log_p_to_p <- function(gwas) {
 #'
 #' @return tibble with lbf, af, beta, se, z
 #' @export
-lbf_to_z_cont <- function(lbf, n, af, prior_v = 50) {
-  se <- sqrt(1 / (2 * n * af * (1-af)))
-  r <- prior_v / (prior_v + se^2)
-  z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
-  beta <- z * se
-  return(data.frame(beta, se))
+lbf_to_z_cont <- function(RSID, lbf, n, af, prior_v = 50) {
+  SE <- sqrt(1 / (2 * n * af * (1-af)))
+  r <- prior_v / (prior_v + SE^2)
+  Z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
+  BETA <- Z * SE
+  P <- abs(2 * pnorm(abs(Z), lower.tail = F))
+  return(data.frame(RSID, BETA, SE, Z, P))
 }
 
-susie <- function(study, gwas, ld_matrix) {
+susie <- function(study, gwas, ld_matrix, n) {
   tryCatch(expr = {
     start_time <- Sys.time()
-    susie_results <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=args$gwas_n, N=5)
+    susie_results <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=n, N=5)
     print(Sys.time() - start_time)
 
     saveRDS(susie_results, paste0(data_dir, 'finemap_tests/susie_', basename(study), '.rds'))
 
     conditioned_gwases <- apply(susie_results$lbf_variable, 1, function(lbf) {
-      conditioned_gwas <- lbf_to_z_cont(lbf, args$gwas_n, gwas$maf)
-      gwas$beta <- conditioned_gwas$beta
-      gwas$se <- conditioned_gwas$se
+      conditioned_gwas <- lbf_to_z_cont(gwas$RSID, lbf, n, gwas$EAF)
+      dplyr::rows_upsert(gwas, conditioned_gwas, by = 'RSID')
       return(gwas)
     })
     return(conditioned_gwases)
@@ -90,42 +146,4 @@ carma <- function(study, gwas, ld_matrix) {
   saveRDS(carma_result, paste0(data_dir, '/finemap_tests/carma_', basename(study), '.rds'))
 }
 
-ld_region <- vroom::vroom(args$ld_region, col_names=F)
-colnames(ld_region) <- ld_region$X1
-ld_region <- ld_region[, 2:(ncol(ld_region)-1)]
-
-all_studies <- list.files(args$ld_block_dir, pattern = "*.z", full.names = T)
-
-all_conditioned_gwases <- lapply(all_studies, function(study) {
-  print(study)
-  gwas <- vroom::vroom(study, delim = " ")
-  #if (typeof(gwas$maf) == 'character') {
-  #  warning('maf is poo, skipping')
-  #  return(gwas)
-  #}
-
-  gwas <- dplyr::filter(gwas, rsid %in% colnames(ld_region)) |>
-    dplyr::filter(!duplicated(rsid))
-  keep <- colnames(ld_region) %in% gwas$rsid
-  ld_for_gwas <- ld_region[keep, keep]
-  ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))
-  #conditioned_gwases <- susie(study, gwas, ld_matrix)
-  carma(study, gwas, ld_for_gwas)
-})
-
-flatten_list_of_lists <- function(x) {
-  if (is.data.frame(x)) return(list(x))
-  if (!is.list(x)) return(x)
-  unlist(lapply(x, flattenMixed), FALSE)
-}
-
-aall_conditioned_gwases <- flatten_list_of_lists(all_conditioned_gwases)
-
-# lapply(aall_conditioned_gwases, function(gwas) {
-#   range <- c(min(gwas$position), max(gwas$position))
-#   #yrange <- c(min(gwas$p), max(gwas$p))
-#   if(!"p" %in% colnames(gwas)) return()
-#   gwas$p[gwas$p == 0] <- .Machine$double.xmin
-#   gwas <- gwas[!is.na(gwas$p), ]
-#   qqman::manhattan(gwas, p='p', chr = 'chromosome', bp = 'position', snp = 'rsid', xlim=range)
-# })
+main(args)

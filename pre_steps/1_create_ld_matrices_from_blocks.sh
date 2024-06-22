@@ -2,6 +2,7 @@
 set -e
 
 LD_BLOCKS_DIR=$DATA_DIR/ld_block_matrices
+THOUSAND_GENOMES=$DATA_DIR/1000genomes
 
 {
   read

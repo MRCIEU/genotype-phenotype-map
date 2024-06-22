@@ -1,5 +1,12 @@
+import datetime
+import os
 import pandas as pd
 import subprocess
+
+DATA_DIR = os.getenv('DATA_DIR')
+RESULTS_DIR = os.getenv('RESULTS_DIR')
+PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
+STUDY_DIR = DATA_DIR + 'study/'
 
 onstart:
     print("##### Genotype-Phenotype Map Pipeline #####")
@@ -7,11 +14,18 @@ onstart:
 def clean_files_pipeline_metadata_for_processing():
     return
 
-subprocess.call (['Rscript', 'calculate_gwases_to_process.R'])
+
+### INPUT DATA
+subprocess.call(['Rscript', 'calculate_gwases_to_process.R'])
 study_data = pd.read_csv(PIPELINE_METADATA + 'gwases_to_process.tsv', sep='\t')
 studies = []
 
 study_file_pattern = STUDY_DIR + '{study}/extraction_metadata.json'
+
+
+### OUTPUT DATA
+time = datetime.datetime.now()
+final_report = f'{RESULTS_DIR}/report_{time:%Y_%m-%d-%H_%M}.tsv'
 
 rule all:
     input: expand(study_file_pattern, prefix=[s for s in studies])
@@ -64,6 +78,14 @@ rule mr_on_coloc_results:
     shell:
         """
         Rscript 7_perform_mr_analysis.R
+        """
+
+rule collate_info_on_all_studies:
+    input: list()
+    output: final_report
+    shell:
+        """
+        Rscript 8_report_on_results_and_studies.R
         """
 
 onsuccess:

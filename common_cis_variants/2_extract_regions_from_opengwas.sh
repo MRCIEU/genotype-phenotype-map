@@ -42,7 +42,7 @@ while IFS= read -r GWAS_STUDY; do
 
     REGION="$CHR:$BEGINNING_END"
     echo "Region to extract: $REGION"
-    EXTRACTED_FILE=$EXTRACTION_DIR/${ANCESTRY}_${CHR}_${POS}.tsv
+    EXTRACTED_FILE=$EXTRACTION_DIR/original/${ANCESTRY}_${CHR}_${POS}.tsv
 
     echo -e "RSID\tCHR\tBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
     /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE

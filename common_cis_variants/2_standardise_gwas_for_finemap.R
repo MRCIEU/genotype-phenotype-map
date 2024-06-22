@@ -1,5 +1,7 @@
 source('core/common.R')
 
+#TODO: Probably can be deleted
+
 parser <- argparser::arg_parser("Standardising GWAS for finemap")
 parser <- argparser::add_argument(parser,
                        "--gwas_filename",

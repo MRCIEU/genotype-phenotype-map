@@ -23,17 +23,17 @@ main <- function(args) {
   extracted_study_file <- paste0(args$ld_block_dir, '/extracted_studies.tsv')
   extracted_studies <- vroom::vroom(extracted_study_file, show_col_types = F)
 
-  finemapping_results <- apply(extracted_studies, 1, function (study) {
-    finemap_info <- data.frame(finemap_successful=F, number_of_finemap_gwases=1)
+  finemapped_results <- apply(extracted_studies, 1, function (study) {
     finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']]) |>
       stringr::str_sub(end=-5)
+    failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+    failed_finemap_info <- data.frame(study=study[['study']], chr=study[['chr']], bp=study[['bp']], finemap_suceeded=F, file=failed_finemap_file)
+
     gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
     if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
       print('Already finemapped, skipping.')
-      finemap_info$finemap_successful <- study[['finemap_successful']]
-      finemap_info$number_of_finemap_gwases <- study[['number_of_finemap_gwases']]
-      return(finemap_info)
+      return()
     }
 
     if (typeof(gwas$EAF) == 'character') {
@@ -41,7 +41,7 @@ main <- function(args) {
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
       file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
-      return(finemap_info)
+      return(failed_finemap_info)
     }
 
     gwas <- dplyr::filter(gwas, RSID %in% ld_region_from_reference_panel$RSID)
@@ -58,34 +58,41 @@ main <- function(args) {
         #create finemapped_studies.tsv
       }
 
+      new_bps <- c()
+      new_files <- c()
       for (i in seq_along(conditioned_gwases)) {
         finemap_file <- paste0(finemap_file_prefix, '_', i,'.tsv')
         vroom::vroom_write(conditioned_gwases[[i]], finemap_file)
         file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
+        new_bps <- c(new_bps, find_new_top_snp(finemap_file, study[['bp']]))
+        new_files <- c(new_files, finemap_file)
       }
-      finemap_info$finemap_succesful<- T
-      finemap_info$number_of_finemap_gwases <- length(conditioned_gwases)
-      return(finemap_info)
+      succeeded_finemap_info <- data.frame(study=study[['study']], chr=study[['chr']], bp=new_bps, finemap_suceeded=T, file=new_files)
+      return(succeeded_finemap_info)
     }, warning = function(w) {
       print(w)
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
       file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
-      return(finemap_info)
+      return(failed_finemap_info)
     })
   }) |> dplyr::bind_rows()
 
-  extracted_studies <- dplyr::mutate(extracted_studies,
-    finemap_successful = finemapping_results$finemap_successful,
-    number_of_finemap_gwases = finemapping_results$number_of_finemap_gwases
-  )
-  vroom::vroom_write(extracted_studies, extracted_study_file)
+  finemapped_results_file <- paste0(args$ld_block_dir, '/finemapped_results.tsv')
+  if (file.exists(finemapped_results_file)) {
+    existing_results <- vroom::vroom(finemapped_results_file, show_col_types = F)
+    all_results <- dplyr::bind_rows(existing_results, finemapped_results) |>
+      dplyr::distinct()
+    vroom::vroom_write(all_results, finemapped_results_file)
+  } else {
+    vroom::vroom_write(finemapped_results, finemapped_results_file)
+  }
 }
 
 #lapply(all_conditioned_gwases, plot_gwas)
 #TODO: delete later
-plot_gwas <- function(gwas) {
-  range <- c(min(gwas$position), max(gwas$position))
+plot_finemapped_gwas <- function(gwas) {
+  range <- c(min(gwas$BP), max(gwas$BP))
   if(!"P" %in% colnames(gwas)) return()
   gwas$P[gwas$P == 0] <- .Machine$double.xmin
   gwas <- gwas[!is.na(gwas$P), ]
@@ -134,6 +141,11 @@ lbf_to_z_cont <- function(RSID, lbf, n, af, prior_v = 50) {
   BETA <- Z * SE
   P <- abs(2 * pnorm(abs(Z), lower.tail = F))
   return(data.frame(RSID, BETA, SE, Z, P))
+}
+
+#TODO: maybe use plink to find it
+find_new_top_snp <- function(gwas_file, bp) {
+  return(bp)
 }
 
 carma <- function(study, gwas, ld_matrix) {

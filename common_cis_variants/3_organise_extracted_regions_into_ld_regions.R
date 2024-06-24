@@ -1,10 +1,9 @@
 source('constants.R')
 
 ld_regions <- vroom::vroom("data/ld_regions.tsv", show_col_types = F)
-current_state <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/current_state.tsv"), show_col_types = F) |>
-  dplyr::filter(extracted == F)
+studies_to_process <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/gwases_to_extract.tsv"), show_col_types = F)
 
-all_updated_ld_blocks <- apply(current_state, 1, function(study) {
+all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
   study_name <- study[["study_name"]]
   p_value_threshold <- study[["p_value_threshold"]]
   study_dir <- study[["extracted_location"]]

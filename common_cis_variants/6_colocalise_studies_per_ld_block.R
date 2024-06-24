@@ -44,12 +44,10 @@ harmonise_gwases_missing_rows <- function(gwases=list()) {
 all_results <- apply(ld_blocks_to_colocalise, 1, function(block) {
   specific_ld_block_data_dir <- block[['data_dir']]
   ld_block_results_dir <- block[['results_dir']]
-  extracted_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/extracted_studies.tsv"), show_col_types = F)
-  extracted_studies$unique_study_id <- paste0(extracted_studies$study, "_", extracted_studies$chr, "_", extracted_studies$bp)
-  extracted_studies$file <- paste0(specific_ld_block_data_dir, "/", extracted_studies$unique_study_id, ".z")
+  extracted_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/finemapped_results.tsv"), show_col_types = F)
 
   studies_to_colocalise <- lapply(extracted_studies$file, function(file) vroom::vroom(file, show_col_types = F))
-  names(studies_to_colocalise) <- extracted_studies$unique_study_id
+  names(studies_to_colocalise) <- file_prefix(extracted_studies$study)
 
   grouped_studies <- list()
   for(i in seq_len(nrow(extracted_studies))) {

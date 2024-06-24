@@ -19,3 +19,9 @@ databases <- list(opengwas="opengwas")
 data_source <- list(ukb="UK Biobank", gtex="GTEx", finngen="Finn Gen", bbj="Biobank Japan", eqtl_gen="eQTL Gen", ukb_ppp="UK Biobank Proteomic...")
 ancestry_map <- list(EUR="European", EAS="East Asian", AFR="African")
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
+
+file_prefix <- function(file_path) {
+  file_name <- basename(file_path)
+  file_prefix <- sub("\\..*", "", file_name)
+  return(file_prefix)
+}

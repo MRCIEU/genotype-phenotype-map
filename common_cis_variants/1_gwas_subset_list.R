@@ -63,6 +63,8 @@ calculate_state_opengwas_data <- function(entries) {
 opengwas_entries <- dplyr::filter(gwas_list, database == databases$opengwas)
 opengwas_data_current_state <- calculate_state_opengwas_data(opengwas_entries)
 #other state calculated here, then we can dplyr::bind_rows()
+
+#TODO: current_state.tsv should be the more 'canonical truth' tsv of what's been extracted, and updated at the end of the pipeline?
 current_state <- dplyr::bind_rows(opengwas_data_current_state)
 vroom::vroom_write(current_state, paste0(pipeline_metadata_dir, "current_state.tsv"))
 

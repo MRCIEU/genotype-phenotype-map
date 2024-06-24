@@ -62,4 +62,4 @@ opengwas_data_current_state <- calculate_state_opengwas_data(opengwas_entries)
 #other state calculated here, then we can dplyr::bind_rows()
 current_state <- dplyr::bind_rows(opengwas_data_current_state)
 
-vroom::vroom_write(current_state, paste0(pipeline_metadata_dir, "gwases_to_extract.tsv"))
+vroom::vroom_write(current_state, paste0(pipeline_metadata_dir, "gwases_to_process.tsv"))

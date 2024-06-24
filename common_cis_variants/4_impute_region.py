@@ -58,7 +58,7 @@ def main(ld_region_prefix, ld_block_dir):
             gwas = pd.concat([gwas,imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
-        gwas.to_csv(imputed_file, sep='\t')
+        gwas.to_csv(imputed_file, sep='\t', index=False)
         os.symlink(imputed_file, ld_block_dir + 'imputed/', target_is_directory=True)
         #TODO: update extracted_studies.tsv with imputed file, and how many rows were imputed / added
         #TODO: OR create a new file, which is what snakemake could look at?

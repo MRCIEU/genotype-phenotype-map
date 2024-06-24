@@ -16,52 +16,69 @@ args <- argparser::parse_args(parser)
 
 main <- function(args) {
   ld_region_finemap_dir <- paste0(args$ld_block_dir, '/finemapped/')
-  ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld', col_names=F), show_col_types = F)
+  ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld'), col_names=F, show_col_types = F)
   ld_region <- ld_region[, 1:(ncol(ld_region)-1)]
   ld_region_from_reference_panel <- vroom::vroom(paste0(args$ld_region_prefix, '.tsv'), show_col_types = F)
 
-  extracted_study_file <- paste0(args$ld_block_dir, '/extracted_studies.sv')
-  extracted_studies <- vroom::vroom(extracted_study_file)
+  extracted_study_file <- paste0(args$ld_block_dir, '/extracted_studies.tsv')
+  extracted_studies <- vroom::vroom(extracted_study_file, show_col_types = F)
 
   finemapping_results <- apply(extracted_studies, 1, function (study) {
-    finemap_info <- data.frame(finemapped=FALSE, number_of_finemap_gwases=1)
+    finemap_info <- data.frame(finemap_successful=F, number_of_finemap_gwases=1)
     finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']]) |>
       stringr::str_sub(end=-5)
-    gwas <- vroom::vroom(study[['study']], show_col_types = F)
+    gwas <- vroom::vroom(study[['file']], show_col_types = F)
+
+    if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
+      print('Already finemapped, skipping.')
+      finemap_info$finemap_successful <- study[['finemap_successful']]
+      finemap_info$number_of_finemap_gwases <- study[['number_of_finemap_gwases']]
+      return(finemap_info)
+    }
 
     if (typeof(gwas$EAF) == 'character') {
       warning('EAF is not populated, cant split results.  Skipping.')
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir)
+      file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
       return(finemap_info)
     }
 
     gwas <- dplyr::filter(gwas, RSID %in% ld_region_from_reference_panel$RSID)
     keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
     ld_for_gwas <- ld_region[keep, keep]
-    ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(gwas), ncol=nrow(gwas))
+    ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=nrow(ld_for_gwas))
 
     tryCatch(expr = {
       # carma_results <- carma(study, gwas, ld_for_gwas)
-      conditioned_gwases <- susie(study, gwas, ld_matrix)
+      conditioned_gwases <- susie(study[['file']], gwas, ld_matrix, as.numeric(study[['sample_size']]))
+
+      if (length(conditioned_gwases) > 1) {
+        #maybe clump and find new lead snp to tag it with?
+        #create finemapped_studies.tsv
+      }
+
       for (i in seq_along(conditioned_gwases)) {
         finemap_file <- paste0(finemap_file_prefix, '_', i,'.tsv')
-        vroom::vroom_write(conditioned_gwases[i], finemap_file)
-        file.symlink(finemap_file, ld_region_finemap_dir)
+        vroom::vroom_write(conditioned_gwases[[i]], finemap_file)
+        file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
       }
-      finemap_info$finemapped <- T
-      finemap_info$number_of_finemap_results <- length(conditioned_gwases)
+      finemap_info$finemap_succesful<- T
+      finemap_info$number_of_finemap_gwases <- length(conditioned_gwases)
       return(finemap_info)
-    }, warning = function() {
+    }, warning = function(w) {
+      print(w)
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir)
+      file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
       return(finemap_info)
     })
-  })
+  }) |> dplyr::bind_rows()
 
-  extracted_studies <- dplyr::bind_cols(extracted_studies, finemapping_results)
+  extracted_studies <- dplyr::mutate(extracted_studies,
+    finemap_successful = finemapping_results$finemap_successful,
+    number_of_finemap_gwases = finemapping_results$number_of_finemap_gwases
+  )
   vroom::vroom_write(extracted_studies, extracted_study_file)
 }
 
@@ -86,6 +103,20 @@ plot_gwas <- function(gwas) {
 #   return(gwas)
 # }
 
+susie <- function(study, gwas, ld_matrix, n) {
+  start_time <- Sys.time()
+  susie_results <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=n, L=5)
+  print(Sys.time() - start_time)
+
+  saveRDS(susie_results, paste0(data_dir, 'finemap_tests/susie_', basename(study), '.rds'))
+
+  conditioned_gwases <- apply(susie_results$lbf_variable, 1, function(lbf) {
+    conditioned_gwas <- lbf_to_z_cont(gwas$RSID, lbf, n, gwas$EAF)
+    gwas <- dplyr::mutate(gwas, BETA = conditioned_gwas$BETA, SE = conditioned_gwas$SE, P = conditioned_gwas$P, Z = conditioned_gwas$Z)
+    return(gwas)
+  })
+  return(conditioned_gwases)
+}
 
 #' Convert log Bayes Factor to summary stats
 #'
@@ -103,27 +134,6 @@ lbf_to_z_cont <- function(RSID, lbf, n, af, prior_v = 50) {
   BETA <- Z * SE
   P <- abs(2 * pnorm(abs(Z), lower.tail = F))
   return(data.frame(RSID, BETA, SE, Z, P))
-}
-
-susie <- function(study, gwas, ld_matrix, n) {
-  tryCatch(expr = {
-    start_time <- Sys.time()
-    susie_results <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=n, N=5)
-    print(Sys.time() - start_time)
-
-    saveRDS(susie_results, paste0(data_dir, 'finemap_tests/susie_', basename(study), '.rds'))
-
-    conditioned_gwases <- apply(susie_results$lbf_variable, 1, function(lbf) {
-      conditioned_gwas <- lbf_to_z_cont(gwas$RSID, lbf, n, gwas$EAF)
-      dplyr::rows_upsert(gwas, conditioned_gwas, by = 'RSID')
-      return(gwas)
-    })
-    return(conditioned_gwases)
-
-  }, warning = function(w) {
-    warning(w)
-    return(gwas)
-  })
 }
 
 carma <- function(study, gwas, ld_matrix) {

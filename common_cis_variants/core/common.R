@@ -1,5 +1,3 @@
-Sys.setenv("VROOM_CONNECTION_SIZE" = 500000)
-
 #TODO: look through these, cause I think most are not being used...  Delete later
 
 standardise_gwas <- function(gwas, N=0, input_gwas_columns=list(), remove_extra_columns=F) {

@@ -3,9 +3,10 @@ from typing import Any
 
 import click
 import glob
-import os
 import numpy as np
+import os
 import pandas as pd
+from pathlib import Path
 import scipy.linalg
 
 DATA_DIR = os.getenv("DATA_DIR")
@@ -20,9 +21,9 @@ def main(ld_region_prefix, ld_block_dir):
     ld_matrix = np.array(ld_matrix)
 
     ld_region_from_reference_panel = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
-    extracted_studies = pd.read_csv(ld_block_dir + 'extracted_studies.tsv', delimiter='\t')
+    extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
 
-    for extracted_study in extracted_studies.iterrows():
+    for i,extracted_study in extracted_studies.iterrows():
         gwas_file = extracted_study['file']
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
@@ -59,9 +60,9 @@ def main(ld_region_prefix, ld_block_dir):
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
         gwas.to_csv(imputed_file, sep='\t', index=False)
-        os.symlink(imputed_file, ld_block_dir + 'imputed/', target_is_directory=True)
-        #TODO: update extracted_studies.tsv with imputed file, and how many rows were imputed / added
-        #TODO: OR create a new file, which is what snakemake could look at?
+        os.symlink(imputed_file, ld_block_dir + '/imputed/', target_is_directory=True)
+
+    Path(ld_block_dir + '/imputation_complete').touch()
 
 
 class SummaryStatisticsImputation:

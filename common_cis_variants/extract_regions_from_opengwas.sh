@@ -1,17 +1,18 @@
 #!/bin/bash
 set -e
-if [[ $# -ne 4 ]] ; then
+if [[ $# -ne 6 ]] ; then
   echo "Incorrect number of arguments: need 6"
   exit 0
 fi
-ORIG_STUDY_DIR=$1
-EXTRACTED_STUDY_DIR=$2
-ANCESTRY=$3
-SAMPLE_SIZE=$4
-P_VALUE=$5
-DATA_TYPE=$6
 
-LD_REGIONS=data/ld_regions.tsv
+ANCESTRY=$1
+SAMPLE_SIZE=$2
+DATA_TYPE=$3
+ORIG_STUDY_DIR=$4
+EXTRACTED_STUDY_DIR=$5
+P_VALUE=$6
+
+LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
 echo $ORIG_STUDY_DIR
 cd $ORIG_STUDY_DIR

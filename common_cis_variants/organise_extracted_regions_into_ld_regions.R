@@ -1,7 +1,11 @@
 source('constants.R')
 
+parser <- argparser::arg_parser("Organise Extracted Regions into LD regions")
+parser <- argparser::add_argument(parser, "--output_file", help = "Output file", type = "character")
+args <- argparser::parse_args(parser)
+
 ld_regions <- vroom::vroom("data/ld_regions.tsv", show_col_types = F)
-studies_to_process <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/gwases_to_extract.tsv"), show_col_types = F)
+studies_to_process <- vroom::vroom(paste0(data_dir, "/pipeline_metadata/studies_to_process.tsv"), show_col_types = F)
 
 all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
   study_name <- study[["study_name"]]
@@ -23,13 +27,19 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     if (nrow(ld_block) > 1) stop(paste("Error: More than 1 LD Block associated with", extracted_chr, bp))
 
     ld_block_data <- paste0(ld_block_data_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
+    ld_region_prefix <- paste0(ld_block_matrices_dir, ancestry, "/", extracted_chr, "_", ld_block$start, "_", ld_block$stop)
     ld_block_results <- paste0(ld_block_results_dir, ancestry, "/", extracted_chr, "/", ld_block$start, "_", ld_block$stop)
 
     study_file <- paste0(study_dir, 'original/', ancestry, "_", extracted_chr, "_", bp, ".tsv")
     ld_block$data_dir <- ld_block_data
+    ld_block$region_prefix <- ld_region_prefix
     ld_block$results_dir <- ld_block_results
-    if(!dir.exists(ld_block_data)) dir.create(ld_block_data, recursive = T)
-    if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive = T)
+    if(!dir.exists(ld_block_data)) {
+      dir.create(paste0(ld_block_data, '/original'), recursive=T, showWarnings=F)
+      dir.create(paste0(ld_block_data, '/imputed'), recursive=T, showWarnings=F)
+      dir.create(paste0(ld_block_data, '/finemapped'), recursive=T, showWarnings=F)
+    }
+    if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive=T, showWarnings=F)
 
     extracted_studies_file <- paste0(ld_block_data, "/extracted_studies.tsv")
     extracted_studies <- tibble::tribble(~study, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size,
@@ -42,7 +52,7 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     }
     vroom::vroom_write(extracted_studies, extracted_studies_file)
 
-    study_in_ld_block <- paste0(ld_block_data, "original/", study_name, "_", extracted_chr, "_", bp, ".tsv")
+    study_in_ld_block <- paste0(ld_block_data, "/original/", study_name, "_", extracted_chr, "_", bp, ".tsv")
     file.symlink(study_file, study_in_ld_block)
 
     return(ld_block)
@@ -51,4 +61,4 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
 })
 
 all_updated_ld_blocks <- dplyr::bind_rows(all_updated_ld_blocks) |> dplyr::distinct() |> dplyr::arrange(chr)
-vroom::vroom_write(all_updated_ld_blocks, paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))
+vroom::vroom_write(all_updated_ld_blocks, args$output_file)

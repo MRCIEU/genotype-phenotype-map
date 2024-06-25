@@ -1,5 +1,5 @@
 options(error = function() traceback(20))
-readRenviron(".Renviron")
+#readRenviron(".Renviron")
 Sys.setenv("VROOM_CONNECTION_SIZE" = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')

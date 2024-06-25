@@ -5,15 +5,6 @@ parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS fil
 parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
 args <- argparser::parse_args(parser)
 
-# args <- list(ld_block_dir="/Users/wt23152/Documents/Projects/scratch/011/data/ld_blocks/EUR/10/93335047_95396367/",
-#              ld_region_prefix="/Users/wt23152/Documents/Projects/scratch/011/data/ld_block_matrices/EUR/10_93335047_95396367"
-# )
-#
-# args <- list(ld_block_dir=paste0(data_dir, "/ld_blocks/EUR/10/93335047_95396367/"),
-#              ld_region_prefix=paste0(data_dir, "/ld_block_matrices/EUR/10_93335047_95396367")
-# )
-
-
 main <- function(args) {
   ld_region_finemap_dir <- paste0(args$ld_block_dir, '/finemapped/')
   ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld'), col_names=F, show_col_types = F)
@@ -87,6 +78,7 @@ main <- function(args) {
   } else {
     vroom::vroom_write(finemapped_results, finemapped_results_file)
   }
+  write.table(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'), col.names=FALSE)
 }
 
 #lapply(all_conditioned_gwases, plot_gwas)

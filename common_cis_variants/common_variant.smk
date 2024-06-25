@@ -30,19 +30,19 @@ extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterr
 extracted_study_pattern = '{study_location}/extracted_snps.tsv'
 
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
-finmapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
+finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
 ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i,ld in ld_regions.iterrows()]
 ld_blocks = ['EUR/6/31571218_32682663']
-
-imputed_file_pattern = STUDY_DIR + '{study}/imputed_info.tsv'
-finemapped_file_pattern = STUDY_DIR + '{study}/finemapped_info.tsv'
 
 ### OUTPUT DATA
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 final_report = f'{RESULTS_DIR}report_{TIMESTAMP}.tsv'
 
 rule all:
-    input: expand(imputation_pattern, ld_block=ld_blocks), expand(extracted_study_pattern, study_location=extracted_studies), ld_blocks_to_process
+    input: expand(imputation_pattern, ld_block=ld_blocks),
+        expand(finemapping_pattern, ld_block=ld_blocks),
+        expand(extracted_study_pattern, study_location=extracted_studies),
+        ld_blocks_to_process
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -75,24 +75,35 @@ rule impute_by_ld_region:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
             print(ld_block.iloc[0]['region_prefix'])
-            command = f"export LD_PRELOAD= && python3 impute_region.py --ld_region_prefix {ld_block.iloc[0]['region_prefix']} --ld_block_dir {ld_block.iloc[0]['data_dir']}"
-
+            command = f"export LD_PRELOAD= && python3 impute_region.py \
+                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
         subprocess.run(command, shell=True)
 
-# rule finemap:
-#     input: list()
-#     output: list()
-#     shell:
-#         """
-#         Rscript 5_finemap_extracted_regions.R
-#         """
-#
+
+rule finemap_by_ld_region:
+    input: ld_blocks_to_process, expand(imputation_pattern, ld_block=ld_blocks)
+    output: temporary(finemapping_pattern)
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+
+        if len(ld_block) == 0:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            command = f"Rscript finemap_extracted_regions.R \
+                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
+        subprocess.run(command, shell=True)
+
 # rule colocalise_per_ld_region:
-#     input: list()
-#     output: list()
+#     input: ld_blocks_to_process, expand(finemapping_pattern, ld_block=ld_blocks)
+#     output: temporary(finemapping_pattern)
 #     shell:
 #         """
-#         Rscript 6_colocalise_studies_per_ld_block.R
+#         Rscript colocalise_studies_per_ld_block.R
 #         """
 #
 # rule mr_on_coloc_results:

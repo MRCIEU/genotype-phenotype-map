@@ -2,46 +2,19 @@ source('constants.R')
 library(argparser, quietly = TRUE)
 bp_range <- 10000
 
-parser <- arg_parser("Colocalising ld blocks")
-parser <- add_argument(parser,
-                       "--chr",
-                       help = "Chromosome",
-                       type = "numeric"
-)
-args <- parse_args(parser)
+parser <- argparser::arg_parser("Colocalise studies per region")
+parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS filename", type = "character")
+parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
+args <- argparser::parse_args(parser)
 
-ld_regions <- vroom::vroom("data/ld_regions.tsv")
-ld_blocks_to_colocalise <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv")) |>
-  dplyr::filter(chr == args$chr)
+main <- function(args) {
+  #Filter by block dir or something
+  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))
 
-harmonise_gwases <- function(...) {
-  gwases <- list(...)
+  if (nrow(ld_blocks_to_process) == 0) {
+    #TODO: either copy last successful coloc result, or create empty dataframe
+  }
 
-  snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$rsid))
-  message(paste("Number of shared SNPs after harmonisation:", length(snpids)))
-
-  gwases <- lapply(gwases, function(gwas) {
-    dplyr::filter(gwas, rsid %in% snpids & !duplicated(rsid)) |>
-      dplyr::arrange(rsid)
-  })
-
-  return(gwases)
-}
-
-harmonise_gwases_missing_rows <- function(gwases=list()) {
-  all_snps <- unique(do.call(c, lapply(gwases, function(gwas) gwas$rsid)))
-  message(paste("Number of SNPs across all gwases:", length(all_snps)))
-
-  gwases <- lapply(gwases, function(gwas) {
-    snp_diff <- setdiff(all_snps, gwas$rsid)
-    message(paste('adding', length(snp_diff), 'rows to gwas'))
-    tidyr::complete(gwas, rsid=snp_diff, beta=0, se=1, lp=0.01)
-  })
-
-  return(gwases)
-}
-
-all_results <- apply(ld_blocks_to_colocalise, 1, function(block) {
   specific_ld_block_data_dir <- block[['data_dir']]
   ld_block_results_dir <- block[['results_dir']]
   extracted_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/finemapped_results.tsv"), show_col_types = F)
@@ -108,4 +81,24 @@ all_results <- apply(ld_blocks_to_colocalise, 1, function(block) {
   print(paste0("LD Block Results: ", ld_block_results_dir, "/hyprcoloc_results.tsv"))
 
   return(significant_results)
-})
+
+}
+
+
+
+harmonise_gwases <- function(...) {
+  gwases <- list(...)
+
+  snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$rsid))
+  message(paste("Number of shared SNPs after harmonisation:", length(snpids)))
+
+  gwases <- lapply(gwases, function(gwas) {
+    dplyr::filter(gwas, rsid %in% snpids & !duplicated(rsid)) |>
+      dplyr::arrange(rsid)
+  })
+
+  return(gwases)
+}
+
+
+main(args)

@@ -31,7 +31,7 @@ main <- function(args) {
       warning('EAF is not populated, cant split results.  Skipping.')
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
+      file.symlink(finemap_file, ld_region_finemap_dir)
       return(failed_finemap_info)
     }
 
@@ -54,7 +54,7 @@ main <- function(args) {
       for (i in seq_along(conditioned_gwases)) {
         finemap_file <- paste0(finemap_file_prefix, '_', i,'.tsv')
         vroom::vroom_write(conditioned_gwases[[i]], finemap_file)
-        file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
+        file.symlink(finemap_file, ld_region_finemap_dir)
         new_bps <- c(new_bps, find_new_top_snp(finemap_file, study[['bp']]))
         new_files <- c(new_files, finemap_file)
       }
@@ -64,7 +64,7 @@ main <- function(args) {
       print(w)
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
       file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir, overwrite=T)
+      file.symlink(finemap_file, ld_region_finemap_dir)
       return(failed_finemap_info)
     })
   }) |> dplyr::bind_rows()

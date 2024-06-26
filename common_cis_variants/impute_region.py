@@ -22,9 +22,11 @@ def main(ld_region_prefix, ld_block_dir):
 
     ld_region_from_reference_panel = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
+    imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
 
-    for i,extracted_study in extracted_studies.iterrows():
-        gwas_file = extracted_study['file']
+    imputed_studies = []
+    for i, study in extracted_studies.iterrows():
+        gwas_file = study['file']
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
             print('Imputed file exists, skipping.')
@@ -56,12 +58,15 @@ def main(ld_region_prefix, ld_block_dir):
             ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
             ld_region_from_reference_panel['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = ld_region_from_reference_panel[rsids_to_add]
-            gwas = pd.concat([gwas,imputed_gwas_data_to_add], axis=0, ignore_index=True)
+            gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
         gwas.to_csv(imputed_file, sep='\t', index=False)
         os.symlink(imputed_file, ld_block_dir + '/imputed/', target_is_directory=True)
+        imputed_studies.append(np.append(study.values, rsids_to_add))
 
+    imputed_studies = pd.DataFrame(imputed_studies, columns=np.append(extracted_studies.columns.values, 'rows_imputed'))
+    imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False, header=not os.path.isfile(imputed_studies_file))
     Path(ld_block_dir + '/imputation_complete').touch()
 
 

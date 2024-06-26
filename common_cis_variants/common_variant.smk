@@ -2,9 +2,6 @@ import os
 import pandas as pd
 import subprocess
 
-#TODO: temporary files output: temporary()
-# https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#protected-and-temporary-files
-
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')
 TIMESTAMP = os.getenv('TIMESTAMP')

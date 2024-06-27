@@ -64,19 +64,18 @@ rule organise_extracted_regions_into_ld_regions:
 rule impute_by_ld_region:
     input: ld_blocks_to_process
     output: temporary(imputation_pattern)
-    threads: 2
+    threads: 16
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:
         ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
         ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+        env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
         if len(ld_block) == 0:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
-            print(ld_block.iloc[0]['region_prefix'])
-            print(ld_block.iloc[0]['data_dir'])
-            command = f"export LD_PRELOAD= && python3 impute_region.py \
+            command = f"{env_vars} && python3 impute_region.py \
                 --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
                 --ld_block_dir {ld_block.iloc[0]['data_dir']}"
         subprocess.run(command, shell=True)
@@ -85,7 +84,7 @@ rule impute_by_ld_region:
 rule finemap_by_ld_region:
     input: ld_blocks_to_process, expand(imputation_pattern, ld_block=ld_blocks)
     output: temporary(finemapping_pattern)
-    threads: 2
+    threads: 1
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:

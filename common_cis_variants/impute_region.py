@@ -9,6 +9,7 @@ import pandas as pd
 from pathlib import Path
 import scipy.linalg
 
+pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5

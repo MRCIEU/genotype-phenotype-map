@@ -20,6 +20,7 @@ calculate_state_opengwas_data <- function(entries) {
     study_name <- basename(directory)
     data_study_dir <- paste0(data_dir, 'study/', study_name, "/")
     study_metadata_json <- paste0(data_study_dir, "extraction_metadata.json")
+    print(study_metadata_json)
 
     if (file.exists(study_metadata_json)) {
       extraction_metadata <- jsonlite::fromJSON(study_metadata_json)

@@ -13,7 +13,7 @@ ld_block_results_dir <- paste0(results_dir, "ld_blocks/")
 
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype
 #methylation goes where?
-data_types <- list(phenotype="phenotype", proteomics="proteomics", metabolomics="metabolomics", eqtl="eqtl")
+data_types <- list(gene_expression="gene_expression", phenotype="phenotype", proteomics="proteomics", metabolomics="metabolomics", eqtl="eqtl")
 study_categories <- list(binary="binary", continuous="Continuous")
 databases <- list(opengwas="opengwas")
 data_source <- list(ukb="UK Biobank", gtex="GTEx", finngen="Finn Gen", bbj="Biobank Japan", eqtl_gen="eQTL Gen", ukb_ppp="UK Biobank Proteomic...")

@@ -5,35 +5,51 @@ bp_range <- 10000
 parser <- argparser::arg_parser("Colocalise studies per region")
 parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS filename", type = "character")
 parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
+parser <- argparser::add_argument(parser, "--coloc_result_file", help = "Coloc result file to save", type = "character")
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
   #Filter by block dir or something
-  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"))
+  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv")) |>
+    dplyr::filter(data_dir == args$ld_block_dir)
 
   if (nrow(ld_blocks_to_process) == 0) {
-    #TODO: either copy last successful coloc result, or create empty dataframe
+    coloc_files <- Sys.glob(paste0(block[['results_dir']], '/hyprcoloc_results'))
+    coloc_files <- sort(coloc_files, decreasing=T)
+    if (length(coloc_files) == 0) {
+      vroom::vroom_write(data.frame(), args$coloc_result_file)
+    } else {
+      file.symlink(coloc_files[1], args$coloc_result_file)
+    }
   }
 
   specific_ld_block_data_dir <- block[['data_dir']]
   ld_block_results_dir <- block[['results_dir']]
-  extracted_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/finemapped_results.tsv"), show_col_types = F)
+  finemapped_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/finemapped_results.tsv"), show_col_types = F)
 
-  studies_to_colocalise <- lapply(extracted_studies$file, function(file) vroom::vroom(file, show_col_types = F))
-  names(studies_to_colocalise) <- file_prefix(extracted_studies$study)
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
+  names(studies_to_colocalise) <- file_prefix(finemapped_studies$study)
 
   grouped_studies <- list()
-  for(i in seq_len(nrow(extracted_studies))) {
-    study_bp <- extracted_studies[i,]$bp
-    study <- extracted_studies[i,]$unique_study_id
-    found_grouped_studies <- dplyr::filter(extracted_studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))$unique_study_id
+  for(i in seq_len(nrow(finemapped_studies))) {
+    study_bp <- finemapped_studies[i,]$bp
+    study <- finemapped_studies[i,]$unique_study_id
+    found_grouped_studies <- dplyr::filter(finemapped_studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))$unique_study_id
+    found_grouped_studies = list(found_grouped_studies)
 
-    #TODO: change this to maybe ad all at the beginning, then sort by length and remove subsets
-    if (!list(found_grouped_studies) %in% grouped_studies) {
+    if (length(found_grouped_studies) > 1) {
       grouped_studies[study] <- list(found_grouped_studies)
     }
+
+    #sort list by size then do some sort of comparison weeding out all the subsets
+    #if (!list(found_grouped_studies) %in% grouped_studies) {
+    #  grouped_studies[study] <- list(found_grouped_studies)
+    #}
   }
-  grouped_studies <- Filter(function(s) length(s) > 1, grouped_studies)
+
+  if (!list(found_grouped_studies) %in% grouped_studies) {
+    grouped_studies[study] <- list(found_grouped_studies)
+  }
 
   results <- lapply(grouped_studies, function(group) {
     specific_group <- studies_to_colocalise[group]

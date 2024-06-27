@@ -13,6 +13,7 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
   study_dir <- study[["extracted_location"]]
   category <- study[["category"]]
   sample_size <- study[["sample_size"]]
+  data_type <- study[["data_type"]]
   extracted_snps <- vroom::vroom(paste0(study_dir, "/extracted_snps.tsv"), show_col_types = F)
 
   if(nrow(extracted_snps) == 0) {
@@ -42,8 +43,8 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive=T, showWarnings=F)
 
     extracted_studies_file <- paste0(ld_block_data, "/extracted_studies.tsv")
-    extracted_studies <- tibble::tribble(~study, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size,
-                                         study_name, study_file, extracted_chr, bp, p_value_threshold, category, sample_size
+    extracted_studies <- tibble::tribble(~study, ~data_type, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size, 
+                                         study_name, data_type, study_file, extracted_chr, bp, p_value_threshold, category, sample_size
     )
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)

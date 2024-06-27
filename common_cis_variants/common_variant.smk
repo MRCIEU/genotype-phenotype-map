@@ -8,6 +8,7 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
+LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
 onstart:
     print("##### Genotype-Phenotype Map Pipeline #####")
@@ -19,17 +20,20 @@ def clean_files_pipeline_metadata_for_processing():
 process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(process_file, sep='\t')
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
+#TODO: remove once we are multi ancestry
+ld_regions = ld_regions[ld_regions['pop'] == "EUR"]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
-extracted_study_pattern = '{study_location}/extracted_snps.tsv'
+extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
 ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i,ld in ld_regions.iterrows()]
-ld_blocks = ['EUR/6/31571218_32682663']
+#ld_blocks = ['EUR/6/31571218_32682663', 'EUR/9/4884926_6557588']
 
 ### OUTPUT DATA
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
 final_report = f'{RESULTS_DIR}report_{TIMESTAMP}.tsv'
 
 rule all:
@@ -43,7 +47,8 @@ rule extract_regions_from_studies:
     output: extracted_study_pattern
     run:
         print('extracting')
-        study = studies_to_process[studies_to_process.study_name == params].values.flatten().tolist()
+        print(params)
+        study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
         command = ['./extract_regions_from_opengwas.sh'] + study[2:]
         command = [str(c) for c in command]
         subprocess.run(command)
@@ -59,6 +64,7 @@ rule organise_extracted_regions_into_ld_regions:
 rule impute_by_ld_region:
     input: ld_blocks_to_process
     output: temporary(imputation_pattern)
+    threads: 2
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:
@@ -69,6 +75,7 @@ rule impute_by_ld_region:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
             print(ld_block.iloc[0]['region_prefix'])
+            print(ld_block.iloc[0]['data_dir'])
             command = f"export LD_PRELOAD= && python3 impute_region.py \
                 --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
                 --ld_block_dir {ld_block.iloc[0]['data_dir']}"
@@ -78,6 +85,7 @@ rule impute_by_ld_region:
 rule finemap_by_ld_region:
     input: ld_blocks_to_process, expand(imputation_pattern, ld_block=ld_blocks)
     output: temporary(finemapping_pattern)
+    threads: 2
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:

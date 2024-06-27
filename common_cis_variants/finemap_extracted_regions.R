@@ -18,7 +18,7 @@ main <- function(args) {
     finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
     finemap_file_prefix <- sub("\\..*", "", finemap_file_prefix)
     failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
-
+    failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
     failed_finemap_info <- data.frame(study=study[['study']], file=failed_finemap_file, chr=study[['chr']],
         bp=study['bp'], p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=study['sample_size'], finemap_suceeded=F
     )
@@ -33,8 +33,9 @@ main <- function(args) {
     if (typeof(gwas$EAF) == 'character') {
       warning('EAF is not populated, cant split results.  Skipping.')
       finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+      symlink_file <- paste0(ld_region_finemap_dir, study['study'], )
       file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir)
+      file.symlink(failed_finemap_file, failed_finemap_symlink)
       return(failed_finemap_info)
     }
 
@@ -55,9 +56,11 @@ main <- function(args) {
       new_bps <- c()
       new_files <- c()
       for (i in seq_along(conditioned_gwases)) {
-        finemap_file <- paste0(finemap_file_prefix, '_', i,'.tsv')
+        finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
+        finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
         vroom::vroom_write(conditioned_gwases[[i]], finemap_file)
-        file.symlink(finemap_file, ld_region_finemap_dir)
+        file.symlink(finemap_file, finemap_symlink)
+
         new_bps <- c(new_bps, find_new_top_snp(finemap_file, study[['bp']]))
         new_files <- c(new_files, finemap_file)
       }
@@ -67,9 +70,8 @@ main <- function(args) {
       return(succeeded_finemap_info)
     }, warning = function(w) {
       print(w)
-      finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
-      file.copy(study[['file']], finemap_file)
-      file.symlink(finemap_file, ld_region_finemap_dir)
+      file.copy(study[['file']], failed_finemap_file)
+      file.symlink(failed_finemap_file, failed_finemap_symlink)
       return(failed_finemap_info)
     })
   }) |> dplyr::bind_rows()

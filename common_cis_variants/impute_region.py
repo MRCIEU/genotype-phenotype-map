@@ -55,17 +55,21 @@ def main(ld_region_prefix, ld_block_dir):
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
-            ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
-            ld_region_from_reference_panel['Z'] = imputation_results['mu']
-            imputed_gwas_data_to_add = ld_region_from_reference_panel[rsids_to_add]
+            specific_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
+            specific_ld_region_from_reference_panel['Z'] = imputation_results['mu']
+            imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
         gwas.to_csv(imputed_file, sep='\t', index=False)
-        os.symlink(imputed_file, ld_block_dir + '/imputed/', target_is_directory=True)
-        imputed_studies.append(np.append(study.values, rsids_to_add))
+        imputed_studies.append([study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, sum(rsids_to_add)])
 
-    imputed_studies = pd.DataFrame(imputed_studies, columns=np.append(extracted_studies.columns.values, 'rows_imputed'))
+        study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
+        Path(study_in_ld_block).unlink(missing_ok=True)
+        os.symlink(imputed_file, study_in_ld_block)
+
+    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'rows_imputed']
+    imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
     imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False, header=not os.path.isfile(imputed_studies_file))
     Path(ld_block_dir + '/imputation_complete').touch()
 

@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 import subprocess
 
@@ -19,8 +20,10 @@ def clean_files_pipeline_metadata_for_processing():
 ### INPUT DATA
 process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(process_file, sep='\t')
+
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
-ld_regions = ld_regions[ld_regions['pop'] == studies_to_process['pop'].unique()]
+relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].unique())
+ld_regions = ld_regions[relevant_ancestries]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extraction_metadata.json'
@@ -58,6 +61,7 @@ rule extract_regions_from_studies:
         script = study[-1]
         command = [script] + study[2:-1]
         command = [str(c) for c in command]
+        print(command)
         subprocess.run(command)
 
 rule organise_extracted_regions_into_ld_regions:

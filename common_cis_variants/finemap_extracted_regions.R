@@ -55,17 +55,10 @@ main <- function(args) {
     ld_for_gwas <- ld_region[keep, keep]
     ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
 
-<<<<<<< Updated upstream
     start_time <- Sys.time()
     carma_result <- carma(study, gwas, ld_for_gwas)
     print(paste('carma time', Sys.time() - start_time))
     saveRDS(carma_result, paste0(data_dir, 'finemap_tests/carma_small_', file_prefix(study[['file']]), '.rds'))
-=======
-
-    tryCatch(expr = {
-      # carma_results <- carma(study, gwas, ld_for_gwas)
-      conditioned_gwases <- susie(study[['file']], gwas, ld_matrix, as.numeric(study[['sample_size']]))
->>>>>>> Stashed changes
 
     start_time <- Sys.time()
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)

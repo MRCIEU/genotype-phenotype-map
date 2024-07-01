@@ -10,7 +10,8 @@ calculate_state_opengwas_data <- function(entries) {
     return(data.frame(
       data_type = entry[['data_type']],
       directory = all_directories,
-      ancestry = entry[['ancestry']]
+      ancestry = entry[['ancestry']],
+      script = entry[['script']]
     ))
   }) |> dplyr::bind_rows()
 

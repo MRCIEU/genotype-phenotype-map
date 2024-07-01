@@ -1,6 +1,26 @@
-Sys.setenv("VROOM_CONNECTION_SIZE" = 500000)
-
 #TODO: look through these, cause I think most are not being used...  Delete later
+
+
+#From Gib's handy Z -> beta/se labbook: https://explodecomputer.github.io/lab-book/posts/2024-06-25-z-to-beta/
+# Setup data to have Z scores and some known betas
+setup_data <- function(a) {
+  a$z <- a$beta / a$se
+  a$beta_known <- NA
+  a$se_known <- NA
+  index <- sample(1:nrow(a), nrow(a)*0.05)
+  a$beta_known[index] <- a$beta[index]
+  a$se_known[index] <- a$se[index]
+  return(a)
+}
+
+make_beta <- function(dat) {
+  dat$senew <- 1 / sqrt(2 * dat$eaf * (1 - dat$eaf) * dat$n)
+  dat$betanew <- dat$z * dat$senew
+  correction <- lm(dat$betanew ~ dat$beta_known)$coef[2]
+  dat$betanew <- dat$betanew / correction
+  dat$senew <- dat$senew / correction
+  return(dat)
+}
 
 standardise_gwas <- function(gwas, N=0, input_gwas_columns=list(), remove_extra_columns=F) {
   gwas <- gwas |>

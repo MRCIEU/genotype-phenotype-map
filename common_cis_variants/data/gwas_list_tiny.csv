@@ -1,0 +1,2 @@
+id_pattern,data_type,database,data_location,ancestry,script
+ukb-b-1000*,phenotype,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR,extract_regions_from_opengwas.sh

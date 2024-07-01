@@ -1,0 +1,148 @@
+import os
+import numpy as np
+import pandas as pd
+import subprocess
+
+DATA_DIR = os.getenv('DATA_DIR')
+RESULTS_DIR = os.getenv('RESULTS_DIR')
+TIMESTAMP = os.getenv('TIMESTAMP')
+PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
+STUDY_DIR = DATA_DIR + 'study/'
+LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
+LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
+
+onstart:
+    print("##### Genotype-Phenotype Map Pipeline #####")
+
+def clean_files_pipeline_metadata_for_processing():
+    return
+
+### INPUT DATA
+process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
+studies_to_process = pd.read_csv(process_file, sep='\t')
+
+ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
+relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].unique())
+ld_regions = ld_regions[relevant_ancestries]
+
+extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
+extracted_study_pattern = '{study_location}extraction_metadata.json'
+
+imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
+finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
+ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+
+#TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
+ld_blocks.remove('EUR/1/148361253_151538880')
+#ld_blocks = ['EUR/6/31571218_32682663', 'EUR/9/4884926_6557588']
+#This just chooses every 50th element
+#ld_blocks = ld_blocks[0::50]
+
+### OUTPUT DATA
+ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
+final_report = f'{RESULTS_DIR}report_{TIMESTAMP}.tsv'
+
+rule all:
+    input: expand(extracted_study_pattern, study_location=extracted_studies),
+        expand(imputation_pattern, ld_block=ld_blocks),
+        expand(finemapping_pattern, ld_block=ld_blocks),
+        #expand(coloc_pattern, ld_block=ld_blocks),
+        #mr_results_file,
+        #collated_results,
+        ld_blocks_to_process
+
+rule extract_regions_from_studies:
+    params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
+    output: extracted_study_pattern
+    run:
+        study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
+        script = study[-1]
+        command = [script] + study[2:-1]
+        command = [str(c) for c in command]
+        print(command)
+        subprocess.run(command)
+
+rule organise_extracted_regions_into_ld_regions:
+    input: expand(extracted_study_pattern, study_location=extracted_studies)
+    output: temporary(ld_blocks_to_process)
+    shell:
+        """
+        Rscript organise_extracted_regions_into_ld_regions.R --output_file {output}
+        """
+
+rule impute_by_ld_region:
+    input: ld_blocks_to_process
+    output: temporary(imputation_pattern)
+    threads: 16
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+        env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
+
+        if len(ld_block) == 0:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            command = f"{env_vars} && python3 impute_region.py \
+                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
+        subprocess.run(command, shell=True)
+
+
+rule finemap_by_ld_region:
+    input: ld_blocks_to_process, imputation_pattern
+    output: temporary(finemapping_pattern)
+    threads: 1
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+
+        if len(ld_block) == 0:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            command = f"Rscript finemap_extracted_regions.R \
+                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
+        subprocess.run(command, shell=True)
+
+#rule colocalise_per_ld_region:
+#    input: ld_blocks_to_process, finemapping_pattern
+#    output: coloc_pattern 
+#    params:
+#        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+#    run:
+#        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+#        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+#
+#        command = f"Rscript finemap_extracted_regions.R \
+#            --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+#            --ld_block_dir {ld_block.iloc[0]['data_dir']}"
+#            --coloc_result_file {output}"
+#        subprocess.run(command, shell=True)
+
+# rule mr_on_coloc_results:
+#     input: expand(coloc_pattern, ld_block=ld_blocks),
+#     output: list()
+#     shell:
+#         """
+#         Rscript 7_perform_mr_analysis.R
+#         """
+
+#rule collate_info_on_all_studies:
+#    input: extracted_study_pattern
+#    output: final_report
+#    shell:
+#        """
+#        Rscript 8_report_on_results_and_studies.R
+#        """
+
+onsuccess:
+    print('yay')
+
+onerror:
+    print('nooooo')

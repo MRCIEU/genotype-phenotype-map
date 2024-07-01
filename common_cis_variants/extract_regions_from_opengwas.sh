@@ -1,22 +1,26 @@
 #!/bin/bash
 set -e
-if [[ $# -ne 4 ]] ; then
-  echo "Incorrect number of arguments: need 6"
+
+if [[ $# -ne 8 ]] ; then
+  echo "Incorrect number of arguments: need 8"
   exit 0
 fi
-ORIG_STUDY_DIR=$1
-EXTRACTED_STUDY_DIR=$2
-ANCESTRY=$3
-SAMPLE_SIZE=$4
-P_VALUE=$5
-DATA_TYPE=$6
 
-LD_REGIONS=data/ld_regions.tsv
+STUDY_NAME=$1
+ANCESTRY=$2
+SAMPLE_SIZE=$3
+DATA_TYPE=$4
+ORIG_STUDY_DIR=$5
+EXTRACTED_STUDY_DIR=$6
+P_VALUE=$7
+GENE=$8
+
+LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
 echo $ORIG_STUDY_DIR
 cd $ORIG_STUDY_DIR
 
-mkdir -p $EXTRACTED_STUDY_DIR/original mkdir $EXTRACTED_STUDY_DIR/imputed $EXTRACTED_STUDY_DIR/finemapped
+mkdir -p $EXTRACTED_STUDY_DIR/original $EXTRACTED_STUDY_DIR/imputed $EXTRACTED_STUDY_DIR/finemapped
 
 EXTRACTED_SNPS=$EXTRACTED_STUDY_DIR/extracted_snps.tsv
 echo -e "CHR\tBP\tLOG_P\tANCESTRY\tLD_REGION\tFILE\tCIS_TRANS" > $EXTRACTED_SNPS
@@ -44,14 +48,15 @@ while IFS=' ' read -r CHR POS LOG_P; do
   echo "Region to extract: $REGION"
   EXTRACTED_FILE=$EXTRACTED_STUDY_DIR/original/${ANCESTRY}_${CHR}_${POS}.tsv
 
-  echo -e "RSID\tCHR\TBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
+  echo -e "RSID\tCHR\tBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
   /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
 
-  SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}}"
+  SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}"
   LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
   echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\tNA" >> $EXTRACTED_SNPS
 done <<< $ALL_CHR_POS
 
-jq -n --arg sample_size $SAMPLE_SIZE --arg ancestry $ANCESTRY --arg p_val $P_VALUE --arg data_type $DATA_TYPE \
-  '{"ancestry": $ancestry, "sample_size": $sample_size, "p_value_threshold":$p_val, "data_type":$data_type}' \
+jq -n --arg sample_size $SAMPLE_SIZE --arg ancestry $ANCESTRY --arg p_val $P_VALUE --arg data_type "${DATA_TYPE}" --arg name "${STUDY_NAME}" \
+  '{"ancestry":($ancestry), "sample_size":($sample_size), "p_value_threshold":($p_val), "data_type":($data_type), "name":($name)}' \
   > $EXTRACTED_STUDY_DIR/extraction_metadata.json
+

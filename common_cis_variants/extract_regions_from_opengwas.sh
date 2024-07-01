@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 if [[ $# -ne 6 ]] ; then
   echo "Incorrect number of arguments: need 6"
   exit 0

@@ -29,25 +29,33 @@ extracted_study_pattern = '{study_location}extracted_snps.tsv'
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
 ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i,ld in ld_regions.iterrows()]
+
+#TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
+ld_blocks.remove('EUR/1/148361253_151538880')
+
 #ld_blocks = ['EUR/6/31571218_32682663', 'EUR/9/4884926_6557588']
+#This just chooses every 50th element
+#ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
 final_report = f'{RESULTS_DIR}report_{TIMESTAMP}.tsv'
 
 rule all:
-    input: expand(imputation_pattern, ld_block=ld_blocks),
+    input: expand(extracted_study_pattern, study_location=extracted_studies),
+        expand(imputation_pattern, ld_block=ld_blocks),
         expand(finemapping_pattern, ld_block=ld_blocks),
-        expand(extracted_study_pattern, study_location=extracted_studies),
+        #expand(coloc_pattern, ld_block=ld_blocks),
+        #mr_results_file,
+        #collated_results,
         ld_blocks_to_process
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
     run:
-        print('extracting')
-        print(params)
         study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
         command = ['./extract_regions_from_opengwas.sh'] + study[2:]
         command = [str(c) for c in command]
@@ -82,7 +90,7 @@ rule impute_by_ld_region:
 
 
 rule finemap_by_ld_region:
-    input: ld_blocks_to_process, expand(imputation_pattern, ld_block=ld_blocks)
+    input: ld_blocks_to_process, imputation_pattern
     output: temporary(finemapping_pattern)
     threads: 1
     params:
@@ -99,16 +107,23 @@ rule finemap_by_ld_region:
                 --ld_block_dir {ld_block.iloc[0]['data_dir']}"
         subprocess.run(command, shell=True)
 
-# rule colocalise_per_ld_region:
-#     input: ld_blocks_to_process, expand(finemapping_pattern, ld_block=ld_blocks)
-#     output: temporary(finemapping_pattern)
-#     shell:
-#         """
-#         Rscript colocalise_studies_per_ld_block.R
-#         """
+#rule colocalise_per_ld_region:
+#    input: ld_blocks_to_process, finemapping_pattern
+#    output: coloc_pattern 
+#    params:
+#        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+#    run:
+#        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+#        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
 #
+#        command = f"Rscript finemap_extracted_regions.R \
+#            --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+#            --ld_block_dir {ld_block.iloc[0]['data_dir']}"
+#            --coloc_result_file {output}"
+#        subprocess.run(command, shell=True)
+
 # rule mr_on_coloc_results:
-#     input: list()
+#     input: expand(coloc_pattern, ld_block=ld_blocks),
 #     output: list()
 #     shell:
 #         """

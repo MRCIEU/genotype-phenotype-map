@@ -22,12 +22,16 @@ calculate_state_opengwas_data <- function(entries) {
     study_metadata_json <- paste0(data_study_dir, "extraction_metadata.json")
 
     if (file.exists(study_metadata_json)) {
-      extraction_metadata <- jsonlite::fromJSON(study_metadata_json)
-      p_value <- as.numeric(extraction_metadata$p_value_threshold)
-      if (p_value <= extraction_p_value) {
-        return(data.frame())
-      } else {
-        file.remove(study_metadata_json)
+      json_data <- readLines(study_metadata_json)
+      if (jsonlite::validate(json_data)) {
+        extraction_metadata <- jsonlite::fromJSON(study_metadata_json)
+        p_value <- as.numeric(extraction_metadata$p_value_threshold)
+
+        if (p_value <= extraction_p_value) {
+          return(data.frame())
+        } else {
+          file.remove(study_metadata_json)
+        }
       }
     }
 

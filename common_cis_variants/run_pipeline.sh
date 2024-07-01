@@ -1,12 +1,14 @@
 #rm -r /local-scratch/projects/genotype-phenotype-map/data/study/ukb-b-10003/*
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/ld_blocks/*
+rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*/finemapped
+rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/ld_blocks/*/*/*/fine*
 
 EXTRA_ARG=$1
 
 Rscript identify_studies_to_process.R
+#Rscript skip_steps.R
 export TIMESTAMP=$(date +%Y_%m_%d-%H_%M)
-#snakemake -s common_variant.smk -c8 &> /tmp/snakemake.log
 
 IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
 PIPELINE=common_cis_variants

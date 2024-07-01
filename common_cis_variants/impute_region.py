@@ -28,6 +28,7 @@ def main(ld_region_prefix, ld_block_dir):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
+        print(f'Imputing {gwas_file}')
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
             print('Imputed file exists, skipping.')
@@ -40,13 +41,14 @@ def main(ld_region_prefix, ld_block_dir):
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         rsids_in_ld_block = np.isin(gwas.RSID, ld_region_from_reference_panel.RSID)
         gwas_filter = np.where(rsids_in_ld_block)[0]
+        gwas = gwas[rsids_in_ld_block]
+
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
 
         sig_t = ld_matrix[known, :][:, known]
         sig_i_t = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.iloc[:, -1])
-        z = z[gwas_filter]
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, sig_t, sig_i_t, lamb=0.01, rtol=0.01

@@ -1,4 +1,4 @@
-id_pattern,data_type,database,data_location,ancestry
-ukb-b-*,phenotype,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR
-eqtl-a-*,gene_expression,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR
-ebi-a-*,phenotype,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR
+id_pattern,data_type,database,data_location,ancestry,script
+ukb-b-*,phenotype,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR,extract_regions_from_opengwas.sh
+eqtl-a-*,gene_expression,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR,extract_regions_from_opengwas.sh
+ebi-a-*,phenotype,opengwas,/local-scratch/projects/genotype-phenotype-map/prototype/data/opengwas/,EUR,extract_regions_from_opengwas.sh

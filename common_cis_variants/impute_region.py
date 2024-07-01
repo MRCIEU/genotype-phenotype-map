@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Any
 
 import click
-import glob
 import numpy as np
 import os
 import pandas as pd
@@ -11,6 +10,7 @@ import scipy.linalg
 
 pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
+
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
 

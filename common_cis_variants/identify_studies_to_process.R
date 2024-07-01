@@ -3,7 +3,6 @@ gwas_list <- vroom::vroom("data/gwas_list.csv", show_col_types=F)
 if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 extraction_p_value <- 5e-8
 
-#TODO: calculate all the different files per study that you might need (imputed file, finampped file)
 calculate_state_opengwas_data <- function(entries) {
   expanded_directories <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], "/", entry[['id_pattern']])
@@ -37,7 +36,6 @@ calculate_state_opengwas_data <- function(entries) {
 
     study_metadata <- jsonlite::fromJSON(paste0(directory, "/", study_name, ".json"))
     ancestry <- study_metadata$population
-    sample_size <- study_metadata$sample_size
     category <- study_metadata$category
     if (is.null(category)) category <- NA
     if (is.null(ancestry) || ancestry != ancestry_map[[entry[['ancestry']]]]) {
@@ -47,12 +45,15 @@ calculate_state_opengwas_data <- function(entries) {
     return(data.frame(
       data_type = entry[['data_type']],
       study_name = study_name,
+      trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
-      sample_size = sample_size,
+      sample_size = study_metadata$sample_size,
       category = category,
       study_location = directory,
       extracted_location = data_study_dir,
-      p_value_threshold = format(extraction_p_value, scientific=FALSE)
+      p_value_threshold = format(extraction_p_value, scientific=FALSE),
+      associated_gene = NA,
+      script = entry[['script']]
     ))
   }) |> dplyr::bind_rows()
 }

@@ -20,19 +20,17 @@ def clean_files_pipeline_metadata_for_processing():
 process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(process_file, sep='\t')
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
-#TODO: remove once we are multi ancestry
-ld_regions = ld_regions[ld_regions['pop'] == "EUR"]
+ld_regions = ld_regions[ld_regions['pop'] == studies_to_process['pop'].unique()]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
-extracted_study_pattern = '{study_location}extracted_snps.tsv'
+extracted_study_pattern = '{study_location}extraction_metadata.json'
 
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
-ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i,ld in ld_regions.iterrows()]
+ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
 #TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
 ld_blocks.remove('EUR/1/148361253_151538880')
-
 #ld_blocks = ['EUR/6/31571218_32682663', 'EUR/9/4884926_6557588']
 #This just chooses every 50th element
 #ld_blocks = ld_blocks[0::50]
@@ -57,7 +55,8 @@ rule extract_regions_from_studies:
     output: extracted_study_pattern
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
-        command = ['./extract_regions_from_opengwas.sh'] + study[2:]
+        script = study[-1]
+        command = [script] + study[2:-1]
         command = [str(c) for c in command]
         subprocess.run(command)
 

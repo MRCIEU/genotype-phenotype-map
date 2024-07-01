@@ -14,7 +14,8 @@ DATA_DIR = os.getenv("DATA_DIR")
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
 
-@click.command(name="Impute studies by region")
+
+@click.command(name='Impute studies by region')
 @click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
 @click.option('--ld_block_dir', help='List of GWAS Summary Statistics file', required=True)
 def main(ld_region_prefix, ld_block_dir):
@@ -28,30 +29,26 @@ def main(ld_region_prefix, ld_block_dir):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
+        gwas = pd.read_csv(gwas_file, delimiter='\t')
+
+        gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
+
         print(f'Imputing {gwas_file}')
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
             print('Imputed file exists, skipping.')
             continue
 
-        gwas = pd.read_csv(gwas_file, delimiter='\t')
-        gwas.drop_duplicates(subset=['RSID'], inplace=True)
-        gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
-
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
-        rsids_in_ld_block = np.isin(gwas.RSID, ld_region_from_reference_panel.RSID)
-        gwas_filter = np.where(rsids_in_ld_block)[0]
-        gwas = gwas[rsids_in_ld_block]
-
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
 
-        sig_t = ld_matrix[known, :][:, known]
-        sig_i_t = ld_matrix[unknown, :][:, known]
-        z = np.array(gwas.iloc[:, -1])
+        known_ld_matrix = ld_matrix[known, :][:, known]
+        missing_ld_matrix = ld_matrix[unknown, :][:, known]
+        z = np.array(gwas.iloc['Z'])
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
-            z, sig_t, sig_i_t, lamb=0.01, rtol=0.01
+            z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
         )
 
         rsids_to_add = (imputation_results["imputation_r2"] >= imputed_r2_threshold) * (
@@ -65,16 +62,34 @@ def main(ld_region_prefix, ld_block_dir):
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
         gwas.to_csv(imputed_file, sep='\t', index=False)
-        imputed_studies.append([study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, sum(rsids_to_add)])
+        imputed_studies.append(
+            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size,
+             sum(rsids_to_add)])
 
         study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
         Path(study_in_ld_block).unlink(missing_ok=True)
         os.symlink(imputed_file, study_in_ld_block)
 
-    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'rows_imputed']
+    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
+                               'rows_imputed']
     imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
-    imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False, header=not os.path.isfile(imputed_studies_file))
+    imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False,
+                           header=not os.path.isfile(imputed_studies_file))
     Path(ld_block_dir + '/imputation_complete').touch()
+
+
+def standardise_extracted_gwas(gwas, ld_region):
+    gwas.drop_duplicates(subset=['RSID'], inplace=True)
+
+    gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
+    rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
+    gwas = gwas[rsids_in_ld_block]
+
+    # ensure order of gwas and ld region match
+    gwas.set_index(gwas['RSID'], inplace=True)
+    gwas = gwas.reindex(index=ld_region.RSID)
+
+    return gwas
 
 
 class SummaryStatisticsImputation:

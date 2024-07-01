@@ -43,27 +43,20 @@ main <- function(args) {
       return(failed_finemap_info)
     }
 
-
-    bp <- as.numeric(study['bp'])
-    range <- 1000000
-    gwas <- dplyr::filter(gwas, BP > (bp - floor(range/2)) & BP < (bp + floor(range/2)))
-    
-    print(nrow(gwas))
-    gwas <- dplyr::filter(gwas, RSID %in% ld_region_from_reference_panel$RSID)
-    print(nrow(gwas))
     keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
     ld_for_gwas <- ld_region[keep, keep]
     ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
+    testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
 
-    start_time <- Sys.time()
-    carma_result <- carma(study, gwas, ld_for_gwas)
-    print(paste('carma time', Sys.time() - start_time))
-    saveRDS(carma_result, paste0(data_dir, 'finemap_tests/carma_small_', file_prefix(study[['file']]), '.rds'))
+    # start_time <- Sys.time()
+    # carma_result <- carma(study, gwas, ld_for_gwas)
+    # print(paste('carma time', Sys.time() - start_time))
+    # saveRDS(carma_result, paste0(data_dir, 'finemap_tests/carma_small_', file_prefix(study[['file']]), '.rds'))
 
     start_time <- Sys.time()
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
     print(paste('susie time', Sys.time() - start_time))
-    saveRDS(susie_result, paste0(data_dir, 'finemap_tests/susie_small_', file_prefix(study[['file']]), '.rds'))
+    saveRDS(susie_result, paste0(data_dir, 'finemap_tests/susie', file_prefix(study[['file']]), '.rds'))
 
     if (susie_result$converged == F) {
       print(paste('susie result failed to converge for', study[['file']], ', skipping..'))

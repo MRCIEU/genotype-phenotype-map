@@ -30,7 +30,7 @@ main <- function(args) {
 
     if (typeof(gwas$EAF) == 'character') {
       message('EAF is not populated, cant split results, skipping.')
-      failed_finemap_info <- process_unfinemapped_gwas(gwas)
+      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
       return(failed_finemap_info)
     }
 
@@ -42,9 +42,11 @@ main <- function(args) {
 
     if (susie_result$converged == F || is.null(susie_result$sets$cs_index) || length(susie_result$sets$cs_index) == 0) {
       message('susie either didnt converge or has no credible sets, skipping.')
-      failed_finemap_info <- process_unfinemapped_gwas(gwas)
+      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
       return(failed_finemap_info)
     }
+
+    message(paste('found', length(susie_result$sets$cs_index), 'credible sets!'))
 
     new_bps <- c()
     new_files <- c()
@@ -74,7 +76,8 @@ main <- function(args) {
   vroom::vroom_write(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'))
 }
 
-process_unfinemapped_gwas <- function(gwas) {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir) {
+  sample_size <- as.numeric(study['sample_size'])
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
   failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
   failed_finemap_info <- data.frame(study=study[['study']],
@@ -87,7 +90,7 @@ process_unfinemapped_gwas <- function(gwas) {
                                     finemap_suceeded=F
   )
 
-  gwas <- populate_beta_with_known_z_scores(gwas)
+  gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   vroom::vroom_write(gwas, failed_finemap_file)
   file.symlink(failed_finemap_file, failed_finemap_symlink)
   return(failed_finemap_info)
@@ -137,8 +140,8 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   gwas$BETA_new <- gwas$BETA_new / correction
   gwas$SE_new <- gwas$SE_new / correction
 
-  gwas <- dplyr::mutate(gwas, BETA = dplyr::if_else(is.na(BETA, BETA_new, BETA)),
-                              SE = dplyr::if_else(is.na(SE, SE_new, SE))) |>
+  gwas <- dplyr::mutate(gwas, BETA = dplyr::if_else(is.na(BETA), BETA_new, BETA),
+                              SE = dplyr::if_else(is.na(SE), SE_new, SE)) |>
     dplyr::select(-BETA_new, -SE_new)
 
   return(gwas)

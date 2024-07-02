@@ -94,7 +94,6 @@ rule organise_extracted_studies_into_ld_regions:
     shell:
         """
         Rscript organise_extracted_regions_into_ld_regions.R --output_file {output}
-        cat {output}
         """
 
 rule impute_per_ld_region:

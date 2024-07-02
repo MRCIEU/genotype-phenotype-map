@@ -65,5 +65,5 @@ opengwas_data_current_state <- calculate_state_opengwas_data(opengwas_entries)
 #other state calculated here, then we can dplyr::bind_rows()
 current_state <- dplyr::bind_rows(opengwas_data_current_state)
 
-print(paste('Found', nrow(current_state), 'new studies to process'))
+message(paste('Found', nrow(current_state), 'new studies to process'))
 vroom::vroom_write(current_state, paste0(pipeline_metadata_dir, "studies_to_process.tsv"))

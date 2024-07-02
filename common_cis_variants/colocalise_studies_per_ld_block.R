@@ -20,7 +20,7 @@ main <- function(args) {
     } else {
       file.symlink(coloc_files[1], args$coloc_result_file)
     }
-    print(paste('Nothing to process for LD region', args$ld_block_dir ,', copying old result.'))
+    message(paste('Nothing to process for LD region', args$ld_block_dir ,', copying old result.'))
     return()
   }
 
@@ -106,23 +106,13 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
       dplyr::bind_cols() |>
       as.matrix()
 
-    tryCatch(
-      expr = {
-        results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
-                                        effect.se = se_matrix,
-                                        trait.names = trait_names,
-                                        binary.outcomes = binary_outcomes,
-                                        snp.id = snps,
-                                        snpscores = T
-        )
-        return(results)
-      },
-      error = function(e) {
-        print(e)
-        return()
-      }
+    results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
+                                    effect.se = se_matrix,
+                                    trait.names = trait_names,
+                                    binary.outcomes = binary_outcomes,
+                                    snp.id = snps,
+                                    snpscores = T
     )
-  })
   return(results)
 }
 

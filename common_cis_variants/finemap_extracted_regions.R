@@ -18,28 +18,19 @@ main <- function(args) {
 
   finemapped_results <- apply(imputed_studies, 1, function (study) {
     sample_size <- as.numeric(study['sample_size'])
-    print(paste('Finemapping', study['file']))
     finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
     finemap_file_prefix <- sub("\\..*", "", finemap_file_prefix)
-    dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
-
-    failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
-    failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
-    failed_finemap_info <- data.frame(study=study[['study']], file=failed_finemap_file, chr=study[['chr']],
-        bp=study['bp'], p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, finemap_suceeded=F
-    )
-
-    gwas <- vroom::vroom(study[['file']], show_col_types = F)
-
     if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
-      print('Already finemapped, skipping.')
       return()
     }
+    cat(paste0('Finemapping ', study['file'], ": "))
+
+    dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
+    gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
     if (typeof(gwas$EAF) == 'character') {
-      warning('EAF is not populated, cant split results, skipping.')
-      file.copy(study[['file']], failed_finemap_file)
-      file.symlink(failed_finemap_file, failed_finemap_symlink)
+      message('EAF is not populated, cant split results, skipping.')
+      failed_finemap_info <- process_unfinemapped_gwas(gwas)
       return(failed_finemap_info)
     }
 
@@ -47,43 +38,31 @@ main <- function(args) {
     ld_for_gwas <- ld_region[keep, keep]
     ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
     testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
-
-    # start_time <- Sys.time()
-    # carma_result <- carma(study, gwas, ld_for_gwas)
-    # print(paste('carma time', Sys.time() - start_time))
-    # saveRDS(carma_result, paste0(data_dir, 'finemap_tests/carma_small_', file_prefix(study[['file']]), '.rds'))
-
-    start_time <- Sys.time()
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
-    print(paste('susie time', Sys.time() - start_time))
-    saveRDS(susie_result, paste0(data_dir, 'finemap_tests/susie', file_prefix(study[['file']]), '.rds'))
 
-    if (susie_result$converged == F) {
-      print(paste('susie result failed to converge for', study[['file']], ', skipping..'))
-      file.copy(study[['file']], failed_finemap_file)
-      file.symlink(failed_finemap_file, failed_finemap_symlink)
+    if (susie_result$converged == F || is.null(susie_result$sets$cs_index) || length(susie_result$sets$cs_index) == 0) {
+      message('susie either didnt converge or has no credible sets, skipping.')
+      failed_finemap_info <- process_unfinemapped_gwas(gwas)
       return(failed_finemap_info)
     }
 
-    #TODO: do some sort of filtering based on susie output if the results are above certain thresholds
-
-    conditioned_gwases <- apply(susie_result$lbf_variable, 1, function(lbf) {
-      conditioned_gwas <- lbf_to_z_cont(gwas$RSID, lbf, sample_size, gwas$EAF)
-      gwas <- dplyr::mutate(gwas, BETA = conditioned_gwas$BETA, SE = conditioned_gwas$SE, P = conditioned_gwas$P, Z = conditioned_gwas$Z)
-      return(gwas)
-    })
-
     new_bps <- c()
     new_files <- c()
-    for (i in seq_along(conditioned_gwases)) {
+    for (i in susie_result$sets$cs_index) {
+      conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
+      #plot_finemapped_gwas(conditioned_gwas)
       finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
       finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
-      vroom::vroom_write(conditioned_gwases[[i]], finemap_file)
+      vroom::vroom_write(conditioned_gwas, finemap_file)
       file.symlink(finemap_file, finemap_symlink)
 
-      new_bps <- c(new_bps, find_new_top_snp(finemap_file, study[['bp']]))
+      #find lead SNP in new credible set
+      important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
+      new_bp <- conditioned_gwas[important_row, ]$BP
+      new_bps <- c(new_bps, new_bp)
       new_files <- c(new_files, finemap_file)
     }
+
     succeeded_finemap_info <- data.frame(study=study[['study']], file=new_files, chr=study[['chr']],
       bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, finemap_suceeded=T
     )
@@ -95,7 +74,25 @@ main <- function(args) {
   vroom::vroom_write(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'))
 }
 
-#lapply(all_conditioned_gwases, plot_gwas)
+process_unfinemapped_gwas <- function(gwas) {
+  failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+  failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
+  failed_finemap_info <- data.frame(study=study[['study']],
+                                    file=failed_finemap_file,
+                                    chr=study[['chr']],
+                                    bp=study['bp'],
+                                    p_value_threshold=study['p_value_threshold'],
+                                    category=study['category'],
+                                    sample_size=sample_size,
+                                    finemap_suceeded=F
+  )
+
+  gwas <- populate_beta_with_known_z_scores(gwas)
+  vroom::vroom_write(gwas, failed_finemap_file)
+  file.symlink(failed_finemap_file, failed_finemap_symlink)
+  return(failed_finemap_info)
+}
+
 #TODO: delete later
 plot_finemapped_gwas <- function(gwas) {
   range <- c(min(gwas$BP), max(gwas$BP))
@@ -107,39 +104,44 @@ plot_finemapped_gwas <- function(gwas) {
 
 #' Convert log Bayes Factor to summary stats
 #'
+#' @param gwas of summary statistics, with EAF as a mandatory column (allele frequencies for each SNP)
 #' @param lbf p-vector of log Bayes Factors for each SNP
 #' @param n Overall sample size
-#' @param af p-vector of allele frequencies for each SNP
 #' @param prior_v Variance of prior distribution. SuSiE uses 50
 #'
-#' @return tibble with lbf, af, beta, se, z
-#' @export
-lbf_to_z_cont <- function(RSID, lbf, n, af, prior_v = 50) {
-  SE <- sqrt(1 / (2 * n * af * (1-af)))
+#' @return tibble with altered BETA, SE, P, LP, and Z
+update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
+  SE <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
   r <- prior_v / (prior_v + SE^2)
   Z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
   BETA <- Z * SE
   P <- abs(2 * pnorm(abs(Z), lower.tail = F))
-  return(data.frame(RSID, BETA, SE, Z, P))
+  LP <- -log10(P)
+
+  gwas <- dplyr::mutate(gwas, BETA = BETA, SE = SE, P = P, LP = LP, Z = Z)
+  return(gwas)
 }
 
-#TODO: maybe use plink --clump to find it?  And filter if the top hit isn't 5e-8?
-find_new_top_snp <- function(gwas_file, bp) {
-  return(bp)
-}
+#' Calculates missing BETA and SE values, given a full set of Z-scores
+#'
+#' @param gwas of summary statistics, with partially populated BETA and SE columns, and fully popualted Z and EAF
+#' @param sample_size of GWAS
+#'
+#' @return gwas with fully populated BETA and SE columns
+populate_beta_with_known_z_scores <- function(gwas, sample_size) {
+  gwas$SE_new <- 1 / sqrt(2 * gwas$EAF * (1 - gwas$EAF) * sample_size)
+  gwas$BETA_new <- gwas$Z * gwas$SE_new
 
-carma <- function(study, gwas, ld_matrix) {
-  lambda_list<-list()
-  z.list<-list()
-  ld.list<-list()
-  lambda.list<-list()
-  z.list[[1]] <- gwas$Z
-  ld.list[[1]] <- ld_matrix
-  lambda.list[[1]] <- 1
+  correction_gwas <- dplyr::filter(gwas, !is.na(BETA) & !is.null(BETA))
+  correction <- lm(correction_gwas$BETA_new ~ correction_gwas$BETA)$coef[2]
+  gwas$BETA_new <- gwas$BETA_new / correction
+  gwas$SE_new <- gwas$SE_new / correction
 
-  #outlier_switch=T because of out sample LD matrix
-  carma_result <- CARMA::CARMA(z.list, ld.list, lambda.list=lambda.list, outlier.switch=TRUE)
-  return(carma_result)
+  gwas <- dplyr::mutate(gwas, BETA = dplyr::if_else(is.na(BETA, BETA_new, BETA)),
+                              SE = dplyr::if_else(is.na(SE, SE_new, SE))) |>
+    dplyr::select(-BETA_new, -SE_new)
+
+  return(gwas)
 }
 
 main(args)

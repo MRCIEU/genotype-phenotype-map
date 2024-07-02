@@ -86,7 +86,11 @@ def main(ld_region_prefix, ld_block_dir):
 def standardise_extracted_gwas(gwas, ld_region):
     gwas.drop_duplicates(subset=['RSID'], inplace=True)
 
-    gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
+    if 'Z' not in gwas.columns:
+        gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
+    if 'P' not in gwas.columns and 'LP' in gwas.columns:
+        gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
+
     rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
     gwas = gwas[rsids_in_ld_block]
 

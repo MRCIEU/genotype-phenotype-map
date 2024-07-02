@@ -33,19 +33,18 @@ def main(ld_region_prefix, ld_block_dir):
 
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
-        print(f'Imputing {gwas_file}')
         imputed_file = gwas_file.replace('original', 'imputed')
         if os.path.isfile(imputed_file):
-            print('Imputed file exists, skipping.')
             continue
 
+        print(f'Imputing {gwas_file}: ', end='')
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
 
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
-        z = np.array(gwas.iloc['Z'])
+        z = np.array(gwas.Z)
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
@@ -61,6 +60,12 @@ def main(ld_region_prefix, ld_block_dir):
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
         print(f'Imputed {sum(rsids_to_add)} SNPs')
+
+        # reorder the gwas, once again, after more entries were added
+        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)]
+        gwas.set_index(gwas['RSID'], inplace=True)
+        gwas = gwas.loc[lds_in_gwas.RSID]
+
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
             [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size,
@@ -86,8 +91,9 @@ def standardise_extracted_gwas(gwas, ld_region):
     gwas = gwas[rsids_in_ld_block]
 
     # ensure order of gwas and ld region match
+    lds_in_gwas = ld_region[np.isin(ld_region.RSID, gwas.RSID)]
     gwas.set_index(gwas['RSID'], inplace=True)
-    gwas = gwas.reindex(index=ld_region.RSID)
+    gwas = gwas.loc[lds_in_gwas.RSID]
 
     return gwas
 
@@ -248,7 +254,6 @@ class SummaryStatisticsImputation:
         """
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
-            print(sig_t.dtype)
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
             return sig_t_inv
         except np.linalg.LinAlgError:

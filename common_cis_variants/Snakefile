@@ -34,7 +34,29 @@ ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_region
 
 #TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
 ld_blocks.remove('EUR/1/148361253_151538880')
-#ld_blocks = ['EUR/6/31571218_32682663', 'EUR/9/4884926_6557588']
+ld_blocks = ['EUR/1/54226262_56413116',
+'EUR/1/54226262_56413116',
+'EUR/1/61922365_63455088',
+'EUR/1/108409665_110303930',
+'EUR/2/21050490_23341382',
+'EUR/2/26894985_28598776',
+'EUR/2/43309590_44313802',
+'EUR/5/73759326_75798865',
+'EUR/6/160580497_162169563',
+'EUR/7/20124908_22507628',
+'EUR/8/19492840_20060855',
+'EUR/8/126410917_128659110',
+'EUR/9/20463534_22206558',
+'EUR/9/135298842_137041121',
+'EUR/10/112561493_115328431',
+'EUR/11/116383348_117747109',
+'EUR/12/119754110_122007650',
+'EUR/19/9238393_11284027',
+'EUR/19/18409862_19877470',
+'EUR/19/44744108_46102696',
+'EUR/20/38436761_39610855',
+'EUR/20/39610856_40585688'
+]
 #This just chooses every 50th element
 #ld_blocks = ld_blocks[0::50]
 
@@ -56,6 +78,7 @@ rule all:
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
+    threads: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
         #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change!
@@ -67,9 +90,11 @@ rule extract_regions_from_studies:
 rule organise_extracted_studies_into_ld_regions:
     input: expand(extracted_study_pattern, study_location=extracted_studies)
     output: temporary(ld_blocks_to_process)
+    threads: 1
     shell:
         """
         Rscript organise_extracted_regions_into_ld_regions.R --output_file {output}
+        cat {output}
         """
 
 rule impute_per_ld_region:
@@ -86,7 +111,7 @@ rule impute_per_ld_region:
         if len(ld_block) == 0:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
-            command = f"{env_vars} && python3 impute_region.py \
+            command = f"{env_vars} && python3 standardise_and_impute_region.py \
                 --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
                 --ld_block_dir {ld_block.iloc[0]['data_dir']}"
         subprocess.run(command, shell=True)

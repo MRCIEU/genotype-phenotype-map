@@ -30,7 +30,7 @@ main <- function(args) {
 
     if (typeof(gwas$EAF) == 'character') {
       message('EAF is not populated, cant split results, skipping.')
-      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
+      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir, 'no_eaf')
       return(failed_finemap_info)
     }
 
@@ -40,9 +40,10 @@ main <- function(args) {
     testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
 
-    if (susie_result$converged == F || is.null(susie_result$sets$cs_index) || length(susie_result$sets$cs_index) == 0) {
+    if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
       message('susie either didnt converge or has no credible sets, skipping.')
       failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
+      if (susie_result$converged == T) failed_finemap_info$message <- 'less_than_2_cs'
       return(failed_finemap_info)
     }
 
@@ -66,7 +67,7 @@ main <- function(args) {
     }
 
     succeeded_finemap_info <- data.frame(study=study[['study']], file=new_files, chr=study[['chr']],
-      bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, finemap_suceeded=T
+      bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, message='success'
     )
     return(succeeded_finemap_info)
   }) |> dplyr::bind_rows()
@@ -76,7 +77,7 @@ main <- function(args) {
   vroom::vroom_write(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'))
 }
 
-process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir) {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
   failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
@@ -87,7 +88,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_regio
                                     p_value_threshold=study['p_value_threshold'],
                                     category=study['category'],
                                     sample_size=sample_size,
-                                    finemap_suceeded=F
+                                    message=message
   )
 
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
@@ -112,16 +113,15 @@ plot_finemapped_gwas <- function(gwas) {
 #' @param n Overall sample size
 #' @param prior_v Variance of prior distribution. SuSiE uses 50
 #'
-#' @return tibble with altered BETA, SE, P, LP, and Z
+#' @return tibble with altered BETA, SE, P, and Z
 update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
-  SE <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
-  r <- prior_v / (prior_v + SE^2)
-  Z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
-  BETA <- Z * SE
-  P <- abs(2 * pnorm(abs(Z), lower.tail = F))
-  LP <- -log10(P)
+  se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
+  r <- prior_v / (prior_v + se^2)
+  z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
+  beta <- z * se
+  p <- abs(2 * pnorm(abs(z), lower.tail = F))
 
-  gwas <- dplyr::mutate(gwas, BETA = BETA, SE = SE, P = P, LP = LP, Z = Z)
+  gwas <- dplyr::mutate(gwas, BETA = beta, SE = se, P = p, Z = z)
   return(gwas)
 }
 
@@ -139,10 +139,12 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   correction <- lm(correction_gwas$BETA_new ~ correction_gwas$BETA)$coef[2]
   gwas$BETA_new <- gwas$BETA_new / correction
   gwas$SE_new <- gwas$SE_new / correction
+  gwas$P_new <- abs(2 * pnorm(abs(gwas$Z), lower.tail = F))
 
   gwas <- dplyr::mutate(gwas, BETA = dplyr::if_else(is.na(BETA), BETA_new, BETA),
-                              SE = dplyr::if_else(is.na(SE), SE_new, SE)) |>
-    dplyr::select(-BETA_new, -SE_new)
+                              SE = dplyr::if_else(is.na(SE), SE_new, SE),
+                              P = dplyr::if_else(is.na(P), P_new, P) ) |>
+    dplyr::select(-BETA_new, -SE_new, -P_new)
 
   return(gwas)
 }

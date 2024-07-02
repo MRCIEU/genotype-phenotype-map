@@ -90,6 +90,7 @@ def standardise_extracted_gwas(gwas, ld_region):
         gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
     if 'P' not in gwas.columns and 'LP' in gwas.columns:
         gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
+        gwas.drop('LP', axis=1, inplace=True)
 
     rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
     gwas = gwas[rsids_in_ld_block]

@@ -34,7 +34,7 @@ def main(ld_region_prefix, ld_block_dir):
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
         imputed_file = gwas_file.replace('original', 'imputed')
-        if os.path.isfile(imputed_file):
+        if gwas is None or os.path.isfile(imputed_file):
             continue
 
         print(f'Imputing {gwas_file}: ', end='')
@@ -86,6 +86,13 @@ def main(ld_region_prefix, ld_block_dir):
 def standardise_extracted_gwas(gwas, ld_region):
     gwas.drop_duplicates(subset=['RSID'], inplace=True)
 
+    columns_to_coerse = ['EAF'] #add BETA and SE?
+    gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
+
+    if gwas['EAF'].isnull().all():
+        return None
+
+    gwas.dropna(subset=columns_to_coerse, inplace=True)
     if 'Z' not in gwas.columns:
         gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
     if 'P' not in gwas.columns and 'LP' in gwas.columns:

@@ -53,7 +53,6 @@ main <- function(args) {
     new_files <- c()
     for (i in susie_result$sets$cs_index) {
       conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-      #plot_finemapped_gwas(conditioned_gwas)
       finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
       finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
       vroom::vroom_write(conditioned_gwas, finemap_file)
@@ -61,7 +60,7 @@ main <- function(args) {
 
       #find lead SNP in new credible set
       important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-      new_bp <- conditioned_gwas[important_row, ]$BP
+      new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
       new_bps <- c(new_bps, new_bp)
       new_files <- c(new_files, finemap_file)
     }
@@ -84,7 +83,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_regio
   failed_finemap_info <- data.frame(study=study[['study']],
                                     file=failed_finemap_file,
                                     chr=study[['chr']],
-                                    bp=study['bp'],
+                                    bp=as.numeric(study['bp']),
                                     p_value_threshold=study['p_value_threshold'],
                                     category=study['category'],
                                     sample_size=sample_size,

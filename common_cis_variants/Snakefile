@@ -11,13 +11,7 @@ STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
 LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
-onstart:
-    print("##### Genotype-Phenotype Map Pipeline #####")
-
-def clean_files_pipeline_metadata_for_processing():
-    return
-
-### INPUT DATA
+### INPUT DATA FILES
 process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(process_file, sep='\t')
 
@@ -34,33 +28,9 @@ ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_region
 
 #TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
 ld_blocks.remove('EUR/1/148361253_151538880')
-ld_blocks = ['EUR/1/54226262_56413116',
-'EUR/1/54226262_56413116',
-'EUR/1/61922365_63455088',
-'EUR/1/108409665_110303930',
-'EUR/2/21050490_23341382',
-'EUR/2/26894985_28598776',
-'EUR/2/43309590_44313802',
-'EUR/5/73759326_75798865',
-'EUR/6/160580497_162169563',
-'EUR/7/20124908_22507628',
-'EUR/8/19492840_20060855',
-'EUR/8/126410917_128659110',
-'EUR/9/20463534_22206558',
-'EUR/9/135298842_137041121',
-'EUR/10/112561493_115328431',
-'EUR/11/116383348_117747109',
-'EUR/12/119754110_122007650',
-'EUR/19/9238393_11284027',
-'EUR/19/18409862_19877470',
-'EUR/19/44744108_46102696',
-'EUR/20/38436761_39610855',
-'EUR/20/39610856_40585688'
-]
-#This just chooses every 50th element
 #ld_blocks = ld_blocks[0::50]
 
-### OUTPUT DATA
+### OUTPUT DATA FILES
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
 mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
@@ -81,7 +51,7 @@ rule extract_regions_from_studies:
     threads: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
-        #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change!
+        #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change it to be more explicit
         script = study[-1]
         command = [script] + study[2:-1]
         command = [str(c) for c in command]
@@ -166,7 +136,7 @@ rule finemap_per_ld_region:
 #        """
 
 onsuccess:
-    print('yay')
+    print('Print important files to investigate here')
 
 onerror:
-    print('nooooo')
+    print(':(')

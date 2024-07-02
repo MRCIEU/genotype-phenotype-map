@@ -2,7 +2,7 @@
 
 EXTRA_ARG=$1
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*
-rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/ukb-b-10008/*
+rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*
 rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/ld_blocks/*
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*/imput*
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*/fine*

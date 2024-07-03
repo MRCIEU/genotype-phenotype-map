@@ -6,3 +6,4 @@ cores: 255
 keep-going: True
 keep-incomplete: True
 rerun-incomplete: True
+rerun-triggers: input

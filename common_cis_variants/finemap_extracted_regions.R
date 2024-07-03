@@ -16,60 +16,66 @@ main <- function(args) {
   imputed_studies_file <- paste0(args$ld_block_dir, '/imputed_studies.tsv')
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
-  finemapped_results <- apply(imputed_studies, 1, function (study) {
-    sample_size <- as.numeric(study['sample_size'])
-    finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
-    finemap_file_prefix <- sub("\\..*", "", finemap_file_prefix)
-    if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
-      return()
-    }
-    cat(paste0('Finemapping ', study['file'], ": "))
+  if (nrow(imputed_studies) == 0) {
+    result_columns <- c('study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'message')
+    finemapped_reuslts <- data.frame(matrix(nrow = 0, ncol = length(result_columns)))
+    colnames(finemapped_reuslts) <- result_columns
+  } else {
+    finemapped_results <- apply(imputed_studies, 1, function (study) {
+      sample_size <- as.numeric(study['sample_size'])
+      finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
+      finemap_file_prefix <- sub("\\..*", "", finemap_file_prefix)
+      if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
+        return()
+      }
+      cat(paste0('Finemapping ', study['file'], ": "))
 
-    dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
-    gwas <- vroom::vroom(study[['file']], show_col_types = F)
+      dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
+      gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
-    if (typeof(gwas$EAF) == 'character') {
-      message('EAF is not populated, cant split results, skipping.')
-      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir, 'no_eaf')
-      return(failed_finemap_info)
-    }
+      if (typeof(gwas$EAF) == 'character') {
+        message('EAF is not populated, cant split results, skipping.')
+        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir, 'no_eaf')
+        return(failed_finemap_info)
+      }
 
-    keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
-    ld_for_gwas <- ld_region[keep, keep]
-    ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
-    testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
-    susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
+      keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
+      ld_for_gwas <- ld_region[keep, keep]
+      ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
+      testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
+      susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
 
-    if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
-      message('susie either didnt converge or has no credible sets, skipping.')
-      failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
-      if (susie_result$converged == T) failed_finemap_info$message <- 'less_than_2_cs'
-      return(failed_finemap_info)
-    }
+      if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
+        message('susie either didnt converge or has no more than 1 credible sets, no need to adjust.')
+        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
+        if (susie_result$converged == T) failed_finemap_info$message <- 'less_than_2_cs'
+        return(failed_finemap_info)
+      }
 
-    message(paste('found', length(susie_result$sets$cs_index), 'credible sets!'))
+      message(paste('found', length(susie_result$sets$cs_index), 'credible sets!'))
 
-    new_bps <- c()
-    new_files <- c()
-    for (i in susie_result$sets$cs_index) {
-      conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-      finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
-      finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
-      vroom::vroom_write(conditioned_gwas, finemap_file)
-      file.symlink(finemap_file, finemap_symlink)
+      new_bps <- c()
+      new_files <- c()
+      for (i in susie_result$sets$cs_index) {
+        conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
+        finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
+        finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
+        vroom::vroom_write(conditioned_gwas, finemap_file)
+        file.symlink(finemap_file, finemap_symlink)
 
-      #find lead SNP in new credible set
-      important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-      new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
-      new_bps <- c(new_bps, new_bp)
-      new_files <- c(new_files, finemap_file)
-    }
+        #find lead SNP in new credible set
+        important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
+        new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
+        new_bps <- c(new_bps, new_bp)
+        new_files <- c(new_files, finemap_file)
+      }
 
-    succeeded_finemap_info <- data.frame(study=study[['study']], file=new_files, chr=study[['chr']],
-      bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, message='success'
-    )
-    return(succeeded_finemap_info)
-  }) |> dplyr::bind_rows()
+      succeeded_finemap_info <- data.frame(study=study[['study']], file=new_files, chr=study[['chr']],
+                                           bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, message='success'
+      )
+      return(succeeded_finemap_info)
+    }) |> dplyr::bind_rows()
+  }
 
   finemapped_results_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
   vroom::vroom_write(finemapped_results, finemapped_results_file, append = file.exists(finemapped_results_file))
@@ -135,7 +141,9 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   gwas$BETA_new <- gwas$Z * gwas$SE_new
 
   correction_gwas <- dplyr::filter(gwas, !is.na(BETA) & !is.null(BETA))
-  correction <- lm(correction_gwas$BETA_new ~ correction_gwas$BETA)$coef[2]
+  correction_gwas$BETA_new[which(!is.finite(correction_gwas$BETA_new))] <- NA
+  correction <- lm(correction_gwas$BETA_new ~ correction_gwas$BETA, na.action=na.omit)$coef[2]
+
   gwas$BETA_new <- gwas$BETA_new / correction
   gwas$SE_new <- gwas$SE_new / correction
   gwas$P_new <- abs(2 * pnorm(abs(gwas$Z), lower.tail = F))

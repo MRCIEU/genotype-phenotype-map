@@ -1,11 +1,12 @@
 source('constants.R')
 
-POSTERIOR_PROB_THRESHOLD <- 0.7
+POSTERIOR_PROB_THRESHOLD <- 0.8
 
 parser <- argparser::arg_parser('Compile results')
 parser <- argparser::add_argument(parser, "--studies_to_process", help = "Studies to process", type = "character")
 parser <- argparser::add_argument(parser, "--current_state", help = "Current state of processed studies", type = "character")
-parser <- argparser::add_argument(parser, "--coloc_result_file", help = "Coloc result file to save", type = "character")
+parser <- argparser::add_argument(parser, "--coloc_results", help = "Coloc result files", type = "character", nargs = Inf)
+parser <- argparser::add_argument(parser, "--compiled_results_file", help = "Compiled result file to save", type = "character")
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
@@ -13,17 +14,16 @@ main <- function(args) {
   gwases_to_extract <- vroom::vroom(args$studies_to_process)
   if (file.exists(args$current_state)) {
     current_state <- vroom::vroom(args$current_state)
-    current_state <- rbind(current_state, gwases_to_extract)
+    current_state <- rbind(current_state, gwases_to_extract) |> dplyr::distinct()
   } else {
     current_state <- gwases_to_extract
   }
   vroom::vroom_write(current_state, args$current_state)
 
-  coloc_results <- readRDS('common_cis_variants/scratch/results/ld_blocks/EUR/10/10249396_12586796/hyprcoloc_results.rds')
-
-  significant_results <- lapply(coloc_results, function(result) {
-    if (is.null(result$results)) return ()
-    significant_result <- dplyr::filter(result$results, posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+  significant_results <- lapply(args$coloc_results, function(result_file) {
+    result <- vroom::vroom(result_file)
+    if (is.null(result)) return ()
+    significant_result <- dplyr::filter(result, posterior_prob >= POSTERIOR_PROB_THRESHOLD)
     if (nrow(significant_result) > 0) return(significant_result)
   }) |> dplyr::bind_rows()
 

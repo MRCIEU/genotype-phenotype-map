@@ -33,17 +33,17 @@ ld_blocks.remove('EUR/1/148361253_151538880')
 ### OUTPUT DATA FILES
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+compiled_results = f'{RESULTS_DIR}compiled_results_{TIMESTAMP}.tsv'
 mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
-final_report = f'{RESULTS_DIR}report_{TIMESTAMP}.tsv'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
         expand(imputation_pattern, ld_block=ld_blocks),
         expand(finemapping_pattern, ld_block=ld_blocks)
-        #expand(coloc_pattern, ld_block=ld_blocks),
+        expand(coloc_pattern, ld_block=ld_blocks),
+        collated_results
         #mr_results_file,
-        #collated_results,
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -69,7 +69,7 @@ rule organise_extracted_studies_into_ld_regions:
 rule impute_per_ld_region:
     input: ld_blocks_to_process
     output: temporary(imputation_pattern)
-    threads: 16
+    threads: 20
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:
@@ -104,20 +104,33 @@ rule finemap_per_ld_region:
                 --ld_block_dir {ld_block.iloc[0]['data_dir']}"
         subprocess.run(command, shell=True)
 
-#rule colocalise_per_ld_region:
-#    input: ld_blocks_to_process, finemapping_pattern
-#    output: coloc_pattern 
-#    params:
-#        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-#    run:
-#        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-#        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
-#
-#        command = f"Rscript finemap_extracted_regions.R \
-#            --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-#            --ld_block_dir {ld_block.iloc[0]['data_dir']}"
-#            --coloc_result_file {output}"
-#        subprocess.run(command, shell=True)
+rule colocalise_per_ld_region:
+   input: ld_blocks_to_process, finemapping_pattern
+   output: coloc_pattern
+   params:
+       ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+   run:
+       ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+       ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+
+       command = f"Rscript finemap_extracted_regions.R \
+           --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+           --ld_block_dir {ld_block.iloc[0]['data_dir']} \
+           --coloc_result_file {output}"
+       subprocess.run(command, shell=True)
+
+rule compile_results_from_coloc:
+    input:
+        all_coloc_results = expand(coloc_pattern, study_location=extracted_studies)
+    output: compiled_results
+    shell:
+        """
+        Rscript compile_results.R \
+            --studies_to_process {} \
+            --current_state {} \
+            --coloc_results {} \
+            --coloc_result_file {}
+        """
 
 # rule mr_on_coloc_results:
 #     input: expand(coloc_pattern, ld_block=ld_blocks),
@@ -127,13 +140,6 @@ rule finemap_per_ld_region:
 #         Rscript 7_perform_mr_analysis.R
 #         """
 
-#rule collate_info_on_all_studies:
-#    input: extracted_study_pattern
-#    output: final_report
-#    shell:
-#        """
-#        Rscript 8_report_on_results_and_studies.R
-#        """
 
 onsuccess:
     print('Print important files to investigate here')

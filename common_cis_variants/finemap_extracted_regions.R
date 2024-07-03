@@ -18,8 +18,8 @@ main <- function(args) {
 
   if (nrow(imputed_studies) == 0) {
     result_columns <- c('study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'message')
-    finemapped_reuslts <- data.frame(matrix(nrow = 0, ncol = length(result_columns)))
-    colnames(finemapped_reuslts) <- result_columns
+    finemapped_results <- data.frame(matrix(nrow = 0, ncol = length(result_columns)))
+    colnames(finemapped_results) <- result_columns
   } else {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
       sample_size <- as.numeric(study['sample_size'])
@@ -126,11 +126,13 @@ update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 
   beta <- z * se
   p <- abs(2 * pnorm(abs(z), lower.tail = F))
 
-  gwas <- dplyr::mutate(gwas, BETA = beta, SE = se, P = p, Z = z)
+  gwas <- dplyr::mutate(gwas, BETA = beta, SE = se, P = p, Z = z) |>
+    tidyr::drop_na(BETA, SE) |>
+    dplyr::filter(SE > 0)
   return(gwas)
 }
 
-#' Calculates missing BETA and SE values, given a full set of Z-scores
+#' Calculates missing BETA, SE, and P values, given a full set of Z-scores
 #'
 #' @param gwas of summary statistics, with partially populated BETA and SE columns, and fully popualted Z and EAF
 #' @param sample_size of GWAS
@@ -151,7 +153,9 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   gwas <- dplyr::mutate(gwas, BETA = dplyr::if_else(is.na(BETA), BETA_new, BETA),
                               SE = dplyr::if_else(is.na(SE), SE_new, SE),
                               P = dplyr::if_else(is.na(P), P_new, P) ) |>
-    dplyr::select(-BETA_new, -SE_new, -P_new)
+    dplyr::select(-BETA_new, -SE_new, -P_new) |>
+    tidyr::drop_na(BETA, SE) |>
+    dplyr::filter(SE > 0)
 
   return(gwas)
 }

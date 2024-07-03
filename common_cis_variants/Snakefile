@@ -9,6 +9,7 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
+LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
 ### INPUT DATA FILES
@@ -26,13 +27,17 @@ imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
 ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
+ld_block_matrices = [f'{LD_BLOCK_MATRICES_DIR}{ld["pop"]}/{ld.chr}_{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
+
 #TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
 ld_blocks.remove('EUR/1/148361253_151538880')
 #ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA FILES
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{result_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
 compiled_results = f'{RESULTS_DIR}compiled_results_{TIMESTAMP}.tsv'
 mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
 
@@ -40,9 +45,9 @@ rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
         expand(imputation_pattern, ld_block=ld_blocks),
-        expand(finemapping_pattern, ld_block=ld_blocks)
-        expand(coloc_pattern, ld_block=ld_blocks),
-        collated_results
+        expand(finemapping_pattern, ld_block=ld_blocks),
+        expand(coloc_pattern, ld_block=ld_blocks)
+        #compiled_results 
         #mr_results_file,
 
 rule extract_regions_from_studies:
@@ -105,32 +110,32 @@ rule finemap_per_ld_region:
         subprocess.run(command, shell=True)
 
 rule colocalise_per_ld_region:
-   input: ld_blocks_to_process, finemapping_pattern
-   output: coloc_pattern
-   params:
-       ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-   run:
-       ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-       ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
-
-       command = f"Rscript finemap_extracted_regions.R \
-           --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-           --ld_block_dir {ld_block.iloc[0]['data_dir']} \
-           --coloc_result_file {output}"
-       subprocess.run(command, shell=True)
-
-rule compile_results_from_coloc:
     input:
-        all_coloc_results = expand(coloc_pattern, study_location=extracted_studies)
-    output: compiled_results
-    shell:
-        """
-        Rscript compile_results.R \
-            --studies_to_process {} \
-            --current_state {} \
-            --coloc_results {} \
-            --coloc_result_file {}
-        """
+        ld_block = ld_blocks_to_process,
+        finemap = finemapping_pattern
+    output: coloc_pattern
+    run:
+        ld_dir = os.path.dirname(input.finemap)
+        ld_block_matrix = ld_block_matrices[ld_dir]
+
+        command = f"Rscript colocalise_studies_per_ld_block.R \
+            --ld_region_prefix {ld_block_matrix} \
+            --ld_block_dir {ld_dir} \
+            --coloc_result_file {output}"
+        subprocess.run(command, shell=True)
+
+#rule compile_results_from_coloc:
+#    input:
+#        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
+#    output: compiled_results
+#    shell:
+#        """
+#        Rscript compile_results.R \
+#            --studies_to_process {} \
+#            --current_state {} \
+#            --coloc_results {} \
+#            --coloc_result_file {}
+#        """
 
 # rule mr_on_coloc_results:
 #     input: expand(coloc_pattern, ld_block=ld_blocks),

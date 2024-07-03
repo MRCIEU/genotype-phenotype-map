@@ -11,14 +11,18 @@ args <- argparser::parse_args(parser)
 #example: coloc_results <- readRDS('common_cis_variants/scratch/results/ld_blocks/EUR/10/10249396_12586796/hyprcoloc_results.rds')
 
 main <- function(args) {
-  specific_ld_block_data_dir <- block[['data_dir']]
-  finemapped_studies <- vroom::vroom(paste0(specific_ld_block_data_dir, "/finemapped_results.tsv"), show_col_types = F)
-
-  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv")) |>
+  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"), show_col_types=F) |>
     dplyr::filter(data_dir == args$ld_block_dir)
 
-  if (nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    coloc_files <- Sys.glob(paste0(block[['results_dir']], '/hyprcoloc_results'))
+  finemapped_file <- paste0(args$ld_block_dir, "/finemapped_studies.tsv")
+  if (file.exists(finemapped_file)) {
+    finemapped_studies <- vroom::vroom(finemapped_file, show_col_types = F)
+    finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
+  }
+
+  if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
+    coloc_result_dir <- dirname(args$coloc_result_file)
+    coloc_files <- Sys.glob(paste0(coloc_result_dir, '/hyprcoloc_results*'))
     coloc_files <- sort(coloc_files, decreasing=T)
     if (length(coloc_files) == 0) {
       vroom::vroom_write(data.frame(), args$coloc_result_file)
@@ -30,10 +34,17 @@ main <- function(args) {
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
-  names(studies_to_colocalise) <- file_prefix(finemapped_studies$study)
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) {
+    gwas <- vroom::vroom(file, show_col_types = F) |> tidyr::drop_na(BETA, SE)
+    return(gwas)
+  })
+  names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
+  if (length(grouped_studies) == 0) {
+    vroom::vroom_write(data.frame(), args$coloc_result_file)
+    return()
+  }
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
 
   all_results <- lapply(hyprcoloc_results, function(result) {
@@ -53,7 +64,6 @@ group_studies_in_same_bp_range <- function(studies) {
     study_bp <- studies[i,]$bp
     study <- studies[i,]$unique_study_id
     found_grouped_studies <- dplyr::filter(studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))$unique_study_id
-    found_grouped_studies <- found_grouped_studies
 
     if (length(found_grouped_studies) > 1) {
       grouped_studies[[study]] <- found_grouped_studies
@@ -62,6 +72,10 @@ group_studies_in_same_bp_range <- function(studies) {
 
   len <- sapply(grouped_studies, length)
   grouped_studies <- grouped_studies[order(len)]
+
+  if (length(grouped_studies) == 0) {
+    return(list())
+  }
 
   to_remove <- c()
   for (i in 1:(length(grouped_studies)-1)) {
@@ -96,13 +110,24 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
       dplyr::bind_cols() |>
       as.matrix()
 
-    results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
-                                    effect.se = se_matrix,
-                                    trait.names = trait_names,
-                                    binary.outcomes = binary_outcomes,
-                                    snp.id = snps,
-                                    snpscores = T
-    )
+      #TODO: what to do with weird errors you can't find in hyprcoloc?
+#    tryCatch(expr = {
+      results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
+                                      effect.se = se_matrix,
+                                      trait.names = trait_names,
+                                      binary.outcomes = binary_outcomes,
+                                      snp.id = snps,
+                                      snpscores = T
+        )
+        return(results)
+#    },
+#    error = function(e) {
+#      message('hyprcoloc error: args')
+#      message(args$ld_block_dir)
+#      message(e)
+#      quit()
+#    })
+  })
   return(results)
 }
 
@@ -113,7 +138,7 @@ harmonise_gwases <- function(...) {
   message(paste("Number of shared SNPs after harmonisation:", length(snpids)))
 
   gwases <- lapply(gwases, function(gwas) {
-    dplyr::filter(gwas, RSID %in% snpids & !duplicated(RSiD)) |>
+    dplyr::filter(gwas, RSID %in% snpids & !duplicated(RSID)) |>
       dplyr::arrange(RSID)
   })
 

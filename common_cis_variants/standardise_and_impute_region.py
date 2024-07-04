@@ -46,6 +46,10 @@ def main(ld_region_prefix, ld_block_dir):
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
 
+        print(known_ld_matrix.shape)
+        print(missing_ld_matrix.shape)
+        print(len(z))
+
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
         )
@@ -77,9 +81,13 @@ def main(ld_region_prefix, ld_block_dir):
 
     imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
                                'rows_imputed']
-    imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
-    imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False,
-                           header=not os.path.isfile(imputed_studies_file))
+    new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
+
+    existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
+    existing_imputed_studies.append(new_imputed_studies, ignore_index=True)
+    existing_imputed_studies.drop_duplicates(inplace=True)
+
+    existing_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(ld_block_dir + '/imputation_complete').touch()
 
 

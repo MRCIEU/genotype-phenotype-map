@@ -31,8 +31,9 @@ ld_block_matrices = [f'{LD_BLOCK_MATRICES_DIR}{ld["pop"]}/{ld.chr}_{ld.start}_{l
 ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
-#TODO: this ld matrix has NaNs for every line of the .ld file, skipping for now
+#TODO: these ld matrices has NaNs for every line of the .ld file, skipping for now
 ld_blocks.remove('EUR/1/148361253_151538880')
+ld_blocks.remove('EUR/17/21290357_27334243')
 #ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA FILES
@@ -74,7 +75,7 @@ rule organise_extracted_studies_into_ld_regions:
 rule impute_per_ld_region:
     input: ld_blocks_to_process
     output: temporary(imputation_pattern)
-    threads: 20
+    threads: 12
     params:
         ld_dir=lambda wildcards, output: os.path.dirname(output[0])
     run:
@@ -124,19 +125,21 @@ rule colocalise_per_ld_region:
             --coloc_result_file {output}"
         subprocess.run(command, shell=True)
 
-#rule compile_results_from_coloc:
+# rule compile_results_from_coloc:
 #    input:
-#        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
+#        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks),
+#        rare_variant_results = extracted_rare_variants_study_pattern
 #    output: compiled_results
 #    shell:
 #        """
 #        Rscript compile_results.R \
+#            --rare_variant_analysis some_file.txt
 #            --studies_to_process {} \
 #            --current_state {} \
 #            --coloc_results {} \
 #            --coloc_result_file {}
 #        """
-
+#
 # rule mr_on_coloc_results:
 #     input: expand(coloc_pattern, ld_block=ld_blocks),
 #     output: list()

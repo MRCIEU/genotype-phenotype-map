@@ -32,8 +32,6 @@ ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld["pop"]}/{ld.chr}/{ld.start}_{ld.sto
 ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
 #TODO: these ld matrices has NaNs for every line of the .ld file, skipping for now
-ld_blocks.remove('EUR/1/148361253_151538880')
-ld_blocks.remove('EUR/17/21290357_27334243')
 #ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA FILES

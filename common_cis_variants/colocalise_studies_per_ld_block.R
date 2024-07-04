@@ -35,7 +35,8 @@ main <- function(args) {
   }
 
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) {
-    gwas <- vroom::vroom(file, show_col_types = F) |> tidyr::drop_na(BETA, SE)
+    gwas <- vroom::vroom(file, show_col_types = F) |> 
+      dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
     return(gwas)
   })
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
@@ -110,23 +111,14 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
       dplyr::bind_cols() |>
       as.matrix()
 
-      #TODO: what to do with weird errors you can't find in hyprcoloc?
-#    tryCatch(expr = {
-      results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
-                                      effect.se = se_matrix,
-                                      trait.names = trait_names,
-                                      binary.outcomes = binary_outcomes,
-                                      snp.id = snps,
-                                      snpscores = T
-        )
-        return(results)
-#    },
-#    error = function(e) {
-#      message('hyprcoloc error: args')
-#      message(args$ld_block_dir)
-#      message(e)
-#      quit()
-#    })
+    results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
+                                    effect.se = se_matrix,
+                                    trait.names = trait_names,
+                                    binary.outcomes = binary_outcomes,
+                                    snp.id = snps,
+                                    snpscores = T
+      )
+      return(results)
   })
   return(results)
 }

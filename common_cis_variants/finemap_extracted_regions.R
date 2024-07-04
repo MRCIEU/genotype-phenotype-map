@@ -10,6 +10,10 @@ main <- function(args) {
   dir.create(ld_region_finemap_dir, recursive=T, showWarnings=F)
 
   ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld'), col_names=F, show_col_types = F)
+  #TODO: delete this once ld matrices have been resaved
+  if (nrow(ld_region) != ncol(ld_region)) {
+    ld_region <- ld_region[, 1:(ncol(ld_region)-1)]
+  }
   ld_region_from_reference_panel <- vroom::vroom(paste0(args$ld_region_prefix, '.tsv'), show_col_types = F)
 
   imputed_studies_file <- paste0(args$ld_block_dir, '/imputed_studies.tsv')

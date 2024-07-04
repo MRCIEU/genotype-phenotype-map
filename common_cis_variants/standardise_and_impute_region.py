@@ -34,7 +34,7 @@ def main(ld_region_prefix, ld_block_dir):
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
         imputed_file = gwas_file.replace('original', 'imputed')
-        if gwas is None or os.path.isfile(imputed_file):
+        if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
             continue
 
         print(f'Imputing {gwas_file}: ', end='')
@@ -45,10 +45,6 @@ def main(ld_region_prefix, ld_block_dir):
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
-
-        print(known_ld_matrix.shape)
-        print(missing_ld_matrix.shape)
-        print(len(z))
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01

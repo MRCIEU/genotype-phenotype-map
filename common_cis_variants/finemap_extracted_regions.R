@@ -81,9 +81,11 @@ main <- function(args) {
   }
 
   finemapped_results_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
-  existing_finemapped_results <- vroom::vroom(finemapped_results_file, show_col_types = F)
-  finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
-    dplyr::distinct()
+  if (file.exists(finemapped_results_file)) {
+    existing_finemapped_results <- vroom::vroom(finemapped_results_file, show_col_types = F)
+    finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
+      dplyr::distinct()
+  }
 
   vroom::vroom_write(finemapped_results, finemapped_results_file)
   vroom::vroom_write(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'))

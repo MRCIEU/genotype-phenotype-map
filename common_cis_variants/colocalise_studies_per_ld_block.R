@@ -8,8 +8,6 @@ parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block tha
 parser <- argparser::add_argument(parser, "--coloc_result_file", help = "Coloc result file to save", type = "character")
 args <- argparser::parse_args(parser)
 
-#example: coloc_results <- readRDS('common_cis_variants/scratch/results/ld_blocks/EUR/10/10249396_12586796/hyprcoloc_results.rds')
-
 main <- function(args) {
   block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"), show_col_types=F) |>
     dplyr::filter(data_dir == args$ld_block_dir)

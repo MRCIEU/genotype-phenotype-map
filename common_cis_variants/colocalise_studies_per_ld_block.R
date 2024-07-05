@@ -2,17 +2,17 @@ source('constants.R')
 library(argparser, quietly = TRUE)
 bp_range <- 10000
 
-parser <- argparser::arg_parser("Colocalise studies per region")
-parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS filename", type = "character")
-parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
-parser <- argparser::add_argument(parser, "--coloc_result_file", help = "Coloc result file to save", type = "character")
+parser <- argparser::arg_parser('Colocalise studies per region')
+parser <- argparser::add_argument(parser, '--ld_region_prefix', help = 'GWAS filename', type = 'character')
+parser <- argparser::add_argument(parser, '--ld_block_dir', help = 'LD block that the ', type = 'character')
+parser <- argparser::add_argument(parser, '--coloc_result_file', help = 'Coloc result file to save', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
-  block <- vroom::vroom(paste0(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv"), show_col_types=F) |>
+  block <- vroom::vroom(paste0(pipeline_metadata_dir, 'updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
     dplyr::filter(data_dir == args$ld_block_dir)
 
-  finemapped_file <- paste0(args$ld_block_dir, "/finemapped_studies.tsv")
+  finemapped_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, show_col_types = F)
     finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
@@ -33,9 +33,7 @@ main <- function(args) {
   }
 
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) {
-    gwas <- vroom::vroom(file, show_col_types = F) |> 
-      dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
-    return(gwas)
+    return(vroom::vroom(file, show_col_types = F))
   })
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
@@ -55,14 +53,18 @@ main <- function(args) {
 
 
 #' group_studies_in_same_bp_range, in 2 steps
-#'   1. created 'grouped_studies' list with all studies whose top snp is within bp_range
+#'   1. created 'grouped_studies' list with all studies whose top snp is within bp_range, and only one study per group
 #'   2. Filter out all grouped studies that are of length 1, or that are subsets of other groups
 group_studies_in_same_bp_range <- function(studies) {
   grouped_studies <- list()
   for(i in seq_len(nrow(studies))) {
     study_bp <- studies[i,]$bp
     study <- studies[i,]$unique_study_id
-    found_grouped_studies <- dplyr::filter(studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))$unique_study_id
+
+    filtered_studies <- dplyr::filter(studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))
+    filtered_studies <- filtered_studies[!duplicated(filtered_studies$study), ]
+
+    found_grouped_studies <- filtered_studies$unique_study_id
 
     if (length(found_grouped_studies) > 1) {
       grouped_studies[[study]] <- found_grouped_studies
@@ -125,7 +127,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
 harmonise_gwases <- function(...) {
   gwases <- list(...)
   snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$RSID))
-  message(paste("Number of shared SNPs after harmonisation:", length(snpids)))
+  message(paste('Number of shared SNPs after harmonisation:', length(snpids)))
 
   gwases <- lapply(gwases, function(gwas) {
     dplyr::filter(gwas, RSID %in% snpids & !duplicated(RSID)) |>

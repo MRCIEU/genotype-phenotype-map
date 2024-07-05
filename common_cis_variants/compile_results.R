@@ -24,6 +24,7 @@ main <- function(args) {
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
+  vroom::vroom_write(all_studies_processed, args$studies_processed)
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
@@ -34,7 +35,7 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   } else {
     studies_processed <- studies_to_process
   }
-  vroom::vroom_write(studies_processed, studies_processed_file)
+  return(studies_to_process)
 }
 
 compile_entire_list_of_extracted_study_regions <- function() {
@@ -42,10 +43,13 @@ compile_entire_list_of_extracted_study_regions <- function() {
   ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
 
   all_finemapped_studies <- lapply(ld_block_dirs, function(ld_block_dir) {
-    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, 'finemapped_studies.tsv'), show_col_types = F)
+    finemap_study <- paste0(ld_block_dir, 'finemapped_studies.tsv')
+    if (!file.exists(finemap_study)) return(data.frame())
+    finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
+      dplyr::select(study, file, chr, bp) |>
+      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
   }) |>
-    dplyr::bind_rows() |>
-    dplyr::select(study, file, chr, bp)
+    dplyr::bind_rows()
 
   #TODO: populate both 'known' (from coloc results) and 'suspected 'genes associated here?
   return(all_finemapped_studies)
@@ -56,15 +60,15 @@ aggregate_pipeline_metadata <- function() {
   ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
 
   lapply(ld_block_dirs, function(ld_block_dir) {
-    if (!file.exists(paste0(ld_block_dir, 'extracted_studies.tsv'))) {
-      return()
+    if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
+      return(data.frame())
     }
     extracted_studies <- vroom::vroom(paste0(ld_block_dir, 'extracted_studies.tsv'), show_col_types = F)
     imputed_studies <- vroom::vroom(paste0(ld_block_dir, 'imputed_studies.tsv'), show_col_types = F)
     finemapped_studies <- vroom::vroom(paste0(ld_block_dir, 'finemapped_studies.tsv'), show_col_types = F)
     deduplicated_finemapped_studies <- finemapped_studies[!duplicated(finemapped_studies$study),]
 
-    return(data.frame(ld_region = sub(, ld_block_dir),
+    return(data.frame(ld_region = ld_block_dir,
                       extracted_studies=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed),
@@ -78,8 +82,8 @@ aggregate_pipeline_metadata <- function() {
 
 compile_coloc_results <- function(coloc_input_files, studies_processed) {
   significant_results <- lapply(coloc_input_files, function(coloc_file) {
-    coloc <- vroom::vroom(coloc_file)
-    if (is.null(coloc)) return ()
+    coloc <- vroom::vroom(coloc_file, show_col_types = F)
+    if (is.null(coloc) || nrow(coloc) == 0) return ()
     significant_result <- dplyr::filter(coloc, !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
     if (nrow(significant_result) > 0) return(significant_result)
   }) |> dplyr::bind_rows()
@@ -88,9 +92,9 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
     traits <- strsplit(result['traits'], ', ')[[1]]
     traits <- order_trait_by_type(traits, studies_processed)
     #TODO: also remove this now that we've changed coloc script
-    #if (length(traits) < 2) {
-    #  return()
-    #}
+    if (length(traits) < 2) {
+      return()
+    }
     paired_results <- data.frame(t(utils::combn(traits, 2))) |>
       dplyr::rename(trait_a = X1, trait_b = X2) |>
       tidyr::separate(col = 'trait_a', into = c('study_a', 'ancestry_a', 'chr_a', 'bp_a', 'finemap_version_a'), sep='_', remove = F) |>

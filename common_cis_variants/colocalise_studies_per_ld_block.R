@@ -42,11 +42,14 @@ main <- function(args) {
     vroom::vroom_write(data.frame(), args$coloc_result_file)
     return()
   }
+
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
 
   all_results <- lapply(hyprcoloc_results, function(result) {
     if (!is.null(result)) return(result$results)
   }) |> dplyr::bind_rows()
+
+  if (is.null(all_results)) all_results <- data.frame()
 
   vroom::vroom_write(all_results, args$coloc_result_file)
 }

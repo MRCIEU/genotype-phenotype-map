@@ -21,6 +21,7 @@ mkdir -p $(dirname $snakemake_log)
 echo "Start time $(date)"
 #Rscript skip_steps.R
 Rscript identify_studies_to_process.R &> $snakemake_log
+echo "-----" &>> $snakemake_log
 snakemake --profile ./ $EXTRA_ARG &>> $snakemake_log
 echo "End time $(date)"
 

@@ -81,7 +81,7 @@ def main(ld_region_prefix, ld_block_dir):
 
     if os.path.isfile(imputed_studies_file):
         existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
-        new_imputed_studies = existing_imputed_studies.append(new_imputed_studies, ignore_index=True)
+        new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
     new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)

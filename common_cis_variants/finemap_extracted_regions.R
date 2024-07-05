@@ -20,9 +20,7 @@ main <- function(args) {
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
   if (nrow(imputed_studies) == 0) {
-    result_columns <- c('study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'message')
-    finemapped_results <- data.frame(matrix(nrow = 0, ncol = length(result_columns)))
-    colnames(finemapped_results) <- result_columns
+    finemapped_results <- data.frame()
   } else {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
       sample_size <- as.numeric(study['sample_size'])

@@ -30,20 +30,20 @@ calculate_opengwas_studies_to_process <- function(entries) {
 
   processing_information <- apply(expanded_directories, 1, function(entry) {
     directory <- entry[['directory']]
-    study_name <- basename(directory)
-    data_study_dir <- paste0(data_dir, 'study/', study_name, '/')
-    processed_studies_file <- paste0(paste0(results_dir, 'processed_studies.tsv'))
+    study <- basename(directory)
+    data_study_dir <- paste0(data_dir, 'study/', study, '/')
+    studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
-    if (file.exists(processed_studies_file)) {
-      processed_studies <- vroom::vroom(processed_studies_file, delim='\t', show_col_types=F)
+    if (file.exists(studies_processed_file)) {
+      studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
 
-      already_processed <- dplyr::filter(processed_studies, study == study_name)
+      already_processed <- dplyr::filter(studies_processed, study_name == study)
       if (nrow(already_processed) > 0 & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
         return(data.frame())
       }
     }
 
-    study_metadata <- jsonlite::fromJSON(paste0(directory, '/', study_name, '.json'))
+    study_metadata <- jsonlite::fromJSON(paste0(directory, '/', study, '.json'))
     ancestry <- study_metadata$population
     category <- study_metadata$category
     if (is.null(category)) category <- NA
@@ -53,7 +53,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
 
     return(data.frame(
       data_type = entry[['data_type']],
-      study_name = study_name,
+      study_name = study,
       trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
       sample_size = study_metadata$sample_size,

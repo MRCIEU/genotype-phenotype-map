@@ -22,6 +22,7 @@ ld_regions = ld_regions[relevant_ancestries]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extraction_metadata.json'
+new_extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
@@ -35,6 +36,7 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 #ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA FILES
+studies_processed = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
 compiled_results = f'{RESULTS_DIR}compiled_results_{TIMESTAMP}.tsv'
@@ -123,21 +125,19 @@ rule colocalise_per_ld_region:
             --coloc_result_file {output}"
         subprocess.run(command, shell=True)
 
-# rule compile_results_from_coloc:
-#    input:
-#        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks),
-#        rare_variant_results = extracted_rare_variants_study_pattern
-#    output: compiled_results
-#    shell:
-#        """
-#        Rscript compile_results.R \
-#            --rare_variant_analysis some_file.txt
-#            --studies_to_process {} \
-#            --current_state {} \
-#            --coloc_results {} \
-#            --coloc_result_file {}
-#        """
-#
+rule compile_results:
+   input:
+       all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
+   output: compiled_results
+   shell:
+       """
+       Rscript compile_results.R \
+           --studies_to_process {process_file} \
+           --processed_studies {processed_studies} \
+           --coloc_results {inpute.all_coloc_results} \
+           --coloc_result_file {output}
+       """
+
 # rule mr_on_coloc_results:
 #     input: expand(coloc_pattern, ld_block=ld_blocks),
 #     output: list()

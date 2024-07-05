@@ -1,8 +1,8 @@
 source("constants.R")
 
-parser <- argparser::arg_parser("Finemap studies per region")
-parser <- argparser::add_argument(parser, "--ld_region_prefix", help = "GWAS filename", type = "character")
-parser <- argparser::add_argument(parser, "--ld_block_dir", help = "LD block that the ", type = "character")
+parser <- argparser::arg_parser('Finemap studies per region')
+parser <- argparser::add_argument(parser, '--ld_region_prefix', help = 'GWAS filename', type = 'character')
+parser <- argparser::add_argument(parser, '--ld_block_dir', help = 'LD block that the ', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
@@ -27,7 +27,7 @@ main <- function(args) {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
       sample_size <- as.numeric(study['sample_size'])
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
-      finemap_file_prefix <- sub("\\..*", "", finemap_file_prefix)
+      finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
       if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
         return()
       }
@@ -60,8 +60,9 @@ main <- function(args) {
       new_bps <- c()
       new_files <- c()
       for (i in susie_result$sets$cs_index) {
+        finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-        finemap_file <- paste0(finemap_file_prefix, '_', i, '.tsv')
+        finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv')
         finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
         vroom::vroom_write(conditioned_gwas, finemap_file)
         file.symlink(finemap_file, finemap_symlink)
@@ -136,8 +137,8 @@ update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 
   p <- abs(2 * pnorm(abs(z), lower.tail = F))
 
   gwas <- dplyr::mutate(gwas, BETA = beta, SE = se, P = p, Z = z) |>
-    tidyr::drop_na(BETA, SE) |>
-    dplyr::filter(SE > 0)
+    dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
+
   return(gwas)
 }
 
@@ -163,8 +164,7 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
                               SE = dplyr::if_else(is.na(SE), SE_new, SE),
                               P = dplyr::if_else(is.na(P), P_new, P) ) |>
     dplyr::select(-BETA_new, -SE_new, -P_new) |>
-    tidyr::drop_na(BETA, SE) |>
-    dplyr::filter(SE > 0)
+    dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
 
   return(gwas)
 }

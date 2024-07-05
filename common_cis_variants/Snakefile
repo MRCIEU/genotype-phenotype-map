@@ -39,17 +39,19 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 studies_processed = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
-compiled_results = f'{RESULTS_DIR}compiled_results_{TIMESTAMP}.tsv'
-mr_results = f'{RESULTS_DIR}mr_results_{TIMESTAMP}.tsv'
+coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/compiled_results.tsv'
+all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
+results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
         expand(imputation_pattern, ld_block=ld_blocks),
         expand(finemapping_pattern, ld_block=ld_blocks),
-        expand(coloc_pattern, ld_block=ld_blocks)
-        #compiled_results 
-        #mr_results_file,
+        expand(coloc_pattern, ld_block=ld_blocks),
+        coloc_results,
+        all_study_regions,
+        results_metadata
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -126,16 +128,22 @@ rule colocalise_per_ld_region:
         subprocess.run(command, shell=True)
 
 rule compile_results:
-   input:
-       all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
-   output: compiled_results
-   shell:
+    input:
+        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
+    output:
+        coloc_results = coloc_results,
+        all_study_regions = all_study_regions,
+        results_metadata = results_metadata
+    shell:
        """
+       mkdir -p $(dirname {output})
        Rscript compile_results.R \
            --studies_to_process {process_file} \
            --processed_studies {processed_studies} \
-           --coloc_results {inpute.all_coloc_results} \
-           --coloc_result_file {output}
+           --coloc_results {input.all_coloc_results} \
+           --all_study_regions_file {output.all_study_regions}
+           --coloc_results_file {output.coloc_results}
+           --compiled_results_metadata_file {output.results_metadata}
        """
 
 # rule mr_on_coloc_results:

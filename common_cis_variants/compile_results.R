@@ -59,7 +59,7 @@ aggregate_pipeline_metadata <- function() {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
   ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
 
-  lapply(ld_block_dirs, function(ld_block_dir) {
+  metadata_per_ld_region <- lapply(ld_block_dirs, function(ld_block_dir) {
     if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
       return(data.frame())
     }
@@ -78,6 +78,11 @@ aggregate_pipeline_metadata <- function() {
                       finemap_no_need=sum(deduplicated_finemapped_studies$message == 'less_than_2_cs')
     ))
   }) |> dplyr::bind_rows()
+  
+  means <- colMeans(metadata_per_ld_region[-1])
+  means$ld_region <- 'mean'
+  metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means)
+  return(metadata_per_ld_region)
 }
 
 compile_coloc_results <- function(coloc_input_files, studies_processed) {

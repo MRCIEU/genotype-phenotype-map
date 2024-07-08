@@ -46,27 +46,27 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies) {
     finemap_study <- paste0(ld_block_dir, 'finemapped_studies.tsv')
     if (!file.exists(finemap_study)) return(data.frame())
     finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
-      dplyr::select(study, file, chr, bp) |>
-      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp), known_gene = NA, suspected_genes = NA)
+      dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
+      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
   }) |>
     dplyr::bind_rows()
 
-  all_finemapped_studies$known_gene <- all_studies$gene[match(all_studies$study_name, all_finemapped_studies$study)]
-  all_finemapped_studies$cis_trans <- all_studies$cis_trans[match(all_studies$study_name, all_finemapped_studies$study)]
-
+  all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
   return(all_finemapped_studies)
 }
 
 #https://www.biostars.org/p/167818/
 find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
-  coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
-  gene_names <- as.data.frame(org.Hs.egSYMBOL)
+  coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
+  gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
+  print(head(all_finemapped_studies))
 
   genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
     dplyr::mutate(chrom=paste0('chr', chrom)) |>
     GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
   genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
+  print(head(genes))
 
   genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
   all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]

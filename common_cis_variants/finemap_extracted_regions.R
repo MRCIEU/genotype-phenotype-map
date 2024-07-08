@@ -84,6 +84,7 @@ main <- function(args) {
                                            p_value_threshold=study['p_value_threshold'],
                                            category=study['category'],
                                            sample_size=sample_size,
+                                           cis_trans=study['cis_trans'],
                                            message='success'
       )
       return(succeeded_finemap_info)
@@ -104,7 +105,7 @@ main <- function(args) {
 process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
-  unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
+  unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_1")
   failed_finemap_symlink <- paste0(ld_region_finemap_dir, unique_id, ".tsv")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -114,6 +115,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_regio
                                     p_value_threshold=study['p_value_threshold'],
                                     category=study['category'],
                                     sample_size=sample_size,
+                                    cis_trans=study['cis_trans'],
                                     message=message
   )
 

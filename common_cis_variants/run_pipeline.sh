@@ -7,7 +7,10 @@ then
   export $(cat .env | xargs)
 fi
 
-#rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*
+rm -r /local-scratch/projects/genotype-phenotype-map/test/data/study/* || echo 'ya'
+rm -r /local-scratch/projects/genotype-phenotype-map/test/data/ld_blocks/* || echo 'ya'
+rm -r /local-scratch/projects/genotype-phenotype-map/test/results/studies_processed.tsv || echo 'ya'
+
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/* || echo "deleting stuff"
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/ld_blocks/* || echo "deleting stuff"
 #rm -r /local-scratch/projects/genotype-phenotype-map/prototype/data/study/*/imput*

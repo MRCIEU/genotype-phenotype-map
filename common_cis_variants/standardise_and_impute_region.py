@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-
+import time
 import click
 import numpy as np
 import os
@@ -37,7 +37,6 @@ def main(ld_region_prefix, ld_block_dir):
         if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
             continue
 
-        print(f'Imputing {gwas_file}: ', end='')
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
@@ -45,6 +44,8 @@ def main(ld_region_prefix, ld_block_dir):
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
+
+        start_time = time.time()
 
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
@@ -59,7 +60,10 @@ def main(ld_region_prefix, ld_block_dir):
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
+        print(f'Imputing {gwas_file}: ', end='')
         print(f'Imputed {sum(rsids_to_add)} SNPs')
+        print(f'{ld_region_prefix}')
+        print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
         lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)]
@@ -68,14 +72,14 @@ def main(ld_region_prefix, ld_block_dir):
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
-            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size,
+            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, study.cis_trans,
              sum(rsids_to_add)])
 
         study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
         Path(study_in_ld_block).unlink(missing_ok=True)
         os.symlink(imputed_file, study_in_ld_block)
 
-    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
+    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
                                'rows_imputed']
     new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
 
@@ -145,7 +149,7 @@ class SummaryStatisticsImputation:
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
-            ld_matrix_known, lamb, rtol
+            ld_matrix_known, lamb, rtol, 1
         )
         if sig_t_inv is None:
             return {
@@ -258,7 +262,7 @@ class SummaryStatisticsImputation:
         return var
 
     @staticmethod
-    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float) -> np.ndarray:
+    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float, iters: int) -> np.ndarray:
         """Invert the correlation matrix. If the provided regularization values are not enough to stabilize the inversion process for the given matrix, the function calls itself recursively, increasing lamb and rtol by 10%.
 
         Args:
@@ -272,10 +276,12 @@ class SummaryStatisticsImputation:
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
+            print(f'Iterations {iters}, lab {lamb} rtol {rtol}')
             return sig_t_inv
         except np.linalg.LinAlgError:
+            iters = iters + 1
             return SummaryStatisticsImputation._invert_sig_t(
-                sig_t, lamb * 1.1, rtol * 1.1
+                sig_t, lamb * 1.1, rtol * 1.1, iters
             )
 
 

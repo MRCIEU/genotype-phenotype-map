@@ -21,8 +21,7 @@ relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].
 ld_regions = ld_regions[relevant_ancestries]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
-extracted_study_pattern = '{study_location}extraction_metadata.json'
-new_extracted_study_pattern = '{study_location}extracted_snps.tsv'
+extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'

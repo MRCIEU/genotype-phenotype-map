@@ -2,6 +2,7 @@ source('constants.R')
 DEFAULT_P_VALUE_THRESHOLD <- 5e-8
 
 gwas_list <- vroom::vroom('data/gwas_list.csv', show_col_types=F)
+gwas_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
 if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
 main <- function() {

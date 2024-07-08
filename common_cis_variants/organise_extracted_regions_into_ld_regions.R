@@ -20,9 +20,9 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     return(data.frame())
   }
   updated_ld_blocks <- apply(extracted_snps, 1, function(extracted) {
-    bp <- as.numeric(extracted[['BP']])
-    extracted_chr <- as.numeric(extracted[['CHR']])
-    ancestry <- extracted[['ANCESTRY']]
+    bp <- as.numeric(extracted[['bp']])
+    extracted_chr <- as.numeric(extracted[['chr']])
+    ancestry <- extracted[['ancestry']]
 
     ld_block <- dplyr::filter(ld_regions, chr == extracted_chr & start < bp & stop > bp & pop == ancestry)
     if (nrow(ld_block) > 1) stop(paste('Error: More than 1 LD Block associated with', extracted_chr, bp))
@@ -43,8 +43,8 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive=T, showWarnings=F)
 
     extracted_studies_file <- paste0(ld_block_data, '/extracted_studies.tsv')
-    extracted_studies <- tibble::tribble(~study, ~data_type, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size, 
-                                         study_name, data_type, study_file, extracted_chr, bp, p_value_threshold, category, sample_size
+    extracted_studies <- tibble::tribble(~study, ~data_type, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size, ~cis_trans,
+                                         study_name, data_type, study_file, extracted_chr, bp, p_value_threshold, category, sample_size, extracted[['cis_trans']]
     )
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)

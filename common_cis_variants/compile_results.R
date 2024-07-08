@@ -18,7 +18,7 @@ main <- function(args) {
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
   coloc_results <- compile_coloc_results(args$coloc_input_files, all_studies_processed)
 
-  all_study_regions <- compile_entire_list_of_extracted_study_regions()
+  all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed)
   results_metadata <- aggregate_pipeline_metadata()
 
   vroom::vroom_write(coloc_results, args$coloc_results_file)
@@ -35,10 +35,10 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   } else {
     studies_processed <- studies_to_process
   }
-  return(studies_to_process)
+  return(studies_processed)
 }
 
-compile_entire_list_of_extracted_study_regions <- function() {
+compile_entire_list_of_extracted_study_regions <- function(all_studies) {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
   ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
 
@@ -47,11 +47,29 @@ compile_entire_list_of_extracted_study_regions <- function() {
     if (!file.exists(finemap_study)) return(data.frame())
     finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
       dplyr::select(study, file, chr, bp) |>
-      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp), known_gene = NA, suspected_genes = NA)
   }) |>
     dplyr::bind_rows()
 
-  #TODO: populate both 'known' (from coloc results) and 'suspected 'genes associated here?
+  all_finemapped_studies$known_gene <- all_studies$gene[match(all_studies$study_name, all_finemapped_studies$study)]
+  all_finemapped_studies$cis_trans <- all_studies$cis_trans[match(all_studies$study_name, all_finemapped_studies$study)]
+
+  all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
+  return(all_finemapped_studies)
+}
+
+#https://www.biostars.org/p/167818/
+find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
+  coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+  gene_names <- as.data.frame(org.Hs.egSYMBOL)
+
+  genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
+    dplyr::mutate(chrom=paste0('chr', chrom)) |>
+    GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
+  genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
+
+  genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
+  all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]
   return(all_finemapped_studies)
 }
 
@@ -95,25 +113,25 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
 
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result['traits'], ', ')[[1]]
-    traits <- order_trait_by_type(traits, studies_processed)
-    #TODO: also remove this now that we've changed coloc script
-    if (length(traits) < 2) {
+    ordered_traits <- order_trait_by_type(traits, studies_processed)
+    if (nrow(ordered_traits) < 2) {
       return()
     }
-    paired_results <- data.frame(t(utils::combn(traits, 2))) |>
-      dplyr::rename(trait_a = X1, trait_b = X2) |>
-      tidyr::separate(col = 'trait_a', into = c('study_a', 'ancestry_a', 'chr_a', 'bp_a', 'finemap_version_a'), sep='_', remove = F) |>
-      tidyr::separate(col = 'trait_b', into = c('study_b', 'ancestry_b', 'chr_b', 'bp_b', 'finemap_version_b'), sep='_', remove = F) |>
+    paired_results <- data.frame(t(utils::combn(ordered_traits$unique_study_id, 2))) |>
+      dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
                     candidate_snp = as.character(result['candidate_snp']),
                     posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp']),
-                    cis_trans = NA
+                    study_a = ordered_traits$study_name[ordered_traits$unique_study_id == unique_study_a],
+                    study_b = ordered_traits$study_name[ordered_traits$unique_study_id == unique_study_b],
+                    directed = ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == unique_study_a]]# < ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == unique_study_b]],
       )
-    paired_results$data_type_a <- studies_processed$data_type[match(paired_results$study_a, studies_processed$study_name)]
-    paired_results$data_type_b <- studies_processed$data_type[match(paired_results$study_b, studies_processed$study_name)]
 
-    #TODO: also remove this, like above
-    #paired_results <- dplyr::filter(paired_results, study_a != study_b)
+    #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
+    #causal pathway, as defined by ordered_data_types (ie. gene_expression -> protein -> phenotype)
+    first_order <- which(ordered_traits$data_type == ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == paired_results$unique_study_a]])[1]
+    second_order <- which(ordered_traits$data_type == ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == paired_results$unique_study_b]])[1]
+    paired_results$directed <- first_order < second_order
 
     return(paired_results)
   }) |> dplyr::bind_rows()
@@ -124,8 +142,9 @@ order_trait_by_type <- function(traits, studies_processed) {
   trait_studies <- unlist(lapply(traits, function(trait) strsplit(trait, '_')[[1]][1]))
   studies <- dplyr::filter(studies_processed, study_name %in% trait_studies) |>
     dplyr::select(study_name, data_type)
-  traits <- traits[order(match(studies$data_type, ordered_data_types))]
-  return(traits)
+  studies$unique_study_id <- traits
+  studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
+  return(studies)
 }
 
 split_string_into_vector <- function(input_string) {

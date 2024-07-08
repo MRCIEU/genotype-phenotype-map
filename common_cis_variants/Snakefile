@@ -39,7 +39,7 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
-coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/compiled_results.tsv'
+coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 
@@ -146,12 +146,12 @@ rule compile_results:
            --compiled_results_metadata_file {output.results_metadata}
        """
 
-# rule mr_on_coloc_results:
+# rule perform_mr_analysis:
 #     input: expand(coloc_pattern, ld_block=ld_blocks),
 #     output: list()
 #     shell:
 #         """
-#         Rscript 7_perform_mr_analysis.R
+#         Rscript perform_mr_analysis.R
 #         """
 
 

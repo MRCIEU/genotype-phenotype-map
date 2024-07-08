@@ -37,6 +37,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
     if (file.exists(studies_processed_file)) {
       studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
 
+      #TODO: check if there exists a study with that study_name already.  Can't be duplicates
+
       already_processed <- dplyr::filter(studies_processed, study_name == study)
       if (nrow(already_processed) > 0 & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
         return(data.frame())
@@ -61,7 +63,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       study_location = directory,
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      associated_gene = NA,
+      gene = NA,
       script = entry[['script']]
     ))
   }) |> dplyr::bind_rows()

@@ -57,23 +57,34 @@ main <- function(args) {
 
       new_bps <- c()
       new_files <- c()
+      unique_ids <- c()
       for (i in susie_result$sets$cs_index) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
         finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv')
-        finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_", i, ".tsv")
+        unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
+
+        finemap_symlink <- paste0(ld_region_finemap_dir, unique_id, ".tsv")
         vroom::vroom_write(conditioned_gwas, finemap_file)
         file.symlink(finemap_file, finemap_symlink)
 
-        #find lead SNP in new credible set
+        #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
-        new_bps <- c(new_bps, new_bp)
+        #TODO: this is finding NAs in bp.  Investigate why, maybe fall back to original bp?
+        new_bps <- c(new_bps, as.numeric(conditioned_gwas[important_row, ]$BP))
         new_files <- c(new_files, finemap_file)
+        unique_ids <- c(unique_ids, unique_id)
       }
 
-      succeeded_finemap_info <- data.frame(study=study[['study']], file=new_files, chr=study[['chr']],
-                                           bp=new_bps, p_value_threshold=study['p_value_threshold'], category=study['category'], sample_size=sample_size, message='success'
+      succeeded_finemap_info <- data.frame(study=study[['study']],
+                                           unique_study_id=unique_ids,
+                                           file=new_files,
+                                           chr=study[['chr']],
+                                           bp=new_bps,
+                                           p_value_threshold=study['p_value_threshold'],
+                                           category=study['category'],
+                                           sample_size=sample_size,
+                                           message='success'
       )
       return(succeeded_finemap_info)
     }) |> dplyr::bind_rows()
@@ -93,8 +104,10 @@ main <- function(args) {
 process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
-  failed_finemap_symlink <- paste0(ld_region_finemap_dir, study['study'], "_", study['chr'], "_", study['bp'], "_1.tsv")
+  unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
+  failed_finemap_symlink <- paste0(ld_region_finemap_dir, unique_id, ".tsv")
   failed_finemap_info <- data.frame(study=study[['study']],
+                                    unique_study_id=unique_id,
                                     file=failed_finemap_file,
                                     chr=study[['chr']],
                                     bp=as.numeric(study['bp']),

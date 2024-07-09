@@ -28,7 +28,7 @@ main <- function(args) {
       file.symlink(coloc_files[1], args$coloc_result_file)
     }
 
-    message(paste('Nothing to process for LD region', args$ld_block_dir ,', skipping.'))
+    message(paste0('Nothing to process for LD region ', args$ld_block_dir ,', skipping.'))
     return()
   }
 

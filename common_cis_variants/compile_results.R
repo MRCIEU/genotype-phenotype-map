@@ -60,13 +60,11 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies) {
 find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
   coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
   gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
-  print(head(all_finemapped_studies))
 
   genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
     dplyr::mutate(chrom=paste0('chr', chrom)) |>
     GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
   genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
-  print(head(genes))
 
   genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
   all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]
@@ -84,22 +82,22 @@ aggregate_pipeline_metadata <- function() {
     extracted_studies <- vroom::vroom(paste0(ld_block_dir, 'extracted_studies.tsv'), show_col_types = F)
     imputed_studies <- vroom::vroom(paste0(ld_block_dir, 'imputed_studies.tsv'), show_col_types = F)
     finemapped_studies <- vroom::vroom(paste0(ld_block_dir, 'finemapped_studies.tsv'), show_col_types = F)
-    deduplicated_finemapped_studies <- finemapped_studies[!duplicated(finemapped_studies$study),]
 
     return(data.frame(ld_region = ld_block_dir,
-                      extracted_studies=nrow(extracted_studies),
+                      extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed),
                       number_finemapped=nrow(finemapped_studies),
-                      finemap_success=sum(deduplicated_finemapped_studies$message == 'success'),
-                      finemap_faile=sum(deduplicated_finemapped_studies$message == 'failed'),
-                      finemap_no_need=sum(deduplicated_finemapped_studies$message == 'less_than_2_cs')
+                      finemap_failed=sum(finemapped_studies$message == 'failed'),
+                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
     ))
   }) |> dplyr::bind_rows()
   
   means <- colMeans(metadata_per_ld_region[-1])
   means$ld_region <- 'mean'
-  metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means)
+  totals <- colSums(metadata_per_ld_region[-1])
+  totals$ld_region <- 'total'
+  metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means, totals)
   return(metadata_per_ld_region)
 }
 
@@ -122,16 +120,16 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
                     candidate_snp = as.character(result['candidate_snp']),
                     posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp']),
-                    study_a = ordered_traits$study_name[ordered_traits$unique_study_id == unique_study_a],
-                    study_b = ordered_traits$study_name[ordered_traits$unique_study_id == unique_study_b],
-                    directed = ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == unique_study_a]]# < ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == unique_study_b]],
+                    study_a = ordered_traits$study_name[match(unique_study_a, ordered_traits$unique_study_id)],
+                    study_b = ordered_traits$study_name[match(unique_study_b, ordered_traits$unique_study_id)]
       )
 
     #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
     #causal pathway, as defined by ordered_data_types (ie. gene_expression -> protein -> phenotype)
-    first_order <- which(ordered_traits$data_type == ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == paired_results$unique_study_a]])[1]
-    second_order <- which(ordered_traits$data_type == ordered_data_types[ordered_traits$data_type[ordered_traits$unique_study_id == paired_results$unique_study_b]])[1]
-    paired_results$directed <- first_order < second_order
+    #this might have to get more complicated, as relationships between types is not always easy to define
+    first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
+    second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
+    paired_results$directed <- first_study_data_types != second_study_data_types 
 
     return(paired_results)
   }) |> dplyr::bind_rows()
@@ -139,9 +137,11 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
 }
 
 order_trait_by_type <- function(traits, studies_processed) {
+  traits <- sort(traits)
   trait_studies <- unlist(lapply(traits, function(trait) strsplit(trait, '_')[[1]][1]))
   studies <- dplyr::filter(studies_processed, study_name %in% trait_studies) |>
-    dplyr::select(study_name, data_type)
+    dplyr::select(study_name, data_type) |>
+    dplyr::arrange(study_name)
   studies$unique_study_id <- traits
   studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
   return(studies)

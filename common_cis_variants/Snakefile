@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import subprocess
 
+TEST_RUN = os.getenv('TEST_RUN')
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')
 TIMESTAMP = os.getenv('TIMESTAMP')
@@ -17,37 +18,49 @@ studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
 
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
+if TEST_RUN:
+  ld_regions = pd.read_csv('data/test_ld_regions.tsv', sep='\t')
+
 relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].unique())
 ld_regions = ld_regions[relevant_ancestries]
+ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+
+complex_ld_blocks = ['EUR/6/19207487_21684064', 'EUR/6/31571218_32682663', 'EUR/11/1213590_3665480', 'EUR/10/4572274_5983761', 'EUR/4/5502388_6773042', 'EUR/10/10249396_12586796']
+simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
+if TEST_RUN: complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
-imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
-finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
-ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+imputation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/imputation_complete'
+complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imputation_complete'
+finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
+complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
 
 ld_block_matrices = [f'{LD_BLOCK_MATRICES_DIR}{ld["pop"]}/{ld.chr}_{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
-#TODO: these ld matrices has NaNs for every line of the .ld file, skipping for now
-#ld_blocks = ld_blocks[0::50]
 
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
+complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_hyprcoloc_results_' + TIMESTAMP + '.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
+mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
-        expand(imputation_pattern, ld_block=ld_blocks),
-        expand(finemapping_pattern, ld_block=ld_blocks),
-        expand(coloc_pattern, ld_block=ld_blocks),
+        expand(imputation_pattern, simple_ld_block=simple_ld_blocks),
+        expand(complex_imputation_pattern, complex_ld_block=complex_ld_blocks),
+        expand(finemapping_pattern, simple_ld_block=simple_ld_blocks),
+        expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
+        expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
+        expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
         coloc_results,
         all_study_regions,
         results_metadata
@@ -73,62 +86,80 @@ rule organise_extracted_studies_into_ld_regions:
         Rscript organise_extracted_regions_into_ld_regions.R --output_file {output}
         """
 
-rule impute_per_ld_region:
-    input: ld_blocks_to_process
-    output: temporary(imputation_pattern)
-    threads: 12
-    params:
-        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-    run:
-        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
-        env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
+def imputation_rule(defined_pattern, name):
+    rule:
+        name: f'{name}_impute_per_ld_block'
+        input: ld_blocks_to_process
+        output: temporary(defined_pattern)
+        threads: 16 if name == 'complex' else 12 
+        priority: 1 if name == 'complex' else 0
+        params:
+            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+        run:
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+            if name == 'complex':
+                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=40 && export MKL_NUM_THREADS=40 && NUMEXPR_NUM_THREADS=40"
+            else:
+                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
-        if len(ld_block) == 0:
-            command = f"mkdir -p $(dirname {output}) && touch {output}"
-        else:
-            command = f"{env_vars} && python3 standardise_and_impute_region.py \
-                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
-        subprocess.run(command, shell=True)
+            if len(ld_block) == 0:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                command = f"{env_vars} && python3 standardise_and_impute_region.py \
+                    --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                    --ld_block_dir {ld_block.iloc[0]['data_dir']} \
+                    --completed_output_file {output}"
+            subprocess.run(command, shell=True)
 
+def finemap_rule(imputation_pattern, finemaping_pattern, name):
+    rule:
+        name: f'{name}_finemap_per_ld_block'
+        input: imputation_pattern 
+        output: temporary(finemaping_pattern)
+        threads: 1
+        params:
+            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+        run:
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
 
-rule finemap_per_ld_region:
-    input: ld_blocks_to_process, imputation_pattern
-    output: temporary(finemapping_pattern)
-    threads: 1
-    params:
-        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-    run:
-        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-        ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+            if len(ld_block) == 0:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                command = f"Rscript finemap_extracted_regions.R \
+                    --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
+                    --ld_block_dir {ld_block.iloc[0]['data_dir']} \
+                    --completed_output_file {output}"
+            subprocess.run(command, shell=True)
 
-        if len(ld_block) == 0:
-            command = f"mkdir -p $(dirname {output}) && touch {output}"
-        else:
-            command = f"Rscript finemap_extracted_regions.R \
-                --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-                --ld_block_dir {ld_block.iloc[0]['data_dir']}"
-        subprocess.run(command, shell=True)
+def coloc_rule(finemapping_pattern, coloc_pattern, name):
+    rule colocalise_per_ld_region:
+        name: f'{name}_coloc_per_ld_block'
+        input:
+            finemap = finemapping_pattern
+        output: coloc_pattern
+        run:
+            ld_dir = os.path.dirname(input.finemap)
+            ld_block_matrix = ld_block_matrices[ld_dir]
 
-rule colocalise_per_ld_region:
-    input:
-        ld_block = ld_blocks_to_process,
-        finemap = finemapping_pattern
-    output: coloc_pattern
-    run:
-        ld_dir = os.path.dirname(input.finemap)
-        ld_block_matrix = ld_block_matrices[ld_dir]
+            command = f"Rscript colocalise_studies_per_ld_block.R \
+                --ld_region_prefix {ld_block_matrix} \
+                --ld_block_dir {ld_dir} \
+                --coloc_result_file {output}"
+            subprocess.run(command, shell=True)
 
-        command = f"Rscript colocalise_studies_per_ld_block.R \
-            --ld_region_prefix {ld_block_matrix} \
-            --ld_block_dir {ld_dir} \
-            --coloc_result_file {output}"
-        subprocess.run(command, shell=True)
+imputation_rule(complex_imputation_pattern, 'complex')
+imputation_rule(imputation_pattern, 'simple')
+
+finemap_rule(complex_imputation_pattern, complex_finemapping_pattern, 'complex')
+finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
+
+coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
+coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
 rule compile_results:
-    input:
-        all_coloc_results = expand(coloc_pattern, ld_block=ld_blocks)
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     output:
         coloc_results = coloc_results,
         all_study_regions = all_study_regions,
@@ -139,20 +170,21 @@ rule compile_results:
        Rscript compile_results.R \
            --studies_to_process {studies_to_process_file} \
            --studies_processed {studies_processed_file} \
-           --coloc_input_files {input.all_coloc_results} \
+           --coloc_input_files {input} \
            --all_study_regions_file {output.all_study_regions} \
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata}
        """
 
 # rule perform_mr_analysis:
-#     input: expand(coloc_pattern, ld_block=ld_blocks),
-#     output: list()
+#     input:
+#         all_study_regions: all_study_regions,
+#         coloc_results: coloc_results,
+#     output: mr_results
 #     shell:
 #         """
-#         Rscript perform_mr_analysis.R
+#         Rscript perform_mr_analysis.R --all_study_regions {input.all_study_regions} --coloc_results {input.coloc_results} --mr_result_file {output}
 #         """
-
 
 onsuccess:
     print('Print important files to investigate here')

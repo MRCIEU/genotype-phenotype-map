@@ -35,11 +35,7 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     ld_block$data_dir <- ld_block_data
     ld_block$region_prefix <- ld_region_prefix
     ld_block$results_dir <- ld_block_results
-    if(!dir.exists(ld_block_data)) {
-      dir.create(paste0(ld_block_data, '/original'), recursive=T, showWarnings=F)
-      dir.create(paste0(ld_block_data, '/imputed'), recursive=T, showWarnings=F)
-      dir.create(paste0(ld_block_data, '/finemapped'), recursive=T, showWarnings=F)
-    }
+    if(!dir.exists(ld_block_data)) dir.create(ld_block_data, recursive=T, showWarnings=F)
     if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive=T, showWarnings=F)
 
     extracted_studies_file <- paste0(ld_block_data, '/extracted_studies.tsv')
@@ -52,9 +48,6 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
       extracted_studies <- extracted_studies[!duplicated(extracted_studies), ]
     }
     vroom::vroom_write(extracted_studies, extracted_studies_file)
-
-    study_in_ld_block <- paste0(ld_block_data, '/original/', study_name, '_', extracted_chr, '_', bp, '.tsv')
-    file.symlink(study_file, study_in_ld_block)
 
     return(ld_block)
   }) |> dplyr::bind_rows()

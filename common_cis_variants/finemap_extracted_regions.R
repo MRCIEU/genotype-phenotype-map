@@ -3,12 +3,10 @@ source("constants.R")
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_region_prefix', help = 'GWAS filename', type = 'character')
 parser <- argparser::add_argument(parser, '--ld_block_dir', help = 'LD block that the ', type = 'character')
+parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
-  ld_region_finemap_dir <- paste0(args$ld_block_dir, '/finemapped/')
-  dir.create(ld_region_finemap_dir, recursive=T, showWarnings=F)
-
   ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld'), col_names=F, show_col_types = F)
   #TODO: delete this once ld matrices have been resaved
   if (nrow(ld_region) != ncol(ld_region)) {
@@ -36,7 +34,7 @@ main <- function(args) {
 
       if (typeof(gwas$EAF) == 'character') {
         message('EAF is not populated, cant split results, skipping.')
-        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir, 'no_eaf')
+        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, 'no_eaf')
         return(failed_finemap_info)
       }
 
@@ -48,7 +46,7 @@ main <- function(args) {
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
         message('susie either didnt converge or has no more than 1 credible sets, no need to adjust.')
-        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, ld_region_finemap_dir)
+        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix)
         if (susie_result$converged == T) failed_finemap_info$message <- 'less_than_2_cs'
         return(failed_finemap_info)
       }
@@ -64,9 +62,7 @@ main <- function(args) {
         finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv')
         unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
 
-        finemap_symlink <- paste0(ld_region_finemap_dir, unique_id, ".tsv")
         vroom::vroom_write(conditioned_gwas, finemap_file)
-        file.symlink(finemap_file, finemap_symlink)
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
@@ -93,20 +89,19 @@ main <- function(args) {
 
   finemapped_results_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
   if (file.exists(finemapped_results_file)) {
-    existing_finemapped_results <- vroom::vroom(finemapped_results_file, show_col_types = F)
+    existing_finemapped_results <- vroom::vroom(finemapped_results_file, col_types = vroom::cols(chr = vroom::col_character()), show_col_types = F)
     finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
       dplyr::distinct()
   }
 
   vroom::vroom_write(finemapped_results, finemapped_results_file)
-  vroom::vroom_write(data.frame(), file=paste0(args$ld_block_dir, '/finemapping_complete'))
+  vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_region_finemap_dir, message='failed') {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
   unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_1")
-  failed_finemap_symlink <- paste0(ld_region_finemap_dir, unique_id, ".tsv")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
                                     file=failed_finemap_file,
@@ -121,7 +116,6 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, ld_regio
 
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   vroom::vroom_write(gwas, failed_finemap_file)
-  file.symlink(failed_finemap_file, failed_finemap_symlink)
   return(failed_finemap_info)
 }
 

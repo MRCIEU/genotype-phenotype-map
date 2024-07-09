@@ -17,7 +17,6 @@ GENE=$8
 
 LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
-echo $ORIG_STUDY_DIR
 cd $ORIG_STUDY_DIR
 
 mkdir -p $EXTRACTED_STUDY_DIR/original $EXTRACTED_STUDY_DIR/imputed $EXTRACTED_STUDY_DIR/finemapped
@@ -50,8 +49,8 @@ while IFS=' ' read -r CHR POS LOG_P; do
   /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
 
   SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}"
-  LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
-  #TODO: delete later
+
+  #TODO: delete later, once cis_trans stuff is in
   CIS_TRANS=NA
   if [[ $STUDY =~ 'eqtl'  ]]; then
     CIS_TRANS=cis

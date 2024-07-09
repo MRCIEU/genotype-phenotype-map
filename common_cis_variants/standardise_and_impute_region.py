@@ -13,16 +13,18 @@ DATA_DIR = os.getenv("DATA_DIR")
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
+imputation_range = 1000000
 
 
 @click.command(name='Impute studies by region')
 @click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
 @click.option('--ld_block_dir', help='List of GWAS Summary Statistics file', required=True)
-def main(ld_region_prefix, ld_block_dir):
+@click.option('--completed_output_file', help='Completion output file', required=True)
+def main(ld_region_prefix, ld_block_dir, completed_output_file):
     ld_matrix = pd.read_csv(ld_region_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
-
     ld_region_from_reference_panel = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
+
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
 
@@ -45,8 +47,21 @@ def main(ld_region_prefix, ld_block_dir):
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
 
-        start_time = time.time()
+        surrounding_megabase = np.where((ld_region_from_reference_panel.BP > (study.bp - imputation_range)) & (ld_region_from_reference_panel.BP < (study.bp + imputation_range)))[0]
+        subset_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[surrounding_megabase]
+        subset_ld_matrix = ld_matrix[surrounding_megabase, :][:, surrounding_megabase]
+        rsids_in_subset_ld_region = np.where(np.isin(gwas.RSID, subset_ld_region_from_reference_panel.RSID))[0]
+        subset_gwas = gwas.iloc[rsids_in_subset_ld_region]
 
+        rsids_in_gwas = np.isin(subset_ld_region_from_reference_panel.RSID, subset_gwas.RSID)
+        known = np.where(rsids_in_gwas)[0]
+        unknown = np.where(rsids_in_gwas == False)[0]
+
+        known_ld_matrix = subset_ld_matrix[known, :][:, known]
+        missing_ld_matrix = subset_ld_matrix[unknown, :][:, known]
+        z = np.array(subset_gwas.Z)
+
+        start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
         )
@@ -55,14 +70,13 @@ def main(ld_region_prefix, ld_block_dir):
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
-            specific_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
+            specific_ld_region_from_reference_panel = subset_ld_region_from_reference_panel.iloc[unknown]
             specific_ld_region_from_reference_panel['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
-        print(f'Imputing {gwas_file}: ', end='')
-        print(f'Imputed {sum(rsids_to_add)} SNPs')
-        print(f'{ld_region_prefix}')
+        print(f'Imputing {gwas_file} with dimension {missing_ld_matrix.shape}: ', end='')
+        print(f'Imputed {sum(rsids_to_add)} SNPs for {ld_region_prefix}')
         print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
@@ -76,8 +90,6 @@ def main(ld_region_prefix, ld_block_dir):
              sum(rsids_to_add)])
 
         study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
-        Path(study_in_ld_block).unlink(missing_ok=True)
-        os.symlink(imputed_file, study_in_ld_block)
 
     imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
                                'rows_imputed']
@@ -89,7 +101,7 @@ def main(ld_region_prefix, ld_block_dir):
         new_imputed_studies.drop_duplicates(inplace=True)
 
     new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
-    Path(ld_block_dir + '/imputation_complete').touch()
+    Path(completed_output_file).touch()
 
 
 def standardise_extracted_gwas(gwas, ld_region):

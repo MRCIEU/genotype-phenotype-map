@@ -17,13 +17,12 @@ GENE=$8
 
 LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
-echo $ORIG_STUDY_DIR
 cd $ORIG_STUDY_DIR
 
 mkdir -p $EXTRACTED_STUDY_DIR/original $EXTRACTED_STUDY_DIR/imputed $EXTRACTED_STUDY_DIR/finemapped
 
 EXTRACTED_SNPS=$EXTRACTED_STUDY_DIR/extracted_snps.tsv
-echo -e "CHR\tBP\tLOG_P\tANCESTRY\tLD_REGION\tFILE\tCIS_TRANS" > $EXTRACTED_SNPS
+echo -e "chr\tbp\tlog_p\tancestry\tld_region\tfile\tcis_trans" > $EXTRACTED_SNPS
 
 echo "RSIDs to extract: $(wc -l < clump.txt)"
 ALL_CHR_POS=$(/home/bcftools/bcftools query -i 'ID=@clump.txt' --format "chr%CHROM %POS [%LP]\n" $STUDY.vcf.gz)
@@ -50,11 +49,12 @@ while IFS=' ' read -r CHR POS LOG_P; do
   /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
 
   SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}"
-  LD_REGION_SNPLIST=$DATA_DIR/ld_block_matrices/${SPECIFIC_LD_REGION}.snplist
-  echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\tNA" >> $EXTRACTED_SNPS
-done <<< $ALL_CHR_POS
 
-jq -n --arg sample_size $SAMPLE_SIZE --arg ancestry $ANCESTRY --arg p_val $P_VALUE --arg data_type "${DATA_TYPE}" --arg name "${STUDY_NAME}" \
-  '{"ancestry":($ancestry), "sample_size":($sample_size), "p_value_threshold":($p_val), "data_type":($data_type), "name":($name)}' \
-  > $EXTRACTED_STUDY_DIR/extraction_metadata.json
+  #TODO: delete later, once cis_trans stuff is in
+  CIS_TRANS=NA
+  if [[ $STUDY =~ 'eqtl'  ]]; then
+    CIS_TRANS=cis
+  fi
+  echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\t${CIS_TRANS}" >> $EXTRACTED_SNPS
+done <<< $ALL_CHR_POS
 

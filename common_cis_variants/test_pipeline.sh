@@ -2,12 +2,19 @@
 set -e
 EXTRA_ARG=$1
 
-if [ -f .env ]
-then
-  export $(cat .env | xargs)
-fi
+export DATA_DIR=/local-scratch/projects/genotype-phenotype-map/test/data/
+export RESULTS_DIR=/local-scratch/projects/genotype-phenotype-map/test/results/
 
-export TIMESTAMP=$(date +%Y_%m_%d-%H_%M)
+export TEST_RUN=true
+echo 'TEST RUN'
+set +e
+rm -r $DATA_DIR/study/*
+rm -r $DATA_DIR/ld_blocks/*/*
+rm -r $DATA_DIR/results/studies_processed.tsv
+rm -r $DATA_DIR/data/pipeline_metadata/studies_to_process.tsv
+set -e
+
+export TIMESTAMP=test
 snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake_log_$TIMESTAMP.log
 mkdir -p $(dirname $snakemake_log)
 

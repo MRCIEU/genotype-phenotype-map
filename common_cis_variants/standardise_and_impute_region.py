@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-
+import time
 import click
 import numpy as np
 import os
@@ -13,16 +13,18 @@ DATA_DIR = os.getenv("DATA_DIR")
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
+imputation_range = 1000000
 
 
 @click.command(name='Impute studies by region')
 @click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
 @click.option('--ld_block_dir', help='List of GWAS Summary Statistics file', required=True)
-def main(ld_region_prefix, ld_block_dir):
+@click.option('--completed_output_file', help='Completion output file', required=True)
+def main(ld_region_prefix, ld_block_dir, completed_output_file):
     ld_matrix = pd.read_csv(ld_region_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
-
     ld_region_from_reference_panel = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
+
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
 
@@ -34,10 +36,9 @@ def main(ld_region_prefix, ld_block_dir):
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
         imputed_file = gwas_file.replace('original', 'imputed')
-        if gwas is None or os.path.isfile(imputed_file):
+        if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
             continue
 
-        print(f'Imputing {gwas_file}: ', end='')
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
@@ -46,6 +47,21 @@ def main(ld_region_prefix, ld_block_dir):
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
 
+        surrounding_megabase = np.where((ld_region_from_reference_panel.BP > (study.bp - imputation_range)) & (ld_region_from_reference_panel.BP < (study.bp + imputation_range)))[0]
+        subset_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[surrounding_megabase]
+        subset_ld_matrix = ld_matrix[surrounding_megabase, :][:, surrounding_megabase]
+        rsids_in_subset_ld_region = np.where(np.isin(gwas.RSID, subset_ld_region_from_reference_panel.RSID))[0]
+        subset_gwas = gwas.iloc[rsids_in_subset_ld_region]
+
+        rsids_in_gwas = np.isin(subset_ld_region_from_reference_panel.RSID, subset_gwas.RSID)
+        known = np.where(rsids_in_gwas)[0]
+        unknown = np.where(rsids_in_gwas == False)[0]
+
+        known_ld_matrix = subset_ld_matrix[known, :][:, known]
+        missing_ld_matrix = subset_ld_matrix[unknown, :][:, known]
+        z = np.array(subset_gwas.Z)
+
+        start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
             z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
         )
@@ -54,12 +70,14 @@ def main(ld_region_prefix, ld_block_dir):
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
-            specific_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
+            specific_ld_region_from_reference_panel = subset_ld_region_from_reference_panel.iloc[unknown]
             specific_ld_region_from_reference_panel['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
-        print(f'Imputed {sum(rsids_to_add)} SNPs')
+        print(f'Imputing {gwas_file} with dimension {missing_ld_matrix.shape}: ', end='')
+        print(f'Imputed {sum(rsids_to_add)} SNPs for {ld_region_prefix}')
+        print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
         lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)]
@@ -68,19 +86,22 @@ def main(ld_region_prefix, ld_block_dir):
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
-            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size,
+            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, study.cis_trans,
              sum(rsids_to_add)])
 
         study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
-        Path(study_in_ld_block).unlink(missing_ok=True)
-        os.symlink(imputed_file, study_in_ld_block)
 
-    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
+    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
                                'rows_imputed']
-    imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
-    imputed_studies.to_csv(imputed_studies_file, mode='a', sep='\t', index=False,
-                           header=not os.path.isfile(imputed_studies_file))
-    Path(ld_block_dir + '/imputation_complete').touch()
+    new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
+
+    if os.path.isfile(imputed_studies_file):
+        existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
+        new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
+        new_imputed_studies.drop_duplicates(inplace=True)
+
+    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
+    Path(completed_output_file).touch()
 
 
 def standardise_extracted_gwas(gwas, ld_region):
@@ -140,7 +161,7 @@ class SummaryStatisticsImputation:
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
-            ld_matrix_known, lamb, rtol
+            ld_matrix_known, lamb, rtol, 1
         )
         if sig_t_inv is None:
             return {
@@ -253,7 +274,7 @@ class SummaryStatisticsImputation:
         return var
 
     @staticmethod
-    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float) -> np.ndarray:
+    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float, iters: int) -> np.ndarray:
         """Invert the correlation matrix. If the provided regularization values are not enough to stabilize the inversion process for the given matrix, the function calls itself recursively, increasing lamb and rtol by 10%.
 
         Args:
@@ -267,10 +288,12 @@ class SummaryStatisticsImputation:
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
+            print(f'Iterations {iters}, lab {lamb} rtol {rtol}')
             return sig_t_inv
         except np.linalg.LinAlgError:
+            iters = iters + 1
             return SummaryStatisticsImputation._invert_sig_t(
-                sig_t, lamb * 1.1, rtol * 1.1
+                sig_t, lamb * 1.1, rtol * 1.1, iters
             )
 
 

@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+EXTRA_ARG=$1
+
+if [ -f .env ]
+then
+  export $(cat .env | xargs)
+fi
+
+export TIMESTAMP=$(date +%Y_%m_%d-%H_%M)
+snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake_log_$TIMESTAMP.log
+mkdir -p $(dirname $snakemake_log)
+
+export IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
+export APPTAINER_VARS="-B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
+
+echo "Start time $(date)"
+apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
+echo "-----" &>> $snakemake_log
+
+if [[ $(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv) == 0 ]]; then
+  echo 'Nothing to process, exiting.'
+  exit 0
+fi
+
+apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+echo "End time $(date)"

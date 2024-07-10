@@ -1,15 +1,25 @@
+setwd('pipeline_steps')
 source('constants.R')
-DEFAULT_P_VALUE_THRESHOLD <- 5e-8
 
-gwas_list <- vroom::vroom('data/gwas_list.csv', show_col_types=F)
-gwas_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
-if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
+DEFAULT_P_VALUE_THRESHOLD <- 5e-8
+TEST_RUN <- Sys.getenv('TEST_RUN', NA)
+
+study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
+studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
+
+if (!is.na(TEST_RUN)) {
+  study_list <- vroom::vroom(paste0('data/', TEST_RUN, '_list.csv'), show_col_types=F)
+  studies_processed_file <- paste0(paste0(results_dir, TEST_RUN, '_test_studies_processed.tsv'))
+}
 
 main <- function() {
-  opengwas_entries <- dplyr::filter(gwas_list, database == databases$opengwas)
+  if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
+
+  opengwas_entries <- dplyr::filter(study_list, database == databases$opengwas)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
 
   #other state calculated here, then we can dplyr::bind_rows()
+  #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process)
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
@@ -33,12 +43,10 @@ calculate_opengwas_studies_to_process <- function(entries) {
     directory <- entry[['directory']]
     study <- basename(directory)
     data_study_dir <- paste0(data_dir, 'study/', study, '/')
-    studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
     if (file.exists(studies_processed_file)) {
       studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
 
-      #TODO: check if there exists a study with that study_name already.  Can't be duplicates
 
       already_processed <- dplyr::filter(studies_processed, study_name == study)
       if (nrow(already_processed) > 0 & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {

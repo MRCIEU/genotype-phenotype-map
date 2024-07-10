@@ -10,6 +10,8 @@ import scipy.linalg
 
 pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
+LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
+LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
@@ -17,13 +19,15 @@ imputation_range = 1000000
 
 
 @click.command(name='Impute studies by region')
-@click.option('--ld_region_prefix', help='LD region used for imputation', required=True)
-@click.option('--ld_block_dir', help='List of GWAS Summary Statistics file', required=True)
+@click.option('--ld_block', help='List of GWAS Summary Statistics file', required=True)
 @click.option('--completed_output_file', help='Completion output file', required=True)
-def main(ld_region_prefix, ld_block_dir, completed_output_file):
-    ld_matrix = pd.read_csv(ld_region_prefix + '.ld', header=None, delimiter=' ')
+def main(ld_block, completed_output_file):
+    ld_matrix_prefix = LD_BLOCK_MATRICES_DIR + ld_block
+    ld_block_dir = LD_BLOCK_DATA_DIR + ld_block
+
+    ld_matrix = pd.read_csv(ld_matrix_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
-    ld_region_from_reference_panel = pd.read_csv(ld_region_prefix + '.tsv', delimiter='\t')
+    ld_region_from_reference_panel = pd.read_csv(ld_matrix_prefix + '.tsv', delimiter='\t')
 
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
@@ -31,7 +35,7 @@ def main(ld_region_prefix, ld_block_dir, completed_output_file):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
-        gwas = pd.read_csv(gwas_file, delimiter='\t')
+        gwas = pd.read_csv(gwas_file, delimiter='\t', )
 
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
@@ -39,15 +43,10 @@ def main(ld_region_prefix, ld_block_dir, completed_output_file):
         if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
             continue
 
-        rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
-        known = np.where(rsids_in_gwas)[0]
-        unknown = np.where(rsids_in_gwas == False)[0]
-
-        known_ld_matrix = ld_matrix[known, :][:, known]
-        missing_ld_matrix = ld_matrix[unknown, :][:, known]
-        z = np.array(gwas.Z)
-
-        surrounding_megabase = np.where((ld_region_from_reference_panel.BP > (study.bp - imputation_range)) & (ld_region_from_reference_panel.BP < (study.bp + imputation_range)))[0]
+        surrounding_megabase = np.where(
+            (ld_region_from_reference_panel.BP > (study.bp - imputation_range)) &
+            (ld_region_from_reference_panel.BP < (study.bp + imputation_range))
+        )[0]
         subset_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[surrounding_megabase]
         subset_ld_matrix = ld_matrix[surrounding_megabase, :][:, surrounding_megabase]
         rsids_in_subset_ld_region = np.where(np.isin(gwas.RSID, subset_ld_region_from_reference_panel.RSID))[0]
@@ -76,7 +75,7 @@ def main(ld_region_prefix, ld_block_dir, completed_output_file):
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
         print(f'Imputing {gwas_file} with dimension {missing_ld_matrix.shape}: ', end='')
-        print(f'Imputed {sum(rsids_to_add)} SNPs for {ld_region_prefix}')
+        print(f'Imputed {sum(rsids_to_add)} SNPs for {ld_matrix_prefix}')
         print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
@@ -100,7 +99,7 @@ def main(ld_region_prefix, ld_block_dir, completed_output_file):
         new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
-    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
+    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False, compression='gzip')
     Path(completed_output_file).touch()
 
 
@@ -161,7 +160,7 @@ class SummaryStatisticsImputation:
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
-            ld_matrix_known, lamb, rtol, 1
+            ld_matrix_known, lamb, rtol
         )
         if sig_t_inv is None:
             return {
@@ -274,7 +273,7 @@ class SummaryStatisticsImputation:
         return var
 
     @staticmethod
-    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float, iters: int) -> np.ndarray:
+    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float) -> np.ndarray:
         """Invert the correlation matrix. If the provided regularization values are not enough to stabilize the inversion process for the given matrix, the function calls itself recursively, increasing lamb and rtol by 10%.
 
         Args:
@@ -288,12 +287,10 @@ class SummaryStatisticsImputation:
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
-            print(f'Iterations {iters}, lab {lamb} rtol {rtol}')
             return sig_t_inv
         except np.linalg.LinAlgError:
-            iters = iters + 1
             return SummaryStatisticsImputation._invert_sig_t(
-                sig_t, lamb * 1.1, rtol * 1.1, iters
+                sig_t, lamb * 1.1, rtol * 1.1
             )
 
 

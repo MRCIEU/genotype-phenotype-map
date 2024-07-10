@@ -25,6 +25,7 @@ main <- function(args) {
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
   vroom::vroom_write(all_studies_processed, args$studies_processed)
+  file.copy(args$studies_processed, dirname(args$coloc_results))
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
@@ -40,14 +41,15 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
 
 compile_entire_list_of_extracted_study_regions <- function(all_studies) {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
-  all_finemapped_studies <- lapply(ld_block_dirs, function(ld_block_dir) {
-    finemap_study <- paste0(ld_block_dir, 'finemapped_studies.tsv')
+  all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
+    finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study)) return(data.frame())
     finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+    return(finemapped_studies)
   }) |>
     dplyr::bind_rows()
 
@@ -56,7 +58,6 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies) {
   return(all_finemapped_studies)
 }
 
-#https://www.biostars.org/p/167818/
 find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
   coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
   gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
@@ -73,7 +74,7 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
 
 aggregate_pipeline_metadata <- function() {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$pop, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
+  ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$ancestry, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
 
   metadata_per_ld_region <- lapply(ld_block_dirs, function(ld_block_dir) {
     if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
@@ -115,6 +116,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
     if (nrow(ordered_traits) < 2) {
       return()
     }
+
     paired_results <- data.frame(t(utils::combn(ordered_traits$unique_study_id, 2))) |>
       dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
@@ -129,7 +131,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
     #this might have to get more complicated, as relationships between types is not always easy to define
     first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
     second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
-    paired_results$directed <- first_study_data_types != second_study_data_types 
+    paired_results$directed <- first_study_data_types != second_study_data_types & second_study_data_types == ordered_data_types$phenotype
 
     return(paired_results)
   }) |> dplyr::bind_rows()

@@ -104,19 +104,20 @@ def impute_rule(defined_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
             if name == 'complex':
                 env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
             else:
                 env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
-            if len(ld_block) == 0:
+            if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
                 command = f"{env_vars} && python3 standardise_and_impute_region.py \
-                    --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-                    --ld_block_dir {ld_block.iloc[0]['data_dir']} \
+                    --ld_block {ld_block} \
                     --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
@@ -129,15 +130,15 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if len(ld_block) == 0:
+            if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
                 command = f"Rscript finemap_extracted_regions.R \
-                    --ld_region_prefix {ld_block.iloc[0]['region_prefix']} \
-                    --ld_block_dir {ld_block.iloc[0]['data_dir']} \
+                    --ld_block {ld_block} \
                     --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
@@ -147,13 +148,13 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         input:
             finemap = finemapping_pattern
         output: coloc_pattern
+        params:
+            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_dir = os.path.dirname(input.finemap)
-            ld_block_matrix = ld_block_matrices[ld_dir]
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
 
             command = f"Rscript colocalise_studies_per_ld_block.R \
-                --ld_region_prefix {ld_block_matrix} \
-                --ld_block_dir {ld_dir} \
+                --ld_block {ld_dir} \
                 --coloc_result_file {output}"
             subprocess.run(command, shell=True)
 

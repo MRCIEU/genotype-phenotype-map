@@ -44,11 +44,12 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies) {
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
   all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    finemap_study <- paste0(ld_block_dir, 'finemapped_studies.tsv')
+    finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study)) return(data.frame())
     finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+    return(finemapped_studies)
   }) |>
     dplyr::bind_rows()
 
@@ -130,7 +131,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
     #this might have to get more complicated, as relationships between types is not always easy to define
     first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
     second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
-    paired_results$directed <- first_study_data_types != second_study_data_types & second_data_types == ordered_data_types$phenotype
+    paired_results$directed <- first_study_data_types != second_study_data_types & second_study_data_types == ordered_data_types$phenotype
 
     return(paired_results)
   }) |> dplyr::bind_rows()

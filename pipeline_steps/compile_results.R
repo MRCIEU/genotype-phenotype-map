@@ -25,6 +25,7 @@ main <- function(args) {
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
   vroom::vroom_write(all_studies_processed, args$studies_processed)
+  file.copy(args$studies_processed, dirname(args$coloc_results))
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {

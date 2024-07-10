@@ -17,10 +17,7 @@ LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
-
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
-if TEST_RUN:
-  ld_regions = pd.read_csv('data/test_ld_regions.tsv', sep='\t')
 
 relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].unique())
 ld_regions = ld_regions[relevant_ancestries]
@@ -34,7 +31,8 @@ complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/10/10249396_12586796'
                      ]
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-if TEST_RUN: complex_ld_blocks = []
+if TEST_RUN == 'test':
+    complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
@@ -51,6 +49,9 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
+if TEST_RUN:
+  studies_processed_file = RESULTS_DIR + f'{TEST_RUN}_studies_processed.tsv'
+
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
 complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_hyprcoloc_results_' + TIMESTAMP + '.tsv'
@@ -98,7 +99,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 16 if name == 'complex' else 12 
+        threads: 20 if name == 'complex' else 12
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -106,7 +107,7 @@ def impute_rule(defined_pattern, name):
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
             ld_block = ld_blocks[ld_blocks.data_dir == params.ld_dir]
             if name == 'complex':
-                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=40 && export MKL_NUM_THREADS=40 && NUMEXPR_NUM_THREADS=40"
+                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
             else:
                 env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 

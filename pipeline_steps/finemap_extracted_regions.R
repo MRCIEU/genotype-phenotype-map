@@ -42,7 +42,7 @@ main <- function(args) {
       ld_for_gwas <- ld_region[keep, keep]
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
-      susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=5)
+      susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
         message('susie either didnt converge or has no more than 1 credible sets, no need to adjust.')

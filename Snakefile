@@ -196,7 +196,10 @@ rule compile_results:
 #         """
 
 onsuccess:
-    print('Print important files to investigate here')
+    print('Yay!  Please look here:')
+    print(coloc_results)
+    print(all_study_regions)
+    print(results_metadata)
 
 onerror:
     print(':(')

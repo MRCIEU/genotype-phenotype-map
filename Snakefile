@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import subprocess
 
+os.chdir('pipeline_steps')
 TEST_RUN = os.getenv('TEST_RUN')
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')

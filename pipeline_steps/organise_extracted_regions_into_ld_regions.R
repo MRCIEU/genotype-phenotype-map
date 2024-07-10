@@ -29,7 +29,7 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
 
     ld_info <- construct_ld_block(extracted_ancestry, extracted_chr, ld_block$start, ld_block$stop)
 
-    study_file <- paste0(study_dir, 'original/', extracted_ancestry, '_', extracted_chr, '_', bp, '.tsv')
+    study_file <- paste0(study_dir, 'original/', extracted_ancestry, '_', extracted_chr, '_', bp, '.tsv.gz')
     ld_block$data_dir <- ld_info$ld_block_data
     ld_block$region_prefix <- ld_info$ld_matrix_prefix
     ld_block$results_dir <- ld_info$ld_block_results

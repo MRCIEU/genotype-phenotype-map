@@ -20,7 +20,7 @@ main <- function(args) {
       sample_size <- as.numeric(study['sample_size'])
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
       finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
-      if (file.exists(paste0(finemap_file_prefix, "_1.tsv"))) {
+      if (file.exists(paste0(finemap_file_prefix, "_1.tsv.gz"))) {
         return()
       }
       cat(paste0('Finemapping ', study['file'], ": "))
@@ -56,7 +56,7 @@ main <- function(args) {
       for (i in susie_result$sets$cs_index) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-        finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv')
+        finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv.gz')
         unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
 
         vroom::vroom_write(conditioned_gwas, finemap_file)
@@ -97,7 +97,7 @@ main <- function(args) {
 
 process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
-  failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv')
+  failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv.gz')
   unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_1")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,

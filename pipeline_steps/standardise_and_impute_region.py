@@ -35,7 +35,7 @@ def main(ld_block, completed_output_file):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
-        gwas = pd.read_csv(gwas_file, delimiter='\t')
+        gwas = pd.read_csv(gwas_file, delimiter='\t', )
 
         gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
@@ -99,7 +99,7 @@ def main(ld_block, completed_output_file):
         new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
-    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
+    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False, compression='gzip')
     Path(completed_output_file).touch()
 
 

@@ -161,7 +161,7 @@ class SummaryStatisticsImputation:
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
-            ld_matrix_known, lamb, rtol, 1
+            ld_matrix_known, lamb, rtol
         )
         if sig_t_inv is None:
             return {
@@ -274,7 +274,7 @@ class SummaryStatisticsImputation:
         return var
 
     @staticmethod
-    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float, iters: int) -> np.ndarray:
+    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float) -> np.ndarray:
         """Invert the correlation matrix. If the provided regularization values are not enough to stabilize the inversion process for the given matrix, the function calls itself recursively, increasing lamb and rtol by 10%.
 
         Args:
@@ -288,12 +288,10 @@ class SummaryStatisticsImputation:
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
-            print(f'Iterations {iters}, lab {lamb} rtol {rtol}')
             return sig_t_inv
         except np.linalg.LinAlgError:
-            iters = iters + 1
             return SummaryStatisticsImputation._invert_sig_t(
-                sig_t, lamb * 1.1, rtol * 1.1, iters
+                sig_t, lamb * 1.1, rtol * 1.1
             )
 
 

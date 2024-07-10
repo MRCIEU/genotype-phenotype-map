@@ -25,4 +25,4 @@ ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R
 RUN pip install -r docker/requirements.txt
-COPY common_cis_variants /home/common_cis_variants/
+COPY . /home/pipeline

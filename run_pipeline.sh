@@ -19,11 +19,10 @@ echo "End time $(date)"
 
 
 #IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
-#PIPELINE=common_cis_variants
 #apptainer run -B /local-scratch \
 #              -B $(pwd)/$PIPELINE:/home/$PIPELINE \
 #              -B /home/$(whoami) \
 #              -B /projects \
-#              --env-file $PIPELINE/.env --env TIMESTAMP=$TIMESTAMP\
-#              --pwd /home/$PIPELINE/ \
+#              --env-file .env --env TIMESTAMP=$TIMESTAMP\
+#              --pwd /home/ \
 #              $IMAGE $COMMAND

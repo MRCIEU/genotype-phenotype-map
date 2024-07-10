@@ -25,7 +25,13 @@ relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].
 ld_regions = ld_regions[relevant_ancestries]
 ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
-complex_ld_blocks = ['EUR/6/19207487_21684064', 'EUR/6/31571218_32682663', 'EUR/11/1213590_3665480', 'EUR/10/4572274_5983761', 'EUR/4/5502388_6773042', 'EUR/10/10249396_12586796']
+complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/6/31571218_32682663',
+                     'EUR/11/1213590_3665480',
+                     'EUR/10/4572274_5983761',
+                     'EUR/4/5502388_6773042',
+                     'EUR/10/10249396_12586796'
+                     ]
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 if TEST_RUN: complex_ld_blocks = []
 
@@ -86,7 +92,7 @@ rule organise_extracted_studies_into_ld_regions:
         Rscript organise_extracted_regions_into_ld_regions.R --output_file {output}
         """
 
-def imputation_rule(defined_pattern, name):
+def impute_rule(defined_pattern, name):
     rule:
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
@@ -134,7 +140,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
             subprocess.run(command, shell=True)
 
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
-    rule colocalise_per_ld_region:
+    rule:
         name: f'{name}_coloc_per_ld_block'
         input:
             finemap = finemapping_pattern
@@ -149,8 +155,8 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
                 --coloc_result_file {output}"
             subprocess.run(command, shell=True)
 
-imputation_rule(complex_imputation_pattern, 'complex')
-imputation_rule(imputation_pattern, 'simple')
+impute_rule(complex_imputation_pattern,'complex')
+impute_rule(imputation_pattern,'simple')
 
 finemap_rule(complex_imputation_pattern, complex_finemapping_pattern, 'complex')
 finemap_rule(imputation_pattern, finemapping_pattern, 'simple')

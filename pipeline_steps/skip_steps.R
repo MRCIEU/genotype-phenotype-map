@@ -5,7 +5,7 @@ vroom::vroom_write(data.frame(), paste0(pipeline_metadata_dir, 'updated_ld_block
 
 for (i in 1:nrow(ld_blocks)) {
   ld_block <- ld_blocks[i, ]
-  ld_block_dir <- paste0(ld_block_data_dir, ld_block$pop, '/', ld_block$chr, '/', ld_block$start, '_', ld_block$stop)
+  ld_block_dir <- paste0(ld_block_data_dir, ld_block$ancestry, '/', ld_block$chr, '/', ld_block$start, '_', ld_block$stop)
   vroom::vroom_write(data.frame(), paste0(ld_block_dir, '/imputation_complete'))
   vroom::vroom_write(data.frame(), paste0(ld_block_dir, '/finemapping_complete'))
 }

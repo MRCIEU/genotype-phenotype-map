@@ -3,16 +3,16 @@ library(argparser, quietly = TRUE)
 bp_range <- 10000
 
 parser <- argparser::arg_parser('Colocalise studies per region')
-parser <- argparser::add_argument(parser, '--ld_region_prefix', help = 'GWAS filename', type = 'character')
-parser <- argparser::add_argument(parser, '--ld_block_dir', help = 'LD block that the ', type = 'character')
+parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_result_file', help = 'Coloc result file to save', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
+  ld_info <- ld_block_dirs(args$ld_block)
   block <- vroom::vroom(paste0(pipeline_metadata_dir, 'updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
-    dplyr::filter(data_dir == args$ld_block_dir)
+    dplyr::filter(data_dir == ld_info$ld_block_data)
 
-  finemapped_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
+  finemapped_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, show_col_types = F)
     finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
@@ -28,7 +28,7 @@ main <- function(args) {
       file.symlink(coloc_files[1], args$coloc_result_file)
     }
 
-    message(paste0('Nothing to process for LD region ', args$ld_block_dir ,', skipping.'))
+    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data ,', skipping.'))
     return()
   }
 

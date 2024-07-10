@@ -2,20 +2,20 @@ setwd('pipeline_steps')
 source('constants.R')
 
 DEFAULT_P_VALUE_THRESHOLD <- 5e-8
-TEST_RUN = Sys.getenv('TEST_RUN', NA)
+TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
-gwas_list <- vroom::vroom('data/gwas_list.csv', show_col_types=F)
+study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
 if (!is.na(TEST_RUN)) {
-  gwas_list <- vroom::vroom(paste0('data/', TEST_RUN, '_list.csv'), show_col_types=F)
+  study_list <- vroom::vroom(paste0('data/', TEST_RUN, '_list.csv'), show_col_types=F)
   studies_processed_file <- paste0(paste0(results_dir, TEST_RUN, '_test_studies_processed.tsv'))
 }
 
 main <- function() {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
-  opengwas_entries <- dplyr::filter(gwas_list, database == databases$opengwas)
+  opengwas_entries <- dplyr::filter(study_list, database == databases$opengwas)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
 
   #other state calculated here, then we can dplyr::bind_rows()

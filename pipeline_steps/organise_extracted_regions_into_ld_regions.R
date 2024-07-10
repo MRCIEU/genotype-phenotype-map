@@ -24,19 +24,17 @@ all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
     extracted_chr <- as.numeric(extracted[['chr']])
     ancestry <- extracted[['ancestry']]
 
-    ld_block <- dplyr::filter(ld_regions, chr == extracted_chr & start < bp & stop > bp & pop == ancestry)
+    ld_block <- dplyr::filter(ld_regions, chr == extracted_chr & start < bp & stop > bp & ancestry == ancestry)
     if (nrow(ld_block) > 1) stop(paste('Error: More than 1 LD Block associated with', extracted_chr, bp))
 
-    ld_block_data <- paste0(ld_block_data_dir, ancestry, '/', extracted_chr, '/', ld_block$start, '_', ld_block$stop)
-    ld_region_prefix <- paste0(ld_block_matrices_dir, ancestry, '/', extracted_chr, '_', ld_block$start, '_', ld_block$stop)
-    ld_block_results <- paste0(ld_block_results_dir, ancestry, '/', extracted_chr, '/', ld_block$start, '_', ld_block$stop)
+    ld_info <- construct_ld_block(ancestry, extracted_chr, ld_block$start, ld_block$stop)
 
     study_file <- paste0(study_dir, 'original/', ancestry, '_', extracted_chr, '_', bp, '.tsv')
-    ld_block$data_dir <- ld_block_data
-    ld_block$region_prefix <- ld_region_prefix
-    ld_block$results_dir <- ld_block_results
-    if(!dir.exists(ld_block_data)) dir.create(ld_block_data, recursive=T, showWarnings=F)
-    if(!dir.exists(ld_block_results)) dir.create(ld_block_results, recursive=T, showWarnings=F)
+    ld_block$data_dir <- ld_info$ld_block_data
+    ld_block$region_prefix <- ld_info$ld_matrix_prefix
+    ld_block$results_dir <- ld_info$ld_block_results
+    if(!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive=T, showWarnings=F)
+    if(!dir.exists(ld_info$ld_block_results)) dir.create(ld_info$ld_block_results, recursive=T, showWarnings=F)
 
     extracted_studies_file <- paste0(ld_block_data, '/extracted_studies.tsv')
     extracted_studies <- tibble::tribble(~study, ~data_type, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size, ~cis_trans,

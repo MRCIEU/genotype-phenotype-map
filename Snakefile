@@ -19,9 +19,9 @@ studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
 
-relevant_ancestries = np.isin(ld_regions['pop'], studies_to_process['ancestry'].unique())
+relevant_ancestries = np.isin(ld_regions['ancestry'], studies_to_process['ancestry'].unique())
 ld_regions = ld_regions[relevant_ancestries]
-ld_blocks = [f'{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/6/31571218_32682663',
@@ -42,8 +42,8 @@ complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imp
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
 complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
 
-ld_block_matrices = [f'{LD_BLOCK_MATRICES_DIR}{ld["pop"]}/{ld.chr}_{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
-ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld["pop"]}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_block_matrices = [f'{LD_BLOCK_MATRICES_DIR}{ld.ancestry}/{ld.chr}_{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_blocks_lookup = [f'{LD_BLOCK_DATA_DIR}{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
 

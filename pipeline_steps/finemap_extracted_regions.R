@@ -1,20 +1,16 @@
 source("constants.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
-parser <- argparser::add_argument(parser, '--ld_region_prefix', help = 'GWAS filename', type = 'character')
-parser <- argparser::add_argument(parser, '--ld_block_dir', help = 'LD block that the ', type = 'character')
+parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
-  ld_region <- vroom::vroom(paste0(args$ld_region_prefix, '.ld'), col_names=F, show_col_types = F)
-  #TODO: delete this once ld matrices have been resaved
-  if (nrow(ld_region) != ncol(ld_region)) {
-    ld_region <- ld_region[, 1:(ncol(ld_region)-1)]
-  }
-  ld_region_from_reference_panel <- vroom::vroom(paste0(args$ld_region_prefix, '.tsv'), show_col_types = F)
+  ld_info <- ld_block_dirs(args$ld_block)
+  ld_region <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.ld'), col_names=F, show_col_types = F)
+  ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.tsv'), show_col_types = F)
 
-  imputed_studies_file <- paste0(args$ld_block_dir, '/imputed_studies.tsv')
+  imputed_studies_file <- paste0(ld_info$ld_block_data, '/imputed_studies.tsv')
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
   if (nrow(imputed_studies) == 0) {
@@ -42,6 +38,7 @@ main <- function(args) {
       ld_for_gwas <- ld_region[keep, keep]
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
+
       susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
@@ -66,8 +63,8 @@ main <- function(args) {
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        #TODO: this is finding NAs in bp.  Investigate why, maybe fall back to original bp?
-        new_bps <- c(new_bps, as.numeric(conditioned_gwas[important_row, ]$BP))
+        #TODO: is this still findings NAs for BP?  Check
+        new_bps <- c(new_bps, as.numeric(gwas[important_row, ]$BP))
         new_files <- c(new_files, finemap_file)
         unique_ids <- c(unique_ids, unique_id)
       }
@@ -87,7 +84,7 @@ main <- function(args) {
     }) |> dplyr::bind_rows()
   }
 
-  finemapped_results_file <- paste0(args$ld_block_dir, '/finemapped_studies.tsv')
+  finemapped_results_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
   if (file.exists(finemapped_results_file)) {
     existing_finemapped_results <- vroom::vroom(finemapped_results_file, col_types = vroom::cols(chr = vroom::col_character()), show_col_types = F)
     finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
@@ -119,14 +116,6 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message=
   return(failed_finemap_info)
 }
 
-#TODO: delete later
-plot_finemapped_gwas <- function(gwas) {
-  range <- c(min(gwas$BP), max(gwas$BP))
-  if(!"P" %in% colnames(gwas)) return()
-  gwas$P[gwas$P == 0] <- .Machine$double.xmin
-  gwas <- gwas[!is.na(gwas$P), ]
-  qqman::manhattan(gwas, p='P', chr = 'CHR', bp = 'BP', snp = 'RSID', xlim=range)
-}
 
 #' Convert log Bayes Factor to summary stats
 #'

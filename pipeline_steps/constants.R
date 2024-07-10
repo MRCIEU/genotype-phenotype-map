@@ -30,3 +30,17 @@ file_prefix <- function(file_path) {
   file_prefix <- sub('\\..*', '', file_name)
   return(file_prefix)
 }
+
+ld_block_dirs <- function(block) {
+  ld_info <- list(ld_block_data = paste0(ld_block_data_dir, block),
+                  ld_block_results = paste0(ld_block_results_dir, block),
+                  ld_matrix_prefix=paste0(ld_block_matrices_dir, block)
+  )
+  return(ld_info)
+}
+
+construct_ld_block <- function(ancestry, chr, start, stop) {
+  block <- paste0(ancestry, '/', chr, '/', start, '_', stop)
+  return(ld_block_dirs(block))
+}
+

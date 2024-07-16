@@ -3,9 +3,12 @@ Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 
+DEFAULT_P_VALUE_THRESHOLD <- 5e-8
+
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/')
+thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
 ld_block_results_dir <- paste0(results_dir, 'ld_blocks/')
@@ -20,8 +23,7 @@ ordered_data_types <- list(splice_variant='splice_variant',
                            phenotype='phenotype'
 )
 study_categories <- list(binary='Binary', continuous='Continuous')
-databases <- list(opengwas='opengwas')
-data_source <- list(ukb='UK Biobank', gtex='GTEx', finngen='Finn Gen', bbj='Biobank Japan', eqtl_gen='eQTL Gen', ukb_ppp='UK Biobank Proteomic...')
+databases <- list(opengwas='opengwas', besd='besd')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 

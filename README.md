@@ -13,9 +13,13 @@ Scoping document: https://uob.sharepoint.com/:w:/r/teams/grp-brs-tds/Shared%20Do
 You will most likely want to use the default set in .env_example
 `cp .env_example .env`
 
-### Investigate info in pipeline_steps/data/study_list.csv
+### 3. Add info in pipeline_steps/data/study_list.csv
 
-This is the file that specifies which studies will be ingested by the pipeline, if you want 
+This is the file that specifies which studies will be ingested by the pipeline, if you want to add a study or set of studies,
+add a row to this csv indicating where they are on disk, and what script to ingest them with
+
+### 4. ./run_pipeline.sh
+
 
 
 ## How to contribute 

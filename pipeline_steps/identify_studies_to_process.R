@@ -1,9 +1,8 @@
 setwd('pipeline_steps')
 source('constants.R')
 
-DEFAULT_P_VALUE_THRESHOLD <- 5e-8
-TEST_RUN <- Sys.getenv('TEST_RUN', NA)
-
+#gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+gene_name_map <- vroom::vroom('~/Downloads/gene_name_map.tsv', show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
@@ -16,16 +15,66 @@ main <- function() {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
   opengwas_entries <- dplyr::filter(study_list, database == databases$opengwas)
+  besd_entries <- dplyr::filter(study_list, database == databases$besd)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
+  besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
 
   #other state calculated here, then we can dplyr::bind_rows()
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
-  studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process)
+  studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process)
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
   vroom::vroom_write(studies_to_process, paste0(pipeline_metadata_dir, 'studies_to_process.tsv'))
 }
 
+#' calculate_besd_studies_to_process
+#' study ids should be in the format of <data_source>-<specifier>-<gene>
+#' ex: gtex-liver-ENSG00000269981
+#' NOTE: all underscores _ will be turned into dashes -
+calculate_besd_studies_to_process <- function(entries) {
+  expanded_studies <- apply(entries, 1, function(entry) {
+    file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
+    data_source <- basename(entry['data_location'])
+    all_studies <- Sys.glob(file_regex)
+    studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
+
+    return(data.frame(
+      data_type = entry[['data_type']],
+      data_source = data_source,
+      study = studies_without_extensions,
+      directory = entry[['data_location']],
+      ancestry = entry[['ancestry']],
+      script = entry[['script']]
+    ))
+  })|> dplyr::bind_rows()
+
+  processing_information <- apply(expanded_studies, 1, function(besd_study) {
+    probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
+    specifier <- basename(besd_study['study'])
+    studies <- paste(besd_study['data_source'], probes, specifier, sep = '-')
+    studies <- gsub('_', '-', studies)
+
+    data_study_dir <- paste0(data_dir, 'study/', studies, '/')
+
+    gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
+    gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
+    traits <- paste(besd_study['data_source'], gene_names, specifier)
+
+    return(data.frame(
+      data_type = besd_study[['data_type']],
+      study_name = studies,
+      trait = traits,
+      ancestry = besd_study[['ancestry']],
+      sample_size = 10000, #TODO: maybe have a json, along with besd, epi, and esi files?
+      category = study_categories$continuous, #TODO: same as above
+      study_location = besd_study[['study']],
+      extracted_location = data_study_dir,
+      p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
+      gene = probes,
+      script = besd_study[['script']]
+    ))
+  }) |> dplyr::bind_rows()
+}
 
 calculate_opengwas_studies_to_process <- function(entries) {
   expanded_directories <- apply(entries, 1, function(entry) {

@@ -78,11 +78,20 @@ rule extract_regions_from_studies:
     output: extracted_study_pattern
     threads: 1
     run:
-        study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
+        study = studies_to_process[studies_to_process.study_name == str(params)]
+        # TODO: refactor this to be a conditional statement depending on the database (and maybe remove 'script' from the study_list.csv
         #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change it to be more explicit
-        script = study[-1]
-        command = [script] + study[2:-1]
-        command = [str(c) for c in command]
+
+        if study.database == 'opengwas':
+            study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
+            script = './extract_regions_from_opengwas.sh'
+            command = [script] + study[2]
+            command = [str(c) for c in command]
+        elif study.database == 'besd':
+            command = f'Rscript extract_regions_from_besd.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
+
         subprocess.run(command)
 
 rule organise_extracted_studies_into_ld_regions:

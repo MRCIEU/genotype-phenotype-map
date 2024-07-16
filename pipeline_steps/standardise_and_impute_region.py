@@ -99,7 +99,7 @@ def main(ld_block, completed_output_file):
         new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
-    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False, compression='gzip')
+    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(completed_output_file).touch()
 
 

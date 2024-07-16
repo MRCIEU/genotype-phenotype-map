@@ -8,6 +8,7 @@ TEST_RUN = os.getenv('TEST_RUN')
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')
 TIMESTAMP = os.getenv('TIMESTAMP')
+
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
@@ -25,13 +26,16 @@ ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regi
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/6/31571218_32682663',
-                     'EUR/11/1213590_3665480',
-                     'EUR/10/4572274_5983761',
-                     'EUR/4/5502388_6773042',
-                     'EUR/10/10249396_12586796'
+                     'EUR/6/30798168_31571217',
+                     #'EUR/11/1213590_3665480',
+                     #'EUR/10/4572274_5983761',
+                     #'EUR/4/5502388_6773042',
+                     #'EUR/10/10249396_12586796'
                      ]
+
+
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-if TEST_RUN == 'test':
+#if TEST_RUN == 'test':
     complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
@@ -79,20 +83,23 @@ rule extract_regions_from_studies:
     threads: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]
-        # TODO: refactor this to be a conditional statement depending on the database (and maybe remove 'script' from the study_list.csv
+        if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
+        study = study.iloc[0]
         #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change it to be more explicit
 
-        if study.database == 'opengwas':
-            study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
+        if study.data_format == 'opengwas':
+            study = study.values.flatten().tolist()
             script = './extract_regions_from_opengwas.sh'
             command = [script] + study[2]
             command = [str(c) for c in command]
-        elif study.database == 'besd':
+        elif study.data_format == 'besd':
             command = f'Rscript extract_regions_from_besd.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
+        else:
+            raise ValueError(f'Cant ingest unknown data format: {study.data_format}')
 
-        subprocess.run(command)
+        subprocess.run(command, shell=True)
 
 rule organise_extracted_studies_into_ld_regions:
     input: expand(extracted_study_pattern, study_location=extracted_studies)
@@ -108,7 +115,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 20 if name == 'complex' else 12
+        threads: 28 if name == 'complex' else 14
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -118,7 +125,8 @@ def impute_rule(defined_pattern, name):
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if name == 'complex':
-                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
+                #env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
+                env_vars = "export LD_PRELOAD="
             else:
                 env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
@@ -163,7 +171,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
 
             command = f"Rscript colocalise_studies_per_ld_block.R \
-                --ld_block {ld_dir} \
+                --ld_block {ld_block} \
                 --coloc_result_file {output}"
             subprocess.run(command, shell=True)
 

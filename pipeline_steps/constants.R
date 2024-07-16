@@ -2,6 +2,7 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
+TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 DEFAULT_P_VALUE_THRESHOLD <- 5e-8
 
@@ -23,7 +24,7 @@ ordered_data_types <- list(splice_variant='splice_variant',
                            phenotype='phenotype'
 )
 study_categories <- list(binary='Binary', continuous='Continuous')
-databases <- list(opengwas='opengwas', besd='besd')
+data_formats <- list(opengwas='opengwas', besd='besd')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 

@@ -1,2 +1,2 @@
-id_pattern,data_type,database,data_location,ancestry,p_value_threshold
+id_pattern,data_type,data_format,data_location,ancestry,p_value_threshold
 *,gene_expression,besd,/local-scratch/projects/genotype-phenotype-map/test/data/qtl/gtex,EUR,5e-8

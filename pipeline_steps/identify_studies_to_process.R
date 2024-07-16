@@ -1,8 +1,7 @@
 setwd('pipeline_steps')
 source('constants.R')
 
-#gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
-gene_name_map <- vroom::vroom('~/Downloads/gene_name_map.tsv', show_col_types=F)
+gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
@@ -14,8 +13,8 @@ if (!is.na(TEST_RUN)) {
 main <- function() {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
-  opengwas_entries <- dplyr::filter(study_list, database == databases$opengwas)
-  besd_entries <- dplyr::filter(study_list, database == databases$besd)
+  opengwas_entries <- dplyr::filter(study_list, data_format == data_formats$opengwas)
+  besd_entries <- dplyr::filter(study_list, data_format == data_formats$besd)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
 
@@ -32,6 +31,7 @@ main <- function() {
 #' ex: gtex-liver-ENSG00000269981
 #' NOTE: all underscores _ will be turned into dashes -
 calculate_besd_studies_to_process <- function(entries) {
+  if (nrow(entries) == 0) return(data.frame())
   expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
     data_source <- basename(entry['data_location'])
@@ -40,16 +40,17 @@ calculate_besd_studies_to_process <- function(entries) {
 
     return(data.frame(
       data_type = entry[['data_type']],
+      data_format = entry[['data_format']],
       data_source = data_source,
       study = studies_without_extensions,
       directory = entry[['data_location']],
-      ancestry = entry[['ancestry']],
-      script = entry[['script']]
+      ancestry = entry[['ancestry']]
     ))
   })|> dplyr::bind_rows()
 
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
     probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
+    probes <- head(probes) #TODO: remove before PR
     specifier <- basename(besd_study['study'])
     studies <- paste(besd_study['data_source'], probes, specifier, sep = '-')
     studies <- gsub('_', '-', studies)
@@ -58,10 +59,11 @@ calculate_besd_studies_to_process <- function(entries) {
 
     gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
     gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
-    traits <- paste(besd_study['data_source'], gene_names, specifier)
+    traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), gene_names)
 
     return(data.frame(
       data_type = besd_study[['data_type']],
+      data_format = besd_study[['data_format']],
       study_name = studies,
       trait = traits,
       ancestry = besd_study[['ancestry']],
@@ -70,13 +72,13 @@ calculate_besd_studies_to_process <- function(entries) {
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = probes,
-      script = besd_study[['script']]
+      gene = probes
     ))
   }) |> dplyr::bind_rows()
 }
 
 calculate_opengwas_studies_to_process <- function(entries) {
+  if (nrow(entries) == 0) return(data.frame())
   expanded_directories <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
     all_directories <- Sys.glob(file_regex)
@@ -84,7 +86,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       data_type = entry[['data_type']],
       directory = all_directories,
       ancestry = entry[['ancestry']],
-      script = entry[['script']]
+      data_format = entry[['data_format']]
     ))
   }) |> dplyr::bind_rows()
 
@@ -113,6 +115,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
 
     return(data.frame(
       data_type = entry[['data_type']],
+      data_format = entry[['data_format']],
       study_name = study,
       trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
@@ -121,8 +124,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       study_location = directory,
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = NA,
-      script = entry[['script']]
+      gene = NA
     ))
   }) |> dplyr::bind_rows()
 }

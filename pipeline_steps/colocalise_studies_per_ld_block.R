@@ -50,7 +50,9 @@ main <- function(args) {
 
   if (is.null(all_results)) all_results <- data.frame()
 
-  vroom::vroom_write(all_results, args$coloc_result_file)
+  coloc_results_file <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  vroom::vroom_write(all_results, coloc_results_file)
+  vroom::vroom_write(data.frame(), args$coloc_result_file)
 }
 
 

@@ -55,13 +55,12 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
 
 ### OUTPUT DATA FILES
-studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
-if TEST_RUN:
-  studies_processed_file = RESULTS_DIR + f'{TEST_RUN}_studies_processed.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/coloc_complete'
+complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_coloc_complete'
 
+studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
-complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_hyprcoloc_results_' + TIMESTAMP + '.tsv'
+raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
@@ -76,6 +75,7 @@ rule all:
         expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
         expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+        raw_coloc_results,
         coloc_results,
         all_study_regions,
         results_metadata
@@ -159,10 +159,16 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            command = f"Rscript colocalise_studies_per_ld_block.R \
-                --ld_block {ld_block} \
-                --coloc_result_file {output}"
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                command = f"Rscript colocalise_studies_per_ld_block.R \
+                    --ld_block {ld_block} \
+                    --coloc_result_file {output}"
+
             subprocess.run(command, shell=True)
 
 
@@ -179,6 +185,7 @@ rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     output:
         coloc_results = coloc_results,
+        raw_coloc_results = raw_coloc_results,
         all_study_regions = all_study_regions,
         results_metadata = results_metadata
     shell:
@@ -187,8 +194,8 @@ rule compile_results:
        Rscript compile_results.R \
            --studies_to_process {studies_to_process_file} \
            --studies_processed {studies_processed_file} \
-           --coloc_input_files {input} \
            --all_study_regions_file {output.all_study_regions} \
+           --raw_coloc_results_file {output.raw_coloc_results} \
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata}
        """

@@ -6,21 +6,28 @@ parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
-parser <- argparser::add_argument(parser, '--coloc_input_files', help = 'All files from the perform coloc pipeline step', type = 'character', nargs = Inf)
 #OUTPUT
 parser <- argparser::add_argument(parser, '--all_study_regions_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
+  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+
+  coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  raw_coloc_results <- vroom::vroom(coloc_input_files, show_col_types = F)
+
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(args$coloc_input_files, all_studies_processed)
+  coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)
 
-  all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed)
-  results_metadata <- aggregate_pipeline_metadata()
+  all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
+  results_metadata <- aggregate_pipeline_metadata(ld_info)
 
+  vroom::vroom_write(raw_coloc_results, args$raw_coloc_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
@@ -40,9 +47,6 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
 }
 
 compile_entire_list_of_extracted_study_regions <- function(all_studies) {
-  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
-
   all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
     finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
@@ -73,11 +77,8 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
   return(all_finemapped_studies)
 }
 
-aggregate_pipeline_metadata <- function() {
-  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$ancestry, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
-
-  metadata_per_ld_region <- lapply(ld_block_dirs, function(ld_block_dir) {
+aggregate_pipeline_metadata <- function(ld_info) {
+  metadata_per_ld_region <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
     if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
       return(data.frame())
     }

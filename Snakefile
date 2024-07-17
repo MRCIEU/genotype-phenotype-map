@@ -24,6 +24,7 @@ ld_regions = ld_regions[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/6/30798168_31571217',
                      'EUR/6/31571218_32682663',
                      'EUR/11/1213590_3665480',
                      'EUR/10/4572274_5983761',
@@ -33,6 +34,12 @@ complex_ld_blocks = ['EUR/6/19207487_21684064',
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 if TEST_RUN == 'test':
     complex_ld_blocks = []
+complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/11/1213590_3665480',
+                     'EUR/10/4572274_5983761',
+                     'EUR/4/5502388_6773042',
+                     'EUR/10/10249396_12586796'
+                     ]
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
@@ -151,12 +158,13 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
 
             command = f"Rscript colocalise_studies_per_ld_block.R \
-                --ld_block {ld_dir} \
+                --ld_block {ld_block} \
                 --coloc_result_file {output}"
             subprocess.run(command, shell=True)
+
 
 impute_rule(complex_imputation_pattern,'complex')
 impute_rule(imputation_pattern,'simple')

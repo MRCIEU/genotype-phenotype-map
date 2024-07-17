@@ -15,7 +15,6 @@ main <- function(args) {
   finemapped_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, show_col_types = F)
-    finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
@@ -32,10 +31,10 @@ main <- function(args) {
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) {
-    return(vroom::vroom(file, show_col_types = F))
-  })
+  finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
+  #studies_to_colocalise <- Filter(function(study) nrow(study) > MINIMUM_STUDY_REGION_SIZE, studies_to_colocalise)
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
   if (length(grouped_studies) == 0) {
@@ -98,7 +97,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
   results <- lapply(groupings, function(group) {
     specific_group <- studies[group]
     specific_group <- do.call(harmonise_gwases, specific_group)
-    if (nrow(specific_group[[1]])==0) return()
+    if (length(specific_group) == 0 || nrow(specific_group[[1]])==0) return()
 
     snps <- specific_group[[1]]$RSID
     trait_names <- names(specific_group)
@@ -130,7 +129,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
 harmonise_gwases <- function(...) {
   gwases <- list(...)
   snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$RSID))
-  message(paste('Number of shared SNPs after harmonisation:', length(snpids)))
+  if (length(snpids) <= 1) return(list())
 
   gwases <- lapply(gwases, function(gwas) {
     dplyr::filter(gwas, RSID %in% snpids & !duplicated(RSID)) |>

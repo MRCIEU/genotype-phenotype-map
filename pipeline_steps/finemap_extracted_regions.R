@@ -126,6 +126,8 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message=
 #'
 #' @return tibble with altered BETA, SE, P, and Z
 update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
+  #TODO: option 1: take allele frequency from the reference panel
+  #TODO: option 2: update hyprcoloc to be able to input lbf, so we don't have to do this conversion at all
   se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)

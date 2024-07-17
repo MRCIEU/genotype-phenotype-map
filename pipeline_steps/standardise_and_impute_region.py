@@ -15,7 +15,6 @@ LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
-imputation_range = 1000000
 
 
 @click.command(name='Impute studies by region')
@@ -43,22 +42,13 @@ def main(ld_block, completed_output_file):
         if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
             continue
 
-        surrounding_megabase = np.where(
-            (ld_region_from_reference_panel.BP > (study.bp - imputation_range)) &
-            (ld_region_from_reference_panel.BP < (study.bp + imputation_range))
-        )[0]
-        subset_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[surrounding_megabase]
-        subset_ld_matrix = ld_matrix[surrounding_megabase, :][:, surrounding_megabase]
-        rsids_in_subset_ld_region = np.where(np.isin(gwas.RSID, subset_ld_region_from_reference_panel.RSID))[0]
-        subset_gwas = gwas.iloc[rsids_in_subset_ld_region]
-
-        rsids_in_gwas = np.isin(subset_ld_region_from_reference_panel.RSID, subset_gwas.RSID)
+        rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         known = np.where(rsids_in_gwas)[0]
         unknown = np.where(rsids_in_gwas == False)[0]
 
-        known_ld_matrix = subset_ld_matrix[known, :][:, known]
-        missing_ld_matrix = subset_ld_matrix[unknown, :][:, known]
-        z = np.array(subset_gwas.Z)
+        known_ld_matrix = ld_matrix[known, :][:, known]
+        missing_ld_matrix = ld_matrix[unknown, :][:, known]
+        z = np.array(gwas.Z)
 
         start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
@@ -69,7 +59,7 @@ def main(ld_block, completed_output_file):
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
-            specific_ld_region_from_reference_panel = subset_ld_region_from_reference_panel.iloc[unknown]
+            specific_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
             specific_ld_region_from_reference_panel['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)

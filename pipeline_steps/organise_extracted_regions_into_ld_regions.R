@@ -7,50 +7,40 @@ args <- argparser::parse_args(parser)
 ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
 studies_to_process <- vroom::vroom(paste0(data_dir, '/pipeline_metadata/studies_to_process.tsv'), show_col_types = F)
 
-all_updated_ld_blocks <- apply(studies_to_process, 1, function(study) {
-  study_name <- study[['study_name']]
-  p_value_threshold <- study[['p_value_threshold']]
-  study_dir <- study[['extracted_location']]
-  category <- study[['category']]
-  sample_size <- study[['sample_size']]
-  data_type <- study[['data_type']]
-  extracted_snps <- vroom::vroom(paste0(study_dir, '/extracted_snps.tsv'), show_col_types = F)
+all_extracted_snp_files <- paste0(studies_to_process$extracted_location, 'extracted_snps.tsv')
+all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
 
-  if(nrow(extracted_snps) == 0) {
-    return(data.frame())
+extracted_snps_by_region$study_name <-stringr::str_extract(extracted_snps_by_region$extracted_location, '(?<=study/)[\\w-]+')
+extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_region)
+
+lapply(extracted_snps_by_region, function(extracted_snps) {
+  ld_block <- unique(extracted_snps$ld_region)
+  ld_info <- ld_block_dirs(ld_block)
+  merged_data <- merge(extracted_snps, studies_to_process, by='study_name')
+
+  extracted_studies <- data.frame(study = merged_data$study_name,
+                                  data_type = merged_data$data_type,
+                                  file = merged_data$file,
+                                  chr = merged_data$chr,
+                                  bp = merged_data$bp,
+                                  p_value_threshold = merged_data$p_value_threshold,
+                                  category = merged_data$category,
+                                  sample_size = merged_data$sample_size,
+                                  cis_trans = merged_data$cis_trans
+  )
+  extracted_studies_file <- paste0(ld_info$ld_block_data, '/extracted_studies.tsv')
+  if (file.exists(extracted_studies_file)) {
+    existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    extracted_studies <- rbind(existing_extracted_studies, extracted_studies)
+    extracted_studies <- extracted_studies[!duplicated(extracted_studies), ]
   }
-  updated_ld_blocks <- apply(extracted_snps, 1, function(extracted) {
-    bp <- as.numeric(extracted[['bp']])
-    extracted_chr <- as.numeric(extracted[['chr']])
-    extracted_ancestry <- extracted[['ancestry']]
 
-    ld_block <- dplyr::filter(ld_regions, chr == extracted_chr & start < bp & stop > bp & ancestry == extracted_ancestry)
-    if (nrow(ld_block) > 1) stop(paste('Error: More than 1 LD Block associated with', extracted_chr, bp))
-
-    ld_info <- construct_ld_block(extracted_ancestry, extracted_chr, ld_block$start, ld_block$stop)
-
-    study_file <- paste0(study_dir, 'original/', extracted_ancestry, '_', extracted_chr, '_', bp, '.tsv.gz')
-    ld_block$data_dir <- ld_info$ld_block_data
-    ld_block$region_prefix <- ld_info$ld_matrix_prefix
-    ld_block$results_dir <- ld_info$ld_block_results
-    if(!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive=T, showWarnings=F)
-    if(!dir.exists(ld_info$ld_block_results)) dir.create(ld_info$ld_block_results, recursive=T, showWarnings=F)
-
-    extracted_studies_file <- paste0(ld_info$ld_block_data, '/extracted_studies.tsv')
-    extracted_studies <- tibble::tribble(~study, ~data_type, ~file, ~chr, ~bp, ~p_value_threshold, ~category, ~sample_size, ~cis_trans,
-                                         study_name, data_type, study_file, extracted_chr, bp, p_value_threshold, category, sample_size, extracted[['cis_trans']]
-    )
-    if (file.exists(extracted_studies_file)) {
-      existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
-      extracted_studies <- rbind(existing_extracted_studies, extracted_studies)
-      extracted_studies <- extracted_studies[!duplicated(extracted_studies), ]
-    }
-    vroom::vroom_write(extracted_studies, extracted_studies_file)
-
-    return(ld_block)
-  }) |> dplyr::bind_rows()
-  return(updated_ld_blocks)
+  vroom::vroom_write(extracted_studies, extracted_studies_file)
 })
 
-all_updated_ld_blocks <- dplyr::bind_rows(all_updated_ld_blocks) |> dplyr::distinct() |> dplyr::arrange(chr)
+ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+ld_regions$data_dir <- ld_info$ld_block_data
+ld_regions$results_dir <- ld_info$ld_block_results
+all_updated_ld_blocks <- dplyr::filter(ld_regions, ld_block %in% names(extracted_snps_by_region)) |> dplyr::arrange(chr)
+
 vroom::vroom_write(all_updated_ld_blocks, args$output_file)

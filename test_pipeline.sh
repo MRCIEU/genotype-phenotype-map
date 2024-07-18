@@ -31,6 +31,6 @@ if [[ $(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv) == 0 ]]; t
   exit 0
 fi
 
-
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

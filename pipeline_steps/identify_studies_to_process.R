@@ -46,10 +46,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
 
     if (file.exists(studies_processed_file)) {
       studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
-
-
       already_processed <- dplyr::filter(studies_processed, study_name == study)
-      if (nrow(already_processed) > 0 & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
+      if (nrow(already_processed) > 0) { # & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
         return(data.frame())
       }
     }

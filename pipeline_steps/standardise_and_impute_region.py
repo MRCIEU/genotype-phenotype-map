@@ -78,8 +78,6 @@ def main(ld_block, completed_output_file):
             [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, study.cis_trans,
              sum(rsids_to_add)])
 
-        study_in_ld_block = f'{ld_block_dir}/imputed/{study["study"]}_{study["chr"]}_{study["bp"]}.tsv'
-
     imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
                                'rows_imputed']
     new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)

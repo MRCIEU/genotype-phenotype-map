@@ -19,6 +19,8 @@ main <- function(args) {
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
   coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
+
   raw_coloc_results <- vroom::vroom(coloc_input_files, show_col_types = F)
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
@@ -46,7 +48,7 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   return(studies_processed)
 }
 
-compile_entire_list_of_extracted_study_regions <- function(all_studies) {
+compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
   all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
     finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
@@ -79,12 +81,12 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
 
 aggregate_pipeline_metadata <- function(ld_info) {
   metadata_per_ld_region <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
+    if (!file.exists(paste0(ld_block_dir, '/finemapped_studies.tsv'))) {
       return(data.frame())
     }
-    extracted_studies <- vroom::vroom(paste0(ld_block_dir, 'extracted_studies.tsv'), show_col_types = F)
-    imputed_studies <- vroom::vroom(paste0(ld_block_dir, 'imputed_studies.tsv'), show_col_types = F)
-    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, 'finemapped_studies.tsv'), show_col_types = F)
+    extracted_studies <- vroom::vroom(paste0(ld_block_dir, '/extracted_studies.tsv'), show_col_types = F)
+    imputed_studies <- vroom::vroom(paste0(ld_block_dir, '/imputed_studies.tsv'), show_col_types = F)
+    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, '/finemapped_studies.tsv'), show_col_types = F)
 
     return(data.frame(ld_region = ld_block_dir,
                       extracted_regions=nrow(extracted_studies),
@@ -95,7 +97,7 @@ aggregate_pipeline_metadata <- function(ld_info) {
                       finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
     ))
   }) |> dplyr::bind_rows()
-  
+
   means <- colMeans(metadata_per_ld_region[-1])
   means$ld_region <- 'mean'
   totals <- colSums(metadata_per_ld_region[-1])
@@ -108,7 +110,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
   significant_results <- lapply(coloc_input_files, function(coloc_file) {
     coloc <- vroom::vroom(coloc_file, show_col_types = F)
     if (is.null(coloc) || nrow(coloc) == 0) return ()
-    significant_result <- dplyr::filter(coloc, !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+    significant_result <- dplyr::filter(coloc, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
     if (nrow(significant_result) > 0) return(significant_result)
   }) |> dplyr::bind_rows()
 

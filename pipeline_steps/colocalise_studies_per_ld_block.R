@@ -18,23 +18,15 @@ main <- function(args) {
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    coloc_result_dir <- dirname(args$coloc_result_file)
-    coloc_files <- Sys.glob(paste0(coloc_result_dir, '/hyprcoloc_results*'))
-    coloc_files <- sort(coloc_files, decreasing=T)
-    if (length(coloc_files) == 0) {
-      vroom::vroom_write(data.frame(), args$coloc_result_file)
-    } else {
-      file.symlink(coloc_files[1], args$coloc_result_file)
-    }
-
+    vroom::vroom_write(data.frame(), args$coloc_result_file)
     message(paste0('Nothing to process for LD region ', ld_info$ld_block_data ,', skipping.'))
     return()
   }
 
   finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
-  names(studies_to_colocalise) <- finemapped_studies$unique_study_id
   #studies_to_colocalise <- Filter(function(study) nrow(study) > MINIMUM_STUDY_REGION_SIZE, studies_to_colocalise)
+  names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
   if (length(grouped_studies) == 0) {
@@ -99,6 +91,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
   results <- lapply(groupings, function(group) {
     specific_group <- studies[group]
     specific_group <- do.call(harmonise_gwases, specific_group)
+
     if (length(specific_group) == 0 || nrow(specific_group[[1]])==0) return()
 
     snps <- specific_group[[1]]$RSID

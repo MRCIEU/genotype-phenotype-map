@@ -24,6 +24,7 @@ ld_regions = ld_regions[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/8/116096495_119685456',
                      'EUR/6/30798168_31571217',
                      'EUR/6/31571218_32682663',
                      'EUR/11/1213590_3665480',
@@ -32,14 +33,15 @@ complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/10/10249396_12586796'
                      ]
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-if TEST_RUN == 'test':
-    complex_ld_blocks = []
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/8/116096495_119685456',
                      'EUR/11/1213590_3665480',
                      'EUR/10/4572274_5983761',
                      'EUR/4/5502388_6773042',
                      'EUR/10/10249396_12586796'
                      ]
+if TEST_RUN == 'test':
+    complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
@@ -160,7 +162,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+            skip_block = len(ld_blocks[ld_blocks.results_dir == params.ld_dir]) == 0
 
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"

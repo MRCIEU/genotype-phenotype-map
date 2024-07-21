@@ -34,12 +34,14 @@ def main(ld_block, completed_output_file):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
-        gwas = pd.read_csv(gwas_file, delimiter='\t', )
-
-        gwas = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
-
         imputed_file = gwas_file.replace('original', 'imputed')
-        if gwas is None or len(gwas) == 0 or os.path.isfile(imputed_file):
+        if os.path.isfile(imputed_file):
+            continue
+
+        gwas = pd.read_csv(gwas_file, delimiter='\t')
+        gwas, eaf_from_reference_panel = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
+
+        if gwas is None or len(gwas) == 0:
             continue
 
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
@@ -76,31 +78,26 @@ def main(ld_block, completed_output_file):
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
             [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, study.cis_trans,
-             sum(rsids_to_add)])
+             sum(rsids_to_add), eaf_from_reference_panel])
 
     imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
-                               'rows_imputed']
+                               'rows_imputed', 'eaf_from_reference_panel']
     new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
 
-    if os.path.isfile(imputed_studies_file):
+    if os.path.isfile(imputed_studies_file) and len(new_imputed_studies) > 0:
         existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
         new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
-    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False, compression='gzip')
+    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(completed_output_file).touch()
 
 
 def standardise_extracted_gwas(gwas, ld_region):
+    eaf_from_reference_panel = False
+
     gwas.drop_duplicates(subset=['RSID'], inplace=True)
 
-    columns_to_coerse = ['EAF'] #add BETA and SE?
-    gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
-
-    if gwas['EAF'].isnull().all():
-        return None
-
-    gwas.dropna(subset=columns_to_coerse, inplace=True)
     if 'Z' not in gwas.columns:
         gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
     if 'P' not in gwas.columns and 'LP' in gwas.columns:
@@ -110,12 +107,23 @@ def standardise_extracted_gwas(gwas, ld_region):
     rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
     gwas = gwas[rsids_in_ld_block]
 
+    columns_to_coerse = ['EAF'] #add BETA and SE?
+    gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
+
+    if gwas['EAF'].isnull().all():
+        gwas.drop(columns=['EAF'], inplace=True)
+        new_eafs = ld_region[['RSID', 'EAF']]
+        gwas = gwas.merge(new_eafs, how='left', on='RSID')
+        eaf_from_reference_panel = True
+
+    gwas.dropna(subset=columns_to_coerse, inplace=True)
+
     # ensure order of gwas and ld region match
     lds_in_gwas = ld_region[np.isin(ld_region.RSID, gwas.RSID)]
     gwas.set_index(gwas['RSID'], inplace=True)
     gwas = gwas.loc[lds_in_gwas.RSID]
 
-    return gwas
+    return gwas, eaf_from_reference_panel
 
 
 class SummaryStatisticsImputation:

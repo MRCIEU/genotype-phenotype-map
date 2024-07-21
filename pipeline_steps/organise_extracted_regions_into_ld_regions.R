@@ -10,10 +10,10 @@ studies_to_process <- vroom::vroom(paste0(data_dir, '/pipeline_metadata/studies_
 all_extracted_snp_files <- paste0(studies_to_process$extracted_location, 'extracted_snps.tsv')
 all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
 
-all_extracted_snps$study_name <-stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-]+')
+all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-]+')
 extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_region)
 
-lapply(extracted_snps_by_region, function(extracted_snps) {
+results <- lapply(extracted_snps_by_region, function(extracted_snps) {
   ld_block <- unique(extracted_snps$ld_region)
   ld_info <- ld_block_dirs(ld_block)
   merged_data <- merge(extracted_snps, studies_to_process, by='study_name')

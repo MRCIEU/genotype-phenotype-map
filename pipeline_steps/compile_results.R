@@ -21,7 +21,7 @@ main <- function(args) {
   coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
   coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
 
-  raw_coloc_results <- vroom::vroom(coloc_input_files, show_col_types = F)
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F)
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
   coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)
@@ -53,12 +53,11 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
     finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
 
-    finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
+    finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
     return(finemapped_studies)
-  }) |>
-    dplyr::bind_rows()
+  }) |> dplyr::bind_rows()
 
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
@@ -87,12 +86,14 @@ aggregate_pipeline_metadata <- function(ld_info) {
     extracted_studies <- vroom::vroom(paste0(ld_block_dir, '/extracted_studies.tsv'), show_col_types = F)
     imputed_studies <- vroom::vroom(paste0(ld_block_dir, '/imputed_studies.tsv'), show_col_types = F)
     finemapped_studies <- vroom::vroom(paste0(ld_block_dir, '/finemapped_studies.tsv'), show_col_types = F)
+    above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
 
     return(data.frame(ld_region = ld_block_dir,
                       extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed),
                       number_finemapped=nrow(finemapped_studies),
+                      number_finemapped_above_threshold=above_threshold,
                       finemap_failed=sum(finemapped_studies$message == 'failed'),
                       finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
     ))

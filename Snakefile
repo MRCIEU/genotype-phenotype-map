@@ -108,7 +108,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 20 if name == 'complex' else 12
+        threads: 28 if name == 'complex' else 16
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -135,7 +135,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 1
+        threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -156,7 +156,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         name: f'{name}_coloc_per_ld_block'
         input:
             finemap = finemapping_pattern
-        output: coloc_pattern
+        output: temporary(coloc_pattern)
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

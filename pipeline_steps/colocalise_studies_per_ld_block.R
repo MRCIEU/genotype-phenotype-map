@@ -14,7 +14,8 @@ main <- function(args) {
 
   finemapped_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
-    finemapped_studies <- vroom::vroom(finemapped_file, show_col_types = F)
+    finemapped_studies <- vroom::vroom(finemapped_file, delim = '\t', show_col_types = F) |>
+      dplyr::filter(min_p <= p_value_threshold)
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
@@ -24,7 +25,8 @@ main <- function(args) {
   }
 
   finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
+
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   #studies_to_colocalise <- Filter(function(study) nrow(study) > MINIMUM_STUDY_REGION_SIZE, studies_to_colocalise)
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 

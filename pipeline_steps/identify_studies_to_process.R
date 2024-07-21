@@ -11,6 +11,11 @@ if (!is.na(TEST_RUN)) {
   study_list <- vroom::vroom(paste0('data/', TEST_RUN, '_list.csv'), show_col_types=F)
   studies_processed_file <- paste0(paste0(results_dir, TEST_RUN, '_test_studies_processed.tsv'))
 }
+if (file.exists(studies_processed_file)) {
+  studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
+} else {
+  studies_processed <- data.frame(study_name=NA)
+}
 
 main <- function() {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
@@ -44,12 +49,9 @@ calculate_opengwas_studies_to_process <- function(entries) {
     study <- basename(directory)
     data_study_dir <- paste0(data_dir, 'study/', study, '/')
 
-    if (file.exists(studies_processed_file)) {
-      studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
-      already_processed <- dplyr::filter(studies_processed, study_name == study)
-      if (nrow(already_processed) > 0) { # & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
-        return(data.frame())
-      }
+    already_processed <- dplyr::filter(studies_processed, study_name == study)
+    if (nrow(already_processed) > 0) { # & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
+      return(data.frame())
     }
 
     study_metadata <- jsonlite::fromJSON(paste0(directory, '/', study, '.json'))

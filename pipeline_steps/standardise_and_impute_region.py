@@ -99,6 +99,7 @@ def standardise_extracted_gwas(gwas, ld_region):
     gwas.drop_duplicates(subset=['RSID'], inplace=True)
 
     if 'Z' not in gwas.columns:
+        gwas['SE'] = gwas['SE'].replace(0, 0.00001)
         gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
     if 'P' not in gwas.columns and 'LP' in gwas.columns:
         gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)

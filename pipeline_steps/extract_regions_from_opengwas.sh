@@ -14,7 +14,7 @@ ORIG_STUDY_DIR=$5
 EXTRACTED_STUDY_DIR=$6
 P_VALUE=$7
 
-LD_REGIONS=/home/common_cis_variants/data/ld_regions.tsv
+LD_REGIONS=/home/pipeline/pipeline_steps/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
 cd $ORIG_STUDY_DIR
 
@@ -50,7 +50,7 @@ while IFS=' ' read -r CHR POS LOG_P; do
   gzip $EXTRACTED_FILE
   EXTRACTED_FILE="$EXTRACTED_FILE.gz"
 
-  SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}_${BEGINNING_END//-/_}"
+  SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}/${BEGINNING_END//-/_}"
 
   #TODO: delete later, once cis_trans stuff is in
   CIS_TRANS=NA

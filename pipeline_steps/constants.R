@@ -6,6 +6,8 @@ TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 DEFAULT_P_VALUE_THRESHOLD <- 5e-8
 
+MINIMUM_STUDY_REGION_SIZE <- 200
+
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/')

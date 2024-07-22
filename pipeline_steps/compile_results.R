@@ -6,21 +6,30 @@ parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
-parser <- argparser::add_argument(parser, '--coloc_input_files', help = 'All files from the perform coloc pipeline step', type = 'character', nargs = Inf)
 #OUTPUT
 parser <- argparser::add_argument(parser, '--all_study_regions_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
+  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+
+  coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
+
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F)
+
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(args$coloc_input_files, all_studies_processed)
+  coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)
 
-  all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed)
-  results_metadata <- aggregate_pipeline_metadata()
+  all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
+  results_metadata <- aggregate_pipeline_metadata(ld_info)
 
+  vroom::vroom_write(raw_coloc_results, args$raw_coloc_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
@@ -39,19 +48,16 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   return(studies_processed)
 }
 
-compile_entire_list_of_extracted_study_regions <- function(all_studies) {
-  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
-
+compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
   all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
     finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
-    if (!file.exists(finemap_study)) return(data.frame())
-    finemapped_studies <- vroom::vroom(finemap_study, show_col_types = F) |>
+    if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
+
+    finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
     return(finemapped_studies)
-  }) |>
-    dplyr::bind_rows()
+  }) |> dplyr::bind_rows()
 
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
@@ -72,28 +78,27 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
   return(all_finemapped_studies)
 }
 
-aggregate_pipeline_metadata <- function() {
-  ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_block_dirs <- paste0(ld_block_data_dir, ld_regions$ancestry, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop, '/')
-
-  metadata_per_ld_region <- lapply(ld_block_dirs, function(ld_block_dir) {
-    if (!file.exists(paste0(ld_block_dir, 'finemapped_studies.tsv'))) {
+aggregate_pipeline_metadata <- function(ld_info) {
+  metadata_per_ld_region <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
+    if (!file.exists(paste0(ld_block_dir, '/finemapped_studies.tsv'))) {
       return(data.frame())
     }
-    extracted_studies <- vroom::vroom(paste0(ld_block_dir, 'extracted_studies.tsv'), show_col_types = F)
-    imputed_studies <- vroom::vroom(paste0(ld_block_dir, 'imputed_studies.tsv'), show_col_types = F)
-    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, 'finemapped_studies.tsv'), show_col_types = F)
+    extracted_studies <- vroom::vroom(paste0(ld_block_dir, '/extracted_studies.tsv'), show_col_types = F)
+    imputed_studies <- vroom::vroom(paste0(ld_block_dir, '/imputed_studies.tsv'), show_col_types = F)
+    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, '/finemapped_studies.tsv'), show_col_types = F)
+    above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
 
     return(data.frame(ld_region = ld_block_dir,
                       extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed),
                       number_finemapped=nrow(finemapped_studies),
+                      number_finemapped_above_threshold=above_threshold,
                       finemap_failed=sum(finemapped_studies$message == 'failed'),
                       finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
     ))
   }) |> dplyr::bind_rows()
-  
+
   means <- colMeans(metadata_per_ld_region[-1])
   means$ld_region <- 'mean'
   totals <- colSums(metadata_per_ld_region[-1])
@@ -106,7 +111,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
   significant_results <- lapply(coloc_input_files, function(coloc_file) {
     coloc <- vroom::vroom(coloc_file, show_col_types = F)
     if (is.null(coloc) || nrow(coloc) == 0) return ()
-    significant_result <- dplyr::filter(coloc, !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+    significant_result <- dplyr::filter(coloc, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
     if (nrow(significant_result) > 0) return(significant_result)
   }) |> dplyr::bind_rows()
 

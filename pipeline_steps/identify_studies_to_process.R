@@ -23,9 +23,14 @@ main <- function() {
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
 
-  #other state calculated here, then we can dplyr::bind_rows()
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process)
+
+  lapply(studies_to_process$extracted_location, function(extracted_location) {
+    dir.create(paste0(extracted_location, '/original'), showWarnings = F, recursive = T)
+    dir.create(paste0(extracted_location, '/imputed'), showWarnings = F, recursive = T)
+    dir.create(paste0(extracted_location, '/finemapped'), showWarnings = F, recursive = T)
+  })
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
   vroom::vroom_write(studies_to_process, paste0(pipeline_metadata_dir, 'studies_to_process.tsv'))
@@ -54,6 +59,13 @@ calculate_besd_studies_to_process <- function(entries) {
   })|> dplyr::bind_rows()
 
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
+    all_files_present <- Sys.glob(besd_study['study'], '.*')
+    if (length(all_files_present != 4)) {
+      stop(paste('BESD study must include besd, epi, esi, and json files:', besd_study['study']))
+    }
+
+    metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
+
     probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
     probes <- head(probes) #TODO: remove before PR
     specifier <- basename(besd_study['study'])
@@ -65,6 +77,7 @@ calculate_besd_studies_to_process <- function(entries) {
     gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
     gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
     traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), gene_names)
+    category <- ifelse(is.na(metadata$category), study_categories$continuous, metadata$category)
 
     return(data.frame(
       data_type = besd_study[['data_type']],
@@ -72,8 +85,8 @@ calculate_besd_studies_to_process <- function(entries) {
       study_name = studies,
       trait = traits,
       ancestry = besd_study[['ancestry']],
-      sample_size = 10000, #TODO: maybe have a json, along with besd, epi, and esi files?
-      category = study_categories$continuous, #TODO: same as above
+      sample_size = metadata$sample_size,
+      category = category,
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),

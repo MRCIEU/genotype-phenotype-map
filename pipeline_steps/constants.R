@@ -27,6 +27,7 @@ ordered_data_types <- list(splice_variant='splice_variant',
 )
 study_categories <- list(binary='Binary', continuous='Continuous')
 data_formats <- list(opengwas='opengwas', besd='besd')
+cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_and_trans')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 
@@ -45,7 +46,11 @@ ld_block_dirs <- function(block) {
 }
 
 construct_ld_block <- function(ancestry, chr, start, stop) {
-  block <- paste0(ancestry, '/', chr, '/', start, '_', stop)
+  block <- ld_block_string(ancestry, chr, start, stop)
   return(ld_block_dirs(block))
+}
+
+ld_block_string <- function(ancestry, chr, start, stop) {
+  return(paste0(ancestry, '/', chr, '/', start, '_', stop))
 }
 

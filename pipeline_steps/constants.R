@@ -3,6 +3,8 @@ Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 
+MINIMUM_STUDY_REGION_SIZE <- 200
+
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/')

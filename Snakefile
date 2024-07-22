@@ -24,6 +24,8 @@ ld_regions = ld_regions[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/8/116096495_119685456',
+                     'EUR/6/30798168_31571217',
                      'EUR/6/31571218_32682663',
                      'EUR/11/1213590_3665480',
                      'EUR/10/4572274_5983761',
@@ -31,6 +33,13 @@ complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/10/10249396_12586796'
                      ]
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
+complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/8/116096495_119685456',
+                     'EUR/11/1213590_3665480',
+                     'EUR/10/4572274_5983761',
+                     'EUR/4/5502388_6773042',
+                     'EUR/10/10249396_12586796'
+                     ]
 if TEST_RUN == 'test':
     complex_ld_blocks = []
 
@@ -48,13 +57,12 @@ ld_block_matrices = dict(zip(ld_blocks_lookup, ld_block_matrices))
 
 
 ### OUTPUT DATA FILES
-studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
-if TEST_RUN:
-  studies_processed_file = RESULTS_DIR + f'{TEST_RUN}_studies_processed.tsv'
+coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/coloc_complete'
+complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_coloc_complete'
 
+studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/hyprcoloc_results_' + TIMESTAMP + '.tsv'
-complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_hyprcoloc_results_' + TIMESTAMP + '.tsv'
+raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
@@ -69,6 +77,7 @@ rule all:
         expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
         expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+        raw_coloc_results,
         coloc_results,
         all_study_regions,
         results_metadata
@@ -99,7 +108,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 20 if name == 'complex' else 12
+        threads: 28 if name == 'complex' else 16
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -126,7 +135,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 1
+        threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -147,16 +156,23 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         name: f'{name}_coloc_per_ld_block'
         input:
             finemap = finemapping_pattern
-        output: coloc_pattern
+        output: temporary(coloc_pattern)
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.results_dir == params.ld_dir]) == 0
 
-            command = f"Rscript colocalise_studies_per_ld_block.R \
-                --ld_block {ld_dir} \
-                --coloc_result_file {output}"
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                command = f"Rscript colocalise_studies_per_ld_block.R \
+                    --ld_block {ld_block} \
+                    --coloc_result_file {output}"
+
             subprocess.run(command, shell=True)
+
 
 impute_rule(complex_imputation_pattern,'complex')
 impute_rule(imputation_pattern,'simple')
@@ -171,6 +187,7 @@ rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     output:
         coloc_results = coloc_results,
+        raw_coloc_results = raw_coloc_results,
         all_study_regions = all_study_regions,
         results_metadata = results_metadata
     shell:
@@ -179,8 +196,8 @@ rule compile_results:
        Rscript compile_results.R \
            --studies_to_process {studies_to_process_file} \
            --studies_processed {studies_processed_file} \
-           --coloc_input_files {input} \
            --all_study_regions_file {output.all_study_regions} \
+           --raw_coloc_results_file {output.raw_coloc_results} \
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata}
        """

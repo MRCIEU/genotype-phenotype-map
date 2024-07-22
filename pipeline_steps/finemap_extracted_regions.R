@@ -17,7 +17,6 @@ main <- function(args) {
     finemapped_results <- data.frame()
   } else {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
-      sample_size <- as.numeric(study['sample_size'])
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
       finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
       if (file.exists(paste0(finemap_file_prefix, "_1.tsv.gz"))) {
@@ -39,6 +38,7 @@ main <- function(args) {
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
 
+      sample_size <- as.numeric(study['sample_size'])
       susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
@@ -52,6 +52,7 @@ main <- function(args) {
 
       new_bps <- c()
       new_files <- c()
+      min_ps <- c()
       unique_ids <- c()
       for (i in susie_result$sets$cs_index) {
         finemap_num <- which(i == susie_result$sets$cs_index)
@@ -63,18 +64,19 @@ main <- function(args) {
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        #TODO: is this still findings NAs for BP?  Check
         new_bps <- c(new_bps, as.numeric(gwas[important_row, ]$BP))
         new_files <- c(new_files, finemap_file)
+        min_ps <- c(min_ps, min(gwas$P))
         unique_ids <- c(unique_ids, unique_id)
       }
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
                                            file=new_files,
-                                           chr=study[['chr']],
+                                           chr=as.character(study[['chr']]),
                                            bp=new_bps,
-                                           p_value_threshold=study['p_value_threshold'],
+                                           p_value_threshold=as.numeric(study['p_value_threshold']),
+                                           min_p=min_ps,
                                            category=study['category'],
                                            sample_size=sample_size,
                                            cis_trans=study['cis_trans'],
@@ -86,32 +88,60 @@ main <- function(args) {
 
   finemapped_results_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
   if (file.exists(finemapped_results_file)) {
-    existing_finemapped_results <- vroom::vroom(finemapped_results_file, col_types = vroom::cols(chr = vroom::col_character()), show_col_types = F)
+    existing_finemapped_results <- vroom::vroom(finemapped_results_file,
+      show_col_types = F,
+      col_types = vroom::cols(
+        chr = vroom::col_character(),
+        bp = vroom::col_number(),
+        p_value_threshold = vroom::col_number()
+      )
+    )
     finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
       dplyr::distinct()
   }
+
+  if (nrow(finemapped_results) == 0) finemapped_results <- empty_finemapped_info()
 
   vroom::vroom_write(finemapped_results, finemapped_results_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
+empty_finemapped_info <- function() {
+  return(data.frame(study=character(),
+                    unique_study_id=character(),
+                    file=character(),
+                    chr=character(),
+                    bp=numeric(),
+                    p_value_threshold=numeric(),
+                    min_p=numeric(),
+                    category=character(),
+                    sample_size=numeric(),
+                    cis_trans=character(),
+                    message=character()
+    )
+  )
+}
+
 process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message='failed') {
   sample_size <- as.numeric(study['sample_size'])
+  gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
+  min_p <- min(gwas$P)
+
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv.gz')
   unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_1")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
                                     file=failed_finemap_file,
-                                    chr=study[['chr']],
+                                    chr=as.character(study[['chr']]),
                                     bp=as.numeric(study['bp']),
-                                    p_value_threshold=study['p_value_threshold'],
+                                    p_value_threshold=as.numeric(study['p_value_threshold']),
+                                    min_p=min_p,
                                     category=study['category'],
                                     sample_size=sample_size,
                                     cis_trans=study['cis_trans'],
                                     message=message
   )
 
-  gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   vroom::vroom_write(gwas, failed_finemap_file)
   return(failed_finemap_info)
 }
@@ -126,6 +156,8 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message=
 #'
 #' @return tibble with altered BETA, SE, P, and Z
 update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
+  #TODO: option 1: take allele frequency from the reference panel
+  #TODO: option 2: update hyprcoloc to be able to input lbf, so we don't have to do this conversion at all
   se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)

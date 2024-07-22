@@ -8,7 +8,7 @@ then
 fi
 
 export TIMESTAMP=$(date +%Y_%m_%d-%H_%M)
-snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake_log_$TIMESTAMP.log
+snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake.log
 mkdir -p $(dirname $snakemake_log)
 
 export IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
@@ -24,4 +24,5 @@ if [[ $(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv) == 0 ]]; t
 fi
 
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

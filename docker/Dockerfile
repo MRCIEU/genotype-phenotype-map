@@ -20,6 +20,8 @@ RUN cd /home && \
     git clone https://github.com/jwr-git/pwcoco.git && cd pwcoco && \
     mkdir build && cd build && /home/cmake-3.30.0-rc1-linux-x86_64/bin/cmake .. && make && \
     mv pwcoco /bin/pwcoco
+    #TODO: install ssimp here, to test out summary stats imputation?
+    # https://github.com/zkutalik/ssimp_software?tab=readme-ov-file#installation
 
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/

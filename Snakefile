@@ -85,13 +85,16 @@ rule extract_regions_from_studies:
         study = studies_to_process[studies_to_process.study_name == str(params)]
         if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
         study = study.iloc[0]
-        #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change it to be more explicit
 
         if study.data_format == 'opengwas':
-            study = study.values.flatten().tolist()
-            script = './extract_regions_from_opengwas.sh'
-            command = [script] + study[2]
-            command = [str(c) for c in command]
+            command = f'./extract_regions_from_opengwas.sh \
+                {study.study_name} \
+                {study.ancestry} \
+                {study.sample_size} \
+                {study.category} \
+                {study.study_location} \
+                {study.extracted_location} \
+                {study.p_value_threshold}'
         elif study.data_format == 'besd':
             command = f'Rscript extract_regions_from_besd.R \
                 --extracted_study_location {study.extracted_location} \

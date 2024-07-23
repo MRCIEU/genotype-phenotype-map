@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-if [[ $# -ne 8 ]] ; then
-  echo "Incorrect number of arguments: need 8"
+echo "$@"
+
+if [[ $# -ne 7 ]] ; then
+  echo "Incorrect number of arguments: need 7"
   exit 0
 fi
 

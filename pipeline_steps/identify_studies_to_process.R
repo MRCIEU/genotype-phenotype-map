@@ -59,17 +59,16 @@ calculate_besd_studies_to_process <- function(entries) {
   })|> dplyr::bind_rows()
 
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
-    all_files_present <- Sys.glob(besd_study['study'], '.*')
-    if (length(all_files_present != 4)) {
+    all_files_present <- Sys.glob(paste0(besd_study['study'], '.*'))
+    if (length(all_files_present) != 4) {
       stop(paste('BESD study must include besd, epi, esi, and json files:', besd_study['study']))
     }
 
     metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
 
     probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
-    probes <- head(probes) #TODO: remove before PR
     specifier <- basename(besd_study['study'])
-    studies <- paste(besd_study['data_source'], probes, specifier, sep = '-')
+    studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
     studies <- gsub('_', '-', studies)
 
     data_study_dir <- paste0(data_dir, 'study/', studies, '/')

@@ -18,7 +18,7 @@ main <- function(args) {
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), DEFAULT_P_VALUE_THRESHOLD, study$p_value_threshold)
-  metadata <- jsonlite::fromJSON(paste0(args$extracted_study_location, '.json'))
+  metadata <- jsonlite::fromJSON(paste0(study$study_location, '.json'))
 
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),
                                                            bp=numeric(),
@@ -41,7 +41,6 @@ main <- function(args) {
 
 
 extract_cis_region <- function(study, p_value_threshold) {
-
   tmp_cis_snp <- paste0('/tmp/', study$study_name, '_top_snp')
   extract_top_snp <- paste('smr --beqtl-summary', study$study_location,
                            '--query', p_value_threshold,
@@ -49,33 +48,38 @@ extract_cis_region <- function(study, p_value_threshold) {
                            '--cis-wind 1',
                            '--out ', tmp_cis_snp
   )
+
   system(extract_top_snp, wait=T)
+  if (!file.exists(paste0(tmp_cis_snp, '.txt'))) return()
   top_cis_snp <- vroom::vroom(paste0(tmp_cis_snp, '.txt'), show_col_types = F)
   if (nrow(top_cis_snp) < 1) return()
+  top_cis_snp <- top_cis_snp[top_cis_snp$p == min(top_cis_snp$p), ][1, ]
 
-  ld_block <- dplyr::filter(ld_regions, chr == top_cis_snp$Chr & start < top_cis_snp$bp & stop > top_cis_snp$bp & ancestry == study$ancestry)
+  ld_block <- dplyr::filter(ld_regions, chr == top_cis_snp$Chr & start < top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
+  ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
+  ld_info <- ld_block_dirs(ld_block_string)
 
   tmp_cis_region <- paste0('/tmp/', study$study_name, '_cis_region')
-  extract_cis_region <- paste('smr --beqtl-summary', study$study_location,
+  extract_region <- paste('smr --beqtl-summary', study$study_location,
                               '--query 1',
-                              '--snp-chr', ld_block$chr,
-                              '--from-snp',ld_block$start,
-                              '--to-snp',ld_block$stop,
+                              '--snp', top_cis_snp$SNP,
+                              '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
                               '--probe ', study$gene,
                               '--out ', tmp_cis_region
   )
-  system(extract_cis_region, wait=T)
+  system(extract_region, wait=T)
   cis_region <- vroom::vroom(paste0(tmp_cis_region, '.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region)
 
-  vroom::vroom_write(cis_region, study$extracted_location)
+  extracted_file <-paste0(study$extracted_location, '/original/', study$ancestry, '_', top_cis_snp$Chr, '_', top_cis_snp$BP, '.tsv.gz')
+  vroom::vroom_write(cis_region, extracted_file)
 
-  ld_region <- ld_block_string(ld_block$ancestry, '/', ld_block$chr, '/', ld_block$start, '_', ld_block$stop)
-  extracted_file <-paste0(study$extracted_location, '/original/', study$ancestry, '_', top_cis_snp$Chr, '_', top_cis_snp$bp, '.tsv.gz')
-  top_hits_per_probe <- data.frame(chr = top_cis_snp$Chr,
-                                   bp = top_cis_snp$bp,
+  top_hits_per_probe <- data.frame(chr = as.character(top_cis_snp$Chr),
+                                   bp = top_cis_snp$BP,
+                                   log_p = -log10(top_cis_snp$p),
+                                   ancestry = study$ancestry,
+                                   ld_region = ld_block_string,
                                    file = extracted_file,
-                                   ld_region = ld_region,
                                    cis_trans = 'cis'
   )
   return(top_hits_per_probe)
@@ -100,7 +104,6 @@ extract_trans_regions <- function() {
   print('starting trans')
 
   all_results <- apply(top_hits_per_probe, 1, function(result) {
-    print(result)
     tmp_smr_result <- paste0('/tmp/', result['probe'], '_', result['SNP'])
     extract_trans_snps <- paste('smr --beqtl-summary', result['file_prefix'],
                                 '--query', p_value,
@@ -149,7 +152,7 @@ extract_trans_regions <- function() {
 }
 
 format_gwas <- function(gwas) {
-  gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', B='b', P='p') |>
+  gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', BETA='b', P='p') |>
     dplyr::select(-Probe, -Probe_Chr, -Probe_bp, -Gene, -Orientation)
   return(gwas)
 }

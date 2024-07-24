@@ -39,7 +39,12 @@ main <- function(args) {
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
 
       sample_size <- as.numeric(study['sample_size'])
-      susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
+      tryCatch(expr = {
+        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
+      }, error = function(e) {
+        message(e)
+        susie_result <-list(converged=F)
+      })
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
         message('susie either didnt converge or has no more than 1 credible sets, no need to adjust.')
@@ -94,6 +99,7 @@ main <- function(args) {
         chr = vroom::col_character(),
         bp = vroom::col_number(),
         min_p = vroom::col_number(),
+        sample_size = vroom::col_number(),
         p_value_threshold = vroom::col_number()
       )
     )

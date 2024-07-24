@@ -18,11 +18,24 @@ echo "Start time $(date)"
 apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
 echo "-----" &>> $snakemake_log
 
-if [[ $(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv) == 0 ]]; then
+NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
+if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
 fi
 
-apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+#if [[ $NUM_STUDIES -gt 10000 ]]; then
+#  NUM_BATCHES=$(($NUM_STUDIES/10000))
+#  echo "Splitting into $NUM_BATCHES batches"
+
+#  for batch in $(seq 1 $NUM_BATCHES); do
+#    echo "--batch all=$batch/$NUM_BATCHES"
+#    apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ --batch all=$batch/$NUM_BATCHES $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+#  done
+#else
+#  echo "Running 1 batch"
+  apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+#fi
+
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

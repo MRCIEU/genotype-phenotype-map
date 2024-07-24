@@ -8,6 +8,8 @@ ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
 studies_to_process <- vroom::vroom(paste0(data_dir, '/pipeline_metadata/studies_to_process.tsv'), show_col_types = F)
 
 all_extracted_snp_files <- paste0(studies_to_process$extracted_location, 'extracted_snps.tsv')
+#filtering out results without any significant SNPs, so we don't hit ulimits on the box
+all_extracted_snp_files  <- Filter(function(file) file.info(file)$size > 70, all_extracted_snp_files)
 all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
 
 all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-]+')

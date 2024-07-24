@@ -93,6 +93,7 @@ main <- function(args) {
       col_types = vroom::cols(
         chr = vroom::col_character(),
         bp = vroom::col_number(),
+        min_p = vroom::col_number(),
         p_value_threshold = vroom::col_number()
       )
     )

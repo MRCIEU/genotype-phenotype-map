@@ -118,7 +118,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 56 if name == 'complex' else 24
+        threads: 56 if name == 'complex' else 20
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])

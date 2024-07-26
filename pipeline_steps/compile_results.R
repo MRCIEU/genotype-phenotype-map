@@ -21,7 +21,8 @@ main <- function(args) {
   coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
   coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
 
-  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F)
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+    dplyr::filter(!is.na(traits) & traits != 'None')
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
   coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)

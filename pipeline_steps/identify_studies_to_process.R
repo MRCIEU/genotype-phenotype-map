@@ -24,7 +24,8 @@ main <- function() {
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
 
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
-  studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process)
+  studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
+    dplyr::filter(studies_processed, study_name %in% studies_processed$study_name)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
     dir.create(paste0(extracted_location, '/original'), showWarnings = F, recursive = T)
@@ -111,11 +112,6 @@ calculate_opengwas_studies_to_process <- function(entries) {
     directory <- entry[['directory']]
     study <- basename(directory)
     data_study_dir <- paste0(data_dir, 'study/', study, '/')
-
-    already_processed <- dplyr::filter(studies_processed, study_name == study)
-    if (nrow(already_processed) > 0) { # & already_processed$p_value_threshold <= DEFAULT_P_VALUE_THRESHOLD) {
-      return(data.frame())
-    }
 
     study_metadata <- jsonlite::fromJSON(paste0(directory, '/', study, '.json'))
     ancestry <- study_metadata$population

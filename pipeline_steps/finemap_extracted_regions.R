@@ -63,7 +63,7 @@ main <- function(args) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
         finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv.gz')
-        unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
+        unique_id <- paste0(study['study'], "_", study['chr'], "_", trimws(study['bp']), "_", finemap_num)
 
         vroom::vroom_write(conditioned_gwas, finemap_file)
 

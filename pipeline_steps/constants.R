@@ -38,7 +38,8 @@ file_prefix <- function(file_path) {
 }
 
 ld_block_dirs <- function(block) {
-  ld_info <- list(ld_block_data = paste0(ld_block_data_dir, block),
+  ld_info <- list(block = block,
+                  ld_block_data = paste0(ld_block_data_dir, block),
                   ld_block_results = paste0(ld_block_results_dir, block),
                   ld_matrix_prefix=paste0(ld_block_matrices_dir, block)
   )

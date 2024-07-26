@@ -14,6 +14,7 @@ parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', he
 
 args <- argparser::parse_args(parser)
 
+
 main <- function(args) {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
@@ -50,8 +51,8 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
 }
 
 compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
-  all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
+  all_finemapped_studies <- apply(ld_info, 1, function(ld_block) {
+    finemap_study <- paste0(ld_block$ld_block_dir, '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
 
     finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
@@ -60,6 +61,7 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
     return(finemapped_studies)
   }) |> dplyr::bind_rows()
 
+  all_finemapped_studies$ld_region <- ld_block$block
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
   return(all_finemapped_studies)
@@ -108,18 +110,13 @@ aggregate_pipeline_metadata <- function(ld_info) {
   return(metadata_per_ld_region)
 }
 
-compile_coloc_results <- function(coloc_input_files, studies_processed) {
-  significant_results <- lapply(coloc_input_files, function(coloc_file) {
-    coloc <- vroom::vroom(coloc_file, show_col_types = F)
-    if (is.null(coloc) || nrow(coloc) == 0) return ()
-    significant_result <- dplyr::filter(coloc, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
-    if (nrow(significant_result) > 0) return(significant_result)
-  }) |> dplyr::bind_rows()
+compile_coloc_results <- function(raw_coloc_results, studies_processed) {
+  significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
 
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
-    traits <- strsplit(result['traits'], ', ')[[1]]
+    traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, studies_processed)
-    if (nrow(ordered_traits) < 2) {
+    if (length(ordered_traits$unique_study_id) < 2) {
       return()
     }
 
@@ -127,9 +124,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
       dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
                     candidate_snp = as.character(result['candidate_snp']),
-                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp']),
-                    study_a = ordered_traits$study_name[match(unique_study_a, ordered_traits$unique_study_id)],
-                    study_b = ordered_traits$study_name[match(unique_study_b, ordered_traits$unique_study_id)]
+                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp'])
       )
 
     #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
@@ -141,15 +136,18 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
 
     return(paired_results)
   }) |> dplyr::bind_rows()
+
+
+
   return(pairwise_significant_results)
 }
 
 order_trait_by_type <- function(traits, studies_processed) {
-  traits <- sort(traits)
-  trait_studies <- unlist(lapply(traits, function(trait) strsplit(trait, '_')[[1]][1]))
+  trait_studies <- sub('_.*', '', traits)
   studies <- dplyr::filter(studies_processed, study_name %in% trait_studies) |>
-    dplyr::select(study_name, data_type) |>
-    dplyr::arrange(study_name)
+    dplyr::select(study_name, data_type)
+
+  studies <- studies[order(studies$study_name), ]
   studies$unique_study_id <- traits
   studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
   return(studies)

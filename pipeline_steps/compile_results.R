@@ -26,7 +26,7 @@ main <- function(args) {
     dplyr::filter(!is.na(traits) & traits != 'None')
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)
+  coloc_results <- compile_coloc_results(raw_coloc_results, all_studies_processed)
 
   all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
   results_metadata <- aggregate_pipeline_metadata(ld_info)
@@ -40,7 +40,13 @@ main <- function(args) {
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
+  gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
+  gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
+  gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
+  studies_to_process$gene <- gene_names
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
     studies_processed <- rbind(studies_processed, studies_to_process) |> dplyr::distinct()
@@ -52,16 +58,16 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
 
 compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
   all_finemapped_studies <- apply(ld_info, 1, function(ld_block) {
-    finemap_study <- paste0(ld_block$ld_block_dir, '/finemapped_studies.tsv')
+    finemap_study <- paste0(ld_block['ld_block_data'], '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
 
     finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+    finemapped_studies$ld_region <- ld_block['block']
     return(finemapped_studies)
   }) |> dplyr::bind_rows()
 
-  all_finemapped_studies$ld_region <- ld_block$block
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
   return(all_finemapped_studies)

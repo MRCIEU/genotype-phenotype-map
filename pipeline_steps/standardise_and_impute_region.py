@@ -9,7 +9,7 @@ from pathlib import Path
 import scipy.linalg
 
 pd.options.mode.copy_on_write = True
-DATA_DIR = os.getenv("DATA_DIR")
+DATA_DIR = os.getenv("DATA_DIR") or '/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/data/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
 LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 
@@ -26,6 +26,10 @@ def main(ld_block, completed_output_file):
 
     ld_matrix = pd.read_csv(ld_matrix_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
+
+    ld_matrix_inv = pd.read_csv(ld_matrix_prefix + '.ldinv', header=None, delimiter=' ')
+    ld_matrix_inv = np.array(ld_matrix_inv)
+
     ld_region_from_reference_panel = pd.read_csv(ld_matrix_prefix + '.tsv', delimiter='\t')
 
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
@@ -35,8 +39,8 @@ def main(ld_block, completed_output_file):
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
         imputed_file = gwas_file.replace('original', 'imputed')
-        if os.path.isfile(imputed_file):
-            continue
+        #if os.path.isfile(imputed_file):
+        #    continue
 
         prep_time = time.time()
         gwas = pd.read_csv(gwas_file, delimiter='\t')
@@ -50,6 +54,11 @@ def main(ld_block, completed_output_file):
         unknown = np.where(rsids_in_gwas == False)[0]
 
         known_ld_matrix = ld_matrix[known, :][:, known]
+
+        inv_recalc = time.time()
+        known_ld_matrix_inv = update_inverse(ld_matrix_inv, known, unknown)
+        print(f'Inv recalc time {time.time() - inv_recalc}')
+
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
 
@@ -57,7 +66,8 @@ def main(ld_block, completed_output_file):
 
         start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
-            z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
+            z, known_ld_matrix, known_ld_matrix_inv, missing_ld_matrix, lamb=0.01, rtol=0.01
+            # z, known_ld_matrix, missing_ld_matrix, lamb=0.01, rtol=0.01
         )
 
         rsids_to_add = (imputation_results["imputation_r2"] >= imputed_r2_threshold) * (
@@ -137,6 +147,7 @@ class SummaryStatisticsImputation:
     def raiss_model(
             z_scores_known: np.ndarray,
             ld_matrix_known: np.ndarray,
+            ld_matrix_known_inverted: np.ndarray,
             ld_matrix_known_missing: np.ndarray,
             lamb: float = 0.01,
             rtol: float = 0.01,
@@ -159,11 +170,15 @@ class SummaryStatisticsImputation:
                 - correct_inversion (np.ndarray): a boolean array indicating if the inversion was successful
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
+        sig_t_inv = ld_matrix_known_inverted
+        np.savetxt('reduced_inverted.inv', sig_t_inv, delimiter=' ')
         invert_time = time.time()
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
             ld_matrix_known, lamb, rtol
         )
         print(f'Invert Time: {time.time() - invert_time}')
+        np.savetxt('calculated_inverted.inv', sig_t_inv, delimiter=' ')
+
         if sig_t_inv is None:
             return {
                 "var": None,
@@ -298,6 +313,18 @@ class SummaryStatisticsImputation:
             return SummaryStatisticsImputation._invert_sig_t(
                 sig_t, lamb * 1.1, rtol * 1.1
             )
+
+
+
+# TODO: Gib, this is from the stackoverflow comment, and works for removing 1 variable.
+def update_inverse(inverse_matrix: np.ndarray, known, unknown) -> np.ndarray:
+    A = inverse_matrix[known, :][:, known]
+    B = inverse_matrix[known, :][:, unknown]
+    C = inverse_matrix[unknown, :][:, known]
+    D = inverse_matrix[unknown, :][:, unknown]
+    inv_D = scipy.linalg.pinv(D, rtol=0.01, atol=0)
+
+    return np.subtract(A, np.dot(B, np.dot(inv_D, C)))
 
 
 if __name__ == "__main__":

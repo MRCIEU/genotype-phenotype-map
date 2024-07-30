@@ -2,80 +2,82 @@
 
 set -e
 
-if [[$# -ne 1]]; then
-    echo "Provide file listing URLs for download"
-    exit 0
-fi
+DCODE_DATA=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data
+LD_REGIONS=${home}/seqdata_steps/pre_steps/data/pyrho_EUR_LD_blocks.bed
 
-LIST=$1
-# This path is wrong
-LD_REGIONS=/home/pipeline/pipeline_steps/data/ld_regions.tsv
-ANCESTRY="EUR"
+# Lower MAF threshold (for 10 expected observations of minor allele in 431,805 white British)
+MIN_MAF=0.000012
 
-cd ${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas
-mkdir -p decode_data_filtered
+CHR="Chrom"
+POS="Pos"
+P="pval"
+MAF="effectAlleleFreq"
+INFO="info"
 
-for LINK in $(cat ${LIST}); do
-        FILENAME=$(echo ${LINK} | cut -d"-" -f3)
-        BASENAME=$(basename ${FILENAME} .txt.gz)
+OUT_DIR=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data_filtered
+mkdir -p ${OUT_DIR}
 
-        echo "Downloading: ${FILENAME}"
-        wget "${LINK}" | gunzip > WGS_tmp.txt
+for FILE in $(ls ${DCODE_DATA}); do
 
-        # Lower MAF threshold (for 10 expected observations of minor allele in 431,805 white British)
-        MIN_MAF=0.000012
+    start_time=$(date +%s)
 
-        # Extract chr and pos of rare variants passing filter (MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.01)
-        awk -v min_maf=${MIN_MAF} \
-        '$9<=0.01 && $12>=0.5 && (($7<=0.01 && $7>=min_maf) || (1-$7<=0.01 && 1-$7>=min_maf)) \
-        {print $1, $2}' WGS_tmp.txt > top_tmp.txt
+    BASENAME=$(basename ${FILE} .txt.gz)
+    OUTNAME=${BASENAME}_filtered.txt
 
-        sed -i '' 's/chr//g' top_tmp.txt
+    echo "Processing: ${FILE}"
 
-        # Identify regions containing at least one variant passing filter
-        while IFS=' ' read -r CHR POS; do
-            if [[ -z $CHR]] || [[ -z $POS]]; then
-                continue
-            fi
+    if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
-        REGION=$(awk -v chr=$CHR -v bp=$POS -v an=$ANCESTRY \
-            '{ if ($1 == chr && $2 < bp && bp < $3 && $4 == an) print $1, $2, $3}' $LD_REGIONS)
+        # Indicies of required columns (annoyingly the order is inconsistent)
+        read -r header < ${DECODE_DATA}/${FILE}
+        chr_index=$(echo $header | awk -v col="$CHR" '{for (i=1; i<=NF; i++) if ($i == col) print i}')
+        pos_index=$(echo $header | awk -v col="$POS" '{for (i=1; i<=NF; i++) if ($i == col) print i}')
+        p_index=$(echo $header | awk -v col="$P" '{for (i=1; i<=NF; i++) if ($i == col) print i}')
+        maf_index=$(echo $header | awk -v col="$MAF" '{for (i=1; i<=NF; i++) if ($i == col) print i}')
+        info_index=$(echo $header | awk -v col="$INFO" '{for (i=1; i<=NF; i++) if ($i == col) print i}')
 
-        echo ${REGION} >> regions_tmp.txt
-        done < top_tmp.txt
+        if [[ -z $chr_index ]] || [[ -z $pos_index ]] || [[ -z $p_index ]] || [[ -z $maf_index ]] || [[ -z $info_index ]] ; then
+            echo "One or more columns not found in the header"
+            exit 1
+        fi
+            
+        # Filter 1 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.00005
+        # Extract chr and pos of rare variants passing filter
 
-        ## CONTINUE
+        awk -v min_maf=${MIN_MAF} -v chr=${chr_index} -v pos=${pos_index} -v p=${p_index} -v maf=${maf_index} -v info=${info_index} \
+        '$p <= 0.00005 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf)) \
+        {print $chr, $pos}' ${DCODE_DATA}/${FILE} > ${OUT_DIR}/top_tmp.txt
 
+        # Keep unique (some variant position duplication in file)   
+        sort -n -k1,1 -k2,2 ${OUT_DIR}/top_tmp.txt | uniq > ${OUT_DIR}/top_tmp_uniq.txt
 
-
-
-
-
-        
-
-
-
-
-
-        # Filter for single row in given region (against reference set of regions)
-        # De-duplicate list
-
-        # Loop through variants and extract variants in 1MB surrounding region
+        # Loop through variants passing filter 1, extract 1MB surrounding region and apply filter 2
+        # Filter 2 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.01
 
         while IFS=' ' read -r chr bp; do
-                awk -v CHR=${chr} -v BP=${bp} '
-                BEGIN {min=BP-500000; max = BP+500000}
-                $1==CHR && $2>=min && $2<=max' 
-                WGS_tmp.txt >> window_tmp.txt
-        done < top_tmp.txt
 
-        # Excude duplicate lines (probs a much smarter way to do this)
-        OUTFILE="${basename}_p1e5windows.txt"
+            awk -v CHR=${chr} -v BP=${bp} \
+            -v min_maf=${MIN_MAF} -v chr=${chr_index} -v pos=${pos_index} -v p=${p_index} -v maf=${maf_index} -v info=${info_index} \
+            'BEGIN {min = BP-500000; max = BP+500000} \
+            $chr == CHR && $pos >= min && $pos <= max && \
+            $p <= 0.01 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf))' \
+            ${DCODE_DATA}/${FILE} >> ${OUT_DIR}/window_tmp.txt
+
+        done < ${OUT_DIR}/top_tmp_uniq.txt
+
+        # Keep unique (duplicates from overlapping windows) and write to output
+        sort -n -k1,1 -k2,2 window_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
+        gzip ${OUT_DIR}/${OUTNAME}
+
+        rm ${OUT_DIR}/top_tmp.txt  ${OUT_DIR}/top_tmp_uniq.txt ${OUT_DIR}/window_tmp.txt
+
+    else
         
-        $(sort window_tmp.txt | uniq) > ${OUTFILE}
+        echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
 
-        gzip ${OUTFILE}
+    fi
 
-        # Remove temporary files
-        rm WGS_tmp.txt top_tmp.txt
+    end_time=$(date +%s)
+    echo "Duration: ($start_time-$end_time)/3600 hour(s)"
+
 done

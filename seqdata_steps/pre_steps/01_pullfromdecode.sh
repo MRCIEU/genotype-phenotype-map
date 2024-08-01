@@ -2,8 +2,8 @@
 
 set -e
 
-# List of file names
-LIST=$1
+# Input file name
+FILE=$1
 
 RAWDATA_DIR=/local-scratch/data/
 DCODE_DATA=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data
@@ -20,26 +20,24 @@ INFO="info"
 OUT_DIR=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data_filtered
 mkdir -p ${OUT_DIR}
 
-for FILE in $(cat ${LIST}); do
+start_time=$(date +%s)
 
-    start_time=$(date +%s)
+BASENAME=$(basename ${FILE} .txt.gz)
+OUTNAME=${BASENAME}_filtered.txt
 
-    BASENAME=$(basename ${FILE} .txt.gz)
-    OUTNAME=${BASENAME}_filtered.txt
+echo "Unzipping ${FILE}..."
+gunzip ${DCODE_DATA}/${FILE}
 
-    #echo "Checking integrity of ${FILE}"
-    #CALC_CHEKSUM=$(md5sum ${DCODE_DATA}/${FILE})
-    #CHECKSUM=$(cat ${DCODE_DATA}/${BASENAME}.md5sum)
-    #[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || exit 1
+INFILE=${BASENAME}.txt
 
-    echo "Unzipping ${FILE}..."
-    
-    gunzip ${DCODE_DATA}/${FILE}
-    INFILE=${BASENAME}.txt
+echo "Checking integrity of ${INFILE}"
+CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
+CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
+[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
 
-    echo "Processing file: ${INFILE}"
+echo "Processing file: ${INFILE}"
 
-    if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
+if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
 	# Temporary directory for processing
     	TMP_DIR=${OUT_DIR}/tmp_${BASENAME}
@@ -119,13 +117,11 @@ for FILE in $(cat ${LIST}); do
 	# Re-zip original file
 	gzip ${DCODE_DATA}/${INFILE}
 
-        #rm -r ${TMP_DIR}
-    else
-        echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
-    fi
+        rm -r ${TMP_DIR}
+else
+	echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
+fi
 
-    end_time=$(date +%s)
-    duration=$((end_time - start_time))
-    echo "Duration: $((duration / 3600)) hours(s)"
-
-done
+end_time=$(date +%s)
+duration=$((end_time - start_time))
+echo "Duration: $((duration / 3600)) hours(s)"

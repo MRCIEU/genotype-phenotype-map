@@ -106,17 +106,12 @@ for FILE in $(cat ${LIST}); do
         done
 
 	# Join split filtered files
-	
 	echo "Joining split filtered files"
-	
 	$(echo ${header}; cat ${TMP_DIR}/serchwindow_*_filtered_tmp.txt) > ${TMP_DIR}/finalvars_tmp.txt
 
         # Keep unique (duplicates from overlapping windows) add header and write to output
-
 	echo "Writing output to: ${OUT_DIR}/${OUTNAME}"
-
 	sort -V -k1,1 -k2,2 ${TMP_DIR}/finalvars_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
-        
 	echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
 
 	gzip ${OUT_DIR}/${OUTNAME}
@@ -125,11 +120,8 @@ for FILE in $(cat ${LIST}); do
 	gzip ${DCODE_DATA}/${INFILE}
 
         #rm -r ${TMP_DIR}
-
     else
-        
         echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
-
     fi
 
     end_time=$(date +%s)

@@ -26,15 +26,17 @@ ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regi
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/8/116096495_119685456',
-                     'EUR/6/31571218_32682663',
+                     'EUR/6/29737971_30798167',
                      'EUR/6/30798168_31571217',
-                     ]
+                     'EUR/6/31571218_32682663',
+]
 
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/6/29737971_30798167',
                      'EUR/8/116096495_119685456',
-                     ]
+]
 if TEST_RUN == 'test':
     complex_ld_blocks = []
 

@@ -43,8 +43,8 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
-  gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
-  gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
+  gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]
+  gene_names[is.na(gene_names)] <- studies_to_process$gene[is.na(gene_names)]
   studies_to_process$gene <- gene_names
 
   if (file.exists(studies_processed_file)) {
@@ -62,7 +62,7 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
 
     finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
-      dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
+      dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans) |>
       dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
     finemapped_studies$ld_region <- ld_block['block']
     return(finemapped_studies)

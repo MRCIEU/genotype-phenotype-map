@@ -20,15 +20,17 @@ ld_score_threshold = 5
 @click.command(name='Impute studies by region')
 @click.option('--ld_block', help='List of GWAS Summary Statistics file', required=True)
 @click.option('--completed_output_file', help='Completion output file', required=True)
-def main(ld_block, completed_output_file):
+@click.option('--new_imputation_method', help='Completion output file', required=True)
+def main(ld_block, completed_output_file, new_imputation_method):
     ld_matrix_prefix = LD_BLOCK_MATRICES_DIR + ld_block
     ld_block_dir = LD_BLOCK_DATA_DIR + ld_block
 
     ld_matrix = pd.read_csv(ld_matrix_prefix + '.ld', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
 
-    ld_matrix_inv = pd.read_csv(ld_matrix_prefix + '.ldinv', header=None, delimiter=' ')
-    ld_matrix_inv = np.array(ld_matrix_inv)
+    if new_imputation_method:
+        ld_matrix_inv = pd.read_csv(ld_matrix_prefix + '.ldinv', header=None, delimiter=' ')
+        ld_matrix_inv = np.array(ld_matrix_inv)
 
     ld_region_from_reference_panel = pd.read_csv(ld_matrix_prefix + '.tsv', delimiter='\t')
 
@@ -55,9 +57,12 @@ def main(ld_block, completed_output_file):
 
         known_ld_matrix = ld_matrix[known, :][:, known]
 
-        inv_recalc = time.time()
-        known_ld_matrix_inv = update_inverse(ld_matrix_inv, known, unknown)
-        print(f'Inv recalc time {time.time() - inv_recalc}')
+        known_ld_matrix_inv = None
+        if new_imputation_method:
+            inv_recalc = time.time()
+            known_ld_matrix_inv = update_inverse(ld_matrix_inv, known, unknown)
+            print(f'Inv recalc time {time.time() - inv_recalc}')
+            np.savetxt('reduced_inverted.inv', known_ld_matrix_inv, delimiter=' ')
 
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
@@ -170,14 +175,16 @@ class SummaryStatisticsImputation:
                 - correct_inversion (np.ndarray): a boolean array indicating if the inversion was successful
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
-        sig_t_inv = ld_matrix_known_inverted
-        np.savetxt('reduced_inverted.inv', sig_t_inv, delimiter=' ')
-        invert_time = time.time()
-        sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
-            ld_matrix_known, lamb, rtol
-        )
-        print(f'Invert Time: {time.time() - invert_time}')
-        np.savetxt('calculated_inverted.inv', sig_t_inv, delimiter=' ')
+
+        if ld_matrix_known_inverted is not None:
+            sig_t_inv = ld_matrix_known_inverted
+        else:
+            invert_time = time.time()
+            sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
+                ld_matrix_known, lamb, rtol
+            )
+            print(f'Invert Time: {time.time() - invert_time}')
+            np.savetxt('calculated_inverted.inv', sig_t_inv, delimiter=' ')
 
         if sig_t_inv is None:
             return {

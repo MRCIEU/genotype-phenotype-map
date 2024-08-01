@@ -88,16 +88,17 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
 }
 
 aggregate_pipeline_metadata <- function(ld_info) {
-  metadata_per_ld_region <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    if (!file.exists(paste0(ld_block_dir, '/finemapped_studies.tsv'))) {
+  metadata_per_ld_region <- apply(ld_info, 1, function(ld) {
+    ld_block_data <- ld['ld_block_data']
+    if (!file.exists(paste0(ld_block_data, '/finemapped_studies.tsv'))) {
       return(data.frame())
     }
-    extracted_studies <- vroom::vroom(paste0(ld_block_dir, '/extracted_studies.tsv'), show_col_types = F)
-    imputed_studies <- vroom::vroom(paste0(ld_block_dir, '/imputed_studies.tsv'), show_col_types = F)
-    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, '/finemapped_studies.tsv'), show_col_types = F)
+    extracted_studies <- vroom::vroom(paste0(ld_block_data, '/extracted_studies.tsv'), show_col_types = F)
+    imputed_studies <- vroom::vroom(paste0(ld_block_data, '/imputed_studies.tsv'), show_col_types = F)
+    finemapped_studies <- vroom::vroom(paste0(ld_block_data, '/finemapped_studies.tsv'), show_col_types = F)
     above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
 
-    return(data.frame(ld_region = ld_block_dir,
+    return(data.frame(ld_region = ld['block'],
                       extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed),

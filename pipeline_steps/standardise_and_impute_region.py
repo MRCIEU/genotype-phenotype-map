@@ -89,7 +89,8 @@ def main(ld_block, completed_output_file):
 
     if os.path.isfile(imputed_studies_file) and len(new_imputed_studies) > 0:
         existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
-        new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
+        if len(existing_imputed_studies) > 0:
+            new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
     new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)

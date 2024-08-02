@@ -37,18 +37,28 @@ main <- function(args) {
   }
 
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
-
-  all_results <- lapply(hyprcoloc_results, function(result) {
-    if (!is.null(result)) return(result$results)
-  }) |> dplyr::bind_rows()
-
-  if (is.null(all_results)) all_results <- data.frame()
+  hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
   coloc_results_file <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
-  vroom::vroom_write(all_results, coloc_results_file)
+  vroom::vroom_write(hyprcoloc_results, coloc_results_file)
   vroom::vroom_write(data.frame(), args$coloc_result_file)
 }
 
+post_coloc_filtering <- function(hyprcoloc_results) {
+  if (is.null(hyprcoloc_results)) hyprcoloc_results <- data.frame()
+  hyprcoloc_results <- lapply(hyprcoloc_results, function(result) {
+    if (!is.null(result)) return(result$results)
+  }) |> dplyr::bind_rows()
+
+  hyprcoloc_results <- hyprcoloc_results[!duplicated(hyprcoloc_results$traits), ]
+  traits <- strsplit(hyprcoloc_results$traits, ', ')
+
+  #we have to remove subsets again because hyprcoloc breaks the larger groups up and reports on different iterations
+  subsets <- find_subsets_of_grouped_studies(traits)
+  hyprcoloc_results <- hyprcoloc_results[-subsets, ]
+
+  return(hyprcoloc_results)
+}
 
 #' group_studies_in_same_bp_range, in 2 steps
 #'   1. created 'grouped_studies' list with all studies whose top snp is within bp_range, and only one study per group
@@ -76,17 +86,23 @@ group_studies_in_same_bp_range <- function(studies) {
     return(list())
   }
 
-  to_remove <- c()
+  subsets <- find_subsets_of_grouped_studies(grouped_studies)
+  grouped_studies <- grouped_studies[-subsets]
+  return(grouped_studies)
+}
+
+find_subsets_of_grouped_studies <- function(grouped_studies) {
+  subsets <- c()
   for (i in 1:(length(grouped_studies)-1)) {
     for (j in (i+1):length(grouped_studies)) {
       if (all(grouped_studies[[i]] %in% grouped_studies[[j]])) {
-        to_remove <- c(to_remove, i)
+        subsets <- c(subsets, i)
       }
     }
   }
-  grouped_studies <- grouped_studies[-to_remove]
 
-  return(grouped_studies)
+  subsets <- subsets[!duplicated(subsets)]
+  return(subsets)
 }
 
 colocalise_based_on_group <- function(studies, groupings, metadata) {

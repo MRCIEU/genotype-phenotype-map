@@ -22,20 +22,11 @@ NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
 if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
+elif [[ $NUM_STUDIES > 200000 ]]; then
+  echo '!!! WARNING: too many studies to ingest at one time.  This will drastically slow down snakemake, consider splitting studies into smaller chunks'
 fi
 
-#if [[ $NUM_STUDIES -gt 10000 ]]; then
-#  NUM_BATCHES=$(($NUM_STUDIES/10000))
-#  echo "Splitting into $NUM_BATCHES batches"
-
-#  for batch in $(seq 1 $NUM_BATCHES); do
-#    echo "--batch all=$batch/$NUM_BATCHES"
-#    apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ --batch all=$batch/$NUM_BATCHES $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
-#  done
-#else
-#  echo "Running 1 batch"
-  apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
-#fi
+apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
 
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

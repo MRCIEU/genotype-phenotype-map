@@ -63,7 +63,7 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
 
     finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
       dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans) |>
-      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp), min_p = as.numeric(min_p))
     finemapped_studies$ld_region <- ld_block['block']
     return(finemapped_studies)
   }) |> dplyr::bind_rows()
@@ -101,11 +101,11 @@ aggregate_pipeline_metadata <- function(ld_info) {
     return(data.frame(ld_region = ld['block'],
                       extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
-                      mean_snps_imputed=mean(imputed_studies$rows_imputed),
+                      mean_snps_imputed=mean(imputed_studies$rows_imputed, na.rm=T),
                       number_finemapped=nrow(finemapped_studies),
                       number_finemapped_above_threshold=above_threshold,
-                      finemap_failed=sum(finemapped_studies$message == 'failed'),
-                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
+                      finemap_failed=sum(finemapped_studies$message == 'failed', na.rm=T),
+                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs', na.rm=T)
     ))
   }) |> dplyr::bind_rows()
 

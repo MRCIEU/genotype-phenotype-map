@@ -38,6 +38,7 @@ def main(ld_block, completed_output_file):
         if os.path.isfile(imputed_file):
             continue
 
+        prep_time = time.time()
         gwas = pd.read_csv(gwas_file, delimiter='\t')
         gwas, eaf_from_reference_panel = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
@@ -51,6 +52,8 @@ def main(ld_block, completed_output_file):
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
+
+        print(f'Prep Time: {time.time() - prep_time}')
 
         start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
@@ -86,7 +89,8 @@ def main(ld_block, completed_output_file):
 
     if os.path.isfile(imputed_studies_file) and len(new_imputed_studies) > 0:
         existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
-        new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
+        if len(existing_imputed_studies) > 0:
+            new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
         new_imputed_studies.drop_duplicates(inplace=True)
 
     new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
@@ -156,9 +160,11 @@ class SummaryStatisticsImputation:
                 - correct_inversion (np.ndarray): a boolean array indicating if the inversion was successful
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
+        invert_time = time.time()
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
             ld_matrix_known, lamb, rtol
         )
+        print(f'Invert Time: {time.time() - invert_time}')
         if sig_t_inv is None:
             return {
                 "var": None,
@@ -169,6 +175,7 @@ class SummaryStatisticsImputation:
                 "imputation_r2": None,
             }
         else:
+            correct_inversion_time = time.time()
             condition_number = np.array(
                 [np.linalg.cond(ld_matrix_known)] * ld_matrix_known_missing.shape[0]
             )
@@ -180,7 +187,9 @@ class SummaryStatisticsImputation:
                 ]
                 * ld_matrix_known_missing.shape[0]
             )
+            print(f'Correct Inversion Time: {time.time() - correct_inversion_time}')
 
+            var_mu_time = time.time()
             var, ld_score = SummaryStatisticsImputation._compute_var(
                 ld_matrix_known_missing, sig_t_inv, lamb
             )
@@ -193,6 +202,7 @@ class SummaryStatisticsImputation:
             R2 = (1 + lamb) - var_norm
 
             mu = mu / np.sqrt(R2)
+            print(f'var mu Time: {time.time() - var_mu_time}')
             return {
                 "var": var,
                 "mu": mu,

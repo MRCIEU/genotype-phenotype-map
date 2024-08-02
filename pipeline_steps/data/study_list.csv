@@ -1,2 +1,3 @@
-id_pattern,data_type,database,data_location,ancestry,script
-ebi-a-*,phenotype,opengwas,/local-scratch/data/opengwas/igd,EUR,./extract_regions_from_opengwas.sh
+id_pattern,data_type,data_format,data_location,ancestry,p_value_threshold
+ebi-a-*,phenotype,opengwas,/local-scratch/data/opengwas/igd,EUR,5e-8
+*,gene_expression,besd,/local-scratch/data/GTEx-cis,EUR,5e-8

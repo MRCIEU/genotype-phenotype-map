@@ -4,7 +4,7 @@ RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRO
     echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
     apt update && apt install -y --no-install-recommends libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl
 
-#Installing finemap, smr, gcta, and gwcoco here...
+#Installing ssimp, finemap, smr, gcta, and gwcoco here...
 RUN cd /home && \
     wget http://christianbenner.com/finemap_v1.4.2_x86_64.tgz && \
     tar -xf finemap_v1.4.2_x86_64.tgz && \
@@ -19,9 +19,10 @@ RUN cd /home && \
     tar xf cmake-3.30.0-rc1-linux-x86_64.tar.gz && \
     git clone https://github.com/jwr-git/pwcoco.git && cd pwcoco && \
     mkdir build && cd build && /home/cmake-3.30.0-rc1-linux-x86_64/bin/cmake .. && make && \
-    mv pwcoco /bin/pwcoco
-    #TODO: install ssimp here, to test out summary stats imputation?
-    # https://github.com/zkutalik/ssimp_software?tab=readme-ov-file#installation
+    mv pwcoco /bin/pwcoco && \
+    wget https://github.com/zkutalik/ssimp_software/raw/master/compiled/ssimp-linux-0.5.6 && \
+    chmod 775 ssimp-linux-0.5.6 && \
+    mv ssimp-linux-0.5.6 /bin/ssimp
 
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/

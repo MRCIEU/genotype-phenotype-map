@@ -2,12 +2,16 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
+TEST_RUN <- Sys.getenv('TEST_RUN', NA)
+
+DEFAULT_P_VALUE_THRESHOLD <- 5e-8
 
 MINIMUM_STUDY_REGION_SIZE <- 200
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/')
+thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
 ld_block_results_dir <- paste0(results_dir, 'ld_blocks/')
@@ -22,8 +26,8 @@ ordered_data_types <- list(splice_variant='splice_variant',
                            phenotype='phenotype'
 )
 study_categories <- list(binary='Binary', continuous='Continuous')
-databases <- list(opengwas='opengwas')
-data_source <- list(ukb='UK Biobank', gtex='GTEx', finngen='Finn Gen', bbj='Biobank Japan', eqtl_gen='eQTL Gen', ukb_ppp='UK Biobank Proteomic...')
+data_formats <- list(opengwas='opengwas', besd='besd')
+cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_and_trans')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 
@@ -34,15 +38,20 @@ file_prefix <- function(file_path) {
 }
 
 ld_block_dirs <- function(block) {
-  ld_info <- list(ld_block_data = paste0(ld_block_data_dir, block),
-                  ld_block_results = paste0(ld_block_results_dir, block),
-                  ld_matrix_prefix=paste0(ld_block_matrices_dir, block)
+  ld_info <- data.frame(block = block,
+                        ld_block_data = paste0(ld_block_data_dir, block),
+                        ld_block_results = paste0(ld_block_results_dir, block),
+                        ld_matrix_prefix=paste0(ld_block_matrices_dir, block)
   )
   return(ld_info)
 }
 
 construct_ld_block <- function(ancestry, chr, start, stop) {
-  block <- paste0(ancestry, '/', chr, '/', start, '_', stop)
+  block <- ld_block_string(ancestry, chr, start, stop)
   return(ld_block_dirs(block))
+}
+
+ld_block_string <- function(ancestry, chr, start, stop) {
+  return(paste0(ancestry, '/', chr, '/', start, '_', stop))
 }
 

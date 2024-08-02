@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-if [[ $# -ne 8 ]] ; then
-  echo "Incorrect number of arguments: need 8"
+echo "$@"
+
+if [[ $# -ne 7 ]] ; then
+  echo "Incorrect number of arguments: need 7"
   exit 0
 fi
 
@@ -13,7 +15,6 @@ DATA_TYPE=$4
 ORIG_STUDY_DIR=$5
 EXTRACTED_STUDY_DIR=$6
 P_VALUE=$7
-GENE=$8
 
 LD_REGIONS=/home/pipeline/pipeline_steps/data/ld_regions.tsv
 STUDY=$(basename $ORIG_STUDY_DIR)
@@ -60,4 +61,3 @@ while IFS=' ' read -r CHR POS LOG_P; do
   fi
   echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\t${CIS_TRANS}" >> $EXTRACTED_SNPS
 done <<< $ALL_CHR_POS
-

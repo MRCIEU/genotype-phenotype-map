@@ -8,6 +8,7 @@ TEST_RUN = os.getenv('TEST_RUN')
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')
 TIMESTAMP = os.getenv('TIMESTAMP')
+
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
@@ -25,21 +26,17 @@ ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regi
 
 complex_ld_blocks = ['EUR/6/19207487_21684064',
                      'EUR/8/116096495_119685456',
+                     'EUR/6/29737971_30798167',
                      'EUR/6/30798168_31571217',
                      'EUR/6/31571218_32682663',
-                     'EUR/11/1213590_3665480',
-                     'EUR/10/4572274_5983761',
-                     'EUR/4/5502388_6773042',
-                     'EUR/10/10249396_12586796'
-                     ]
+]
+
+
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 complex_ld_blocks = ['EUR/6/19207487_21684064',
+                     'EUR/6/29737971_30798167',
                      'EUR/8/116096495_119685456',
-                     'EUR/11/1213590_3665480',
-                     'EUR/10/4572274_5983761',
-                     'EUR/4/5502388_6773042',
-                     'EUR/10/10249396_12586796'
-                     ]
+]
 if TEST_RUN == 'test':
     complex_ld_blocks = []
 
@@ -87,12 +84,27 @@ rule extract_regions_from_studies:
     output: extracted_study_pattern
     threads: 1
     run:
-        study = studies_to_process[studies_to_process.study_name == str(params)].values.flatten().tolist()
-        #TODO: this assignment is hacky and prone to breaking if you change the tsv.  change it to be more explicit
-        script = study[-1]
-        command = [script] + study[2:-1]
-        command = [str(c) for c in command]
-        subprocess.run(command)
+        study = studies_to_process[studies_to_process.study_name == str(params)]
+        if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
+        study = study.iloc[0]
+
+        if study.data_format == 'opengwas':
+            command = f'./extract_regions_from_opengwas.sh \
+                {study.study_name} \
+                {study.ancestry} \
+                {study.sample_size} \
+                {study.category} \
+                {study.study_location} \
+                {study.extracted_location} \
+                {study.p_value_threshold}'
+        elif study.data_format == 'besd':
+            command = f'Rscript extract_regions_from_besd.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
+        else:
+            raise ValueError(f'Cant ingest unknown data format: {study.data_format}')
+
+        subprocess.run(command, shell=True)
 
 rule organise_extracted_studies_into_ld_regions:
     input: expand(extracted_study_pattern, study_location=extracted_studies)
@@ -108,7 +120,7 @@ def impute_rule(defined_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(defined_pattern)
-        threads: 28 if name == 'complex' else 16
+        threads: 56 if name == 'complex' else 20
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -118,7 +130,8 @@ def impute_rule(defined_pattern, name):
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if name == 'complex':
-                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
+                #env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=32 && export MKL_NUM_THREADS=32 && NUMEXPR_NUM_THREADS=32"
+                env_vars = "export LD_PRELOAD="
             else:
                 env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
@@ -135,7 +148,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 2
+        threads: 4
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -185,6 +198,7 @@ coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
 rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
+    threads: 2
     output:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,

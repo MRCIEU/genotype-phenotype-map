@@ -14,6 +14,7 @@ parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', he
 
 args <- argparser::parse_args(parser)
 
+
 main <- function(args) {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
@@ -21,10 +22,11 @@ main <- function(args) {
   coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
   coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
 
-  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F)
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+    dplyr::filter(!is.na(traits) & traits != 'None')
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(coloc_input_files, all_studies_processed)
+  coloc_results <- compile_coloc_results(raw_coloc_results, all_studies_processed)
 
   all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
   results_metadata <- aggregate_pipeline_metadata(ld_info)
@@ -38,7 +40,13 @@ main <- function(args) {
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
+  gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
+  gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]
+  gene_names[is.na(gene_names)] <- studies_to_process$gene[is.na(gene_names)]
+  studies_to_process$gene <- gene_names
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
     studies_processed <- rbind(studies_processed, studies_to_process) |> dplyr::distinct()
@@ -49,13 +57,14 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
 }
 
 compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
-  all_finemapped_studies <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    finemap_study <- paste0(ld_block_dir, '/finemapped_studies.tsv')
+  all_finemapped_studies <- apply(ld_info, 1, function(ld_block) {
+    finemap_study <- paste0(ld_block['ld_block_data'], '/finemapped_studies.tsv')
     if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
 
     finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
-      dplyr::select(study, unique_study_id, file, chr, bp, cis_trans) |>
-      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp))
+      dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans) |>
+      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp), min_p = as.numeric(min_p))
+    finemapped_studies$ld_region <- ld_block['block']
     return(finemapped_studies)
   }) |> dplyr::bind_rows()
 
@@ -79,23 +88,24 @@ find_suspected_gene_associated_with_position <- function(all_finemapped_studies)
 }
 
 aggregate_pipeline_metadata <- function(ld_info) {
-  metadata_per_ld_region <- lapply(ld_info$ld_block_data, function(ld_block_dir) {
-    if (!file.exists(paste0(ld_block_dir, '/finemapped_studies.tsv'))) {
+  metadata_per_ld_region <- apply(ld_info, 1, function(ld) {
+    ld_block_data <- ld['ld_block_data']
+    if (!file.exists(paste0(ld_block_data, '/finemapped_studies.tsv'))) {
       return(data.frame())
     }
-    extracted_studies <- vroom::vroom(paste0(ld_block_dir, '/extracted_studies.tsv'), show_col_types = F)
-    imputed_studies <- vroom::vroom(paste0(ld_block_dir, '/imputed_studies.tsv'), show_col_types = F)
-    finemapped_studies <- vroom::vroom(paste0(ld_block_dir, '/finemapped_studies.tsv'), show_col_types = F)
+    extracted_studies <- vroom::vroom(paste0(ld_block_data, '/extracted_studies.tsv'), show_col_types = F)
+    imputed_studies <- vroom::vroom(paste0(ld_block_data, '/imputed_studies.tsv'), show_col_types = F)
+    finemapped_studies <- vroom::vroom(paste0(ld_block_data, '/finemapped_studies.tsv'), show_col_types = F)
     above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
 
-    return(data.frame(ld_region = ld_block_dir,
+    return(data.frame(ld_region = ld['block'],
                       extracted_regions=nrow(extracted_studies),
                       studies_imputed=nrow(imputed_studies),
-                      mean_snps_imputed=mean(imputed_studies$rows_imputed),
+                      mean_snps_imputed=mean(imputed_studies$rows_imputed, na.rm=T),
                       number_finemapped=nrow(finemapped_studies),
                       number_finemapped_above_threshold=above_threshold,
-                      finemap_failed=sum(finemapped_studies$message == 'failed'),
-                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs')
+                      finemap_failed=sum(finemapped_studies$message == 'failed', na.rm=T),
+                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs', na.rm=T)
     ))
   }) |> dplyr::bind_rows()
 
@@ -107,18 +117,13 @@ aggregate_pipeline_metadata <- function(ld_info) {
   return(metadata_per_ld_region)
 }
 
-compile_coloc_results <- function(coloc_input_files, studies_processed) {
-  significant_results <- lapply(coloc_input_files, function(coloc_file) {
-    coloc <- vroom::vroom(coloc_file, show_col_types = F)
-    if (is.null(coloc) || nrow(coloc) == 0) return ()
-    significant_result <- dplyr::filter(coloc, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
-    if (nrow(significant_result) > 0) return(significant_result)
-  }) |> dplyr::bind_rows()
+compile_coloc_results <- function(raw_coloc_results, studies_processed) {
+  significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
 
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
-    traits <- strsplit(result['traits'], ', ')[[1]]
+    traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, studies_processed)
-    if (nrow(ordered_traits) < 2) {
+    if (length(ordered_traits$unique_study_id) < 2) {
       return()
     }
 
@@ -126,9 +131,7 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
       dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
                     candidate_snp = as.character(result['candidate_snp']),
-                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp']),
-                    study_a = ordered_traits$study_name[match(unique_study_a, ordered_traits$unique_study_id)],
-                    study_b = ordered_traits$study_name[match(unique_study_b, ordered_traits$unique_study_id)]
+                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp'])
       )
 
     #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
@@ -140,15 +143,18 @@ compile_coloc_results <- function(coloc_input_files, studies_processed) {
 
     return(paired_results)
   }) |> dplyr::bind_rows()
+
+
+
   return(pairwise_significant_results)
 }
 
 order_trait_by_type <- function(traits, studies_processed) {
-  traits <- sort(traits)
-  trait_studies <- unlist(lapply(traits, function(trait) strsplit(trait, '_')[[1]][1]))
+  trait_studies <- sub('_.*', '', traits)
   studies <- dplyr::filter(studies_processed, study_name %in% trait_studies) |>
-    dplyr::select(study_name, data_type) |>
-    dplyr::arrange(study_name)
+    dplyr::select(study_name, data_type)
+
+  studies <- studies[order(studies$study_name), ]
   studies$unique_study_id <- traits
   studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
   return(studies)

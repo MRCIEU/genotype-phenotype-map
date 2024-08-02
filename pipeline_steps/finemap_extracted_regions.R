@@ -39,7 +39,12 @@ main <- function(args) {
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
 
       sample_size <- as.numeric(study['sample_size'])
-      susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
+      susie_result <- list(converged=F)
+      tryCatch(expr = {
+        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
+      }, error = function(e) {
+        message(e)
+      })
 
       if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
         message('susie either didnt converge or has no more than 1 credible sets, no need to adjust.')
@@ -58,7 +63,7 @@ main <- function(args) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
         finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv.gz')
-        unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_", i)
+        unique_id <- paste0(study['study'], "_", study['chr'], "_", trimws(study['bp']), "_", finemap_num)
 
         vroom::vroom_write(conditioned_gwas, finemap_file)
 
@@ -93,6 +98,8 @@ main <- function(args) {
       col_types = vroom::cols(
         chr = vroom::col_character(),
         bp = vroom::col_number(),
+        min_p = vroom::col_number(),
+        sample_size = vroom::col_number(),
         p_value_threshold = vroom::col_number()
       )
     )

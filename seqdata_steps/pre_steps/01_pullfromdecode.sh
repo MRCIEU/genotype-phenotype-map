@@ -2,6 +2,8 @@
 
 set -e
 
+start_time=$(date +%s)
+
 # Input file name
 FILE=$1
 
@@ -19,8 +21,6 @@ INFO="info"
 
 OUT_DIR=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data_filtered
 mkdir -p ${OUT_DIR}
-
-start_time=$(date +%s)
 
 BASENAME=$(basename ${FILE} .txt.gz)
 OUTNAME=${BASENAME}_filtered.txt
@@ -83,8 +83,8 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 	done < ${TMP_DIR}/top_tmp_uniq.txt
 
         # Loop through variants passing filter 1, extract 1MB surrounding region and apply filter 2
-	# Run in parallel over split files
-        # Filter 2 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.01
+	# across split files
+        # Filter 2 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.1
 	
 	echo "Extracting filter 2 variants"
 
@@ -99,22 +99,23 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 		-v p=${p_index} -v maf=${maf_index} -v info=${info_index} \
             	'BEGIN {min = ref-500000; max = ref+500000} \
             	$pos >= min && $pos <= max && \
-            	$p <= 0.01 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf))' \
-            	${TMP_DIR}/searchwindow_${j}_tmp.txt > ${TMP_DIR}/serchwindow_${j}_filtered_tmp.txt
+            	$p <= 0.1 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf))' \
+            	${TMP_DIR}/searchwindow_${j}_tmp.txt > ${TMP_DIR}/searchwindow_${j}_filtered_tmp.txt
         done
 
 	# Join split filtered files
 	echo "Joining split filtered files"
-	$(echo ${header}; cat ${TMP_DIR}/serchwindow_*_filtered_tmp.txt) > ${TMP_DIR}/finalvars_tmp.txt
+	(echo ${header}; cat ${TMP_DIR}/searchwindow_*_filtered_tmp.txt) > ${TMP_DIR}/finalvars_tmp.txt
 
         # Keep unique (duplicates from overlapping windows) add header and write to output
 	echo "Writing output to: ${OUT_DIR}/${OUTNAME}"
 	sort -V -k1,1 -k2,2 ${TMP_DIR}/finalvars_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
 	echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
-
+	
+	echo "Compressing output file"
 	gzip ${OUT_DIR}/${OUTNAME}
 
-	# Re-zip original file
+	echo "Re-compressing input file"
 	gzip ${DCODE_DATA}/${INFILE}
 
         rm -r ${TMP_DIR}
@@ -124,4 +125,9 @@ fi
 
 end_time=$(date +%s)
 duration=$((end_time - start_time))
-echo "Duration: $((duration / 3600)) hours(s)"
+
+((sec=duration%60, duration/=60, min=duration%60, hrs=duration/60))
+timestamp=$(printf "Total time taken - %d hours, %d minutes, and %d seconds." $hrs $min $sec)
+
+echo "Processing: ${FILE} COMPLETE! `date` ${timestamp}"
+echo "Processing: ${FILE} COMPLETE! `date` ${timestamp}" >> ${OUT_DIR}/filtering.log

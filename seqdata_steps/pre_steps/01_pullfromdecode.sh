@@ -23,21 +23,22 @@ OUT_DIR=${RAWDATA_DIR}/ukb-seq/downloads/halldorexwas/decode_data_filtered
 mkdir -p ${OUT_DIR}
 
 BASENAME=$(basename ${FILE} .txt.gz)
+INFILE=${BASENAME}.txt
 OUTNAME=${BASENAME}_filtered.txt
 
-echo "Unzipping ${FILE}..."
-gunzip ${DCODE_DATA}/${FILE}
-
-INFILE=${BASENAME}.txt
-
-echo "Checking integrity of ${INFILE}"
-CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
-CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
-[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
-
-echo "Processing file: ${INFILE}"
-
 if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
+
+	if [[ ! -e "${DCODE_DATA}/${INFILE}" ]] ; then
+		echo "Unzipping ${FILE}..."
+        	gunzip ${DCODE_DATA}/${FILE}
+	fi
+
+	echo "Checking integrity of ${INFILE}"
+	CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
+	CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
+	[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
+
+	echo "Processing file: ${INFILE}"
 
 	# Temporary directory for processing
     	TMP_DIR=${OUT_DIR}/tmp_${BASENAME}
@@ -67,8 +68,16 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
         sort -V -k1,1 -k2,2 ${TMP_DIR}/top_tmp.txt | uniq > ${TMP_DIR}/top_tmp_uniq.txt
 
 	echo "No. filter 1 hits: $(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)"
-	
-	# Grep surrounding 200,000 lines each side of filter 1 variants and split files
+
+	echo "Splitting chromosomes"
+
+	# Split input file by chromosome
+	for chrom in {1..22}; do
+		chrno=$(echo chr${chrom})
+		rg -w ${chrno} ${DCODE_DATA}/${INFILE} > ${TMP_DIR}/${chrno}_tmp.txt
+	done
+
+	# Grep surrounding 200,000 lines each side of filter 1 variants and split files again
 	echo "Splitting windows surrounding filter 1 hits"
 	
 	i=1
@@ -76,7 +85,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 		keepchr=$(echo ${line} | awk '{print $1}')
 		pasteline=$(echo ${line} | awk '{print $1":"$2":"}')
 
-		rg ${pasteline} ${DCODE_DATA}/${INFILE} -C 200000 | awk -v chr=${chr_index} -v keep=${keepchr} \
+		rg ${pasteline} ${TMP_DIR}/${keepchr}_tmp.txt -C 200000 | awk -v chr=${chr_index} -v keep=${keepchr} \
 		'$chr == keep' > "${TMP_DIR}/searchwindow_${i}_tmp.txt"
 		
 		i=$((i+1))

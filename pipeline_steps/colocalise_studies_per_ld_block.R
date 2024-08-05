@@ -55,7 +55,7 @@ post_coloc_filtering <- function(hyprcoloc_results) {
 
   #we have to remove subsets again because hyprcoloc breaks the larger groups up and reports on different iterations
   subsets <- find_subsets_of_grouped_studies(traits)
-  hyprcoloc_results <- hyprcoloc_results[-subsets, ]
+  if (length(subsets) > 0) hyprcoloc_results <- hyprcoloc_results[-subsets, ]
 
   return(hyprcoloc_results)
 }
@@ -87,12 +87,13 @@ group_studies_in_same_bp_range <- function(studies) {
   }
 
   subsets <- find_subsets_of_grouped_studies(grouped_studies)
-  grouped_studies <- grouped_studies[-subsets]
+  if (length(subsets) > 0) grouped_studies <- grouped_studies[-subsets]
   return(grouped_studies)
 }
 
 find_subsets_of_grouped_studies <- function(grouped_studies) {
   subsets <- c()
+  if (length(grouped_studies) < 2) return(subsets)
   for (i in 1:(length(grouped_studies)-1)) {
     for (j in (i+1):length(grouped_studies)) {
       if (all(grouped_studies[[i]] %in% grouped_studies[[j]])) {
@@ -118,6 +119,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
     binary_outcomes <- lapply(categories, function(category) {
       return (category == study_categories$binary)
     })
+
 
     beta_matrix <- lapply(specific_group, function(study) study$BETA) |>
       dplyr::bind_cols() |>

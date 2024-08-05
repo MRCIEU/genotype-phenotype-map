@@ -144,7 +144,9 @@ compile_coloc_results <- function(raw_coloc_results, studies_processed) {
     return(paired_results)
   }) |> dplyr::bind_rows()
 
-
+  #remove duplicate rows (of either study_a, study_b or study_b, study_a)
+  cols <- c('unique_study_a','unique_study_b')
+  pairwise_significant_results <- pairwise_significant_results[!duplicated(t(apply(pairwise_significant_results[cols], 1, sort))), ]
 
   return(pairwise_significant_results)
 }

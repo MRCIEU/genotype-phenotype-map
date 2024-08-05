@@ -3,9 +3,10 @@
 LIST=$1
 NUM_PARALLEL=250
 
+DIR_NAME=/local-scratch/data/ukb-seq/downloads/halldorexwas/decode_data
+
 count=1
 for FILE in $(cat ${LIST}); do
-  DIR_NAME=$(dirname $FILE)
   BASENAME=$(basename ${FILE} .txt.gz)
   LOG_FILE=$DIR_NAME/$BASENAME.log
   ./01_pullfromdecode.sh $FILE &> $LOG_FILE &

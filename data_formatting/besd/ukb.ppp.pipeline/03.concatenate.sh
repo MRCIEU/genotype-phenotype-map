@@ -1,7 +1,6 @@
 #!/bin/bash
 
-#GZ_FILES="/home/rj18633/scratch/gp.map/data/besd.formatting/test.out/v1/v3/snps.updated"
-#ESD_DIR="/home/rj18633/scratch/gp.map/data/besd.formatting/test.out/v1/v3/esd"
+
 gz_files="$SNPS_UPDATED_DIR"
 esd_dir="$ESD_DIR"
 

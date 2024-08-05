@@ -1,8 +1,5 @@
 #!/bin/bash
 
-## test first 
-##input_dir="/home/rj18633/scratch/gp.map/data/besd.formatting/test.dat"
-###output_dir="/home/rj18633/scratch/gp.map/data/besd.formatting/test.out/v1/v3/processed"
 
 # Use environment variables for input and output directories instead
 input_dir="$INPUT_DIR"

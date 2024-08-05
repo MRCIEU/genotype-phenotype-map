@@ -3,9 +3,7 @@ library(dplyr)
 library(future)
 library(furrr)
 
-###setwd("/home/rj18633/scratch/gp.map/data/besd.formatting/test.out/v1/v3/processed")
-###out.path <- "/home/rj18633/scratch/gp.map/data/besd.formatting/test.out/v1/v3/snps.updated"
- 
+
 
 # Use environment variables for directories
 processed_dir <- Sys.getenv("PROCESSED_DIR")

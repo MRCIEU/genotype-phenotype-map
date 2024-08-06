@@ -130,4 +130,3 @@ populate_json_for_besd <- function() {
 
 }
 
-update_finemapped_studies()

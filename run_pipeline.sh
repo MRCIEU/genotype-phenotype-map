@@ -22,7 +22,7 @@ NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
 if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
-elif [[ $NUM_STUDIES > 200000 ]]; then
+elif [[ $NUM_STUDIES -gt 200000 ]]; then
   echo '!!! WARNING: too many studies to ingest at one time.  This will drastically slow down snakemake, consider splitting studies into smaller chunks'
 fi
 

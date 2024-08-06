@@ -61,7 +61,7 @@ calculate_besd_studies_to_process <- function(entries) {
 
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
     all_files_present <- Sys.glob(paste0(besd_study['study'], '.*'))
-    if (length(all_files_present) != 4) {
+    if (length(all_files_present) < 4) {
       stop(paste('BESD study must include besd, epi, esi, and json files:', besd_study['study']))
     }
 

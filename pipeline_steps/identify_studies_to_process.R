@@ -1,6 +1,10 @@
 setwd('pipeline_steps')
 source('constants.R')
 
+parser <- argparser::arg_parser('Identify Studies to Process for Pipeline')
+parser <- argparser::add_argument(parser, '--bespoke_parsing', help = 'Bespoke parsing options', type = 'character', default = 'none')
+args <- argparser::parse_args(parser)
+
 gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
@@ -15,13 +19,13 @@ if (file.exists(studies_processed_file)) {
   studies_processed <- data.frame(study_name=NA)
 }
 
-main <- function() {
+main <- function(args) {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
   opengwas_entries <- dplyr::filter(study_list, data_format == data_formats$opengwas)
   besd_entries <- dplyr::filter(study_list, data_format == data_formats$besd)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
-  besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
+  besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries, args$bespoke_parsing)
 
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
@@ -41,7 +45,7 @@ main <- function() {
 #' study ids should be in the format of <data_source>-<specifier>-<gene>
 #' ex: gtex-liver-ENSG00000269981
 #' NOTE: all underscores _ will be turned into dashes -
-calculate_besd_studies_to_process <- function(entries) {
+calculate_besd_studies_to_process <- function(entries, bespoke_parsing_option) {
   if (nrow(entries) == 0) return(data.frame())
   expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
@@ -67,16 +71,22 @@ calculate_besd_studies_to_process <- function(entries) {
 
     metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
 
-    probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
+    epi <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_names = F, show_col_types = F)
+    probes <- epi$X2
+    genes <- epi$X5
     specifier <- basename(besd_study['study'])
     studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
     studies <- gsub('_', '-', studies)
+    studies <- gsub('\\.', '-', studies)
 
     data_study_dir <- paste0(data_dir, 'study/', studies, '/')
 
-    gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
-    gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
-    traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), gene_names)
+    if (bespoke_parsing_option == bespoke_parsing_options$gtex_sqtl) {
+      probe_strings <- sub('chr\\d+:(\\d+):(\\d+):clu_(\\d+):.*', 'cluster:\\3 bp:\\1-\\2', probes)
+      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes, probe_strings)
+    } else {
+      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes)
+    }
     category <- ifelse(is.na(metadata$category), study_categories$continuous, metadata$category)
 
     return(data.frame(
@@ -90,7 +100,8 @@ calculate_besd_studies_to_process <- function(entries) {
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = probes
+      probe = probes,
+      gene = genes
     ))
   }) |> dplyr::bind_rows()
 }
@@ -132,9 +143,10 @@ calculate_opengwas_studies_to_process <- function(entries) {
       study_location = directory,
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = NA
+      gene = NA,
+      probe = NA
     ))
   }) |> dplyr::bind_rows()
 }
 
-main()
+main(args)

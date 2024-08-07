@@ -9,7 +9,7 @@ from pathlib import Path
 import scipy.linalg
 
 pd.options.mode.copy_on_write = True
-DATA_DIR = os.getenv("DATA_DIR")
+DATA_DIR = os.getenv("DATA_DIR") or '/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/data/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
 LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 
@@ -44,6 +44,20 @@ def main(ld_block, completed_output_file):
 
         if gwas is None or len(gwas) == 0:
             continue
+
+        # min_bp = gwas['BP'].min() - 1000
+        # max_bp = gwas['BP'].max() + 1000
+        # subset_range = ld_region_from_reference_panel['BP'].between(min_bp, max_bp)
+        # ld_matrix_subset = ld_matrix[subset_range, :][:, subset_range]
+        # ld_region_from_reference_panel_subset = ld_region_from_reference_panel[subset_range]
+        #
+        # print('orig info')
+        # print(ld_matrix.shape)
+        # print(ld_region_from_reference_panel.shape)
+        # print('subset info')
+        # print(ld_matrix_subset.shape)
+        # print(ld_region_from_reference_panel_subset.shape)
+        # continue
 
         rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
         known = np.where(rsids_in_gwas)[0]
@@ -80,10 +94,10 @@ def main(ld_block, completed_output_file):
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
-            [study.study, imputed_file, study.chr, study.bp, study.p_value_threshold, study.category, study.sample_size, study.cis_trans,
-             sum(rsids_to_add), eaf_from_reference_panel])
+            [study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold, study.category,
+             study.sample_size, study.cis_trans, sum(rsids_to_add), eaf_from_reference_panel])
 
-    imputed_studies_columns = ['study', 'file', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
+    imputed_studies_columns = ['study', 'file', 'ancestry', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
                                'rows_imputed', 'eaf_from_reference_panel']
     new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
 

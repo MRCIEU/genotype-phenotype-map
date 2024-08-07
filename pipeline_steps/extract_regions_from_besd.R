@@ -7,6 +7,7 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Extract genomic regions from a BESD file')
 parser <- argparser::add_argument(parser, '--extracted_study_location', help = 'Study location', type = 'character')
+parser <- argparser::add_argument(parser, '--bespoke_parsing', help = 'Flag to signal bespoke parsing of besd format', type = 'character', default = 'none')
 parser <- argparser::add_argument(parser, '--extracted_output_file', help = 'Extracted Output file', type = 'character')
 args <- argparser::parse_args(parser)
 
@@ -44,7 +45,7 @@ extract_cis_region <- function(study, p_value_threshold) {
   tmp_cis_snp <- paste0('/tmp/', study$study_name, '_top_snp')
   extract_top_snp <- paste('smr --beqtl-summary', study$study_location,
                            '--query', p_value_threshold,
-                           '--probe ', study$gene,
+                           '--probe ', study$probe,
                            '--cis-wind 1',
                            '--out ', tmp_cis_snp
   )
@@ -60,7 +61,7 @@ extract_cis_region <- function(study, p_value_threshold) {
                               '--query 1',
                               '--snp', top_cis_snp$SNP,
                               '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
-                              '--probe ', study$gene,
+                              '--probe ', study$probe,
                               '--out ', tmp_cis_region
   )
   system(extract_region, wait=T)
@@ -94,7 +95,7 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
   tmp_trans_snps <- paste0('/tmp/', study$study_name, '_top_trans_snps')
   extract_top_snps <- paste('smr --beqtl-summary', study$study_location,
                            '--query', p_value_threshold,
-                           '--probe ', study$gene,
+                           '--probe ', study$probe,
                            '--cis-wind 1',
                            '--out ', tmp_trans_snps
   )
@@ -128,7 +129,7 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
                             '--query 1',
                             '--snp', clumped_snp['SNP'],
                             '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
-                            '--probe ', study$gene,
+                            '--probe ', study$probe,
                             '--out ', tmp_trans_region
     )
     system(extract_region, wait=T)

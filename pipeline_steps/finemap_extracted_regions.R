@@ -63,21 +63,21 @@ main <- function(args) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
         finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv.gz')
-        unique_id <- paste0(study['study'], "_", study['chr'], "_", trimws(study['bp']), "_", finemap_num)
-
+        unique_id <- paste0(study['study'], '_', study['ancestry'], '_', study['chr'], '_', trimws(study['bp']), '_', finemap_num)
         vroom::vroom_write(conditioned_gwas, finemap_file)
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
         new_bps <- c(new_bps, as.numeric(gwas[important_row, ]$BP))
         new_files <- c(new_files, finemap_file)
-        min_ps <- c(min_ps, min(gwas$P))
+        min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
         unique_ids <- c(unique_ids, unique_id)
       }
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
                                            file=new_files,
+                                           ancestry=study[['ancestry']],
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
                                            p_value_threshold=as.numeric(study['p_value_threshold']),
@@ -117,6 +117,7 @@ empty_finemapped_info <- function() {
   return(data.frame(study=character(),
                     unique_study_id=character(),
                     file=character(),
+                    ancestry=character(),
                     chr=character(),
                     bp=numeric(),
                     p_value_threshold=numeric(),
@@ -135,10 +136,11 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message=
   min_p <- min(gwas$P)
 
   failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv.gz')
-  unique_id <- paste0(study['study'], "_", study['chr'], "_", study['bp'], "_1")
+  unique_id <- paste0(study['study'], "_", study['ancestry'], '_', study['chr'], "_", trimws(study['bp']), "_1")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
                                     file=failed_finemap_file,
+                                    ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
                                     bp=as.numeric(study['bp']),
                                     p_value_threshold=as.numeric(study['p_value_threshold']),

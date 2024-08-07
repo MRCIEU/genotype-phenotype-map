@@ -12,7 +12,7 @@ all_extracted_snp_files <- paste0(studies_to_process$extracted_location, 'extrac
 all_extracted_snp_files  <- Filter(function(file) file.info(file)$size > 70, all_extracted_snp_files)
 all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
 
-all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_\\.]+')
+all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:\\.]+')
 extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_region)
 
 results <- lapply(extracted_snps_by_region, function(extracted_snps) {
@@ -23,6 +23,7 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
   extracted_studies <- data.frame(study = merged_data$study_name,
                                   data_type = merged_data$data_type,
                                   file = merged_data$file,
+                                  ancestry = merged_data$ancestry,
                                   chr = merged_data$chr,
                                   bp = merged_data$bp,
                                   p_value_threshold = merged_data$p_value_threshold,

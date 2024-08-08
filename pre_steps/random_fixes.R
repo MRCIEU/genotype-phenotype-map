@@ -1,33 +1,23 @@
 source('../pipeline_steps/constants.R')
 
 update_studies_processed <- function() {
-  gene_name_map <- vroom::vroom(paste0('/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/data/1000genomes/gene_name_map.tsv'), show_col_types=F)
-  results_dir <- '/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/results'
-  studies_processed_file <- paste0(results_dir, '/studies_processed.tsv')
-  studies_processed <- vroom::vroom(studies_processed_file)
-  gene_names <- gene_name_map$GENE_NAME[match(studies_processed$gene, gene_name_map$ENSEMBL_ID)]
-  studies_processed$gene <- gene_names
-  vroom::vroom_write(studies_processed, studies_processed_file)
-
-}
-
-update_extracted_studies <- function() {
-  results_dir <- '/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/results/'
   studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
   studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
-  studies_processed$probe <- studies_processed$gene
   studies_processed$study_name <- sub('\\.', '-', studies_processed$study_name)
-
-  studies_processed$extracted_location <- sub('BrainMeta-cis-eqtl-BrainMeta-cis-eQTL', 'BrainMeta-cis-eQTL', studies_processed$extracted_location)
-  studies_processed$extracted_location <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', studies_processed$extracted_location)
-  studies_processed$extracted_location[grepl('BrainMeta-cis-eQTL', studies_processed$extracted_location)] <- sub('\\.', '-', studies_processed$extracted_location[grepl('BrainMeta-cis-eQTL', studies_processed$extracted_location)])
+  
+  studies_processed$study_name <- sub('BrainMeta-cis-eqtl-BrainMeta-cis-eQTL', 'BrainMeta-cis-eQTL', studies_processed$study_name)
+  studies_processed$study_name <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', studies_processed$study_name)
 
   vroom::vroom_write(studies_processed, studies_processed_file)
+}
 
-  brain_studies <- Sys.glob(extracted_study_dir, 'Brain*')
-  lapply(brain_studies, function(study) {
+update_extracted_snps <- function() {
+  brain_studies <- Sys.glob(paste0(extracted_study_dir, 'BrainMeta*/'))
+
+  dont_print <- lapply(brain_studies, function(study) {
     extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
     extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) > 0) print(extracted_snps_file)
 
     extracted_snps$file <- sub('BrainMeta-cis-eqtl-BrainMeta-cis-eQTL', 'BrainMeta-cis-eQTL', extracted_snps$file)
     extracted_snps$file <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', extracted_snps$file)
@@ -43,6 +33,7 @@ brain_meta_updates <- function() {
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
   lapply(ld_info$ld_block_data, function(ld_block) {
+    print(ld_block)
     extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
     if (!file.exists(extracted_studies_file)) return()
 
@@ -56,7 +47,7 @@ brain_meta_updates <- function() {
     extracted_studies$file <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', extracted_studies$file)
     extracted_studies$file[grepl('BrainMeta-cis-eQTL', extracted_studies$file)] <- sub('\\.', '-', extracted_studies$file[grepl('BrainMeta-cis-eQTL', extracted_studies$file)])
 
-    vroom::vroom(extracted_studies, extracted_studies_file)
+    vroom::vroom_write(extracted_studies, extracted_studies_file)
 
 
     imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
@@ -72,8 +63,7 @@ brain_meta_updates <- function() {
     imputed_studies$file <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', imputed_studies$file)
     imputed_studies$file[grepl('BrainMeta-cis-eQTL', imputed_studies$file)] <- sub('\\.', '-', imputed_studies$file[grepl('BrainMeta-cis-eQTL', imputed_studies$file)])
 
-    vroom::vroom(imputed_studies, imputed_studies_file)
-
+    vroom::vroom_write(imputed_studies, imputed_studies_file)
 
     finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
     if (!file.exists(finemapped_studies_file)) return()
@@ -87,6 +77,9 @@ brain_meta_updates <- function() {
     finemapped_studies$unique_study_id <- sub('BrainMeta-cis-eqtl-BrainMeta-cis-eQTL', 'BrainMeta-cis-eQTL', finemapped_studies$unique_study_id)
     finemapped_studies$unique_study_id <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', finemapped_studies$unique_study_id)
     finemapped_studies$unique_study_id <- sub('\\.', '-', finemapped_studies$unique_study_id)
+    finemapped_studies$unique_study_id <- gsub(' ', '', finemapped_studies$unique_study_id)
+    fill_study_name <- grepl('^EUR', finemapped_studies$unique_study_id)
+    finemapped_studies$unique_study_id[fill_study_name] <- paste0(finemapped_studies$study[fill_study_name], '_', finemapped_studies$unique_study_id[fill_study_name])
 
     finemapped_studies$file <- sub('BrainMeta-cis-eqtl-BrainMeta-cis-eQTL', 'BrainMeta-cis-eQTL', finemapped_studies$file)
     finemapped_studies$file <- sub('Brain-eMeta-Brain-eMeta', 'Brain-eMeta-full', finemapped_studies$file)
@@ -100,18 +93,14 @@ brain_meta_updates <- function() {
     fill_eur <- !grepl('EUR', finemapped_studies$unique_study_id)
     finemapped_studies$unique_study_id[fill_eur] <- sub('_', '_EUR_', finemapped_studies$unique_study_id[fill_eur])
 
-    fill_study_name <- grepl('^EUR', finemapped_studies$unique_study_id)
-    finemapped_studies$unique_study_id[fill_study_name] <- paste0(finemapped_studies$study[fill_study_name], '_', finemapped_studies$unique_study_id[fill_study_name])
-    finemapped_studies$unique_study_id <- gsub(' ', '', finemapped_studies$unique_study_id)
-
-
     no_min_p_finemapped <- finemapped_studies[is.na(finemapped_studies$min_p), ]
     actual_min_ps <- lapply(no_min_p_finemapped$file, function(file) {
-      min(vroom::vroom(file, show_col_types = F)$P)
+      return(min(vroom::vroom(file, show_col_types = F)$P))
     })
-    finemapped_studies$min_p[is.na(finemapped_studies$min_p)] <- actual_min_ps
+    finemapped_studies$min_p[is.na(finemapped_studies$min_p)] <- unlist(actual_min_ps)
+
+    vroom::vroom_write(finemapped_studies, finemapped_studies_file)
   })
-  vroom::vroom(finemapped_studies, finemapped_studies_file)
 
 }
 

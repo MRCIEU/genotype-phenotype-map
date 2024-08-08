@@ -2,6 +2,7 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Organise Extracted Regions into LD regions')
 parser <- argparser::add_argument(parser, '--output_file', help = 'Output file', type = 'character')
+parser <- argparser::add_argument(parser, '--include_all', help = 'Include all flag', flag = T)
 args <- argparser::parse_args(parser)
 
 ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
@@ -12,18 +13,19 @@ all_extracted_snp_files <- paste0(studies_to_process$extracted_location, 'extrac
 all_extracted_snp_files  <- Filter(function(file) file.info(file)$size > 70, all_extracted_snp_files)
 all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
 
-all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:\\.]+')
+all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:]+')
 extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_region)
 
 results <- lapply(extracted_snps_by_region, function(extracted_snps) {
   ld_block <- unique(extracted_snps$ld_region)
   ld_info <- ld_block_dirs(ld_block)
   merged_data <- merge(extracted_snps, studies_to_process, by='study_name')
+  if (nrow(extracted_snps) == 0) return()
 
   extracted_studies <- data.frame(study = merged_data$study_name,
                                   data_type = merged_data$data_type,
                                   file = merged_data$file,
-                                  ancestry = merged_data$ancestry,
+                                  ancestry = merged_data$ancestry.x,
                                   chr = merged_data$chr,
                                   bp = merged_data$bp,
                                   p_value_threshold = merged_data$p_value_threshold,
@@ -50,5 +52,9 @@ ld_regions$ld_block <- paste0(ld_regions$ancestry, '/', ld_regions$chr, '/', ld_
 ld_regions$data_dir <- ld_info$ld_block_data
 ld_regions$results_dir <- ld_info$ld_block_results
 all_updated_ld_blocks <- dplyr::filter(ld_regions, ld_block %in% names(extracted_snps_by_region)) |> dplyr::arrange(chr)
+
+if (args$include_all) {
+  all_updated_ld_blocks <- ld_regions
+}
 
 vroom::vroom_write(all_updated_ld_blocks, args$output_file)

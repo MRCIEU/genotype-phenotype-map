@@ -1,10 +1,6 @@
 setwd('pipeline_steps')
 source('constants.R')
 
-parser <- argparser::arg_parser('Identify Studies to Process for Pipeline')
-parser <- argparser::add_argument(parser, '--bespoke_parsing', help = 'Bespoke parsing options', type = 'character', default = 'none')
-args <- argparser::parse_args(parser)
-
 gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
@@ -19,13 +15,13 @@ if (file.exists(studies_processed_file)) {
   studies_processed <- data.frame(study_name=NA)
 }
 
-main <- function(args) {
+main <- function() {
   if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
 
   opengwas_entries <- dplyr::filter(study_list, data_format == data_formats$opengwas)
   besd_entries <- dplyr::filter(study_list, data_format == data_formats$besd)
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
-  besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries, args$bespoke_parsing)
+  besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
 
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
@@ -45,7 +41,7 @@ main <- function(args) {
 #' study ids should be in the format of <data_source>-<specifier>-<gene>
 #' ex: gtex-liver-ENSG00000269981
 #' NOTE: all underscores _ will be turned into dashes -
-calculate_besd_studies_to_process <- function(entries, bespoke_parsing_option) {
+calculate_besd_studies_to_process <- function(entries) {
   if (nrow(entries) == 0) return(data.frame())
   expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
@@ -56,6 +52,7 @@ calculate_besd_studies_to_process <- function(entries, bespoke_parsing_option) {
     return(data.frame(
       data_type = entry[['data_type']],
       data_format = entry[['data_format']],
+      bespoke_parsing = entry[['bespoke_parsing']],
       data_source = data_source,
       study = studies_without_extensions,
       directory = entry[['data_location']],
@@ -81,7 +78,7 @@ calculate_besd_studies_to_process <- function(entries, bespoke_parsing_option) {
 
     data_study_dir <- paste0(data_dir, 'study/', studies, '/')
 
-    if (bespoke_parsing_option == bespoke_parsing_options$gtex_sqtl) {
+    if (besd_study['bespoke_parsing'] == bespoke_parsing_options$gtex_sqtl) {
       probe_strings <- sub('chr\\d+:(\\d+):(\\d+):clu_(\\d+):.*', 'cluster:\\3 bp:\\1-\\2', probes)
       traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes, probe_strings)
     } else {
@@ -149,4 +146,4 @@ calculate_opengwas_studies_to_process <- function(entries) {
   }) |> dplyr::bind_rows()
 }
 
-main(args)
+main()

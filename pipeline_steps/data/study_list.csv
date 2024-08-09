@@ -1,5 +1,8 @@
-id_pattern,data_type,data_format,data_location,ancestry,p_value_threshold
-ebi-a-*,phenotype,opengwas,/local-scratch/data/opengwas/igd,EUR,5e-8
-*,gene_expression,besd,/local-scratch/data/GTEx-cis,EUR,5e-8
-*,gene_expression,besd,/local-scratch/data/Brain-eMeta,EUR,5e-8
-*,gene_expression,besd,/local-scratch/data/BrainMeta-cis-eqtl,EUR,5e-8
+id_pattern,data_type,data_format,bespoke_parsing,data_location,ancestry,p_value_threshold
+ebi-a-*,phenotype,opengwas,none,/local-scratch/data/opengwas/igd,EUR,5e-8
+*,gene_expression,besd,none,/local-scratch/data/GTEx-cis,EUR,5e-8
+*,gene_expression,besd,none,/local-scratch/data/Brain-eMeta,EUR,5e-8
+*,gene_expression,besd,none,/local-scratch/data/BrainMeta-cis-eQTL,EUR,5e-8
+Whole_Blood*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
+Cells_Cult*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
+Nerve_Tibial*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8

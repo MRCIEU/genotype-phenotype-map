@@ -157,7 +157,7 @@ order_trait_by_type <- function(traits, studies_processed) {
     dplyr::select(study_name, data_type)
 
   studies <- studies[order(studies$study_name), ]
-  studies$unique_study_id <- traits
+  studies$unique_study_id <- traits[order(traits)]
   studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
   return(studies)
 }

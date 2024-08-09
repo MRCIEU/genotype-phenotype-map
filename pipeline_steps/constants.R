@@ -15,6 +15,7 @@ thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
 ld_block_results_dir <- paste0(results_dir, 'ld_blocks/')
+bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?

@@ -52,6 +52,7 @@ calculate_besd_studies_to_process <- function(entries) {
     return(data.frame(
       data_type = entry[['data_type']],
       data_format = entry[['data_format']],
+      bespoke_parsing = entry[['bespoke_parsing']],
       data_source = data_source,
       study = studies_without_extensions,
       directory = entry[['data_location']],
@@ -67,16 +68,22 @@ calculate_besd_studies_to_process <- function(entries) {
 
     metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
 
-    probes <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_select = 2, col_names = F, show_col_types = F)$X2
+    epi <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_names = F, show_col_types = F)
+    probes <- epi$X2
+    genes <- epi$X5
     specifier <- basename(besd_study['study'])
     studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
     studies <- gsub('_', '-', studies)
+    studies <- gsub('\\.', '-', studies)
 
     data_study_dir <- paste0(data_dir, 'study/', studies, '/')
 
-    gene_names <- gene_name_map$GENE_NAME[match(probes, gene_name_map$ENSEMBL_ID)]
-    gene_names[is.na(gene_names)] <- probes[is.na(gene_names)]
-    traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), gene_names)
+    if (besd_study['bespoke_parsing'] == bespoke_parsing_options$gtex_sqtl) {
+      probe_strings <- sub('chr\\d+:(\\d+):(\\d+):clu_(\\d+):.*', 'cluster:\\3 bp:\\1-\\2', probes)
+      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes, probe_strings)
+    } else {
+      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes)
+    }
     category <- ifelse(is.na(metadata$category), study_categories$continuous, metadata$category)
 
     return(data.frame(
@@ -90,7 +97,8 @@ calculate_besd_studies_to_process <- function(entries) {
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = probes
+      probe = probes,
+      gene = genes
     ))
   }) |> dplyr::bind_rows()
 }
@@ -132,7 +140,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       study_location = directory,
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
-      gene = NA
+      gene = NA,
+      probe = NA
     ))
   }) |> dplyr::bind_rows()
 }

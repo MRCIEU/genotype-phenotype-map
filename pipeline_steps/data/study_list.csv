@@ -4,5 +4,5 @@ ebi-a-*,phenotype,opengwas,none,/local-scratch/data/opengwas/igd,EUR,5e-8
 *,gene_expression,besd,none,/local-scratch/data/Brain-eMeta,EUR,5e-8
 *,gene_expression,besd,none,/local-scratch/data/BrainMeta-cis-eQTL,EUR,5e-8
 Whole_Blood*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
-Nerve_*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
-Cells_*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
+Cells_Cult*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
+Nerve_Tibial*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8

@@ -59,9 +59,9 @@ def main(ld_block, completed_output_file):
         # print(ld_region_from_reference_panel_subset.shape)
         # continue
 
-        rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
-        known = np.where(rsids_in_gwas)[0]
-        unknown = np.where(rsids_in_gwas == False)[0]
+        snps_in_gwas = np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)
+        known = np.where(snps_in_gwas)[0]
+        unknown = np.where(snps_in_gwas == False)[0]
 
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
@@ -88,9 +88,9 @@ def main(ld_block, completed_output_file):
         print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
-        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)]
-        gwas.set_index(gwas['RSID'], inplace=True)
-        gwas = gwas.loc[lds_in_gwas.RSID]
+        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)]
+        gwas.set_index(gwas['SNP'], inplace=True)
+        gwas = gwas.loc[lds_in_gwas.SNP]
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
@@ -114,8 +114,6 @@ def main(ld_block, completed_output_file):
 def standardise_extracted_gwas(gwas, ld_region):
     eaf_from_reference_panel = False
 
-    gwas.drop_duplicates(subset=['RSID'], inplace=True)
-
     if 'Z' not in gwas.columns:
         gwas['SE'] = gwas['SE'].replace(0, 0.00001)
         gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
@@ -123,24 +121,24 @@ def standardise_extracted_gwas(gwas, ld_region):
         gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
         gwas.drop('LP', axis=1, inplace=True)
 
-    rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
-    gwas = gwas[rsids_in_ld_block]
+    snps_in_ld_block = np.isin(gwas.SNP, ld_region.SNP)
+    gwas = gwas[snps_in_ld_block]
 
     columns_to_coerse = ['EAF'] #add BETA and SE?
     gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
 
     if gwas['EAF'].isnull().all():
         gwas.drop(columns=['EAF'], inplace=True)
-        new_eafs = ld_region[['RSID', 'EAF']]
-        gwas = gwas.merge(new_eafs, how='left', on='RSID')
+        new_eafs = ld_region[['SNP', 'EAF']]
+        gwas = gwas.merge(new_eafs, how='left', on='SNP')
         eaf_from_reference_panel = True
 
     gwas.dropna(subset=columns_to_coerse, inplace=True)
 
     # ensure order of gwas and ld region match
-    lds_in_gwas = ld_region[np.isin(ld_region.RSID, gwas.RSID)]
-    gwas.set_index(gwas['RSID'], inplace=True)
-    gwas = gwas.loc[lds_in_gwas.RSID]
+    lds_in_gwas = ld_region[np.isin(ld_region.SNP, gwas.SNP)]
+    gwas.set_index(gwas['SNP'], inplace=True)
+    gwas = gwas.loc[lds_in_gwas.SNP]
 
     return gwas, eaf_from_reference_panel
 

@@ -60,7 +60,7 @@ extract_cis_region <- function(study, p_value_threshold) {
   extract_region <- paste('smr --beqtl-summary', study$study_location,
                               '--query 1',
                               '--snp', top_cis_snp$SNP,
-                              '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
+                              '--snp-wind 1000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
                               '--probe ', study$probe,
                               '--out ', tmp_cis_region
   )
@@ -136,7 +136,7 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
     trans_region <- vroom::vroom(paste0(tmp_trans_region, '.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region)
 
-    extracted_file <-paste0(study$extracted_location, '/original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
+    extracted_file <- paste0(study$extracted_location, '/original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
     vroom::vroom_write(trans_region, extracted_file)
     ld_block <- dplyr::filter(ld_regions, chr == clumped_snp['CHR'] & start < clumped_snp['BP'] & stop > clumped_snp['BP'] & ancestry == study$ancestry)
 
@@ -160,6 +160,9 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
 format_gwas <- function(gwas) {
   gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', BETA='b', P='p') |>
     dplyr::select(-Probe, -Probe_Chr, -Probe_bp, -Gene, -Orientation)
+
+  gwas <- standardise_alleles(gwas)
+
   return(gwas)
 }
 

@@ -121,6 +121,8 @@ def standardise_extracted_gwas(gwas, ld_region):
         gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
         gwas.drop('LP', axis=1, inplace=True)
 
+    gwas = standardise_alleles(gwas)
+
     snps_in_ld_block = np.isin(gwas.SNP, ld_region.SNP)
     gwas = gwas[snps_in_ld_block]
 
@@ -142,6 +144,27 @@ def standardise_extracted_gwas(gwas, ld_region):
 
     return gwas, eaf_from_reference_panel
 
+
+def standardise_alleles(gwas):
+    gwas['EA'] = gwas['EA'].str.upper()
+    gwas['OA'] = gwas['OA'].str.upper()
+    gwas['EAF'] = pd.to_numeric(gwas['EAF'], errors='coerce')
+
+    to_flip = (gwas['EA'] > gwas['OA']) & (~gwas['EA'].isin(['D', 'I']))
+
+    if to_flip.any():
+        gwas.loc[to_flip, 'EAF'] = 1 - gwas.loc[to_flip, 'EAF']
+        gwas.loc[to_flip, 'BETA'] = -1 * gwas.loc[to_flip, 'BETA']
+
+        temp = gwas.loc[to_flip, 'OA'].copy()
+        gwas.loc[to_flip, 'OA'] = gwas.loc[to_flip, 'EA']
+        gwas.loc[to_flip, 'EA'] = temp
+
+    gwas['SNP'] = (gwas['CHR'].astype(str) + ":" +
+                   gwas['BP'].map(lambda x: format(x, 'f').rstrip('0').rstrip('.')) + "_" +
+                   gwas['EA'] + "_" + gwas['OA']).str.upper()
+
+    return gwas
 
 class SummaryStatisticsImputation:
     """Implementation of RAISS summary statstics imputation model."""

@@ -1,0 +1,14 @@
+{
+  "name": "genotype-phenotype",
+  "version": "1.0.0",
+  "description": "Visualisation for the genotype phenotype map project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cytoscape-dagre": "^2.5.0"
+  }
+}

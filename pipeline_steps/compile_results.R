@@ -119,6 +119,7 @@ aggregate_pipeline_metadata <- function(ld_info) {
 
 compile_coloc_results <- function(raw_coloc_results, studies_processed) {
   significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+  significant_results$coloc_group_id <- paste0('coloc_group_', seq(nrow(significant_results)))
 
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
@@ -131,7 +132,9 @@ compile_coloc_results <- function(raw_coloc_results, studies_processed) {
       dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
       dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
                     candidate_snp = as.character(result['candidate_snp']),
-                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp'])
+                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp'],
+                    coloc_group_id = result['group_id']
+                    )
       )
 
     #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological

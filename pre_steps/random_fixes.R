@@ -133,6 +133,58 @@ standardise_everything <- function() {
   }
 }
 
+standardise_z_scores <- function() {
+  all_studies <- Sys.glob(paste0(extracted_study_dir, '*/'))
+
+  for (study in all_studies) {
+    print(paste('standardising', study))
+    extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
+    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) == 0) next
+
+    apply(extracted_snps, 1, function(extraction) {
+      standardised_imputed_study <- sub('original', 'imputed', extraction[['file']])
+      old_imputed_study <- sub('study/', 'study_fix/study/', standardised_imputed_study)
+      if (!file.exists(standardised_imputed_study)) {
+        print(paste('IMPUTATION MISSING: ', standardised_imputed_study))
+        return()
+      }
+      standardised_imputed_gwas <- vroom::vroom(standardised_imputed_study, show_col_types = F)
+      old_imputed_gwas <- vroom::vroom(old_imputed_study, show_col_types = F)
+      updated_imputed_gwas <- fix_z_score_direction(old_imputed_gwas, standardised_imputed_gwas)
+      vroom::vroom_write(updated_imputed_gwas, standardised_imputed_study)
+
+      finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
+      finemap_file_prefix <- sub('\\..*', '', finemapped_studies)
+      all_finemaps <- Sys.glob(paste0(finemap_file_prefix, '*'))
+
+      if (length(all_finemaps) == 0) {
+        print(paste('FINEMAPPING MISSING: ', finemap_file_prefix))
+        return()
+      }
+
+      for (standardised_finemap_study in all_finemaps) {
+        old_finemapped_study <- sub('study/', 'study_fix/study/', standardised_finemap_study)
+
+        standardised_finemap_gwas <- vroom::vroom(standardised_finemap_study, show_col_types = F)
+        old_finemap_gwas <- vroom::vroom(standardised_finemap_study, show_col_types = F)
+
+        updated_finemap_study <- fix_z_score_direction(old_finemap_gwas, standardised_finemap_gwas)
+        vroom::vroom_write(updated_finemap_study, standardised_finemap_study)
+      }
+    })
+  }
+}
+
+fix_z_score_direction <- function(old_gwas, standardised_gwas) {
+  to_flip <- (old_gwas$EA > old_gwas$OA) & (!old_gwas$EA %in% c("D", "I"))
+  if (any(to_flip)) {
+    standardised_gwas$Z[to_flip] <- -1 * standardised_gwas$Z[to_flip]
+  }
+
+  return(standardised_gwas)
+}
+
 
 update_studies_processed <- function() {
   studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
@@ -357,4 +409,4 @@ populate_json_for_besd <- function() {
 
 }
 
-standardise_everything()
+standardise_z_scores()

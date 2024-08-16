@@ -52,8 +52,6 @@ while IFS=' ' read -r CHR POS LOG_P; do
   gzip $EXTRACTED_FILE
   EXTRACTED_FILE="$EXTRACTED_FILE.gz"
 
-  Rscript standardise_alleles.R --gwas_file $EXTRACTED_FILE
-
   SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}/${BEGINNING_END//-/_}"
 
   echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\t${CIS_TRANS}" >> $EXTRACTED_SNPS

@@ -161,8 +161,6 @@ format_gwas <- function(gwas) {
   gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', BETA='b', P='p') |>
     dplyr::select(-Probe, -Probe_Chr, -Probe_bp, -Gene, -Orientation)
 
-  gwas <- standardise_alleles(gwas)
-
   return(gwas)
 }
 

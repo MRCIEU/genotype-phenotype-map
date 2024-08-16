@@ -68,6 +68,10 @@ calculate_besd_studies_to_process <- function(entries) {
 
     metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
 
+    if (is.null(metadata$tissue) || is.null(metadata$sample_size)) {
+      stop(paste('json file is missing tissue or sample_size', besd_study['study']))
+    }
+
     epi <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_names = F, show_col_types = F)
     probes <- epi$X2
     genes <- epi$X5
@@ -84,7 +88,8 @@ calculate_besd_studies_to_process <- function(entries) {
     } else {
       traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes)
     }
-    category <- ifelse(is.na(metadata$category), study_categories$continuous, metadata$category)
+    category <- ifelse(is.null(metadata$category), study_categories$continuous, metadata$category)
+    tissue <- ifelse(is.null(metadata$tissue), NA, metadata$tissue)
 
     return(data.frame(
       data_type = besd_study[['data_type']],
@@ -98,7 +103,8 @@ calculate_besd_studies_to_process <- function(entries) {
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
       probe = probes,
-      gene = genes
+      gene = genes,
+      tissue = metadata$tissue
     ))
   }) |> dplyr::bind_rows()
 }
@@ -141,7 +147,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       extracted_location = data_study_dir,
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
       gene = NA,
-      probe = NA
+      probe = NA,
+      tissue = NA
     ))
   }) |> dplyr::bind_rows()
 }

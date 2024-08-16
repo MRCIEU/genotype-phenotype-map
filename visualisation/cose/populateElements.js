@@ -1,5 +1,8 @@
 jsonInput = {
-    gene: {id: 'GENE', display_name: "Gene"},
+    gene: {
+        id: 'IL6',
+        display_name: "IL6"
+    },
     studies: [
         {
             id: 'phenotype_3',
@@ -90,7 +93,7 @@ jsonInput = {
             data_type: 'eqtl',
             display_name: 'eqtl_2',
             full_name: 'eqtl_2',
-            tissue: 'Adipose Subcutaneous',
+            tissue: 'Liver',
             coloc_group_id: 'coloc_group_45',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
@@ -108,7 +111,7 @@ jsonInput = {
             data_type: 'sqtl',
             display_name: 'sqtl_2',
             full_name: 'sqtl_2',
-            tissue: 'Liver',
+            tissue: 'Adipose Subcutaneous',
             coloc_group_id: 'coloc_group_23',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
@@ -237,7 +240,9 @@ let cy = window.cy = cytoscape({
     container: document.getElementById('cy'),
     boxSelectionEnabled: false,
     autounselectify: true,
-    animate: true,
+    idealEdgeLength: 1,
+    // animate: true,
+    // animationDuration: 500,
 
     layout: {
         name: 'cose',
@@ -247,11 +252,38 @@ let cy = window.cy = cytoscape({
             selector: ':parent',
             style: {
                 'background-opacity': 0.05,
-                'border-width': 0.3
+                'border-width': 0.3,
+                'display': 'none'
             }
         },
         {
-            selector: 'node',
+            selector: '.gene',
+            style: {
+                'shape': 'round-rectangle',
+                'height': 20,
+                'width': 40,
+                "text-valign": "center",
+                "text-halign": "center",
+                'background-color': 'data(background)',
+                'label': "data(label)",
+                'font-size': '8px',
+            }
+        },
+        {
+            selector: '.tissue',
+            style: {
+                'background-color': '#149543',
+                'shape': 'round-rectangle',
+                'height': 10,
+                'width': 40,
+                "text-valign": "center",
+                "text-halign": "center",
+                'label': "data(label)",
+                'font-size': '8px'
+            }
+        },
+        {
+            selector: '.result',
             style: {
                 'shape': 'round-rectangle',
                 'height': 10,
@@ -260,16 +292,25 @@ let cy = window.cy = cytoscape({
                 "text-halign": "center",
                 'background-color': 'data(background)',
                 'label': "data(label)",
-                'font-size': '8px'
+                'font-size': '8px',
+                'display': 'none'
             },
         },
-        { selector: 'edge',
+        {
+            selector: 'edge',
             style: {
                 'curve-style': 'haystack',
                 'haystack-radius': 0,
                 'width': 0.7,
                 'opacity': 0.3,
                 'line-color': '#083a45'
+            }
+        },
+        {
+            selector: '.hidden-edge',
+            style: {
+                'opacity': 0,
+                'line-color': '#df3a45'
             }
         }
     ],
@@ -297,31 +338,55 @@ nodeStyleMap = {
 cy.add({
     data: {
         id: jsonInput.gene.id,
+        level: 2,
+        data_type: 'gene',
         label: jsonInput.gene.display_name,
         background: nodeStyleMap.gene.background
-    }
+    },
+    classes: 'gene'
 })
 
 //creating coloc groups as parent nodes, so we know how to cluster them
-const unique_coloc_groups = [...new Set(jsonInput.studies.map(item => item.coloc_group_id))];
+const unique_coloc_groups = [...new Set(jsonInput.studies.map(item => item.coloc_group_id))].filter(Boolean);
 unique_coloc_groups.forEach(coloc_group => {
     cy.add({
-        data: { id: coloc_group },
+        data: { id: coloc_group, data_type: 'coloc_group'},
         group: 'nodes'
     })
 })
 
+//creating tissues as nodes, maybe in a way to switch between views?
+const unique_tissues= [...new Set(jsonInput.studies.map(item => item.tissue))].filter(Boolean);
+unique_tissues.forEach(tissue => {
+    cy.add({
+        data: {
+            id: tissue,
+            data_type: 'tissue',
+            level: 1,
+            label: tissue,
+        },
+        classes: 'tissue',
+        group: 'nodes'
+    })
+    cy.add({
+        data: { source: jsonInput.gene.id, target: tissue},
+        group: 'edges'
+    })
+})
 
 //creating all nodes for representation
 jsonInput.studies.forEach(study => {
     cy.add({
         data: {
             id: study.id,
+            data_type: study.data_type,
+            tissue: study.tissue,
             label: study.display_name,
             parent: study.coloc_group_id,
             sub_studies: study.sub_studies,
             background: nodeStyleMap[study.data_type].background
         },
+        classes: 'result',
         group: 'nodes'
     })
 })
@@ -333,11 +398,37 @@ jsonInput.links.forEach(link => {
             data: { source: jsonInput.gene.id, target: link.from },
             group: 'edges'
         })
+        //adds reverse link to and from qtl sources, so we can find all successors more easily
+        cy.add({
+            data: { source: link.to, target: link.from },
+            group: 'edges'
+        })
     }
     cy.add({
         data: { source: link.from, target: link.to },
+        classes: 'hidden-edge',
         group: 'edges'
     })
 })
 
-cy.layout({ name: 'cose' }).run();
+cy.layout({ name: 'concentric' }).run();
+
+cy.on('tap', 'node', function(event) {
+    let data = event.target.data()
+    if (data.data_type === 'gene' ) {
+        cy.elements('node[data_type != "tissue"]').style('display', 'none')
+        cy.elements('node[data_type = "tissue"]').style('display', 'element')
+        cy.elements('node[data_type = "gene"]').style('display', 'element')
+        cy.layout({ name: 'concentric' }).run();
+    }
+    else if (data.data_type === 'tissue') {
+        cy.batch(function() {
+            let select = 'node[tissue = "' + data.label + '"]'
+            cy.elements(select).successors().style('display', 'element')
+            cy.elements(select).parent().style('display', 'element')
+            // cy.elements('node[data_type != "tissue"]').style('display', 'element')
+            cy.elements('node[data_type = "tissue"]').style('display', 'none')
+        })
+        cy.layout({ name: 'cose' }).run();
+    }
+})

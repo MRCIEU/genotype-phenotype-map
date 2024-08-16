@@ -110,18 +110,18 @@ let elements = [
         data: { source: 'GENE', target: 'sQTL_1' },
         group: 'edges',
     },
-    {
-        data: { source: 'GENE', target: 'sQTL_2' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'GENE', target: 'sQTL_2' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'GENE', target: 'eQTL_1' },
         group: 'edges',
     },
-    {
-        data: { source: 'GENE', target: 'eQTL_2' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'GENE', target: 'eQTL_2' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'sQTL_1', target: 'eQTL_2' },
         group: 'edges',
@@ -130,62 +130,62 @@ let elements = [
         data: { source: 'eQTL_1', target: 'sQTL_2' },
         group: 'edges',
     },
-    {
-        data: { source: 'eQTL_1', target: 'phenotype_1' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'eQTL_1', target: 'phenotype_1' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'sQTL_2', target: 'phenotype_1' },
         group: 'edges',
     },
-    {
-        data: { source: 'eQTL_1', target: 'phenotype_2' },
-        group: 'edges',
-    },
-    {
-        data: { source: 'sQTL_2', target: 'phenotype_2' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'eQTL_1', target: 'phenotype_2' },
+    //     group: 'edges',
+    // },
+    // {
+    //     data: { source: 'sQTL_2', target: 'phenotype_2' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'phenotype_1', target: 'phenotype_2' },
         group: 'edges',
     },
-    {
-        data: { source: 'sQTL_1', target: 'phenotype_3' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'sQTL_1', target: 'phenotype_3' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'eQTL_2', target: 'phenotype_3' },
         group: 'edges',
     },
-    {
-        data: { source: 'sQTL_1', target: 'phenotype_4' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'sQTL_1', target: 'phenotype_4' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'phenotype_3', target: 'phenotype_4' },
         group: 'edges',
     },
-    {
-        data: { source: 'phenotype_3', target: 'phenotype_5' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'phenotype_3', target: 'phenotype_5' },
+    //     group: 'edges',
+    // },
     {
         data: { source: 'phenotype_4', target: 'phenotype_5' },
         group: 'edges',
     },
-    {
-        data: { source: 'eQTL_2', target: 'phenotype_4' },
-        group: 'edges',
-    },
-    {
-        data: { source: 'sQTL_1', target: 'phenotype_5' },
-        group: 'edges',
-    },
-    {
-        data: { source: 'eQTL_2', target: 'phenotype_5' },
-        group: 'edges',
-    },
+    // {
+    //     data: { source: 'eQTL_2', target: 'phenotype_4' },
+    //     group: 'edges',
+    // },
+    // {
+    //     data: { source: 'sQTL_1', target: 'phenotype_5' },
+    //     group: 'edges',
+    // },
+    // {
+    //     data: { source: 'eQTL_2', target: 'phenotype_5' },
+    //     group: 'edges',
+    // },
 ]
 
 let cy = window.cy = cytoscape({
@@ -193,6 +193,8 @@ let cy = window.cy = cytoscape({
     boxSelectionEnabled: false,
     autounselectify: true,
     animate: true,
+    nodeRepulsion: 1,
+    idealEdgeLength: 1,
 
     layout: {
         name: 'cose',
@@ -202,6 +204,12 @@ let cy = window.cy = cytoscape({
             selector: ':parent',
             style: {
                 'background-opacity': 0.333,
+            }
+        },
+        {
+            selector: '.tissue',
+            style: {
+
             }
         },
         {

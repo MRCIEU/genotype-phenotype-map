@@ -8,3 +8,4 @@ Artery*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
 Whole_Blood*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
 Cells_Cult*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
 Nerve_Tibial*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8
+Heart_Atrial_Appendage_chr21*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,5e-8

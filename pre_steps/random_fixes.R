@@ -134,13 +134,22 @@ standardise_everything <- function() {
 }
 
 standardise_z_scores <- function() {
+  library(parallel)
   all_studies <- Sys.glob(paste0(extracted_study_dir, '*/'))
+  study_to_remove <- '/local-scratch/projects/genotype-phenotype-map/data/study/GTEx-sqtl-cis-Cells-Cultured-fibroblasts-chr1-chr1:100921841:100961828:clu-44102:ENSG00000162695-11/'
+  remove_to <- match(study_to_remove, all_studies)
+  all_studies <- all_studies[-seq(remove_to)]
+  print(length(all_studies))
 
-  for (study in all_studies) {
+  results <- mclapply(X=all_studies, mc.cores=100, FUN=function(study) {
     print(paste('standardising', study))
     extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
+    if (!file.exists(extracted_snps_file )) {
+      print(paste('EXTRACTION MISSING: ', extracted_snps_file))
+      return() 
+    }
     extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
-    if (nrow(extracted_snps) == 0) next
+    if (nrow(extracted_snps) == 0) return()
 
     apply(extracted_snps, 1, function(extraction) {
       standardised_imputed_study <- sub('original', 'imputed', extraction[['file']])
@@ -152,6 +161,11 @@ standardise_z_scores <- function() {
       standardised_imputed_gwas <- vroom::vroom(standardised_imputed_study, show_col_types = F)
       old_imputed_gwas <- vroom::vroom(old_imputed_study, show_col_types = F)
       updated_imputed_gwas <- fix_z_score_direction(old_imputed_gwas, standardised_imputed_gwas)
+
+      if (any((updated_imputed_gwas$Z * updated_imputed_gwas$BETA) < 0, na.rm=T)) {
+        quit(paste('ERROR: ', standardised_imputed_study, 'BETA and Z still dont match'))
+      }
+
       vroom::vroom_write(updated_imputed_gwas, standardised_imputed_study)
 
       finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
@@ -167,17 +181,21 @@ standardise_z_scores <- function() {
         old_finemapped_study <- sub('study/', 'study_fix/study/', standardised_finemap_study)
 
         standardised_finemap_gwas <- vroom::vroom(standardised_finemap_study, show_col_types = F)
-        old_finemap_gwas <- vroom::vroom(standardised_finemap_study, show_col_types = F)
+        old_finemap_gwas <- vroom::vroom(old_finemapped_study, show_col_types = F)
 
-        updated_finemap_study <- fix_z_score_direction(old_finemap_gwas, standardised_finemap_gwas)
-        vroom::vroom_write(updated_finemap_study, standardised_finemap_study)
+        updated_finemap_gwas <- fix_z_score_direction(old_finemap_gwas, standardised_finemap_gwas)
+        if (any((updated_finemap_gwas$Z * updated_finemap_gwas$BETA) < 0, na.rm=T)) {
+          quit(paste('ERROR: ', standardised_finemap_gwas, 'BETA and Z still dont match'))
+        }
+        vroom::vroom_write(updated_finemap_gwas, standardised_finemap_study)
       }
     })
-  }
+  })
 }
 
 fix_z_score_direction <- function(old_gwas, standardised_gwas) {
   to_flip <- (old_gwas$EA > old_gwas$OA) & (!old_gwas$EA %in% c("D", "I"))
+  print(paste('flipping', sum(to_flip), 'z scores'))
   if (any(to_flip)) {
     standardised_gwas$Z[to_flip] <- -1 * standardised_gwas$Z[to_flip]
   }

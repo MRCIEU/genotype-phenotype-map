@@ -24,6 +24,7 @@ main <- function(args) {
 
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
     dplyr::filter(!is.na(traits) & traits != 'None')
+  raw_coloc_results$coloc_group_id <- paste0('coloc_group_', seq(nrow(raw_coloc_results)))
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
   coloc_results <- compile_coloc_results(raw_coloc_results, all_studies_processed)
@@ -119,7 +120,6 @@ aggregate_pipeline_metadata <- function(ld_info) {
 
 compile_coloc_results <- function(raw_coloc_results, studies_processed) {
   significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
-  significant_results$coloc_group_id <- paste0('coloc_group_', seq(nrow(significant_results)))
 
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]

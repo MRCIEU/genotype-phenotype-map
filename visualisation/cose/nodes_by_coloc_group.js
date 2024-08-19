@@ -3,8 +3,8 @@ jsonInput = {
         id: 'IL6',
         display_name: "IL6"
     },
-    studies: [
-        {
+    studies: {
+        'phenotype_3': {
             id: 'phenotype_3',
             data_type: 'phenotype',
             display_name: 'phenotype_3',
@@ -19,7 +19,7 @@ jsonInput = {
                 }
             ]
         },
-        {
+        'phenotype_4': {
             id: 'phenotype_4',
             data_type: 'phenotype',
             display_name: 'phenotype_4',
@@ -34,7 +34,7 @@ jsonInput = {
                 }
             ]
         },
-        {
+        'phenotype_5': {
             id: 'phenotype_5',
             data_type: 'phenotype',
             display_name: 'phenotype_5',
@@ -49,7 +49,7 @@ jsonInput = {
                 }
             ]
         },
-        {
+        'phenotype_1': {
             id: 'phenotype_1',
             data_type: 'phenotype',
             display_name: 'phenotype_1',
@@ -64,7 +64,7 @@ jsonInput = {
                 }
             ]
         },
-        {
+        'phenotype_2': {
             id: 'phenotype_2',
             data_type: 'phenotype',
             display_name: 'phenotype_2',
@@ -79,7 +79,7 @@ jsonInput = {
                 }
             ]
         },
-        {
+        'eqtl_1': {
             id: 'eqtl_1',
             data_type: 'eqtl',
             display_name: 'eqtl_1',
@@ -88,7 +88,7 @@ jsonInput = {
             coloc_group_id: 'coloc_group_23',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
-        {
+        'eqtl_2': {
             id: 'eqtl_2',
             data_type: 'eqtl',
             display_name: 'eqtl_2',
@@ -97,7 +97,7 @@ jsonInput = {
             coloc_group_id: 'coloc_group_45',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
-        {
+        'sqtl_1': {
             id: 'sqtl_1',
             data_type: 'sqtl',
             display_name: 'sqtl_1',
@@ -106,7 +106,7 @@ jsonInput = {
             coloc_group_id: 'coloc_group_45',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
-        {
+        'sqtl_2': {
             id: 'sqtl_2',
             data_type: 'sqtl',
             display_name: 'sqtl_2',
@@ -115,124 +115,20 @@ jsonInput = {
             coloc_group_id: 'coloc_group_23',
             sub_studies: [ { unique_study_id: '123456' } ]
         },
-    ],
-    links: [
+    },
+    coloc_groups: [
         {
-            from: 'sqtl_2',
-            from_data_type: 'sqtl',
-            to: 'eqtl_1',
+            studies: ['sqtl_1', 'eqtl_2', 'phenotype_3', 'phenotype_4', 'phenotype_5'],
+            posterior_prob: 0.87,
+            candidate_snp: 'rs123456',
+            posterior_explained_by_snp: 0.67
+        },
+        {
+            studies: ['eqtl_1', 'sqtl_2', 'phenotype_1', 'phenotype_2'],
             posterior_prob: 0.94,
             candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'eqtl_1',
-            from_data_type: 'eqtl',
-            to: 'phenotype_1',
-            posterior_prob: 0.94,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'eqtl_1',
-            from_data_type: 'eqtl',
-            to: 'phenotype_2',
-            posterior_prob: 0.94,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'phenotype_1',
-            from_data_type: 'phenotype',
-            to: 'phenotype_2',
-            posterior_prob: 0.94,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'sqtl_2',
-            from_data_type: 'sqtl',
-            to: 'phenotype_2',
-            posterior_prob: 0.94,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-
-
-
-
-        {
-            from: 'sqtl_1',
-            from_data_type: 'sqtl',
-            to: 'eqtl_2',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'eqtl_2',
-            from_data_type: 'eqtl',
-            to: 'phenotype_3',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'eqtl_2',
-            from_data_type: 'eqtl',
-            to: 'phenotype_4',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'eqtl_2',
-            from_data_type: 'eqtl',
-            to: 'phenotype_5',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'sqtl_1',
-            from_data_type: 'sqtl',
-            to: 'phenotype_3',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'sqtl_1',
-            from_data_type: 'sqtl',
-            to: 'phenotype_4',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'sqtl_1',
-            from_data_type: 'sqtl',
-            to: 'phenotype_5',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'phenotype_3',
-            from_data_type: 'phenotype',
-            to: 'phenotype_5',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
-        {
-            from: 'phenotype_4',
-            from_data_type: 'phenotype',
-            to: 'phenotype_5',
-            posterior_prob: 0.87,
-            candidate_snp: 'rs123456',
-            posterior_explained_by_snp: 0.67
-        },
+            posterior_explained_by_snp: 0.9
+        }
     ]
 }
 
@@ -270,7 +166,7 @@ let cy = window.cy = cytoscape({
             }
         },
         {
-            selector: '.tissue',
+            selector: '.coloc-group',
             style: {
                 'background-color': '#149543',
                 'shape': 'round-rectangle',
@@ -347,10 +243,19 @@ cy.add({
 })
 
 //creating coloc groups as parent nodes, so we know how to cluster them
-const unique_coloc_groups = [...new Set(jsonInput.studies.map(item => item.coloc_group_id))].filter(Boolean);
-unique_coloc_groups.forEach(coloc_group => {
+
+jsonInput.coloc_groups.forEach(colocGroup => {
+    phenotypes = colocGroup.studies
+        .map(study => jsonInput.studies[study])
+        .filter(study => study.data_type === 'phenotype')
+        .map(study => study.display_name)
+        .join('\n')
     cy.add({
-        data: { id: coloc_group, data_type: 'coloc_group'},
+        data: { id: coloc_group,
+            data_type: 'coloc_group',
+            label: phenotypes
+        },
+        classes: 'coloc-group',
         group: 'nodes'
     })
 })

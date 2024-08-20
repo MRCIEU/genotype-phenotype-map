@@ -1,4 +1,208 @@
 source('../pipeline_steps/constants.R')
+options(dplyr.width = Inf)
+
+flippy_flippy <- function(ld_block_matrix, gwas) {
+  rsid_match <- match(gwas$RSID, ld_block_matrix$RSID)
+
+  gwas$REF_EA <- ld_block_matrix$EA[rsid_match]
+  gwas$REF_OA <- ld_block_matrix$OA[rsid_match]
+
+  to_flip <- gwas$EA == gwas$REF_OA & gwas$OA == gwas$REF_EA
+  right_way_around <- gwas$EA == gwas$REF_EA & gwas$OA == gwas$REF_OA
+  weird <- nrow(gwas) - sum(to_flip) - sum(right_way_around)
+  print(paste('flipping', sum(to_flip), 'eaf values. ', sum(right_way_around), 'are good. ', weird, ' are weird'))
+  gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
+
+  gwas <- dplyr::select(gwas, -REF_EA, -REF_OA)
+
+  return(gwas)
+}
+
+update_existing_eafs <- function() {
+  ld_block_matrices <- list()
+  study_to_remove <- '/local-scratch/projects/genotype-phenotype-map/data/study/ebi-a-GCST000758/'
+
+  all_studies <- Sys.glob(paste0(extracted_study_dir, '[a-zC-Z]*/'))
+  print(length(all_studies))
+  remove_to <- match(study_to_remove, all_studies)
+  all_studies <- all_studies[-seq(remove_to)]
+  print(length(all_studies))
+
+  for (study in all_studies) {
+    extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
+      if (!file.exists(extracted_snps_file )) {
+        print(paste('EXTRACTION MISSING: ', extracted_snps_file))
+        next
+      }
+
+    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) == 0) next
+
+    apply(extracted_snps, 1, function(extraction) {
+      ld_region <- extraction[['ld_region']]
+      if (ld_region == '//_') return()
+
+      if (is.null(ld_block_matrices[[ld_region]])) {
+        ld_block_matrices[[ld_region]] <- vroom::vroom(paste0(ld_block_matrices_dir, ld_region, '.tsv'), show_col_types = F)
+      }
+
+      ld_block_matrix <- ld_block_matrices[[ld_region]]
+
+      original_gwas <- vroom::vroom(extraction[['file']], show_col_types = F)
+
+      if (!all(is.na(as.numeric(original_gwas$EAF)))) {
+        print(paste('EAF already included: ', extraction[['file']]))
+        return()
+      }
+
+      imputed_study <- sub('original', 'imputed', extraction[['file']])
+      if (!file.exists(imputed_study)) {
+        print(paste('IMPUTATION MISSING: ', imputed_study))
+        return()
+      }
+      imputed_gwas <- vroom::vroom(imputed_study, show_col_types = F)
+      print(imputed_study)
+      updated_imputed_gwas <- flippy_flippy(ld_block_matrix, imputed_gwas)
+      vroom::vroom_write(updated_imputed_gwas, imputed_study)
+
+      finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
+      finemap_file_prefix <- sub('\\..*', '', finemapped_studies)
+      all_finemaps <- Sys.glob(paste0(finemap_file_prefix, '*'))
+
+      if (length(all_finemaps) == 0) {
+        print(paste('FINEMAPPING MISSING: ', finemap_file_prefix))
+        return()
+      }
+
+      for (finemap_study in all_finemaps) {
+        finemap_gwas <- vroom::vroom(finemap_study, show_col_types = F)
+        print(finemap_study)
+        updated_finemap_gwas <- flippy_flippy(ld_block_matrix, finemap_gwas)
+        vroom::vroom_write(updated_finemap_gwas, finemap_study)
+      }
+
+    })
+  }
+}
+
+standardise_everything <- function() {
+  #ld_matrix_info_files <- Sys.glob(paste0(ld_block_matrices_dir, 'EUR/*/*.tsv'))
+
+  #print('standardising...')
+  #for (file in ld_matrix_info_files) {
+  #  print(file)
+  #  ld_matrix_info <- vroom::vroom(file, show_col_types = F)
+  #  ld_matrix_info <- standardise_alleles(ld_matrix_info)
+  #  vroom::vroom_write(ld_matrix_info, file)
+  #}
+
+  all_studies <- Sys.glob(paste0(extracted_study_dir, '*/'))
+
+  for (study in all_studies) {
+    print(paste('standardising', study))
+    extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
+    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) == 0) next
+
+    apply(extracted_snps, 1, function(extraction) {
+      imputed_study <- sub('original', 'imputed', extraction[['file']])
+      if (!file.exists(imputed_study)) {
+        print(paste('IMPUTATION MISSING: ', imputed_study))
+        return()
+      }
+      imputed_gwas <- vroom::vroom(imputed_study, show_col_types = F)
+      imputed_gwas <- standardise_alleles(imputed_gwas)
+      vroom::vroom_write(imputed_gwas, imputed_study)
+
+      finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
+      finemap_file_prefix <- sub('\\..*', '', finemapped_studies)
+      all_finemaps <- Sys.glob(paste0(finemap_file_prefix, '*'))
+
+      if (length(all_finemaps) == 0) {
+        print(paste('FINEMAPPING MISSING: ', finemap_file_prefix))
+        return()
+      }
+
+      for (finemap_study in all_finemaps) {
+        finemap_gwas <- vroom::vroom(finemap_study, show_col_types = F)
+        finemap_gwas <- standardise_alleles(finemap_gwas)
+        vroom::vroom_write(finemap_gwas, finemap_study)
+      }
+
+    })
+  }
+}
+
+standardise_z_scores <- function() {
+  library(parallel)
+  all_studies <- Sys.glob(paste0(extracted_study_dir, '*/'))
+  study_to_remove <- '/local-scratch/projects/genotype-phenotype-map/data/study/GTEx-sqtl-cis-Cells-Cultured-fibroblasts-chr1-chr1:100921841:100961828:clu-44102:ENSG00000162695-11/'
+  remove_to <- match(study_to_remove, all_studies)
+  all_studies <- all_studies[-seq(remove_to)]
+  print(length(all_studies))
+
+  results <- mclapply(X=all_studies, mc.cores=100, FUN=function(study) {
+    print(paste('standardising', study))
+    extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
+    if (!file.exists(extracted_snps_file )) {
+      print(paste('EXTRACTION MISSING: ', extracted_snps_file))
+      return() 
+    }
+    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) == 0) return()
+
+    apply(extracted_snps, 1, function(extraction) {
+      standardised_imputed_study <- sub('original', 'imputed', extraction[['file']])
+      old_imputed_study <- sub('study/', 'study_fix/study/', standardised_imputed_study)
+      if (!file.exists(standardised_imputed_study)) {
+        print(paste('IMPUTATION MISSING: ', standardised_imputed_study))
+        return()
+      }
+      standardised_imputed_gwas <- vroom::vroom(standardised_imputed_study, show_col_types = F)
+      old_imputed_gwas <- vroom::vroom(old_imputed_study, show_col_types = F)
+      updated_imputed_gwas <- fix_z_score_direction(old_imputed_gwas, standardised_imputed_gwas)
+
+      if (any((updated_imputed_gwas$Z * updated_imputed_gwas$BETA) < 0, na.rm=T)) {
+        quit(paste('ERROR: ', standardised_imputed_study, 'BETA and Z still dont match'))
+      }
+
+      vroom::vroom_write(updated_imputed_gwas, standardised_imputed_study)
+
+      finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
+      finemap_file_prefix <- sub('\\..*', '', finemapped_studies)
+      all_finemaps <- Sys.glob(paste0(finemap_file_prefix, '*'))
+
+      if (length(all_finemaps) == 0) {
+        print(paste('FINEMAPPING MISSING: ', finemap_file_prefix))
+        return()
+      }
+
+      for (standardised_finemap_study in all_finemaps) {
+        old_finemapped_study <- sub('study/', 'study_fix/study/', standardised_finemap_study)
+
+        standardised_finemap_gwas <- vroom::vroom(standardised_finemap_study, show_col_types = F)
+        old_finemap_gwas <- vroom::vroom(old_finemapped_study, show_col_types = F)
+
+        updated_finemap_gwas <- fix_z_score_direction(old_finemap_gwas, standardised_finemap_gwas)
+        if (any((updated_finemap_gwas$Z * updated_finemap_gwas$BETA) < 0, na.rm=T)) {
+          quit(paste('ERROR: ', standardised_finemap_gwas, 'BETA and Z still dont match'))
+        }
+        vroom::vroom_write(updated_finemap_gwas, standardised_finemap_study)
+      }
+    })
+  })
+}
+
+fix_z_score_direction <- function(old_gwas, standardised_gwas) {
+  to_flip <- (old_gwas$EA > old_gwas$OA) & (!old_gwas$EA %in% c("D", "I"))
+  print(paste('flipping', sum(to_flip), 'z scores'))
+  if (any(to_flip)) {
+    standardised_gwas$Z[to_flip] <- -1 * standardised_gwas$Z[to_flip]
+  }
+
+  return(standardised_gwas)
+}
+
 
 update_studies_processed <- function() {
   studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
@@ -223,3 +427,4 @@ populate_json_for_besd <- function() {
 
 }
 
+standardise_z_scores()

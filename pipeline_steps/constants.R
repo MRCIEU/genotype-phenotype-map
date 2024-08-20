@@ -56,3 +56,21 @@ ld_block_string <- function(ancestry, chr, start, stop) {
   return(paste0(ancestry, '/', chr, '/', start, '_', stop))
 }
 
+standardise_alleles <- function(gwas) {
+  gwas$EA <- toupper(gwas$EA)
+  gwas$OA <- toupper(gwas$OA)
+  gwas$EAF <- as.numeric(gwas$EAF)
+
+  to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
+  if (any(to_flip)) {
+    gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
+    gwas$BETA[to_flip] <- -1 * gwas$BETA[to_flip]
+
+    temp <- gwas$OA[to_flip]
+    gwas$OA[to_flip] <- gwas$EA[to_flip]
+    gwas$EA[to_flip] <- temp
+  }
+
+  gwas$SNP <- toupper(paste0(gwas$CHR, ":", format(gwas$BP, scientific = F, trim = T), "_", gwas$EA, "_", gwas$OA))
+  return(gwas)
+}

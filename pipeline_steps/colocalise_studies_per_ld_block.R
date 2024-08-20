@@ -143,12 +143,12 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
 
 harmonise_gwases <- function(...) {
   gwases <- list(...)
-  snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$RSID))
+  snpids <- Reduce(intersect, lapply(gwases, function(gwas) gwas$SNP))
   if (length(snpids) <= 1) return(list())
 
   gwases <- lapply(gwases, function(gwas) {
-    dplyr::filter(gwas, RSID %in% snpids & !duplicated(RSID)) |>
-      dplyr::arrange(RSID)
+    dplyr::filter(gwas, SNP %in% snpids & !duplicated(SNP)) |>
+      dplyr::arrange(SNP)
   })
 
   return(gwases)

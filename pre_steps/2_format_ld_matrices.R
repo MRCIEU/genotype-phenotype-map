@@ -11,6 +11,7 @@ for (region in seq_len(nrow(ld_regions))) {
     dplyr::rename(RSID='SNP', EA='A1', OA='A2', EAF='MAF')
   gwas$BP <- bim$X4[match(gwas$RSID, bim$X2)]
   gwas <- dplyr::select(gwas, RSID, CHR, BP, EA, OA, EAF, -NCHROBS)
+  gwas <- standardise_alleles(gwas)
 
   vroom::vroom_write(gwas, paste0(ld_region_string, ".tsv"))
 }

@@ -33,7 +33,7 @@ main <- function(args) {
         return(failed_finemap_info)
       }
 
-      keep <- ld_region_from_reference_panel$RSID %in% gwas$RSID
+      keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
       ld_for_gwas <- ld_region[keep, keep]
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
       testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
@@ -165,8 +165,6 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, message=
 #'
 #' @return tibble with altered BETA, SE, P, and Z
 update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
-  #TODO: option 1: take allele frequency from the reference panel
-  #TODO: option 2: update hyprcoloc to be able to input lbf, so we don't have to do this conversion at all
   se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)

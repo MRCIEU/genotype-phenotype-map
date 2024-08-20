@@ -54,10 +54,5 @@ while IFS=' ' read -r CHR POS LOG_P; do
 
   SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}/${BEGINNING_END//-/_}"
 
-  #TODO: delete later, once cis_trans stuff is in
-  CIS_TRANS=NA
-  if [[ $STUDY =~ 'eqtl'  ]]; then
-    CIS_TRANS=cis
-  fi
   echo -e "${CHR}\t${POS}\t${LOG_P}\t${ANCESTRY}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\t${CIS_TRANS}" >> $EXTRACTED_SNPS
 done <<< $ALL_CHR_POS

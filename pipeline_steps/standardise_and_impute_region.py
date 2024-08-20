@@ -38,7 +38,6 @@ def main(ld_block, completed_output_file):
         if os.path.isfile(imputed_file):
             continue
 
-        prep_time = time.time()
         gwas = pd.read_csv(gwas_file, delimiter='\t')
         gwas, eaf_from_reference_panel = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
@@ -59,15 +58,13 @@ def main(ld_block, completed_output_file):
         # print(ld_region_from_reference_panel_subset.shape)
         # continue
 
-        rsids_in_gwas = np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)
-        known = np.where(rsids_in_gwas)[0]
-        unknown = np.where(rsids_in_gwas == False)[0]
+        snps_in_gwas = np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)
+        known = np.where(snps_in_gwas)[0]
+        unknown = np.where(snps_in_gwas == False)[0]
 
         known_ld_matrix = ld_matrix[known, :][:, known]
         missing_ld_matrix = ld_matrix[unknown, :][:, known]
         z = np.array(gwas.Z)
-
-        print(f'Prep Time: {time.time() - prep_time}')
 
         start_time = time.time()
         imputation_results = SummaryStatisticsImputation.raiss_model(
@@ -88,9 +85,9 @@ def main(ld_block, completed_output_file):
         print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
-        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.RSID, gwas.RSID)]
-        gwas.set_index(gwas['RSID'], inplace=True)
-        gwas = gwas.loc[lds_in_gwas.RSID]
+        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)]
+        gwas.set_index(gwas['SNP'], inplace=True)
+        gwas = gwas.loc[lds_in_gwas.SNP]
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
@@ -114,7 +111,7 @@ def main(ld_block, completed_output_file):
 def standardise_extracted_gwas(gwas, ld_region):
     eaf_from_reference_panel = False
 
-    gwas.drop_duplicates(subset=['RSID'], inplace=True)
+    gwas.drop_duplicates(subset=['CHR', 'BP', 'EA', 'OA'], inplace=True)
 
     if 'Z' not in gwas.columns:
         gwas['SE'] = gwas['SE'].replace(0, 0.00001)
@@ -123,27 +120,51 @@ def standardise_extracted_gwas(gwas, ld_region):
         gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
         gwas.drop('LP', axis=1, inplace=True)
 
-    rsids_in_ld_block = np.isin(gwas.RSID, ld_region.RSID)
-    gwas = gwas[rsids_in_ld_block]
+    gwas = standardise_alleles(gwas)
+
+    snps_in_ld_block = np.isin(gwas.SNP, ld_region.SNP)
+    gwas = gwas[snps_in_ld_block]
 
     columns_to_coerse = ['EAF'] #add BETA and SE?
     gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
 
     if gwas['EAF'].isnull().all():
         gwas.drop(columns=['EAF'], inplace=True)
-        new_eafs = ld_region[['RSID', 'EAF']]
-        gwas = gwas.merge(new_eafs, how='left', on='RSID')
+        new_eafs = ld_region[['SNP', 'EAF']]
+        gwas = gwas.merge(new_eafs, how='left', on='SNP')
         eaf_from_reference_panel = True
 
     gwas.dropna(subset=columns_to_coerse, inplace=True)
 
     # ensure order of gwas and ld region match
-    lds_in_gwas = ld_region[np.isin(ld_region.RSID, gwas.RSID)]
-    gwas.set_index(gwas['RSID'], inplace=True)
-    gwas = gwas.loc[lds_in_gwas.RSID]
+    lds_in_gwas = ld_region[np.isin(ld_region.SNP, gwas.SNP)]
+    gwas.set_index(gwas['SNP'], inplace=True)
+    gwas = gwas.loc[lds_in_gwas.SNP]
 
     return gwas, eaf_from_reference_panel
 
+
+def standardise_alleles(gwas):
+    gwas['EA'] = gwas['EA'].str.upper()
+    gwas['OA'] = gwas['OA'].str.upper()
+    gwas['EAF'] = pd.to_numeric(gwas['EAF'], errors='coerce')
+
+    to_flip = (gwas['EA'] > gwas['OA']) & (~gwas['EA'].isin(['D', 'I']))
+
+    if to_flip.any():
+        gwas.loc[to_flip, 'EAF'] = 1 - gwas.loc[to_flip, 'EAF']
+        gwas.loc[to_flip, 'BETA'] = -1 * gwas.loc[to_flip, 'BETA']
+        gwas.loc[to_flip, 'Z'] = -1 * gwas.loc[to_flip, 'Z']
+
+        temp = gwas.loc[to_flip, 'OA'].copy()
+        gwas.loc[to_flip, 'OA'] = gwas.loc[to_flip, 'EA']
+        gwas.loc[to_flip, 'EA'] = temp
+
+    gwas['SNP'] = (gwas['CHR'].astype(str) + ":" +
+                   gwas['BP'].map(lambda x: format(x, 'f').rstrip('0').rstrip('.')) + "_" +
+                   gwas['EA'] + "_" + gwas['OA']).str.upper()
+
+    return gwas
 
 class SummaryStatisticsImputation:
     """Implementation of RAISS summary statstics imputation model."""
@@ -174,11 +195,9 @@ class SummaryStatisticsImputation:
                 - correct_inversion (np.ndarray): a boolean array indicating if the inversion was successful
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
-        invert_time = time.time()
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
             ld_matrix_known, lamb, rtol
         )
-        print(f'Invert Time: {time.time() - invert_time}')
         if sig_t_inv is None:
             return {
                 "var": None,
@@ -189,7 +208,6 @@ class SummaryStatisticsImputation:
                 "imputation_r2": None,
             }
         else:
-            correct_inversion_time = time.time()
             condition_number = np.array(
                 [np.linalg.cond(ld_matrix_known)] * ld_matrix_known_missing.shape[0]
             )
@@ -201,9 +219,7 @@ class SummaryStatisticsImputation:
                 ]
                 * ld_matrix_known_missing.shape[0]
             )
-            print(f'Correct Inversion Time: {time.time() - correct_inversion_time}')
 
-            var_mu_time = time.time()
             var, ld_score = SummaryStatisticsImputation._compute_var(
                 ld_matrix_known_missing, sig_t_inv, lamb
             )
@@ -216,7 +232,6 @@ class SummaryStatisticsImputation:
             R2 = (1 + lamb) - var_norm
 
             mu = mu / np.sqrt(R2)
-            print(f'var mu Time: {time.time() - var_mu_time}')
             return {
                 "var": var,
                 "mu": mu,

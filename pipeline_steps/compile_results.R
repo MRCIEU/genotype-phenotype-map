@@ -117,6 +117,24 @@ aggregate_pipeline_metadata <- function(ld_info) {
   return(metadata_per_ld_region)
 }
 
+ingested_data_integrity_check <- function() {
+  ld_regions <- vroom::vroom('data/ld_regions.tsv')
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+
+  lapply(ld_info$ld_block_data, function(ld_block) {
+    extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
+    imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
+    finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
+    if (!file.exists(extracted_studies_file)) return()
+
+    extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    imputed_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    finemapped_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+
+  })
+
+}
+
 compile_coloc_results <- function(raw_coloc_results, studies_processed) {
   significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
 

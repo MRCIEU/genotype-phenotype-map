@@ -2,6 +2,7 @@ source("constants.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
+parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the region complez', default = F, type = 'logical')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
@@ -27,21 +28,19 @@ main <- function(args) {
       dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
       gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
-      if (typeof(gwas$EAF) == 'character') {
-        message('EAF is not populated, cant split results, skipping.')
-        failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, 'no_eaf')
-        return(failed_finemap_info)
-      }
-
       keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
       ld_for_gwas <- ld_region[keep, keep]
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
-      testthat::expect_true(nrow(gwas) == nrow(ld_for_gwas), 'gwas and ld matrix should match size')
+      if (nrow(gwas) != nrow(ld_for_gwas)) {
+        stop(paste('Error: GWAS', nrow(gwas), 'and ld matrix', nrow(ld_for_gwas), 'should match size'))
+      }
 
       sample_size <- as.numeric(study['sample_size'])
+      max_finemapped_results <- if(args$complex_region == T) 20 else 10
+
       susie_result <- list(converged=F)
       tryCatch(expr = {
-        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size)
+        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=max_finemapped_results)
       }, error = function(e) {
         message(e)
       })

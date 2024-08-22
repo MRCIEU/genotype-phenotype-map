@@ -28,9 +28,7 @@ main <- function() {
     dplyr::filter(!study_name %in% studies_processed$study_name)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
-    dir.create(paste0(extracted_location, '/original'), showWarnings = F, recursive = T)
-    dir.create(paste0(extracted_location, '/imputed'), showWarnings = F, recursive = T)
-    dir.create(paste0(extracted_location, '/finemapped'), showWarnings = F, recursive = T)
+    dir.create(extracted_location, showWarnings = F, recursive = T)
   })
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
@@ -53,6 +51,7 @@ calculate_besd_studies_to_process <- function(entries) {
       data_type = entry[['data_type']],
       data_format = entry[['data_format']],
       bespoke_parsing = entry[['bespoke_parsing']],
+      reference_build = entry[['reference_build']],
       data_source = data_source,
       study = studies_without_extensions,
       directory = entry[['data_location']],
@@ -101,6 +100,7 @@ calculate_besd_studies_to_process <- function(entries) {
       category = category,
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
+      reference_build = besd_study[['reference_build']],
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
       probe = probes,
       gene = genes,
@@ -145,6 +145,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       category = category,
       study_location = directory,
       extracted_location = data_study_dir,
+      reference_build = entry[['reference_build']],
       p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
       gene = NA,
       probe = NA,

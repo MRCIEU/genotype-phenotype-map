@@ -23,7 +23,6 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
   if (nrow(extracted_snps) == 0) return()
 
   extracted_studies <- data.frame(study = merged_data$study_name,
-                                  data_type = merged_data$data_type,
                                   file = merged_data$file,
                                   ancestry = merged_data$ancestry.x,
                                   chr = merged_data$chr,
@@ -31,7 +30,8 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
                                   p_value_threshold = merged_data$p_value_threshold,
                                   category = merged_data$category,
                                   sample_size = merged_data$sample_size,
-                                  cis_trans = merged_data$cis_trans
+                                  cis_trans = merged_data$cis_trans,
+                                  reference_build = merged_data$reference_build
   )
 
   if (!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive = T)

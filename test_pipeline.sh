@@ -3,6 +3,9 @@ set -e
 echo 'TEST RUN'
 EXTRA_SNAKEMAKE_ARG=$1
 
+#If you want to add more data to this test pipeline
+#smr --beqtl-summary /some/besd_file  --extract-probe probe.txt  --query 1 --make-besd --out subset_of_besd_file
+
 export TEST_RUN=test
 export TIMESTAMP=test
 

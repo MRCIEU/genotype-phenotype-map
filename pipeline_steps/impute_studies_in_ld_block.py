@@ -39,31 +39,29 @@ def main(ld_block, completed_output_file):
             continue
 
         gwas = pd.read_csv(gwas_file, delimiter='\t')
-        gwas, eaf_from_reference_panel = standardise_extracted_gwas(gwas, ld_region_from_reference_panel)
 
         if gwas is None or len(gwas) == 0:
             continue
 
-        # min_bp = gwas['BP'].min() - 1000
-        # max_bp = gwas['BP'].max() + 1000
-        # subset_range = ld_region_from_reference_panel['BP'].between(min_bp, max_bp)
-        # ld_matrix_subset = ld_matrix[subset_range, :][:, subset_range]
-        # ld_region_from_reference_panel_subset = ld_region_from_reference_panel[subset_range]
-        #
-        # print('orig info')
-        # print(ld_matrix.shape)
-        # print(ld_region_from_reference_panel.shape)
-        # print('subset info')
-        # print(ld_matrix_subset.shape)
-        # print(ld_region_from_reference_panel_subset.shape)
-        # continue
+        min_bp = gwas['BP'].min() - 10000
+        max_bp = gwas['BP'].max() + 10000
+        subset_range = ld_region_from_reference_panel['BP'].between(min_bp, max_bp)
+        ld_matrix_subset = ld_matrix[subset_range, :][:, subset_range]
+        ld_region_subset = ld_region_from_reference_panel[subset_range]
 
-        snps_in_gwas = np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)
+        print('orig info')
+        print(ld_matrix.shape)
+        print(ld_region_from_reference_panel.shape)
+        print('subset info')
+        print(ld_matrix_subset.shape)
+        print(ld_region_subset.shape)
+
+        snps_in_gwas = np.isin(ld_region_subset.SNP, gwas.SNP)
         known = np.where(snps_in_gwas)[0]
         unknown = np.where(snps_in_gwas == False)[0]
 
-        known_ld_matrix = ld_matrix[known, :][:, known]
-        missing_ld_matrix = ld_matrix[unknown, :][:, known]
+        known_ld_matrix = ld_matrix_subset[known, :][:, known]
+        missing_ld_matrix = ld_matrix_subset[unknown, :][:, known]
         z = np.array(gwas.Z)
 
         start_time = time.time()
@@ -75,7 +73,7 @@ def main(ld_block, completed_output_file):
                 imputation_results["ld_score"] >= ld_score_threshold
         )
         if sum(rsids_to_add) >= 1:
-            specific_ld_region_from_reference_panel = ld_region_from_reference_panel.iloc[unknown]
+            specific_ld_region_from_reference_panel = ld_region_subset.iloc[unknown]
             specific_ld_region_from_reference_panel['Z'] = imputation_results['mu']
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
@@ -85,7 +83,7 @@ def main(ld_block, completed_output_file):
         print(f'Time: {time.time() - start_time}')
 
         # reorder the gwas, once again, after more entries were added
-        lds_in_gwas = ld_region_from_reference_panel[np.isin(ld_region_from_reference_panel.SNP, gwas.SNP)]
+        lds_in_gwas = ld_region_subset[np.isin(ld_region_subset.SNP, gwas.SNP)]
         gwas.set_index(gwas['SNP'], inplace=True)
         gwas = gwas.loc[lds_in_gwas.SNP]
 
@@ -107,64 +105,6 @@ def main(ld_block, completed_output_file):
     new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(completed_output_file).touch()
 
-
-def standardise_extracted_gwas(gwas, ld_region):
-    eaf_from_reference_panel = False
-
-    gwas.drop_duplicates(subset=['CHR', 'BP', 'EA', 'OA'], inplace=True)
-
-    if 'Z' not in gwas.columns:
-        gwas['SE'] = gwas['SE'].replace(0, 0.00001)
-        gwas['Z'] = gwas.apply(lambda row: row.BETA / row.SE, axis=1)
-    if 'P' not in gwas.columns and 'LP' in gwas.columns:
-        gwas['P'] = gwas.apply(lambda row: pow(10, row.LP*-1), axis=1)
-        gwas.drop('LP', axis=1, inplace=True)
-
-    gwas = standardise_alleles(gwas)
-
-    snps_in_ld_block = np.isin(gwas.SNP, ld_region.SNP)
-    gwas = gwas[snps_in_ld_block]
-
-    columns_to_coerse = ['EAF'] #add BETA and SE?
-    gwas[columns_to_coerse] = gwas[columns_to_coerse].apply(lambda x: pd.to_numeric(x, errors='coerce'))
-
-    if gwas['EAF'].isnull().all():
-        gwas.drop(columns=['EAF'], inplace=True)
-        new_eafs = ld_region[['SNP', 'EAF']]
-        gwas = gwas.merge(new_eafs, how='left', on='SNP')
-        eaf_from_reference_panel = True
-
-    gwas.dropna(subset=columns_to_coerse, inplace=True)
-
-    # ensure order of gwas and ld region match
-    lds_in_gwas = ld_region[np.isin(ld_region.SNP, gwas.SNP)]
-    gwas.set_index(gwas['SNP'], inplace=True)
-    gwas = gwas.loc[lds_in_gwas.SNP]
-
-    return gwas, eaf_from_reference_panel
-
-
-def standardise_alleles(gwas):
-    gwas['EA'] = gwas['EA'].str.upper()
-    gwas['OA'] = gwas['OA'].str.upper()
-    gwas['EAF'] = pd.to_numeric(gwas['EAF'], errors='coerce')
-
-    to_flip = (gwas['EA'] > gwas['OA']) & (~gwas['EA'].isin(['D', 'I']))
-
-    if to_flip.any():
-        gwas.loc[to_flip, 'EAF'] = 1 - gwas.loc[to_flip, 'EAF']
-        gwas.loc[to_flip, 'BETA'] = -1 * gwas.loc[to_flip, 'BETA']
-        gwas.loc[to_flip, 'Z'] = -1 * gwas.loc[to_flip, 'Z']
-
-        temp = gwas.loc[to_flip, 'OA'].copy()
-        gwas.loc[to_flip, 'OA'] = gwas.loc[to_flip, 'EA']
-        gwas.loc[to_flip, 'EA'] = temp
-
-    gwas['SNP'] = (gwas['CHR'].astype(str) + ":" +
-                   gwas['BP'].map(lambda x: format(x, 'f').rstrip('0').rstrip('.')) + "_" +
-                   gwas['EA'] + "_" + gwas['OA']).str.upper()
-
-    return gwas
 
 class SummaryStatisticsImputation:
     """Implementation of RAISS summary statstics imputation model."""

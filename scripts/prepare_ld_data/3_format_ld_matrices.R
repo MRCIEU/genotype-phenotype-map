@@ -1,5 +1,5 @@
-source("../pipeline_steps/constants.R")
-ld_regions <- vroom::vroom("../pipeline_steps/data/ld_regions.tsv", show_col_types = F)
+source("../../pipeline_steps/constants.R")
+ld_regions <- vroom::vroom("../../pipeline_steps/data/ld_regions.tsv", show_col_types = F)
 ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
 NUM_PARALLEL_JOBS = 150

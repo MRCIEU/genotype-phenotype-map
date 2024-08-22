@@ -27,7 +27,8 @@ main <- function(args) {
                                                            ancestry=character(),
                                                            ld_region=character(),
                                                            file=character(),
-                                                           cis_trans=character()
+                                                           cis_trans=character(),
+                                                           reference_build=character()
   )
   if (metadata$cis_trans == cis_trans$cis_only || metadata$cis_trans == cis_trans$cis_trans) {
     extracted_cis_snps <- extract_cis_region(study, p_value_threshold)
@@ -54,6 +55,12 @@ extract_cis_region <- function(study, p_value_threshold) {
   if (!file.exists(paste0(tmp_cis_snp, '.txt'))) return()
   top_cis_snp <- vroom::vroom(paste0(tmp_cis_snp, '.txt'), show_col_types = F)
   if (nrow(top_cis_snp) < 1) return()
+
+  dir.create(paste0(study$extracted_location, '/original'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/standardised'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/imputed'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/finemapped'), showWarnings = F, recursive = T)
+
   top_cis_snp <- top_cis_snp[top_cis_snp$p == min(top_cis_snp$p), ][1, ]
 
   tmp_cis_region <- paste0('/tmp/', study$study_name, '_cis_region')
@@ -80,7 +87,8 @@ extract_cis_region <- function(study, p_value_threshold) {
                                ancestry = study$ancestry,
                                ld_region = ld_block_string,
                                file = extracted_file,
-                               cis_trans = 'cis'
+                               cis_trans = 'cis',
+                               reference_build=study$reference_build
   )
   return(extracted_snps)
 }
@@ -143,12 +151,13 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
     ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
     top_hit_per_probe <- data.frame(chr = as.character(clumped_snp['CHR']),
-                                     bp = clumped_snp['BP'],
-                                     log_p = -log10(clumped_snp['P']),
-                                     ancestry = study$ancestry,
-                                     ld_region = ld_block_string,
-                                     file = extracted_file,
-                                     cis_trans = 'trans'
+                                    bp = clumped_snp['BP'],
+                                    log_p = -log10(clumped_snp['P']),
+                                    ancestry = study$ancestry,
+                                    ld_region = ld_block_string,
+                                    file = extracted_file,
+                                    cis_trans = 'trans',
+                                    reference_build=study$reference_build
     )
     return(top_hit_per_probe)
   }) |> dplyr::bind_rows()
@@ -163,6 +172,5 @@ format_gwas <- function(gwas) {
 
   return(gwas)
 }
-
 
 main(args)

@@ -12,6 +12,7 @@ pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/allele_flip/')
 thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
+liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
 ld_block_results_dir <- paste0(results_dir, 'ld_blocks/')
@@ -19,6 +20,7 @@ bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?
+reference_builds <- list(GRCh36="GRCh36", GRCh37="GRCh37", GRCh38="GRCh38")
 ordered_data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',

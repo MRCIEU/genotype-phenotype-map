@@ -34,7 +34,7 @@ main <- function(args) {
     extracted_cis_snps <- extract_cis_region(study, p_value_threshold)
   }
   if (metadata$cis_trans == cis_trans$trans_only || metadata$cis_trans == cis_trans$cis_trans) {
-    extracted_trans_snps <- extract_trans_regions(study, p_value_threshold)
+    extracted_trans_snps <- extract_trans_regions(extracted_cis_snps, study, p_value_threshold)
   }
 
   extracted_snps <- dplyr::bind_rows(extracted_cis_snps, extracted_trans_snps)
@@ -84,11 +84,9 @@ extract_cis_region <- function(study, p_value_threshold) {
   extracted_snps <- data.frame(chr = as.character(top_cis_snp$Chr),
                                bp = top_cis_snp$BP,
                                log_p = -log10(top_cis_snp$p),
-                               ancestry = study$ancestry,
                                ld_region = ld_block_string,
                                file = extracted_file,
-                               cis_trans = 'cis',
-                               reference_build=study$reference_build
+                               cis_trans = 'cis'
   )
   return(extracted_snps)
 }
@@ -99,7 +97,7 @@ extract_cis_region <- function(study, p_value_threshold) {
 #' 1: get all hits above p-value threshold
 #' 2: clump results, somehow filter out cis region
 #' 3: loop through clumped results to get all regions
-extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
+extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) {
   tmp_trans_snps <- paste0('/tmp/', study$study_name, '_top_trans_snps')
   extract_top_snps <- paste('smr --beqtl-summary', study$study_location,
                            '--query', p_value_threshold,

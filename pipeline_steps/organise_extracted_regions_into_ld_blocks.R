@@ -24,7 +24,7 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
 
   extracted_studies <- data.frame(study = merged_data$study_name,
                                   file = merged_data$file,
-                                  ancestry = merged_data$ancestry.x,
+                                  ancestry = merged_data$ancestry,
                                   chr = merged_data$chr,
                                   bp = merged_data$bp,
                                   p_value_threshold = merged_data$p_value_threshold,

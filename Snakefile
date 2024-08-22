@@ -47,7 +47,7 @@ extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterr
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
 standardisation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/standardisation_complete'
-complex_standardisation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/complex_standardisation_complete'
+complex_standardisation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_standardisation_complete'
 imputation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/imputation_complete'
 complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
@@ -115,11 +115,11 @@ rule organise_extracted_studies_into_ld_regions:
         Rscript organise_extracted_regions_into_ld_blocks.R --output_file {output}
         """
 
-def standardise_rule(defined_pattern, name):
+def standardise_rule(standardisation_pattern, name):
     rule:
         name: f'{name}_standardise_per_ld_block'
         input: ld_blocks_to_process
-        output: temporary(defined_pattern)
+        output: temporary(standardisation_pattern)
         threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -137,11 +137,11 @@ def standardise_rule(defined_pattern, name):
             subprocess.run(command, shell=True)
 
 
-def impute_rule(defined_pattern, name):
+def impute_rule(standardisation_pattern, imputation_pattern, name):
     rule:
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
-        output: temporary(defined_pattern)
+        output: temporary(imputation_pattern)
         threads: 56 if name == 'complex' else 24
         priority: 1 if name == 'complex' else 0
         params:
@@ -210,11 +210,11 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             subprocess.run(command, shell=True)
 
 
-standardise_rule(complex_standardisation_pattern,'complex')
-standardise_rule(standardisation_pattern,'simple')
+standardise_rule(complex_standardisation_pattern, 'complex')
+standardise_rule(standardisation_pattern, 'simple')
 
-impute_rule(complex_imputation_pattern,'complex')
-impute_rule(imputation_pattern,'simple')
+impute_rule(complex_standardisation_pattern, complex_imputation_pattern,'complex')
+impute_rule(standardisation_pattern, imputation_pattern,'simple')
 
 finemap_rule(complex_imputation_pattern, complex_finemapping_pattern, 'complex')
 finemap_rule(imputation_pattern, finemapping_pattern, 'simple')

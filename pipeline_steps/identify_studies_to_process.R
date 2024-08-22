@@ -117,6 +117,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
     return(data.frame(
       data_type = entry[['data_type']],
       directory = all_directories,
+      reference_build = entry[['reference_build']],
       ancestry = entry[['ancestry']],
       data_format = entry[['data_format']]
     ))

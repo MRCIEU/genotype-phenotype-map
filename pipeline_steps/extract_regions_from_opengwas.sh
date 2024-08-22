@@ -22,7 +22,7 @@ cd $ORIG_STUDY_DIR
 
 
 EXTRACTED_SNPS=$EXTRACTED_STUDY_DIR/extracted_snps.tsv
-echo -e "chr\tbp\tlog_p\tld_region\tfile\tcis_trans\treference_build" > $EXTRACTED_SNPS
+echo -e "chr\tbp\tlog_p\tld_region\tfile\tcis_trans" > $EXTRACTED_SNPS
 
 echo "RSIDs to extract for ${STUDY_NAME}: $(wc -l < clump.txt)"
 ALL_CHR_POS=$(/home/bcftools/bcftools query -i 'ID=@clump.txt' --format "chr%CHROM %POS [%LP]\n" $STUDY.vcf.gz)
@@ -50,10 +50,10 @@ while IFS=' ' read -r CHR POS LOG_P; do
   echo -e "RSID\tCHR\tBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
   /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE
 
-  gzip $EXTRACTED_FILE
+  gzip -f $EXTRACTED_FILE
   EXTRACTED_FILE="$EXTRACTED_FILE.gz"
 
   SPECIFIC_LD_REGION="${ANCESTRY}/${CHR}/${BEGINNING_END//-/_}"
 
-  echo -e "${CHR}\t${POS}\t${LOG_P}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\t${CIS_TRANS}" >> $EXTRACTED_SNPS
+  echo -e "${CHR}\t${POS}\t${LOG_P}\t${SPECIFIC_LD_REGION}\t${EXTRACTED_FILE}\tNA" >> $EXTRACTED_SNPS
 done <<< $ALL_CHR_POS

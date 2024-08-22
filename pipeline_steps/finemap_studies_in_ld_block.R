@@ -40,7 +40,7 @@ main <- function(args) {
 
       susie_result <- list(converged=F)
       tryCatch(expr = {
-        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=max_finemapped_results)
+        susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix, n=sample_size, L=max_finemapped_results, refine=T)
       }, error = function(e) {
         message(e)
       })

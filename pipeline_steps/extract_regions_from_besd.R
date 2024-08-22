@@ -24,11 +24,9 @@ main <- function(args) {
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),
                                                            bp=numeric(),
                                                            log_p=numeric(),
-                                                           ancestry=character(),
                                                            ld_region=character(),
                                                            file=character(),
-                                                           cis_trans=character(),
-                                                           reference_build=character()
+                                                           cis_trans=character()
   )
   if (metadata$cis_trans == cis_trans$cis_only || metadata$cis_trans == cis_trans$cis_trans) {
     extracted_cis_snps <- extract_cis_region(study, p_value_threshold)

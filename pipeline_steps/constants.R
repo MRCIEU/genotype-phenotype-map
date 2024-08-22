@@ -10,7 +10,7 @@ MINIMUM_STUDY_REGION_SIZE <- 200
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
-ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/')
+ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/allele_flip/')
 thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
@@ -64,7 +64,12 @@ standardise_alleles <- function(gwas) {
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
   if (any(to_flip)) {
     gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
-    gwas$BETA[to_flip] <- -1 * gwas$BETA[to_flip]
+    if ('BETA' %in% names(gwas)) {
+      gwas$BETA[to_flip] <- -1 * gwas$BETA[to_flip]
+    }
+    if ('Z' %in% names(gwas)) {
+      gwas$Z[to_flip] <- -1 * gwas$Z[to_flip]
+    }
 
     temp <- gwas$OA[to_flip]
     gwas$OA[to_flip] <- gwas$EA[to_flip]

@@ -427,4 +427,71 @@ populate_json_for_besd <- function() {
 
 }
 
-standardise_z_scores()
+remove_imputed_and_finemapped_results_from_pipeline <- function(study_pattern) {
+  NUM_PARALLEL_JOBS <- 100
+
+  all_studies <- Sys.glob(paste0(extracted_study_dir, study_pattern, '*/'))
+  # study_to_remove <- '/local-scratch/projects/genotype-phenotype-map/data/study/study-name'
+  # remove_to <- match(study_to_remove, all_studies)
+  # all_studies <- all_studies[-seq(remove_to)]
+
+  results <- parallel::mclapply(X=all_studies, mc.cores=NUM_PARALLEL_JOBS, FUN=function(study_dir) {
+    print(paste('changing:', study_dir))
+    study_id <- basename(study_dir)
+    extracted_snps_file <- paste0(study_dir, '/extracted_snps.tsv')
+    if (!file.exists(extracted_snps_file )) {
+      print(paste('EXTRACTION MISSING: ', extracted_snps_file))
+      return()
+    }
+    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
+    if (nrow(extracted_snps) == 0) return()
+
+    apply(extracted_snps, 1, function(extraction) {
+      ld_block <- paste0(ld_block_data_dir, extraction[['ld_region']])
+
+      imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
+      if (!file.exists(imputed_studies_file)) {
+        print(paste('IMPUTED STUDIES FILE MISSING:', imputed_studies_file))
+        return()
+      }
+
+      imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
+      entries <- nrow(imputed_studies)
+      imputed_studies <- dplyr::filter(imputed_studies, !study == study_id)
+      print(paste('removed', entries - nrow(imputed_studies), 'rows from imputed_studies'))
+      vroom::vroom_write(imputed_studies, imputed_studies_file)
+      imputed_files <- Sys.glob(paste0(study_dir, '/imputed/*'))
+      file.remove(imputed_files)
+
+
+      finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
+      if (!file.exists(finemapped_studies_file)) {
+        print(paste('FINEMAPPED STUDIES FILE MISSING:', finemapped_studies_file))
+        return()
+      }
+
+      finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+      entries <- nrow(finemapped_studies)
+      finemapped_studies <- dplyr::filter(finemapped_studies, !study == study_id)
+      print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
+      vroom::vroom_write(finemapped_studies, finemapped_studies_file)
+    })
+    finemapped_files <- Sys.glob(paste0(study_dir, '/finemapped/*'))
+    file.remove(finemapped_files)
+  })
+}
+
+print_alleles_to_flip <- function() {
+  flipped_dir <- paste0(thousand_genomes_dir, '/flipped/')
+  bims <- Sys.glob(paste0(flipped_dir, '*.bim'))
+
+  lapply(bims, function(bim_file) {
+    bim <- vroom::vroom(bim_file, col_names=F)
+    print(names(bim))
+    bim <- bim[(bim$X5 > bim$X6), ]
+    vroom::vroom_write(dplyr::select(bim, X2), paste0(bim_file, '_toflip'), col_names=F)
+  })
+
+}
+
+print_alleles_to_flip()

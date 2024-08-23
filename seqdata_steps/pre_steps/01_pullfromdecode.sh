@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e
 
 start_time=$(date +%s)
@@ -28,10 +27,8 @@ OUTNAME=${BASENAME}_filtered.txt
 
 if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
-	if [[ ! -e "${DCODE_DATA}/${INFILE}" ]] ; then
-		echo "Unzipping ${FILE}..."
-        	gunzip ${DCODE_DATA}/${FILE}
-	fi
+  echo "Unzipping ${FILE}..."
+  gunzip -f ${DCODE_DATA}/${FILE}
 
 	echo "Checking integrity of ${INFILE}"
 	CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
@@ -122,10 +119,10 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 	echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
 	
 	echo "Compressing output file"
-	gzip ${OUT_DIR}/${OUTNAME}
+	gzip -f ${OUT_DIR}/${OUTNAME}
 
 	echo "Re-compressing input file"
-	gzip ${DCODE_DATA}/${INFILE}
+	gzip -f ${DCODE_DATA}/${INFILE}
 
         rm -r ${TMP_DIR}
 else

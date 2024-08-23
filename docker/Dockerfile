@@ -23,7 +23,7 @@ RUN cd /home && \
     wget https://github.com/zkutalik/ssimp_software/raw/master/compiled/ssimp-linux-0.5.6 && \
     chmod 775 ssimp-linux-0.5.6 && \
     mv ssimp-linux-0.5.6 /bin/ssimp && \
-    wget -O DENTIST.gz https://www.dropbox.com/scl/fi/1yna9rizfy6s0ixek0cca/DENTIST.1.3.0.0.gz && \
+    wget -O DENTIST.gz 'https://www.dropbox.com/scl/fi/1yna9rizfy6s0ixek0cca/DENTIST.1.3.0.0.gz?rlkey=0ak0cdsev152jteibceit4mje&dl=0' && \
     gunzip DENTIST.gz && \
     chmod 775 DENTIST && \
     mv DENTIST /bin/DENTIST

@@ -11,7 +11,7 @@ MINIMUM_STUDY_REGION_SIZE <- 200
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/allele_flip/')
-thousand_genomes_dir <- paste0(data_dir, '1000genomes/')
+thousand_genomes_dir <- paste0(data_dir, '1000genomes/allele_flip')
 liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 

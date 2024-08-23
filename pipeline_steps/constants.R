@@ -20,7 +20,6 @@ bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?
-reference_builds <- list(GRCh36="GRCh36", GRCh37="GRCh37", GRCh38="GRCh38")
 ordered_data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',
@@ -33,6 +32,13 @@ data_formats <- list(opengwas='opengwas', besd='besd')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_and_trans')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
+
+reference_builds <- list(GRCh36="GRCh36", GRCh37="GRCh37", GRCh38="GRCh38")
+available_liftover_conversions <- list(
+  'GRCh36GRCh37' = 'hg18ToHg19.over.chain.gz',
+  'GRCh38GRCh37' = 'hg18ToHg19.over.chain.gz',
+  'GRCh37GRCh38' = 'hg18ToHg19.over.chain.gz',
+)
 
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)

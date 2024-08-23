@@ -5,25 +5,30 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-available_liftover_conversions <- list()
-available_liftover_conversions[[paste0(reference_builds$GRCh36, reference_builds$GRCh37)]] <- "hg18ToHg19.over.chain.gz"
-available_liftover_conversions[[paste0(reference_builds$GRCh38, reference_builds$GRCh37)]] <- "hg38ToHg19.over.chain.gz"
-available_liftover_conversions[[paste0(reference_builds$GRCh37, reference_builds$GRCh38)]] <- "hg19ToHg38.over.chain.gz"
-available_liftover_conversions[[paste0(reference_builds$GRCh37, reference_builds$GRCh36)]] <- "hg19ToHg18.over.chain.gz"
+standardised_studies <- data.frame(study=character(),
+                                   file=character(),
+                                   ancestry=character(),
+                                   chr=character(),
+                                   bp=numeric(),
+                                   p_value_threshold=numeric(),
+                                   category=character(),
+                                   sample_size=numeric(),
+                                   cis_trans=character(),
+                                   eaf_from_reference_panel=logical()
+)
 
 main <- function(args) {
-  standardised_studies <- data.frame(study=character(),
-                                     file=character(),
-                                     ancestry=character(),
-                                     chr=character(),
-                                     bp=numeric(),
-                                     p_value_threshold=numeric(),
-                                     category=character(),
-                                     sample_size=numeric(),
-                                     cis_trans=character(),
-                                     eaf_from_reference_panel=logical()
-  )
+  perform_standardisation(args)
+  perform_qc(args)
 
+  vroom::vroom_write(data.frame(), args$completed_output_file)
+}
+
+perform_qc <- function(args) {
+
+}
+
+perform_standardisation <- function(args) {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_region <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.tsv'), show_col_types = F)
 
@@ -50,7 +55,6 @@ main <- function(args) {
     results <- apply(extracted_studies, 1, function (study) {
       standardised_file <- sub('original', 'standardised', study[['file']])
       if (standardised_file %in% existing_standardised_studies$file) {
-        print('already processed')
         return()
       }
 
@@ -59,7 +63,7 @@ main <- function(args) {
       response <- convert_reference_build_via_liftover(gwas, study[['reference_build']], reference_builds$GRCh37) |>
         standardise_alleles() |>
         standardise_extracted_gwas(ld_region)
- 
+
       study['file'] <- standardised_file
       study['eaf_from_reference_panel'] <- response$eaf_from_reference_panel
       study <- study[-match('reference_build', names(study))]
@@ -75,10 +79,9 @@ main <- function(args) {
   }
 
   standardised_studies <- dplyr::bind_rows(existing_standardised_studies, standardised_studies) |>
-      dplyr::distinct()
+    dplyr::distinct()
 
   vroom::vroom_write(standardised_studies, standardised_studies_file)
-  vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
 standardise_extracted_gwas <- function(gwas, ld_region) {

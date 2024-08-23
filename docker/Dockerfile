@@ -4,7 +4,7 @@ RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRO
     echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
     apt update && apt install -y --no-install-recommends libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl
 
-#Installing ssimp, finemap, smr, gcta, and gwcoco here...
+#Installing ssimp, finemap, smr, gcta, DENTIST, and gwcoco here...
 RUN cd /home && \
     wget http://christianbenner.com/finemap_v1.4.2_x86_64.tgz && \
     tar -xf finemap_v1.4.2_x86_64.tgz && \
@@ -22,7 +22,11 @@ RUN cd /home && \
     mv pwcoco /bin/pwcoco && \
     wget https://github.com/zkutalik/ssimp_software/raw/master/compiled/ssimp-linux-0.5.6 && \
     chmod 775 ssimp-linux-0.5.6 && \
-    mv ssimp-linux-0.5.6 /bin/ssimp
+    mv ssimp-linux-0.5.6 /bin/ssimp && \
+    wget -O DENTIST.gz https://www.dropbox.com/scl/fi/1yna9rizfy6s0ixek0cca/DENTIST.1.3.0.0.gz && \
+    gunzip DENTIST.gz && \
+    chmod 775 DENTIST && \
+    mv DENTIST /bin/DENTIST
 
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/

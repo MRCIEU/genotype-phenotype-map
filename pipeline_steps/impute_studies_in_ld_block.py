@@ -9,12 +9,15 @@ from pathlib import Path
 import scipy.linalg
 
 pd.options.mode.copy_on_write = True
-DATA_DIR = os.getenv("DATA_DIR") or '/Users/wt23152/Documents/Projects/genotype-phenotype-map/pipeline_steps/scratch/data/'
+DATA_DIR = os.getenv("DATA_DIR")
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
 LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
+
+imputed_studies_columns = ['study', 'file', 'ancestry', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
+                           'cis_trans', 'rows_imputed']
 
 
 @click.command(name='Impute studies by region')
@@ -30,16 +33,19 @@ def main(ld_block, completed_output_file):
 
     extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
+    if os.path.isfile(imputed_studies_file):
+        existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
+    else:
+        existing_imputed_studies = pd.DataFrame(columns=imputed_studies_columns)
 
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
         imputed_file = gwas_file.replace('original', 'imputed')
-        if os.path.isfile(imputed_file):
+        if imputed_file in existing_imputed_studies['file'].values:
             continue
 
         gwas = pd.read_csv(gwas_file, delimiter='\t')
-
         if gwas is None or len(gwas) == 0:
             continue
 
@@ -90,19 +96,13 @@ def main(ld_block, completed_output_file):
         gwas.to_csv(imputed_file, sep='\t', index=False)
         imputed_studies.append(
             [study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold, study.category,
-             study.sample_size, study.cis_trans, sum(rsids_to_add), eaf_from_reference_panel])
+             study.sample_size, study.cis_trans, sum(rsids_to_add)])
 
-    imputed_studies_columns = ['study', 'file', 'ancestry', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size', 'cis_trans',
-                               'rows_imputed', 'eaf_from_reference_panel']
-    new_imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
+    imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
+    imputed_studies = existing_imputed_studies._append(imputed_studies, ignore_index=True)
+    imputed_studies.drop_duplicates(inplace=True)
 
-    if os.path.isfile(imputed_studies_file) and len(new_imputed_studies) > 0:
-        existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
-        if len(existing_imputed_studies) > 0:
-            new_imputed_studies = existing_imputed_studies._append(new_imputed_studies, ignore_index=True)
-        new_imputed_studies.drop_duplicates(inplace=True)
-
-    new_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
+    imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(completed_output_file).touch()
 
 

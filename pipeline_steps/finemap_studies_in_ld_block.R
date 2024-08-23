@@ -14,18 +14,32 @@ main <- function(args) {
   imputed_studies_file <- paste0(ld_info$ld_block_data, '/imputed_studies.tsv')
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
+  finemapped_results_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
+  if (file.exists(finemapped_results_file)) {
+    existing_finemapped_results <- vroom::vroom(finemapped_results_file,
+                                                show_col_types = F,
+                                                col_types = vroom::cols(
+                                                  chr = vroom::col_character(),
+                                                  bp = vroom::col_number(),
+                                                  min_p = vroom::col_number(),
+                                                  sample_size = vroom::col_number(),
+                                                  p_value_threshold = vroom::col_number()
+                                                )
+    )
+  } else {
+    existing_finemapped_results  <- empty_finemapped_info()
+  }
+
   if (nrow(imputed_studies) == 0) {
     finemapped_results <- data.frame()
   } else {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
       finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
-      if (file.exists(paste0(finemap_file_prefix, "_1.tsv.gz"))) {
+      if (finemap_file_prefix %in% existing_finemapped_results$file) {
         return()
       }
       cat(paste0('Finemapping ', study['file'], ": "))
-
-      dir.create(dirname(finemap_file_prefix), recursive=T, showWarnings=F)
       gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
       keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
@@ -90,22 +104,7 @@ main <- function(args) {
     }) |> dplyr::bind_rows()
   }
 
-  finemapped_results_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
-  if (file.exists(finemapped_results_file)) {
-    existing_finemapped_results <- vroom::vroom(finemapped_results_file,
-      show_col_types = F,
-      col_types = vroom::cols(
-        chr = vroom::col_character(),
-        bp = vroom::col_number(),
-        min_p = vroom::col_number(),
-        sample_size = vroom::col_number(),
-        p_value_threshold = vroom::col_number()
-      )
-    )
-    finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |>
-      dplyr::distinct()
-  }
-
+  finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> dplyr::distinct()
   if (nrow(finemapped_results) == 0) finemapped_results <- empty_finemapped_info()
 
   vroom::vroom_write(finemapped_results, finemapped_results_file)

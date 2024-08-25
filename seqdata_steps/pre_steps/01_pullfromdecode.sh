@@ -30,16 +30,16 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
   echo "Unzipping ${FILE}..."
   gunzip -f ${DCODE_DATA}/${FILE}
 
-	echo "Checking integrity of ${INFILE}"
-	CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
-	CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
-	[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
+  echo "Checking integrity of ${INFILE}"
+  CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
+  CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
+  [[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
 
-	echo "Processing file: ${INFILE}"
+  echo "Processing file: ${INFILE}"
 
-	# Temporary directory for processing
-    	TMP_DIR=${OUT_DIR}/tmp_${BASENAME}
-    	mkdir -p ${TMP_DIR}
+  # Temporary directory for processing
+      TMP_DIR=${OUT_DIR}/tmp_${BASENAME}
+      mkdir -p ${TMP_DIR}
 
         # Indicies of required columns (annoyingly the order is inconsistent)
         read -r header < ${DCODE_DATA}/${INFILE}
@@ -64,69 +64,69 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
         # Keep unique (some variant position duplication in file)
         sort -V -k1,1 -k2,2 ${TMP_DIR}/top_tmp.txt | uniq > ${TMP_DIR}/top_tmp_uniq.txt
 
-	echo "No. filter 1 hits: $(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)"
+  echo "No. filter 1 hits: $(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)"
 
-	echo "Splitting chromosomes"
+  echo "Splitting chromosomes"
 
-	# Split input file by chromosome
-	for chrom in {1..22}; do
-		chrno=$(echo chr${chrom})
-		rg -w ${chrno} ${DCODE_DATA}/${INFILE} > ${TMP_DIR}/${chrno}_tmp.txt
-	done
+  # Split input file by chromosome
+  for chrom in {1..22}; do
+    chrno=$(echo chr${chrom})
+    rg -w ${chrno} ${DCODE_DATA}/${INFILE} > ${TMP_DIR}/${chrno}_tmp.txt
+  done
 
-	# Grep surrounding 200,000 lines each side of filter 1 variants and split files again
-	echo "Splitting windows surrounding filter 1 hits"
-	
-	i=1
-	while IFS= read -r line; do
-		keepchr=$(echo ${line} | awk '{print $1}')
-		pasteline=$(echo ${line} | awk '{print $1":"$2":"}')
+  # Grep surrounding 200,000 lines each side of filter 1 variants and split files again
+  echo "Splitting windows surrounding filter 1 hits"
+  
+  i=1
+  while IFS= read -r line; do
+    keepchr=$(echo ${line} | awk '{print $1}')
+    pasteline=$(echo ${line} | awk '{print $1":"$2":"}')
 
-		rg ${pasteline} ${TMP_DIR}/${keepchr}_tmp.txt -C 200000 | awk -v chr=${chr_index} -v keep=${keepchr} \
-		'$chr == keep' > "${TMP_DIR}/searchwindow_${i}_tmp.txt"
-		
-		i=$((i+1))
-	done < ${TMP_DIR}/top_tmp_uniq.txt
+    rg ${pasteline} ${TMP_DIR}/${keepchr}_tmp.txt -C 200000 | awk -v chr=${chr_index} -v keep=${keepchr} \
+    '$chr == keep' > "${TMP_DIR}/searchwindow_${i}_tmp.txt"
+    
+    i=$((i+1))
+  done < ${TMP_DIR}/top_tmp_uniq.txt
 
         # Loop through variants passing filter 1, extract 1MB surrounding region and apply filter 2
-	# across split files
+  # across split files
         # Filter 2 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.1
-	
-	echo "Extracting filter 2 variants"
+  
+  echo "Extracting filter 2 variants"
 
-	i=$(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)
-	
-	for ((j=1; j<=i; j++)); do
-		
-		# Position of the original filtered variant
-		refpos=$(awk -v pos=${pos_index} -v J=${j} 'NR==J {print $pos}' ${TMP_DIR}/top_tmp_uniq.txt)
+  i=$(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)
+  
+  for ((j=1; j<=i; j++)); do
+    
+    # Position of the original filtered variant
+    refpos=$(awk -v pos=${pos_index} -v J=${j} 'NR==J {print $pos}' ${TMP_DIR}/top_tmp_uniq.txt)
 
-            	awk -v min_maf=${MIN_MAF} -v ref=${refpos} -v pos=${pos_index} \
-		-v p=${p_index} -v maf=${maf_index} -v info=${info_index} \
-            	'BEGIN {min = ref-500000; max = ref+500000} \
-            	$pos >= min && $pos <= max && \
-            	$p <= 0.1 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf))' \
-            	${TMP_DIR}/searchwindow_${j}_tmp.txt > ${TMP_DIR}/searchwindow_${j}_filtered_tmp.txt
-        done
+              awk -v min_maf=${MIN_MAF} -v ref=${refpos} -v pos=${pos_index} \
+    -v p=${p_index} -v maf=${maf_index} -v info=${info_index} \
+              'BEGIN {min = ref-500000; max = ref+500000} \
+              $pos >= min && $pos <= max && \
+              $p <= 0.1 && $info >= 0.5 && (($maf <= 0.01 && $maf >= min_maf) || (1-$maf <= 0.01 && 1-$maf >= min_maf))' \
+              ${TMP_DIR}/searchwindow_${j}_tmp.txt > ${TMP_DIR}/searchwindow_${j}_filtered_tmp.txt
+  done
 
-	# Join split filtered files
-	echo "Joining split filtered files"
-	(echo ${header}; cat ${TMP_DIR}/searchwindow_*_filtered_tmp.txt) > ${TMP_DIR}/finalvars_tmp.txt
+  # Join split filtered files
+  echo "Joining split filtered files"
+  (echo ${header}; find . -type f -name 'searchwindow_*_filtered_tmp.txt' -print0 | xargs -0 cat) > ${TMP_DIR}/finalvars_tmp.txt
 
-        # Keep unique (duplicates from overlapping windows) add header and write to output
-	echo "Writing output to: ${OUT_DIR}/${OUTNAME}"
-	sort -V -k1,1 -k2,2 ${TMP_DIR}/finalvars_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
-	echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
-	
-	echo "Compressing output file"
-	gzip -f ${OUT_DIR}/${OUTNAME}
+  # Keep unique (duplicates from overlapping windows) add header and write to output
+  echo "Writing output to: ${OUT_DIR}/${OUTNAME}"
+  sort -V -k1,1 -k2,2 ${TMP_DIR}/finalvars_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
+  echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
+  
+  echo "Compressing output file"
+  gzip -f ${OUT_DIR}/${OUTNAME}
 
-	echo "Re-compressing input file"
-	gzip -f ${DCODE_DATA}/${INFILE}
+  echo "Re-compressing input file"
+  gzip -f ${DCODE_DATA}/${INFILE}
 
-        rm -r ${TMP_DIR}
+  rm -r ${TMP_DIR}
 else
-	echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
+  echo "File ${OUT_DIR}/${OUTNAME}.gz already exists"
 fi
 
 end_time=$(date +%s)

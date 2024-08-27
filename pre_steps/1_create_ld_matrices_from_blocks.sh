@@ -1,19 +1,46 @@
 #!/bin/bash
-set -e
 
-LD_BLOCKS_DIR=$DATA_DIR/ld_block_matrices
-THOUSAND_GENOMES=$DATA_DIR/1000genomes
+# location of plink format UKB European data
+d="/local-scratch/projects/Lifecourse-GWAS/ukb/geno_input/"
+
+# sample 50k randomly 
+shuf -n 50000 $d/data.chr01.fam | cut -f 1,2 > ukb50k.ids
+
+
+ldmat_region () {
+    chr=$1
+    chrl=$(printf "%02d" $chr)
+    p1=$2
+    p2=$3
+    datadir=$4
+    keeplist=$5
+    plink=$6
+    outdir=$7
+    out="${outdir}/${chr}/${p1}-${p2}"
+    f="$out.unphased.vcor1"
+    if [ -e "$f" ]; then
+        echo "done $out"
+    else
+        bfile="${datadir}/data.chr${chrl}"
+        tfile=$(mktemp)
+        echo "$chr $p1 $p2 $chr_$p2_$p2" > $tfile
+        mkdir -p ${outdir}/${chr}
+        $plink --bfile $bfile --chr $chr --extract range $tfile --r-unphased square --out $out --keep-allele-order
+        $plink --bfile $bfile --chr $chr --extract range $tfile  --out $out  --keep-allele-order --freq
+        $plink --bfile $bfile --chr $chr --extract range $tfile  --out $out  --keep-allele-order --make-just-bim
+    fi
+}
+
+ldmat_region 1 1892607 3582736 $d ukb50k.ids /local-scratch/projects/genotype-phenotype-map/bin/plink2 temp
+ldmat_region 22 44995308 46470495 $d ukb50k.ids /local-scratch/projects/genotype-phenotype-map/bin/plink2 temp
 
 {
-  read
-  while IFS=$'\t' read -r CHR START_BP END_BP ANCESTRY; do
-    PLINK_OUTPUT=$LD_BLOCKS_DIR/${ANCESTRY}/${CHR}/${START_BP}_${END_BP}
-    mkdir -p $(dirname $PLINK_OUTPUT)
-    RANGE_FILE=$LD_BLOCKS_DIR/range_file.tmp
-    echo "$CHR $START_BP $END_BP ${ANCESTRY}/${CHR}/${START_BP}_${END_BP}" > $RANGE_FILE
+    while IFS=$'\t' read -r CHR START_BP END_BP; do
+        ldmat_region $CHR $START_BP $END_BP $d ukb50k.ids /local-scratch/projects/genotype-phenotype-map/bin/plink2 temp
+    done
+} < eur_ldregions.txt
 
-    plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr $CHR --extract range $RANGE_FILE --r square spaces --out $PLINK_OUTPUT --keep-allele-order
-    plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr $CHR --extract range $RANGE_FILE  --out $PLINK_OUTPUT  --keep-allele-order --freq
-    plink1.9 --bfile $THOUSAND_GENOMES/$ANCESTRY --chr $CHR --extract range $RANGE_FILE  --out $PLINK_OUTPUT  --keep-allele-order --make-just-bim
-  done
-} < data/ld_regions.tsv
+# parallel -j 60 -a eur_ldregions.txt ./ldmat.sh {} $d ukb50k.ids /local-scratch/projects/genotype-phenotype-map/bin/plink2 temp
+
+ls -1 temp/*/*vcor1 | wc -l
+wc -l eur_ldregions.txt

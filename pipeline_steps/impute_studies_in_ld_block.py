@@ -41,7 +41,7 @@ def main(ld_block, completed_output_file):
     imputed_studies = []
     for i, study in extracted_studies.iterrows():
         gwas_file = study['file']
-        imputed_file = gwas_file.replace('original', 'imputed')
+        imputed_file = gwas_file.replace('standardised', 'imputed')
         if imputed_file in existing_imputed_studies['file'].values:
             continue
 

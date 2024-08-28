@@ -22,7 +22,8 @@ main <- function(args) {
                                                     sample_size = vroom::col_number(),
                                                     p_value_threshold = vroom::col_number(),
                                                     snps_removed_by_reference_panel=vroom::col_number(),
-                                                    snps_removed_by_dentist=vroom::col_number()
+                                                    eaf_from_referene_panel=vroom::col_logical(),
+                                                    snps_removed_by_qc=vroom::col_number()
                                                   )
     )
   } else {
@@ -38,7 +39,7 @@ main <- function(args) {
       return(result$study)
     }) |> dplyr::bind_rows()
     if (nrow(standardised_studies) > 0) dplyr::mutate_at(standardised_studies, c('bp', 'p_value_threshold', 'sample_size',
-                                                                                 'snps_removed_by_reference_panel', 'snps_removed_by_dentist'), as.numeric)
+                                                                                 'snps_removed_by_reference_panel', 'snps_removed_by_qc'), as.numeric)
 
   }
 
@@ -62,16 +63,22 @@ perform_qc <- function(gwas, study) {
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file
   )
-  system(dentist_command, wait = T)
+  system(dentist_command, wait = T, intern = T)
 
   dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
   if (!file.exists(dentist_file_to_remove)) {
     stop('DENTIST command failed')
+    study['qc_step_suceeded'] <- F
+    study['snps_removed_by_qc'] <- 0
   }
-  dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, show_col_types = F)
-  gwas <- dplyr::filter(gwas, RSID %in% dentist_to_remove$X1)
+  else {
+    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, show_col_types = F)
+    gwas <- dplyr::filter(gwas, RSID %in% dentist_to_remove$X1) |>
+      dplyr::select(SNP, RSID, dplyr::everything())
 
-  study['snps_removed_by_dentist'] <- nrow(dentist_to_remove)
+    study['qc_step_succeeded'] <- T
+    study['snps_removed_by_qc'] <- nrow(dentist_to_remove)
+  }
   return(list(gwas=gwas, study=study))
 }
 
@@ -110,7 +117,7 @@ empty_standardised_studies <- function() {
                      cis_trans=character(),
                      eaf_from_reference_panel=logical(),
                      snps_removed_by_reference_panel=numeric(),
-                     snps_removed_by_dentist=numeric(),
+                     snps_removed_by_qc=numeric()
   ))
 
 }
@@ -146,7 +153,7 @@ standardise_extracted_gwas <- function(gwas, ld_region) {
   
   return(list(gwas = gwas,
               eaf_from_reference_panel = eaf_from_reference_panel,
-              snps_removed_by_reference_panel = nrow(gwas) - original_gwas_size))
+              snps_removed_by_reference_panel = original_gwas_size - nrow(gwas)))
 }
 
 standardise_alleles <- function(gwas) {

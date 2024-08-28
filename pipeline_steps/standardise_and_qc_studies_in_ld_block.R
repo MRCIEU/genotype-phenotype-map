@@ -33,7 +33,7 @@ main <- function(args) {
   if (nrow(extracted_studies) > 0) {
     standardised_studies <- apply(extracted_studies, 1, function (study) {
       result <- perform_standardisation(study, ld_region)
-      result <- perform_qc(result$gwas, result$study)
+      result <- perform_qc(result$gwas, result$study, ld_info$ld_matrix_prefix)
       vroom::vroom_write(result$gwas)
 
       return(result$study)
@@ -50,7 +50,7 @@ main <- function(args) {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-perform_qc <- function(gwas, study) {
+perform_qc <- function(gwas, study, bfile) {
   dentist_gwas <- dplyr::rename(gwas, REAL_SNP='SNP', SNP='RSID', A1='EA', A2='OA', freq='EAF', beta='BETA', se='SE', p='P') |>
     dplyr::mutate(N = as.numeric(study[['sample_size']])) |>
     dplyr::select(SNP, A1, A2, freq, beta, se, p, N)
@@ -58,12 +58,31 @@ perform_qc <- function(gwas, study) {
   dentist_tmp_file <- tempfile(basename(study[['file']]))
   vroom::vroom_write(dentist_gwas, dentist_tmp_file)
 
+
+  print('whole bfile')
+  start <- Sys.time()
   dentist_command <- paste('DENTIST --bfile', paste0(thousand_genomes_dir, study[['ancestry']]),
                            '--gwas-summary', dentist_tmp_file,
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file
   )
+  system(dentist_command, wait = T)
+  print(Sys.time() - start)
+  dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
+  if (file.exists(dentist_file_to_remove)) {
+    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
+    print(nrow(dentist_to_remove))
+  }
+
+  print('specific bfile')
+  start <- Sys.time()
+  dentist_command <- paste('DENTIST --bfile', bfile,
+                           '--gwas-summary', dentist_tmp_file,
+                           '--chrID', study[['chr']],
+                           '--out', dentist_tmp_file
+  )
   system(dentist_command, wait = T, intern = T)
+  print(Sys.time() - start)
 
   dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
   if (!file.exists(dentist_file_to_remove)) {
@@ -72,7 +91,8 @@ perform_qc <- function(gwas, study) {
     study['snps_removed_by_qc'] <- 0
   }
   else {
-    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, show_col_types = F)
+    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
+    print(nrow(dentist_to_remove))
     gwas <- dplyr::filter(gwas, RSID %in% dentist_to_remove$X1) |>
       dplyr::select(SNP, RSID, dplyr::everything())
 

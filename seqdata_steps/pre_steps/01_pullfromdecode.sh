@@ -111,7 +111,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
   # Join split filtered files
   echo "Joining split filtered files"
-  (echo ${header}; find . -type f -name 'searchwindow_*_filtered_tmp.txt' -print0 | xargs -0 cat) > ${TMP_DIR}/finalvars_tmp.txt
+  (echo ${header}; find $TMP_DIR -type f -name searchwindow_*_filtered_tmp.txt -print0 | xargs -0 cat) > ${TMP_DIR}/finalvars_tmp.txt
 
   # Keep unique (duplicates from overlapping windows) add header and write to output
   echo "Writing output to: ${OUT_DIR}/${OUTNAME}"

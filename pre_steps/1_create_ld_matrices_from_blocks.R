@@ -4,12 +4,15 @@ library(data.table)
 library(here)
 
 bfiles <- "/local-scratch/projects/Lifecourse-GWAS/ukb/geno_input/"
-eur <- fread("eur_ldregions.txt") %>% as_tibble()
-outdir <- "/local-scratch/projects/genotype-phenotype-map/data/ldmat_gib/eur"
+eur <- fread(here("pre_steps", "eur_ldregions.txt")) %>% as_tibble()
+outdir <- "/local-scratch/projects/genotype-phenotype-map/data/ldmat_gib/EUR"
 file.exists(outdir)
 tfile <- tempfile()
 keepfile <- here("ldmat", "ukb50k.ids")
 plink <- "/local-scratch/projects/genotype-phenotype-map/bin/plink2"
+file.exists(keepfile)
+
+# Generate plink subsets
 
 for(i in 1:nrow(eur))
 {
@@ -46,8 +49,25 @@ for(i in 1:nrow(eur))
     if(nchar(out) > 0) unlink(glue("{out}*~"))
 }
 
+# Generate LD mats and frequencies
+
+for(i in 1:nrow(eur))
+{
+    message(i)
+    chr <- eur$V1[i]
+    pos1 <- eur$V2[i]
+    pos2 <- eur$V3[i]
+    out <- glue("{outdir}/{chr}/{pos1}-{pos2}")
+
+    glue("{plink} --bfile {out} --r-unphased square --out {out} --keep-allele-order") %>% system()
+    # glue("gzip {out}.unphased.vcor1") %>% system()
+    glue("{plink} --bfile {out} --out {out} --keep-allele-order --freq") %>% system()
+}
 
 
-
-
-
+# Create a single individual level dataset of all the regions
+mergelist <- paste0(outdir, "/", eur$V1, "/", eur$V2, "-", eur$V3)
+mergefile <- tempfile()
+write.table(mergelist, file=mergefile, row=F, col=F, qu=F)
+out <- "/local-scratch/projects/genotype-phenotype-map/data/ldmat_gib/EUR"
+glue("plink1.9 --merge-list {mergefile} --make-bed --out {out} --keep-allele-order") %>% system()

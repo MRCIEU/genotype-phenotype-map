@@ -140,7 +140,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     trans_region <- vroom::vroom(paste0(tmp_trans_region, '.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region)
 
-    extracted_file <- paste0(study$extracted_location, '/original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
+    extracted_file <- paste0(study$extracted_location, 'original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
     vroom::vroom_write(trans_region, extracted_file)
     ld_block <- dplyr::filter(ld_regions, chr == clumped_snp['CHR'] & start < clumped_snp['BP'] & stop > clumped_snp['BP'] & ancestry == study$ancestry)
 

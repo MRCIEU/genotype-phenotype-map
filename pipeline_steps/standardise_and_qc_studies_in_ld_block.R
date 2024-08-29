@@ -22,7 +22,7 @@ main <- function(args) {
                                                     sample_size = vroom::col_number(),
                                                     p_value_threshold = vroom::col_number(),
                                                     snps_removed_by_reference_panel=vroom::col_number(),
-                                                    eaf_from_referene_panel=vroom::col_logical(),
+                                                    eaf_from_reference_panel=vroom::col_logical(),
                                                     snps_removed_by_qc=vroom::col_number()
                                                   )
     )
@@ -32,15 +32,21 @@ main <- function(args) {
 
   if (nrow(extracted_studies) > 0) {
     standardised_studies <- apply(extracted_studies, 1, function (study) {
+      standardised_file <- sub('original', 'standardised', study[['file']])
+
+      if (standardised_file %in% existing_standardised_studies$file) {
+        return()
+      }
       result <- perform_standardisation(study, ld_region)
       result <- perform_qc(result$gwas, result$study, ld_info$ld_matrix_prefix)
-      vroom::vroom_write(result$gwas)
+      vroom::vroom_write(result$gwas, result$study$file)
 
       return(result$study)
-    }) |> dplyr::bind_rows()
-    if (nrow(standardised_studies) > 0) dplyr::mutate_at(standardised_studies, c('bp', 'p_value_threshold', 'sample_size',
-                                                                                 'snps_removed_by_reference_panel', 'snps_removed_by_qc'), as.numeric)
+    }) |>
+      dplyr::bind_rows() |>
+      type.convert(as.is=T)
 
+    standardised_studies$chr <- as.character(standardised_studies$chr)
   }
 
   standardised_studies <- dplyr::bind_rows(existing_standardised_studies, standardised_studies) |>
@@ -58,43 +64,26 @@ perform_qc <- function(gwas, study, bfile) {
   dentist_tmp_file <- tempfile(basename(study[['file']]))
   vroom::vroom_write(dentist_gwas, dentist_tmp_file)
 
-
-  print('whole bfile')
-  start <- Sys.time()
-  dentist_command <- paste('DENTIST --bfile', paste0(thousand_genomes_dir, study[['ancestry']]),
-                           '--gwas-summary', dentist_tmp_file,
-                           '--chrID', study[['chr']],
-                           '--out', dentist_tmp_file
-  )
-  system(dentist_command, wait = T)
-  print(Sys.time() - start)
-  dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
-  if (file.exists(dentist_file_to_remove)) {
-    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
-    print(nrow(dentist_to_remove))
-  }
-
-  print('specific bfile')
   start <- Sys.time()
   dentist_command <- paste('DENTIST --bfile', bfile,
                            '--gwas-summary', dentist_tmp_file,
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file
   )
-  system(dentist_command, wait = T, intern = T)
+  system(dentist_command, wait = T)
   print(Sys.time() - start)
 
   dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
   if (!file.exists(dentist_file_to_remove)) {
-    stop('DENTIST command failed')
-    study['qc_step_suceeded'] <- F
+    message('DENTIST command failed')
+    study['qc_step_succeeded'] <- F
     study['snps_removed_by_qc'] <- 0
   }
   else {
     dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
-    print(nrow(dentist_to_remove))
-    gwas <- dplyr::filter(gwas, RSID %in% dentist_to_remove$X1) |>
+    gwas <- dplyr::filter(gwas, !RSID %in% dentist_to_remove$X1) |>
       dplyr::select(SNP, RSID, dplyr::everything())
+    print(paste('keeping:', nrow(gwas), 'deleting:', nrow(dentist_to_remove)))
 
     study['qc_step_succeeded'] <- T
     study['snps_removed_by_qc'] <- nrow(dentist_to_remove)
@@ -102,12 +91,8 @@ perform_qc <- function(gwas, study, bfile) {
   return(list(gwas=gwas, study=study))
 }
 
-perform_standardisation <- function(study, ld_region) {
+perform_standardisation <- function(study, ld_region, existing_standardised_studies) {
   standardised_file <- sub('original', 'standardised', study[['file']])
-  if (standardised_file %in% existing_standardised_studies$file) {
-    return()
-  }
-
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
   response <- convert_reference_build_via_liftover(gwas, study[['reference_build']], reference_builds$GRCh37) |>
@@ -118,9 +103,6 @@ perform_standardisation <- function(study, ld_region) {
   study['eaf_from_reference_panel'] <- response$eaf_from_reference_panel
   study['snps_removed_by_reference_panel'] <- response$snps_removed_by_reference_panel
   study <- study[-match('reference_build', names(study))]
-
-  #maybe cant save it as gzipped file?
-  vroom::vroom_write(response$gwas, study[['file']])
 
   return(list(gwas=response$gwas, study=as.list(study)))
 }
@@ -159,15 +141,13 @@ standardise_extracted_gwas <- function(gwas, ld_region) {
   gwas <- dplyr::filter(gwas, SNP %in% ld_region$SNP)
   ld_region <- dplyr::filter(ld_region, SNP %in% gwas$SNP)
 
-  columns_to_coerce <- c("EAF") # Add BETA and SE if needed
-  gwas <- dplyr::mutate(gwas, dplyr::across(dplyr::all_of(columns_to_coerce), as.numeric))
-  
   if (all(is.na(gwas$EAF))) {
     gwas <- dplyr::select(gwas, -EAF) |>
       dplyr::left_join(ld_region |> dplyr::select(SNP, EAF), by = "SNP")
     eaf_from_reference_panel <- TRUE
   }
 
+  columns_to_coerce <- c("EAF") # Add BETA and SE if needed
   gwas <- tidyr::drop_na(gwas, dplyr::all_of(columns_to_coerce)) |>
     dplyr::arrange(match(SNP, ld_region$SNP))
   
@@ -179,6 +159,8 @@ standardise_extracted_gwas <- function(gwas, ld_region) {
 standardise_alleles <- function(gwas) {
   gwas$EA <- toupper(gwas$EA)
   gwas$OA <- toupper(gwas$OA)
+  columns_to_coerce <- c("EAF") # Add BETA and SE if needed
+  gwas <- dplyr::mutate(gwas, dplyr::across(dplyr::all_of(columns_to_coerce), as.numeric))
 
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
   if (any(to_flip)) {

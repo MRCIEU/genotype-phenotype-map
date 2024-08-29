@@ -131,7 +131,7 @@ def standardise_rule(standardisation_pattern, name):
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
-                command = f"Rscript standardise_studies_in_ld_block.R \
+                command = f"Rscript standardise_and_qc_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
             subprocess.run(command, shell=True)

@@ -15,7 +15,8 @@ export RESULTS_DIR=/local-scratch/projects/genotype-phenotype-map/$TEST_RUN/resu
 set +e
 rm -r $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 #rm -r $DATA_DIR/study/*
-#rm -r $DATA_DIR/ld_blocks/*/*
+rm -r $DATA_DIR/pipeline_metadata/updated_ld_blocks_to_colocalise.tsv
+rm -r $DATA_DIR/ld_blocks/*/*
 rm -r $RESULTS_DIR/studies_processed.tsv
 rm -r $RESULTS_DIR/$TIMESTAMP/*
 rm -r $RESULTS_DIR/ld_blocks/*/*

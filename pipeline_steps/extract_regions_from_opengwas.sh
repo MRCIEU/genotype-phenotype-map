@@ -45,7 +45,7 @@ while IFS=' ' read -r CHR POS LOG_P; do
   fi
 
   REGION="$CHR:$BEGINNING_END"
-  EXTRACTED_FILE=$EXTRACTED_STUDY_DIR/original/${ANCESTRY}_${CHR}_${POS}.tsv
+  EXTRACTED_FILE=${EXTRACTED_STUDY_DIR}original/${ANCESTRY}_${CHR}_${POS}.tsv
 
   echo -e "RSID\tCHR\tBP\tEA\tOA\tEAF\tBETA\tSE\tLP" > $EXTRACTED_FILE
   /home/bcftools/bcftools query --regions $REGION --format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" $STUDY.vcf.gz >> $EXTRACTED_FILE

@@ -2,7 +2,7 @@ source("constants.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
-parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the region complez', default = F, type = 'logical')
+parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the ld block complex', default = F, type = 'logical')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
@@ -46,11 +46,11 @@ main <- function(args) {
       ld_for_gwas <- ld_region[keep, keep]
       ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
       if (nrow(gwas) != nrow(ld_for_gwas)) {
-        stop(paste('Error: GWAS', nrow(gwas), 'and ld matrix', nrow(ld_for_gwas), 'should match size'))
+        stop(paste('Error:', study[['file']], 'GWAS', nrow(gwas), 'and ld matrix', nrow(ld_for_gwas), 'should match size'))
       }
 
       sample_size <- as.numeric(study['sample_size'])
-      max_finemapped_results <- if(args$complex_region == T) 20 else 10
+      max_finemapped_results <- if(args$complex_block == T) 20 else 10
 
       susie_result <- list(converged=F)
       tryCatch(expr = {

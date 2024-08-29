@@ -31,7 +31,7 @@ def main(ld_block, completed_output_file):
     ld_matrix = np.array(ld_matrix)
     ld_region_from_reference_panel = pd.read_csv(ld_matrix_prefix + '.tsv', delimiter='\t')
 
-    extracted_studies = pd.read_csv(ld_block_dir + '/extracted_studies.tsv', delimiter='\t')
+    standardised_studies = pd.read_csv(ld_block_dir + '/standardised_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
     if os.path.isfile(imputed_studies_file):
         existing_imputed_studies = pd.read_csv(imputed_studies_file, delimiter='\t')
@@ -39,7 +39,7 @@ def main(ld_block, completed_output_file):
         existing_imputed_studies = pd.DataFrame(columns=imputed_studies_columns)
 
     imputed_studies = []
-    for i, study in extracted_studies.iterrows():
+    for i, study in standardised_studies.iterrows():
         gwas_file = study['file']
         imputed_file = gwas_file.replace('standardised', 'imputed')
         if imputed_file in existing_imputed_studies['file'].values:
@@ -51,9 +51,9 @@ def main(ld_block, completed_output_file):
 
         min_bp = gwas['BP'].min() - 10000
         max_bp = gwas['BP'].max() + 10000
-        subset_range = ld_region_from_reference_panel['BP'].between(min_bp, max_bp)
+        subset_range = np.where(ld_region_from_reference_panel['BP'].between(min_bp, max_bp))[0]
         ld_matrix_subset = ld_matrix[subset_range, :][:, subset_range]
-        ld_region_subset = ld_region_from_reference_panel[subset_range]
+        ld_region_subset = ld_region_from_reference_panel.iloc[subset_range]
 
         print('orig info')
         print(ld_matrix.shape)

@@ -115,6 +115,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     probe_top_hits <- dplyr::filter(probe_top_hits, !(Chr == extracted_cis_snps$Chr[1] & BP > min_bp & BP < max_bp))
   }
 
+  #TODO: What to do here?  Might need the whole ancestry bfile
   plink_command <- paste0('plink1.9 --bfile', thousand_genomes_dir, '/', study$ancestry,
                           '--clump ', probe_top_hits,'.txt',
                           ' --clump-snp-field SNP ',

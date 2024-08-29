@@ -3,7 +3,7 @@ ld_regions <- vroom::vroom("../../pipeline_steps/data/ld_regions.tsv", show_col_
 ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
 NUM_PARALLEL_JOBS = 150
-results <- parallel::mclapply(X=ld_info$ld_matrix_prefix, mc.cores=NUM_PARALLEL_JOBS, FUN=function(ld_region_string) {
+results <- parallel::mclapply(X=ld_info$ld_reference_panel_prefix, mc.cores=NUM_PARALLEL_JOBS, FUN=function(ld_region_string) {
   print(ld_region_string)
 
   bim <- vroom::vroom(paste0(ld_region_string, ".bim"), delim='\t', col_names = F, show_col_types = F) |>

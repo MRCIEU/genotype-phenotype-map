@@ -10,7 +10,7 @@ MINIMUM_STUDY_REGION_SIZE <- 200
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
-ld_block_matrices_dir <- paste0(data_dir, 'ld_block_matrices/allele_flip/')
+ld_reference_panel_dir <- paste0(data_dir, 'ld_reference_panel/')
 thousand_genomes_dir <- paste0(data_dir, '1000genomes/allele_flip/')
 liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
@@ -50,7 +50,7 @@ ld_block_dirs <- function(block) {
   ld_info <- data.frame(block = block,
                         ld_block_data = paste0(ld_block_data_dir, block),
                         ld_block_results = paste0(ld_block_results_dir, block),
-                        ld_matrix_prefix=paste0(ld_block_matrices_dir, block)
+                        ld_reference_panel_prefix=paste0(ld_reference_panel_dir, block)
   )
   return(ld_info)
 }

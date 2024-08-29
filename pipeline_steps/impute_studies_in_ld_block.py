@@ -11,7 +11,7 @@ import scipy.linalg
 pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
+LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ldmat_gib/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
@@ -24,12 +24,12 @@ imputed_studies_columns = ['study', 'file', 'ancestry', 'chr', 'bp', 'p_value_th
 @click.option('--ld_block', help='List of GWAS Summary Statistics file', required=True)
 @click.option('--completed_output_file', help='Completion output file', required=True)
 def main(ld_block, completed_output_file):
-    ld_matrix_prefix = LD_BLOCK_MATRICES_DIR + ld_block
+    ld_reference_panel_prefix = LD_BLOCK_MATRICES_DIR + ld_block
     ld_block_dir = LD_BLOCK_DATA_DIR + ld_block
 
-    ld_matrix = pd.read_csv(ld_matrix_prefix + '.ld', header=None, delimiter=' ')
+    ld_matrix = pd.read_csv(ld_reference_panel_prefix + '.unphased.vcor1', header=None, delimiter=' ')
     ld_matrix = np.array(ld_matrix)
-    ld_region_from_reference_panel = pd.read_csv(ld_matrix_prefix + '.tsv', delimiter='\t')
+    ld_region_from_reference_panel = pd.read_csv(ld_reference_panel_prefix + '.tsv', delimiter='\t')
 
     standardised_studies = pd.read_csv(ld_block_dir + '/standardised_studies.tsv', delimiter='\t')
     imputed_studies_file = ld_block_dir + '/imputed_studies.tsv'
@@ -55,13 +55,6 @@ def main(ld_block, completed_output_file):
         ld_matrix_subset = ld_matrix[subset_range, :][:, subset_range]
         ld_region_subset = ld_region_from_reference_panel.iloc[subset_range]
 
-        print('orig info')
-        print(ld_matrix.shape)
-        print(ld_region_from_reference_panel.shape)
-        print('subset info')
-        print(ld_matrix_subset.shape)
-        print(ld_region_subset.shape)
-
         snps_in_gwas = np.isin(ld_region_subset.SNP, gwas.SNP)
         known = np.where(snps_in_gwas)[0]
         unknown = np.where(snps_in_gwas == False)[0]
@@ -84,9 +77,8 @@ def main(ld_block, completed_output_file):
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
-        print(f'Imputing {gwas_file} with dimension {missing_ld_matrix.shape}: ', end='')
-        print(f'Imputed {sum(rsids_to_add)} SNPs for {ld_matrix_prefix}')
-        print(f'Time: {time.time() - start_time}')
+        print(f'Time: {time.time() - start_time}, imputed: {sum(rsids_to_add)} '
+              f'for {os.path.basename(gwas_file)} with dimension {missing_ld_matrix.shape}')
 
         # reorder the gwas, once again, after more entries were added
         lds_in_gwas = ld_region_subset[np.isin(ld_region_subset.SNP, gwas.SNP)]

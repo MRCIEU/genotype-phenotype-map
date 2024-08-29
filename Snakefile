@@ -12,7 +12,6 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_block_matrices/'
 LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
 ### INPUT DATA FILES

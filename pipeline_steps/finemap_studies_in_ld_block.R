@@ -8,8 +8,8 @@ args <- argparser::parse_args(parser)
 
 main <- function(args) {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_region <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.ld'), col_names=F, show_col_types = F)
-  ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.tsv'), show_col_types = F)
+  ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names=F, show_col_types = F)
+  ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
 
   imputed_studies_file <- paste0(ld_info$ld_block_data, '/imputed_studies.tsv')
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
@@ -43,10 +43,10 @@ main <- function(args) {
       gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
       keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
-      ld_for_gwas <- ld_region[keep, keep]
-      ld_matrix <- matrix(as.vector(data.matrix(ld_for_gwas)), nrow=nrow(ld_for_gwas), ncol=ncol(ld_for_gwas))
-      if (nrow(gwas) != nrow(ld_for_gwas)) {
-        stop(paste('Error:', study[['file']], 'GWAS', nrow(gwas), 'and ld matrix', nrow(ld_for_gwas), 'should match size'))
+      ld_matrix_subset <- ld_matrix[keep, keep]
+      ld_matrix <- matrix(as.vector(data.matrix(ld_matrix_subset)), nrow=nrow(ld_matrix_subset), ncol=ncol(ld_matrix_subset))
+      if (nrow(gwas) != nrow(ld_matrix_subset)) {
+        stop(paste('Error:', study[['file']], 'GWAS', nrow(gwas), 'and ld matrix', nrow(ld_matrix_subset), 'should match size'))
       }
 
       sample_size <- as.numeric(study['sample_size'])

@@ -7,7 +7,7 @@ args <- argparser::parse_args(parser)
 
 main <- function(args) {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_region <- vroom::vroom(paste0(ld_info$ld_matrix_prefix, '.tsv'), show_col_types = F)
+  ld_region <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
 
   extracted_studies_file <- paste0(ld_info$ld_block_data, '/extracted_studies.tsv')
   extracted_studies  <- vroom::vroom(extracted_studies_file , show_col_types = F)
@@ -38,7 +38,7 @@ main <- function(args) {
         return()
       }
       result <- perform_standardisation(study, ld_region)
-      result <- perform_qc(result$gwas, result$study, ld_info$ld_matrix_prefix)
+      result <- perform_qc(result$gwas, result$study, ld_info$ld_reference_panel_prefix)
       vroom::vroom_write(result$gwas, result$study$file)
 
       return(result$study)
@@ -91,7 +91,7 @@ perform_qc <- function(gwas, study, bfile) {
   return(list(gwas=gwas, study=study))
 }
 
-perform_standardisation <- function(study, ld_region, existing_standardised_studies) {
+perform_standardisation <- function(study, ld_region) {
   standardised_file <- sub('original', 'standardised', study[['file']])
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
@@ -143,7 +143,7 @@ standardise_extracted_gwas <- function(gwas, ld_region) {
 
   if (all(is.na(gwas$EAF))) {
     gwas <- dplyr::select(gwas, -EAF) |>
-      dplyr::left_join(ld_region |> dplyr::select(SNP, EAF), by = "SNP")
+      dplyr::left_join(ld_region |> dplyr::select(SNP, EAF), by = 'SNP')
     eaf_from_reference_panel <- TRUE
   }
 

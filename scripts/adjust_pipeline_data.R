@@ -80,6 +80,37 @@ update_extracted_studies <- function() {
   })
 }
 
+update_ld_matrix_data <- function() {
+  block_matrix_dirs <- paste0(ld_reference_panel_dir, 'EUR/', seq(1, 22))
+  for (dir in block_matrix_dirs) {
+    setwd(dir)
+    files <- list.files()
+    new_files <- lapply(files, function(old_file) {
+      new_file <- sub('-', '_', old_file)
+      new_bp <- as.numeric(sub('.*_(\\d+)\\..*', '\\1', new_file))
+      new_bp <- new_bp - 1
+      new_file <- sub('(.*_)\\d+(\\..*)', paste0('\\1', new_bp, '\\2'), new_file)
+      print(new_file)
+      file.rename(old_file, new_file)
+    })
+
+    freq_files <- Filter(\(file) grepl('afreq',file), files)
+    bim_files <- Filter(\(file) grepl('bim',file), files)
+    mapply(function(freq_file, bim_file) {
+      bim <- vroom::vroom(bim_file, delim='\t', col_names = F, show_col_types = F) |>
+        dplyr::select(X2, X4)
+      freq <- vroom::vroom(freq_file, show_col_types = F) |>
+        dplyr::rename(SNP='ID', CHR='#CHROM', EA='ALT', OA='REF', EAF='ALT_FREQS') |>
+        dplyr::select(SNP, CHR, EA, OA, EAF)
+      freq$BP <- bim$X4[match(freq$SNP, bim$X2)]
+
+      new_file_name <- sub('bim', 'tsv', bim_file)
+      vroom::vroom_write(freq, new_file_name)
+    },freq_files, bim_files)
+
+  }
+}
+
 remove_imputed_and_finemapped_results_from_pipeline <- function(study_pattern) {
   NUM_PARALLEL_JOBS <- 100
 
@@ -148,4 +179,4 @@ skip_steps <- function() {
 }
 
 
-remove_imputed_and_finemapped_results_from_pipeline('GTEx-sQTL-cis-Heart')
+update_ld_matrix_data()

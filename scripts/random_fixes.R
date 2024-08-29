@@ -43,7 +43,7 @@ update_existing_eafs <- function() {
       if (ld_region == '//_') return()
 
       if (is.null(ld_block_matrices[[ld_region]])) {
-        ld_block_matrices[[ld_region]] <- vroom::vroom(paste0(ld_block_matrices_dir, ld_region, '.tsv'), show_col_types = F)
+        ld_block_matrices[[ld_region]] <- vroom::vroom(paste0(ld_reference_panel_dir, ld_region, '.tsv'), show_col_types = F)
       }
 
       ld_block_matrix <- ld_block_matrices[[ld_region]]

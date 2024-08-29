@@ -177,11 +177,16 @@ standardise_alleles <- function(gwas) {
     gwas$EA[to_flip] <- temp
   }
 
-  gwas$SNP <- toupper(paste0(gwas$CHR, ":", format(gwas$BP, scientific = F, trim = T), "_", gwas$EA, "_", gwas$OA))
+  compressed_ea <- compress_alleles(gwas$EA)
+  compressed_oa <- compress_alleles(gwas$OA)
 
+  gwas$SNP <- paste0(gwas$CHR, ":", format(gwas$BP, scientific = F, trim = T), "_", compressed_ea, "_", compressed_oa)
   return(gwas)
 }
 
+compress_alleles <- function(alleles) {
+  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else allele)
+}
 
 #' convert_reference_build_via_liftover: Change reference build of BP marker from allow list of liftOver conversions
 #'

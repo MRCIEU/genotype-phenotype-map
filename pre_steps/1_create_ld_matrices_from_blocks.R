@@ -3,8 +3,8 @@ library(dplyr)
 library(data.table)
 library(here)
 
-bfiles <- "/local-scratch/projects/Lifecourse-GWAS/ukb/geno_input/"
-eur <- fread(here("pre_steps", "eur_ldregions.txt")) %>% as_tibble()
+bfiles <- "/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel/EUR/full_maf"
+eur <- fread(here("pipeline_steps/data", "ld_regions.tsv")) %>% as_tibble() %>% filter(ancestry == "EUR")
 outdir <- "/local-scratch/projects/genotype-phenotype-map/data/ldmat_gib/EUR"
 file.exists(outdir)
 tfile <- tempfile()
@@ -17,10 +17,10 @@ file.exists(keepfile)
 for(i in 1:nrow(eur))
 {
     message(i)
-    chr <- eur$V1[i]
-    pos1 <- eur$V2[i]
-    pos2 <- eur$V3[i]
-    out <- glue("{outdir}/{chr}/{pos1}-{pos2}")
+    chr <- eur$chr[i]
+    pos1 <- eur$start[i]
+    pos2 <- eur$stop[i]
+    out <- glue("{outdir}/{chr}/{pos1}_{pos2}")
 
     s <- glue("{chr} {pos1} {pos2} a")
     write.table(s, file=tfile, row=F, col=F, qu=F)
@@ -54,10 +54,10 @@ for(i in 1:nrow(eur))
 for(i in 1:nrow(eur))
 {
     message(i)
-    chr <- eur$V1[i]
-    pos1 <- eur$V2[i]
-    pos2 <- eur$V3[i]
-    out <- glue("{outdir}/{chr}/{pos1}-{pos2}")
+    chr <- eur$chr[i]
+    pos1 <- eur$start[i]
+    pos2 <- eur$stop[i]
+    out <- glue("{outdir}/{chr}/{pos1}_{pos2}")
 
     glue("{plink} --bfile {out} --r-unphased square --out {out} --keep-allele-order") %>% system()
     # glue("gzip {out}.unphased.vcor1") %>% system()
@@ -66,7 +66,7 @@ for(i in 1:nrow(eur))
 
 
 # Create a single individual level dataset of all the regions
-mergelist <- paste0(outdir, "/", eur$V1, "/", eur$V2, "-", eur$V3)
+mergelist <- paste0(outdir, "/", eur$chr, "/", eur$start, "_", eur$stop)
 mergefile <- tempfile()
 write.table(mergelist, file=mergefile, row=F, col=F, qu=F)
 out <- "/local-scratch/projects/genotype-phenotype-map/data/ldmat_gib/EUR"

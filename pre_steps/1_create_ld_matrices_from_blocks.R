@@ -58,7 +58,7 @@ for(i in 1:nrow(eur))
 
     glue("{plink} --bfile {out} --r-unphased square --out {out} --keep-allele-order") %>% system()
     # glue("gzip {out}.unphased.vcor1") %>% system()
-    glue("{plink} --bfile {out} --out {out} --keep-allele-order --freq") %>% system()
+    #glue("{plink} --bfile {out} --out {out} --keep-allele-order --freq") %>% system()
 }
 
 

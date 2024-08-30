@@ -5,13 +5,11 @@ results_dir <- Sys.getenv('RESULTS_DIR')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 DEFAULT_P_VALUE_THRESHOLD <- 5e-8
-
 MINIMUM_STUDY_REGION_SIZE <- 200
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
 ld_reference_panel_dir <- paste0(data_dir, 'ld_reference_panel/')
-thousand_genomes_dir <- paste0(data_dir, '1000genomes/allele_flip/')
 liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 

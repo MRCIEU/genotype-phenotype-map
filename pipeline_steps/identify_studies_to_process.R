@@ -1,7 +1,7 @@
 setwd('pipeline_steps')
 source('constants.R')
 
-gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 

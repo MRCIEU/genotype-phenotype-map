@@ -40,7 +40,7 @@ main <- function(args) {
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
-  gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+  gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
   gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]

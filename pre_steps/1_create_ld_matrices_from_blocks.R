@@ -25,7 +25,7 @@ for(i in 1:nrow(eur))
     #bfile <- file.path(bfiles, paste0("data.chr", sprintf("%02d", chr)))
 
     # create subset
-    glue("{plink} --bfile {bfiles} --chr {chr} --extract range {tfile} --make-bed --out {out} --keep-allele-order") %>% system()
+    glue("{plink} --bfile {bfiles} --chr {chr} --extract range {tfile} --make-bed --out {out} --keep-allele-order --freq") %>% system()
 
     # update alleles
 

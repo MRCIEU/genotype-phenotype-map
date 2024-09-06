@@ -87,14 +87,6 @@ update_ld_matrix_data <- function() {
   for (dir in block_matrix_dirs) {
     setwd(dir)
     files <- list.files()
-    new_files <- lapply(files, function(old_file) {
-      new_file <- sub('-', '_', old_file)
-      new_bp <- as.numeric(sub('.*_(\\d+)\\..*', '\\1', new_file))
-      new_bp <- new_bp - 1
-      new_file <- sub('(.*_)\\d+(\\..*)', paste0('\\1', new_bp, '\\2'), new_file)
-      file.rename(old_file, new_file)
-      return(new_file)
-    })
 
     freq_files <- Filter(\(file) grepl('afreq$', file), files)
     bim_files <- Filter(\(file) grepl('bim$', file), files)
@@ -183,4 +175,4 @@ skip_steps <- function() {
   }
 }
 
-
+update_ld_matrix_data() 

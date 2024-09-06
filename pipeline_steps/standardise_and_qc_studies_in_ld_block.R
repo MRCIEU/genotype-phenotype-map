@@ -23,7 +23,6 @@ main <- function(args) {
                                                     p_value_threshold = vroom::col_number(),
                                                     snps_removed_by_reference_panel=vroom::col_number(),
                                                     eaf_from_reference_panel=vroom::col_logical(),
-                                                    snps_removed_by_qc=vroom::col_number()
                                                   )
     )
   } else {
@@ -32,15 +31,16 @@ main <- function(args) {
 
   if (nrow(extracted_studies) > 0) {
     standardised_studies <- apply(extracted_studies, 1, function (study) {
+      start_time <- Sys.time()
       standardised_file <- sub('original', 'standardised', study[['file']])
 
       if (standardised_file %in% existing_standardised_studies$file) {
         return()
       }
       result <- perform_standardisation(study, ld_region)
-      result <- perform_qc(result$gwas, result$study, ld_info$ld_reference_panel_prefix)
       vroom::vroom_write(result$gwas, result$study$file)
 
+      result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
       return(result$study)
     }) |>
       dplyr::bind_rows() |>
@@ -54,41 +54,6 @@ main <- function(args) {
 
   vroom::vroom_write(standardised_studies, standardised_studies_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
-}
-
-perform_qc <- function(gwas, study, bfile) {
-  dentist_gwas <- dplyr::rename(gwas, REAL_SNP='SNP', SNP='RSID', A1='EA', A2='OA', freq='EAF', beta='BETA', se='SE', p='P') |>
-    dplyr::mutate(N = as.numeric(study[['sample_size']])) |>
-    dplyr::select(SNP, A1, A2, freq, beta, se, p, N)
-
-  dentist_tmp_file <- tempfile(basename(study[['file']]))
-  vroom::vroom_write(dentist_gwas, dentist_tmp_file)
-
-  start <- Sys.time()
-  dentist_command <- paste('DENTIST --bfile', bfile,
-                           '--gwas-summary', dentist_tmp_file,
-                           '--chrID', study[['chr']],
-                           '--out', dentist_tmp_file
-  )
-  system(dentist_command, wait = T)
-  print(Sys.time() - start)
-
-  dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
-  if (!file.exists(dentist_file_to_remove)) {
-    message('DENTIST command failed')
-    study['qc_step_succeeded'] <- F
-    study['snps_removed_by_qc'] <- 0
-  }
-  else {
-    dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
-    gwas <- dplyr::filter(gwas, !RSID %in% dentist_to_remove$X1) |>
-      dplyr::select(SNP, RSID, dplyr::everything())
-    print(paste('keeping:', nrow(gwas), 'deleting:', nrow(dentist_to_remove)))
-
-    study['qc_step_succeeded'] <- T
-    study['snps_removed_by_qc'] <- nrow(dentist_to_remove)
-  }
-  return(list(gwas=gwas, study=study))
 }
 
 perform_standardisation <- function(study, ld_region) {
@@ -119,9 +84,8 @@ empty_standardised_studies <- function() {
                      cis_trans=character(),
                      eaf_from_reference_panel=logical(),
                      snps_removed_by_reference_panel=numeric(),
-                     snps_removed_by_qc=numeric()
+                     time_taken=character()
   ))
-
 }
 
 standardise_extracted_gwas <- function(gwas, ld_region) {

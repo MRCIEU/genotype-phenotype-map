@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LIST=$1
-NUM_PARALLEL=50
+NUM_PARALLEL=75
 
 parallel --jobs $NUM_PARALLEL --delay 1 \
   'DIR_NAME=/local-scratch/data/ukb-seq/downloads/halldorexwas/decode_data; 

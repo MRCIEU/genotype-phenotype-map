@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import click
+import cupy as cp
 import datetime
 import numpy as np
 import os
@@ -157,8 +158,12 @@ class SummaryStatisticsImputation:
             var_norm = SummaryStatisticsImputation._var_in_boundaries(var, lamb)
 
             R2 = (1 + lamb) - var_norm
-            mu = mu / np.sqrt(R2)
 
+            mu = cp.asnumpy(mu)
+            mu = mu / np.sqrt(cp.asnumpy(R2))
+
+            var = cp.asnumpy(var)
+            ld_score = cp.asnumpy(ld_score)
             return {
                 "var": var,
                 "mu": mu,
@@ -168,35 +173,35 @@ class SummaryStatisticsImputation:
 
     @staticmethod
     def _compute_mu(
-            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, zt: np.ndarray
-    ) -> np.ndarray:
-        """Compute the estimation of z-score from neighborring snp.
+            sig_i_t: cp.ndarray, sig_t_inv: cp.ndarray, zt: cp.ndarray
+    ) -> cp.ndarray:
+        """Compute the estimation of z-score from neighborring scp.
 
         Args:
-            sig_i_t (np.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
-            sig_t_inv (np.ndarray): inverse of the correlation matrix of known matrix
-            zt (np.ndarray): Zscores of known snp
+            sig_i_t (cp.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
+            sig_t_inv (cp.ndarray): inverse of the correlation matrix of known matrix
+            zt (cp.ndarray): Zscores of known snp
         Returns:
-            np.ndarray: a vector of length i containing the estimate of zscore
+            cp.ndarray: a vector of length i containing the estimate of zscore
 
         """
-        return np.dot(sig_i_t, np.dot(sig_t_inv, zt))
+        return cp.dot(sig_i_t, cp.dot(sig_t_inv, zt))
 
     @staticmethod
     def _compute_var(
-            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, lamb: float
-    ) -> tuple[np.ndarray, np.ndarray]:
+            sig_i_t: cp.ndarray, sig_t_inv: cp.ndarray, lamb: float
+    ) -> tuple[cp.ndarray, cp.ndarray]:
         """Compute the expected variance of the imputed SNPs.
 
         Args:
-            sig_i_t (np.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
-            sig_t_inv (np.ndarray): inverse of the correlation matrix of known matrix
+            sig_i_t (cp.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
+            sig_t_inv (cp.ndarray): inverse of the correlation matrix of known matrix
             lamb (float): regularization term added to matrix
 
         Returns:
-            tuple[np.ndarray, np.ndarray]: a tuple containing the variance and the ld score
+            tuple[cp.ndarray, cp.ndarray]: a tuple containing the variance and the ld score
         """
-        var = (1 + lamb) - np.einsum(
+        var = (1 + lamb) - cp.einsum(
             "ij,jk,ki->i", sig_i_t, sig_t_inv, sig_i_t.transpose()
         )
         ld_score = (sig_i_t ** 2).sum(1)
@@ -204,40 +209,40 @@ class SummaryStatisticsImputation:
         return var, ld_score
 
     @staticmethod
-    def _var_in_boundaries(var: np.ndarray, lamb: float) -> np.ndarray:
+    def _var_in_boundaries(var: cp.ndarray, lamb: float) -> cp.ndarray:
         """Forces the variance to be in the 0 to 1+lambda boundary. Theoritically we shouldn't have to do that.
 
         Args:
-            var (np.ndarray): the variance of the imputed SNPs
+            var (cp.ndarray): the variance of the imputed SNPs
             lamb (float): regularization term added to the diagonal of the sig_t matrix
 
         Returns:
-            np.ndarray: the variance of the imputed SNPs
+            cp.ndarray: the variance of the imputed SNPs
         """
-        id_neg = np.where(var < 0)
+        id_neg = cp.where(var < 0)
         var[id_neg] = 0
-        id_inf = np.where(var > (0.99999 + lamb))
+        id_inf = cp.where(var > (0.99999 + lamb))
         var[id_inf] = 1
 
         return var
 
     @staticmethod
-    def _invert_sig_t(sig_t: np.ndarray, lamb: float, rtol: float) -> np.ndarray:
+    def _invert_sig_t(sig_t: cp.ndarray, lamb: float, rtol: float) -> cp.ndarray:
         """Invert the correlation matrix. If the provided regularization values are not enough to stabilize the inversion process for the given matrix, the function calls itself recursively, increasing lamb and rtol by 10%.
 
         Args:
-            sig_t (np.ndarray): the correlation matrix
+            sig_t (cp.ndarray): the correlation matrix
             lamb (float): regularization term added to the diagonal of the sig_t matrix
             rtol (float): threshold to filter eigenvector with a eigenvalue under rtol make inversion biased but much more numerically robust
 
         Returns:
-            np.ndarray: the inverse of the correlation matrix
+            cp.ndarray: the inverse of the correlation matrix
         """
         try:
-            np.fill_diagonal(sig_t, (1 + lamb))
+            cp.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
             return sig_t_inv
-        except np.linalg.LinAlgError:
+        except cp.linalg.LinAlgError:
             return SummaryStatisticsImputation._invert_sig_t(
                 sig_t, lamb * 1.1, rtol * 1.1
             )

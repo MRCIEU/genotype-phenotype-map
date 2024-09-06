@@ -20,7 +20,7 @@ main <- function(args) {
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
     vroom::vroom_write(data.frame(), args$coloc_result_file)
-    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data ,', skipping.'))
+    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data, ', skipping.'))
     return()
   }
 
@@ -113,7 +113,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
 
     if (length(specific_group) == 0 || nrow(specific_group[[1]])==0) return()
 
-    snps <- specific_group[[1]]$RSID
+    snps <- specific_group[[1]]$SNP
     trait_names <- names(specific_group)
     categories <- dplyr::filter(metadata, study %in% trait_names)$category
     binary_outcomes <- lapply(categories, function(category) {

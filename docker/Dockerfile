@@ -32,4 +32,9 @@ ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R
 RUN pip install -r docker/requirements.txt
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \
+  dpkg -i cuda-keyring_1.1-1_all.deb && \
+  apt-get update && \
+  apt-get -y install cuda-toolkit-12-6
+
 COPY . /home/pipeline

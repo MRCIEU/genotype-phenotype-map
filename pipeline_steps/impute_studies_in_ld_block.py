@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import click
+import cupy as cp
 import datetime
 import numpy as np
 import os
@@ -11,7 +12,7 @@ import scipy.linalg
 pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ldmat_gib/'
+LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_reference_panel/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
@@ -77,19 +78,19 @@ def main(ld_block, completed_output_file):
             imputed_gwas_data_to_add = specific_ld_region_from_reference_panel[rsids_to_add]
             gwas = pd.concat([gwas, imputed_gwas_data_to_add], axis=0, ignore_index=True)
 
-        time_taken = str(datetime.datetime.now() - start_time)
-        print(f'Time: {time_taken}, imputed: {sum(rsids_to_add)} '
-              f'for {os.path.basename(gwas_file)} with dimension {missing_ld_matrix.shape}')
-
         # reorder the gwas, once again, after more entries were added
         lds_in_gwas = ld_region_subset[np.isin(ld_region_subset.SNP, gwas.SNP)]
         gwas.set_index(gwas['SNP'], inplace=True)
         gwas = gwas.loc[lds_in_gwas.SNP]
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
+        time_taken = str(datetime.datetime.now() - start_time)
         imputed_studies.append(
             [study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold, study.category,
              study.sample_size, study.cis_trans, sum(rsids_to_add), time_taken])
+
+        print(f'Time: {time_taken}, imputed: {sum(rsids_to_add)} '
+              f'for {os.path.basename(gwas_file)} with dimension {missing_ld_matrix.shape}')
 
     imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
     imputed_studies = existing_imputed_studies._append(imputed_studies, ignore_index=True)
@@ -130,11 +131,9 @@ class SummaryStatisticsImputation:
                 - imputation_r2 (np.ndarray): the R2 of the imputation
         """
 
-        inv_start = datetime.datetime.now()
         sig_t_inv = SummaryStatisticsImputation._invert_sig_t(
             ld_matrix_known, lamb, rtol
         )
-        print(f"inv: {str(datetime.datetime.now() - inv_start)}")
         if sig_t_inv is None:
             return {
                 "var": None,
@@ -143,21 +142,21 @@ class SummaryStatisticsImputation:
                 "imputation_r2": None,
             }
         else:
-            var_start = datetime.datetime.now()
             var, ld_score = SummaryStatisticsImputation._compute_var(
                 ld_matrix_known_missing, sig_t_inv, lamb
             )
-            print(f"var: {str(datetime.datetime.now() - var_start)}")
 
-            mu_start = datetime.datetime.now()
             mu = SummaryStatisticsImputation._compute_mu(
                 ld_matrix_known_missing, sig_t_inv, z_scores_known
             )
-            print(f"mu: {str(datetime.datetime.now() - mu_start)}")
             var_norm = SummaryStatisticsImputation._var_in_boundaries(var, lamb)
 
             R2 = (1 + lamb) - var_norm
-            mu = mu / np.sqrt(R2)
+
+            mu = cp.asnumpy(mu)
+            mu = mu / np.sqrt(cp.asnumpy(R2))
+            var = cp.asnumpy(var)
+            ld_score = cp.asnumpy(ld_score)
 
             return {
                 "var": var,
@@ -168,35 +167,35 @@ class SummaryStatisticsImputation:
 
     @staticmethod
     def _compute_mu(
-            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, zt: np.ndarray
-    ) -> np.ndarray:
-        """Compute the estimation of z-score from neighborring snp.
+            sig_i_t: cp.ndarray, sig_t_inv: cp.ndarray, zt: cp.ndarray
+    ) -> cp.ndarray:
+        """Compute the estimation of z-score from neighborring scp.
 
         Args:
-            sig_i_t (np.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
-            sig_t_inv (np.ndarray): inverse of the correlation matrix of known matrix
-            zt (np.ndarray): Zscores of known snp
+            sig_i_t (cp.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
+            sig_t_inv (cp.ndarray): inverse of the correlation matrix of known matrix
+            zt (cp.ndarray): Zscores of known snp
         Returns:
-            np.ndarray: a vector of length i containing the estimate of zscore
+            cp.ndarray: a vector of length i containing the estimate of zscore
 
         """
-        return np.dot(sig_i_t, np.dot(sig_t_inv, zt))
+        return cp.dot(sig_i_t, cp.dot(sig_t_inv, zt))
 
     @staticmethod
     def _compute_var(
-            sig_i_t: np.ndarray, sig_t_inv: np.ndarray, lamb: float
-    ) -> tuple[np.ndarray, np.ndarray]:
+            sig_i_t: cp.ndarray, sig_t_inv: cp.ndarray, lamb: float
+    ) -> tuple[cp.ndarray, cp.ndarray]:
         """Compute the expected variance of the imputed SNPs.
 
         Args:
-            sig_i_t (np.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
-            sig_t_inv (np.ndarray): inverse of the correlation matrix of known matrix
+            sig_i_t (cp.ndarray) : correlation matrix with line corresponding to unknown Snp (snp to impute) and column to known SNPs
+            sig_t_inv (cp.ndarray): inverse of the correlation matrix of known matrix
             lamb (float): regularization term added to matrix
 
         Returns:
-            tuple[np.ndarray, np.ndarray]: a tuple containing the variance and the ld score
+            tuple[cp.ndarray, cp.ndarray]: a tuple containing the variance and the ld score
         """
-        var = (1 + lamb) - np.einsum(
+        var = (1 + lamb) - cp.einsum(
             "ij,jk,ki->i", sig_i_t, sig_t_inv, sig_i_t.transpose()
         )
         ld_score = (sig_i_t ** 2).sum(1)
@@ -204,19 +203,19 @@ class SummaryStatisticsImputation:
         return var, ld_score
 
     @staticmethod
-    def _var_in_boundaries(var: np.ndarray, lamb: float) -> np.ndarray:
+    def _var_in_boundaries(var: cp.ndarray, lamb: float) -> cp.ndarray:
         """Forces the variance to be in the 0 to 1+lambda boundary. Theoritically we shouldn't have to do that.
 
         Args:
-            var (np.ndarray): the variance of the imputed SNPs
+            var (cp.ndarray): the variance of the imputed SNPs
             lamb (float): regularization term added to the diagonal of the sig_t matrix
 
         Returns:
-            np.ndarray: the variance of the imputed SNPs
+            cp.ndarray: the variance of the imputed SNPs
         """
-        id_neg = np.where(var < 0)
+        id_neg = cp.where(var < 0)
         var[id_neg] = 0
-        id_inf = np.where(var > (0.99999 + lamb))
+        id_inf = cp.where(var > (0.99999 + lamb))
         var[id_inf] = 1
 
         return var
@@ -231,13 +230,13 @@ class SummaryStatisticsImputation:
             rtol (float): threshold to filter eigenvector with a eigenvalue under rtol make inversion biased but much more numerically robust
 
         Returns:
-            np.ndarray: the inverse of the correlation matrix
+            cp.ndarray: the inverse of the correlation matrix
         """
         try:
             np.fill_diagonal(sig_t, (1 + lamb))
             sig_t_inv = scipy.linalg.pinv(sig_t, rtol=rtol, atol=0)
             return sig_t_inv
-        except np.linalg.LinAlgError:
+        except scipy.linalg.LinAlgError:
             return SummaryStatisticsImputation._invert_sig_t(
                 sig_t, lamb * 1.1, rtol * 1.1
             )

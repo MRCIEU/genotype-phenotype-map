@@ -9,7 +9,7 @@ MINIMUM_STUDY_REGION_SIZE <- 200
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
-ld_reference_panel_dir <- paste0(data_dir, 'ldmat_gib/')
+ld_reference_panel_dir <- paste0(data_dir, 'ld_reference_panel/')
 liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 

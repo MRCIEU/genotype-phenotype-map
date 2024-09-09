@@ -36,7 +36,7 @@ main <- function(args) {
           first_finemap_num_results = 0,
           second_finemap_num_results = NA,
           qc_step_run = F,
-          snps_removed_by_qc = 0
+          snps_removed_by_qc = NA
         ))
         return(results$failed_finemap_info)
       }
@@ -61,9 +61,12 @@ main <- function(args) {
           }
           study['second_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
         }
+        else {
+          study['second_finemap_num_results'] <- NA
+        }
       } else {
         study['qc_step_run'] <- F
-        study['snps_removed_by_qc'] <- 0
+        study['snps_removed_by_qc'] <- NA
       }
 
       succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
@@ -91,7 +94,8 @@ load_existing_finemapped_results <- function(finemapped_results_file) {
                           first_finemap_num_results = vroom::col_number(),
                           second_finemap_num_results = vroom::col_number(),
                           qc_step_run = vroom::col_logical(),
-                          snps_removed_by_qc = vroom::col_numeric()
+                          snps_removed_by_qc = vroom::col_number(),
+                          time_taken = vroom::col_character()
                         )
     ))
   } else {
@@ -207,6 +211,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            sample_size=sample_size,
                                            cis_trans=study['cis_trans'],
                                            finemap_message='success',
+                                           first_finemap_num_results=as.numeric(study[['first_finemap_num_results']]),
+                                           second_finemap_num_results=as.numeric(study[['second_finemap_num_results']]),
                                            qc_step_run=as.logical(study[['qc_step_run']]),
                                            snps_removed_by_qc=as.numeric(study[['snps_removed_by_qc']]),
                                            time_taken=time_taken

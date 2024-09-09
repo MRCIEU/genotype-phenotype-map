@@ -141,6 +141,7 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
         output: temporary(imputation_pattern)
+        retries: 3
         threads: 56 if name == 'complex' else 24
         priority: 1 if name == 'complex' else 0
         params:

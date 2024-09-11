@@ -6,6 +6,10 @@ parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the ld b
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
+discard_gwas_size <- 150
+minimum_gwas_size <- 700
+number_finemapped_results_threshold <- 3
+
 main <- function(args) {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names=F, show_col_types = F)
@@ -25,10 +29,18 @@ main <- function(args) {
       sample_size <- as.numeric(study['sample_size'])
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
       finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
-      if (any(grepl(finemap_file_prefix, existing_finemapped_results$file))) {
+
+      study_already_finemapped <- any(grepl(finemap_file_prefix, existing_finemapped_results$file))
+      if (study_already_finemapped) {
         return()
       }
+
+      #we don't want to use extracted regions with too few SNPs, due to poor finemapping results
+      #and spurious coloc results due to needing to harmonise SNPs 
       gwas <- vroom::vroom(study[['file']], show_col_types = F)
+      if (nrow(gwas) < discard_gwas_size) {
+        return()
+      }
 
       results <- run_susie_finemapping(gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time)
       if (!is.null(results$failed_finemap_info)) {
@@ -43,7 +55,7 @@ main <- function(args) {
       study['first_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
 
       #if there are a lot of susie results, run DENTIST, to see if there are any bad SNPs, then rerun susie if any SNPs are removed
-      if (length(results$susie_result$sets$cs_index) > 3) {
+      if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold) {
         message('performing qc')
         qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
         study <- qc_results$study
@@ -126,14 +138,21 @@ empty_finemapped_info <- function() {
 }
 
 run_susie_finemapping <- function(gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time) {
+  failed_finemap_info <- NULL
+  susie_result <- list(converged=F)
+
+  if (nrow(gwas) < minimum_gwas_size) {
+    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time)
+    failed_finemap_info$finemap_message <- 'too_small_to_finemap'
+    return(list(susie_result=susie_result, failed_finemap_info=failed_finemap_info))
+  }
+
   keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
   ld_matrix_subset <- ld_matrix[keep, keep]
   ld_matrix_subset <- matrix(as.vector(data.matrix(ld_matrix_subset)), nrow=nrow(ld_matrix_subset), ncol=ncol(ld_matrix_subset))
   if (nrow(gwas) != nrow(ld_matrix_subset)) {
     stop(paste('Error:', study[['file']], 'GWAS', nrow(gwas), 'and ld matrix', nrow(ld_matrix_subset), 'should match size'))
   }
-  failed_finemap_info <- NULL
-  susie_result <- list(converged=F)
 
   tryCatch(expr = {
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix_subset, n=sample_size)
@@ -211,8 +230,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            sample_size=sample_size,
                                            cis_trans=study['cis_trans'],
                                            finemap_message='success',
-                                           first_finemap_num_results=as.numeric(study[['first_finemap_num_results']]),
-                                           second_finemap_num_results=as.numeric(study[['second_finemap_num_results']]),
+                                           first_finemap_num_results=as.numeric(study['first_finemap_num_results']),
+                                           second_finemap_num_results=as.numeric(study['second_finemap_num_results']),
                                            qc_step_run=as.logical(study[['qc_step_run']]),
                                            snps_removed_by_qc=as.numeric(study[['snps_removed_by_qc']]),
                                            time_taken=time_taken
@@ -254,7 +273,6 @@ perform_qc <- function(gwas, study, bfile) {
       dentist_full_remove <- vroom::vroom(dentist_full_file, col_names = F, show_col_types = F) |>
         dplyr::filter(X1 %in% dentist_to_remove$X1) |>
         dplyr::rename(SNP='X1', chisq='X2', nlogp='X3', dup='X4')
-      print(head(dentist_full_remove))
       vroom::vroom_write(dentist_full_remove, dentist_file)
     }
 

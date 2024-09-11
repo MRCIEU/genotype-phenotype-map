@@ -1,6 +1,7 @@
 setwd('pipeline_steps')
 source('constants.R')
 
+minimum_snps_in_opengwas_study <- 1000000
 gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
@@ -133,6 +134,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
     category <- study_metadata$category
     if (is.null(category)) category <- NA
     if (is.null(ancestry) || ancestry != ancestry_map[[entry[['ancestry']]]]) {
+      return(data.frame())
+    } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {
       return(data.frame())
     }
 

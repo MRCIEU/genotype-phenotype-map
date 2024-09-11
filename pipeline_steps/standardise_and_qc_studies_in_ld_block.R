@@ -49,10 +49,13 @@ main <- function(args) {
     standardised_studies$chr <- as.character(standardised_studies$chr)
   }
 
-  standardised_studies <- dplyr::bind_rows(existing_standardised_studies, standardised_studies) |>
-    dplyr::distinct()
+  if (nrow(standardised_studies) > 0) {
+    standardised_studies <- dplyr::bind_rows(existing_standardised_studies, standardised_studies) |>
+      dplyr::distinct()
 
-  vroom::vroom_write(standardised_studies, standardised_studies_file)
+    vroom::vroom_write(standardised_studies, standardised_studies_file)
+  }
+
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
@@ -74,17 +77,17 @@ perform_standardisation <- function(study, ld_region) {
 
 empty_standardised_studies <- function() {
   return(data.frame(study=character(),
-                     file=character(),
-                     ancestry=character(),
-                     chr=character(),
-                     bp=numeric(),
-                     p_value_threshold=numeric(),
-                     category=character(),
-                     sample_size=numeric(),
-                     cis_trans=character(),
-                     eaf_from_reference_panel=logical(),
-                     snps_removed_by_reference_panel=numeric(),
-                     time_taken=character()
+                    file=character(),
+                    ancestry=character(),
+                    chr=character(),
+                    bp=numeric(),
+                    p_value_threshold=numeric(),
+                    category=character(),
+                    sample_size=numeric(),
+                    cis_trans=character(),
+                    eaf_from_reference_panel=logical(),
+                    snps_removed_by_reference_panel=numeric(),
+                    time_taken=character()
   ))
 }
 

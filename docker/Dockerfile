@@ -2,7 +2,11 @@ FROM mrcieu/genehackman:1.0.0
 
 RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
-    apt update && apt install -y --no-install-recommends libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl
+    apt update && apt install -y --no-install-recommends less libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl && \
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    apt-get update && \
+    apt-get -y install cuda-toolkit-12-6
 
 #Installing ssimp, finemap, smr, gcta, DENTIST, and gwcoco here...
 RUN cd /home && \
@@ -26,15 +30,14 @@ RUN cd /home && \
     wget -O DENTIST.gz 'https://www.dropbox.com/scl/fi/1yna9rizfy6s0ixek0cca/DENTIST.1.3.0.0.gz?rlkey=0ak0cdsev152jteibceit4mje&dl=0' && \
     gunzip DENTIST.gz && \
     chmod 775 DENTIST && \
-    mv DENTIST /bin/DENTIST
+    mv DENTIST /bin/DENTIST && \
+    wget https://s3.amazonaws.com/plink2-assets/alpha5/plink2_linux_x86_64_20240820.zip && \
+    unzip plink2_linux_x86_64_20240820.zip && \
+    mv plink2 /usr/bin/
 
-ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.1/lib/libmkl_rt.so
+ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.2/lib/libmkl_rt.so
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R
 RUN pip install -r docker/requirements.txt
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \
-  dpkg -i cuda-keyring_1.1-1_all.deb && \
-  apt-get update && \
-  apt-get -y install cuda-toolkit-12-6
 
 COPY . /home/pipeline

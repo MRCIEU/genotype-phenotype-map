@@ -102,7 +102,7 @@ calculate_besd_studies_to_process <- function(entries) {
       study_location = besd_study[['study']],
       extracted_location = data_study_dir,
       reference_build = besd_study[['reference_build']],
-      p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
+      p_value_threshold = format(besd_study[['p_value_threshold']], scientific=FALSE),
       probe = probes,
       gene = genes,
       tissue = metadata$tissue
@@ -150,7 +150,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       study_location = directory,
       extracted_location = data_study_dir,
       reference_build = entry[['reference_build']],
-      p_value_threshold = format(DEFAULT_P_VALUE_THRESHOLD, scientific=FALSE),
+      p_value_threshold = format(besd_study[['p_value_threshold']], scientific=FALSE),
       gene = NA,
       probe = NA,
       tissue = NA

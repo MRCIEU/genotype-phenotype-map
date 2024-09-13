@@ -18,7 +18,7 @@ main <- function(args) {
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
-  p_value_threshold <- ifelse(is.na(study$p_value_threshold), DEFAULT_P_VALUE_THRESHOLD, study$p_value_threshold)
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(paste0(study$study_location, '.json'))
 
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),

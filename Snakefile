@@ -88,14 +88,9 @@ rule extract_regions_from_studies:
         study = study.iloc[0]
 
         if study.data_format == 'opengwas':
-            command = f'./extract_regions_from_opengwas.sh \
-                {study.study_name} \
-                {study.ancestry} \
-                {study.sample_size} \
-                {study.category} \
-                {study.study_location} \
-                {study.extracted_location} \
-                {study.p_value_threshold}'
+            command = f'Rscript extract_regions_from_opengwas.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
         elif study.data_format == 'besd':
             command = f'Rscript extract_regions_from_besd.R \
                 --extracted_study_location {study.extracted_location} \

@@ -4,8 +4,8 @@ data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
-DEFAULT_P_VALUE_THRESHOLD <- 5e-8
-MINIMUM_STUDY_REGION_SIZE <- 200
+genome_wide_p_value_threshold <- 5e-8
+lowest_p_value_threshold <- 1.5e-4
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')

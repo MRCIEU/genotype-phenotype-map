@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import subprocess
+import sys
 
 os.chdir('pipeline_steps')
 TEST_RUN = os.getenv('TEST_RUN')
@@ -17,6 +18,11 @@ LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
+
+if len(studies_to_process) == 0:
+    print('No studies to process, exiting.')
+    sys.exit()
+
 ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
 
 relevant_ancestries = np.isin(ld_regions['ancestry'], studies_to_process['ancestry'].unique())

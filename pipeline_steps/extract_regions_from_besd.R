@@ -49,7 +49,7 @@ extract_cis_region <- function(study, p_value_threshold) {
                            '--out ', tmp_cis_snp
   )
 
-  system(extract_top_snp, wait=T)
+  system(extract_top_snp, wait=T, ignore.stdout = T)
   if (!file.exists(paste0(tmp_cis_snp, '.txt'))) return()
   top_cis_snp <- vroom::vroom(paste0(tmp_cis_snp, '.txt'), show_col_types = F)
   if (nrow(top_cis_snp) < 1) return()
@@ -69,7 +69,7 @@ extract_cis_region <- function(study, p_value_threshold) {
                               '--probe ', study$probe,
                               '--out ', tmp_cis_region
   )
-  system(extract_region, wait=T)
+  system(extract_region, wait=T, ignore.stdout = T)
   cis_region <- vroom::vroom(paste0(tmp_cis_region, '.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region)
 
@@ -103,7 +103,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
                            '--cis-wind 1',
                            '--out ', tmp_trans_snps
   )
-  system(extract_top_snps, wait=T)
+  system(extract_top_snps, wait=T, ignore.stdout = T)
   if (!file.exists(paste0(tmp_trans_snps, '.txt'))) return()
   probe_top_hits <- vroom::vroom(paste0(tmp_smr_result, '.txt'), show_col_types = F)
 
@@ -119,10 +119,11 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
                           '--clump ', probe_top_hits,'.txt',
                           ' --clump-snp-field SNP ',
                           '--clump-p1 ', p_value_threshold, ' --clump-kb 1000',
+                          '--clump-r2 0.001 ',
                           '--out ', tmp_trans_snps
   )
 
-  system(plink_command, wait=T)
+  system(plink_command, wait=T, ignore.stdout = T)
 
   clumped_trans_snps <- data.table::fread(paste0(tmp_trans_snps, '.clumped'))
   if (nrow(clumped_trans_snps) < 1) return()
@@ -132,11 +133,11 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     extract_region <- paste('smr --beqtl-summary', study$study_location,
                             '--query 1',
                             '--snp', clumped_snp['SNP'],
-                            '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
+                            '--snp-wind 1000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
                             '--probe ', study$probe,
                             '--out ', tmp_trans_region
     )
-    system(extract_region, wait=T)
+    system(extract_region, wait=T, ignore.stdout = T)
     trans_region <- vroom::vroom(paste0(tmp_trans_region, '.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region)
 
@@ -159,7 +160,6 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
   }) |> dplyr::bind_rows()
 
   return(top_trans_hits_per_probe)
-
 }
 
 format_gwas <- function(gwas) {

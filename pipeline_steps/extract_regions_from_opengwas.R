@@ -1,6 +1,6 @@
 source('constants.R')
 # 1. Clump GWAS at requested --value threshold to find all regions to extract
-# 2. Deduplicate list to 
+# 2. Deduplicate list to ensure we are only extracting 1 SNP per region (and using the top hit)
 #  with these 2 steps, I can create extracted_snps.tsv, but with cis_trans filled out appropriately
 # 3. Using extracted_snps, extract whole regions and store
 
@@ -47,7 +47,7 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
     '--clump-snp-field rsid ',
     '--clump-field pval ',
     '--out {clumped_hits_file}')
-  system(plink_command, wait = T)
+  system(plink_command, wait = T, ignore.stdout = T)
 
   clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps')) |>
     dplyr::rename(CHR='#CHROM', BP='POS') |>
@@ -80,13 +80,16 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   ld_regions$bcf_region <- glue::glue('{ld_regions$chr}:{ld_regions$start}-{ld_regions$stop}') 
   ld_regions$string_region <- ld_block_string(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
-  region_per_clump <- apply(clumped_snps, 1, function(clump) {
-    dplyr::filter(ld_regions, chr == clump['CHR'] & start < clump['BP'] & stop > clump['BP'] & ancestry == study$ancestry) |>
-      dplyr::select(bcf_region, string_region)
-  }) |> dplyr::bind_rows()
+  clumped_snps <- apply(clumped_snps, 1, function(clump) {
+    region <- dplyr::filter(ld_regions, chr == clump['CHR'] & start < clump['BP'] & stop > clump['BP'] & ancestry == study$ancestry)
+    if (nrow(region) == 0) return()
+
+    return(data.frame(CHR = clump['CHR'], BP = clump['BP'], P=clump['P'], bcf_region = region$bcf_region, string_region = region$string_region))
+  })
+  
+  clumped_snps <- clumped_snps |> dplyr::bind_rows()
 
   #removing duplicate entries per region, so we only grab the region once.
-  clumped_snps <- dplyr::bind_cols(clumped_snps, region_per_clump)
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
 
   extracted_snps <- apply(clumped_snps, 1, function(clump) {
@@ -113,8 +116,8 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     )
     return(extraction_info)
   }) |> dplyr::bind_rows()
-  message(glue::glue('{study["study_location"]}: Extracted {nrow(extracted_snps)} regions'))
 
+  message(glue::glue('{study["extracted_location"]}: Extracted {nrow(extracted_snps)} regions'))
   return(extracted_snps)
 }
 

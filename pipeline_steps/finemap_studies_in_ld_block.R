@@ -256,7 +256,7 @@ perform_qc <- function(gwas, study, bfile) {
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file
   )
-  system(dentist_command, wait = T)
+  system(dentist_command, wait = T, ignore.stdout = T)
 
   dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
   dentist_full_file <- paste0(dentist_tmp_file, '.DENTIST.full.txt')

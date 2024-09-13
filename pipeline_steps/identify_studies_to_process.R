@@ -2,13 +2,13 @@ setwd('pipeline_steps')
 source('constants.R')
 
 minimum_snps_in_opengwas_study <- 1000000
+
 gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
 if (!is.na(TEST_RUN)) {
-  study_list <- vroom::vroom(paste0('data/', TEST_RUN, '_list.csv'), show_col_types=F)
-  studies_processed_file <- paste0(paste0(results_dir, TEST_RUN, '_test_studies_processed.tsv'))
+  study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
 }
 if (file.exists(studies_processed_file)) {
   studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
@@ -56,6 +56,7 @@ calculate_besd_studies_to_process <- function(entries) {
       data_source = data_source,
       study = studies_without_extensions,
       directory = entry[['data_location']],
+      p_value_threshold = entry[['p_value_threshold']],
       ancestry = entry[['ancestry']]
     ))
   })|> dplyr::bind_rows()
@@ -112,7 +113,7 @@ calculate_besd_studies_to_process <- function(entries) {
 
 calculate_opengwas_studies_to_process <- function(entries) {
   if (nrow(entries) == 0) return(data.frame())
-  expanded_directories <- apply(entries, 1, function(entry) {
+  expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
     all_directories <- Sys.glob(file_regex)
     return(data.frame(
@@ -120,12 +121,13 @@ calculate_opengwas_studies_to_process <- function(entries) {
       directory = all_directories,
       reference_build = entry[['reference_build']],
       ancestry = entry[['ancestry']],
+      p_value_threshold = entry[['p_value_threshold']],
       data_format = entry[['data_format']]
     ))
   }) |> dplyr::bind_rows()
 
-  processing_information <- apply(expanded_directories, 1, function(entry) {
-    directory <- entry[['directory']]
+  processing_information <- apply(expanded_studies, 1, function(opengwas_study) {
+    directory <- opengwas_study[['directory']]
     study <- basename(directory)
     data_study_dir <- paste0(data_dir, 'study/', study, '/')
 
@@ -133,15 +135,15 @@ calculate_opengwas_studies_to_process <- function(entries) {
     ancestry <- study_metadata$population
     category <- study_metadata$category
     if (is.null(category)) category <- NA
-    if (is.null(ancestry) || ancestry != ancestry_map[[entry[['ancestry']]]]) {
+    if (is.null(ancestry) || ancestry != ancestry_map[[opengwas_study[['ancestry']]]]) {
       return(data.frame())
     } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {
       return(data.frame())
     }
 
     return(data.frame(
-      data_type = entry[['data_type']],
-      data_format = entry[['data_format']],
+      data_type = opengwas_study[['data_type']],
+      data_format = opengwas_study[['data_format']],
       study_name = study,
       trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
@@ -149,8 +151,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       category = category,
       study_location = directory,
       extracted_location = data_study_dir,
-      reference_build = entry[['reference_build']],
-      p_value_threshold = format(besd_study[['p_value_threshold']], scientific=FALSE),
+      reference_build = opengwas_study[['reference_build']],
+      p_value_threshold = format(opengwas_study[['p_value_threshold']], scientific=FALSE),
       gene = NA,
       probe = NA,
       tissue = NA

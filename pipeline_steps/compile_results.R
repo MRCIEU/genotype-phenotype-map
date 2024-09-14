@@ -114,11 +114,11 @@ aggregate_pipeline_metadata <- function(ld_info) {
     ))
   }) |> dplyr::bind_rows()
 
-  means <- colMeans(metadata_per_ld_region[-1])
-  means$ld_region <- 'mean'
-  totals <- colSums(metadata_per_ld_region[-1])
-  totals$ld_region <- 'total'
-  metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means, totals)
+  # means <- colMeans(metadata_per_ld_region[-1])
+  # means$ld_region <- 'mean'
+  # totals <- colSums(metadata_per_ld_region[-1])
+  # totals$ld_region <- 'total'
+  # metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means, totals)
   return(metadata_per_ld_region)
 }
 

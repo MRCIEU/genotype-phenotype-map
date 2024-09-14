@@ -39,7 +39,6 @@ def main(ld_block, completed_output_file):
     else:
         existing_imputed_studies = pd.DataFrame(columns=imputed_studies_columns)
 
-    imputed_studies = []
     for i, study in standardised_studies.iterrows():
         start_time = datetime.datetime.now()
         gwas_file = study['file']
@@ -84,19 +83,20 @@ def main(ld_block, completed_output_file):
         gwas = gwas.loc[lds_in_gwas.SNP]
 
         gwas.to_csv(imputed_file, sep='\t', index=False)
-        time_taken = str(datetime.datetime.now() - start_time)
-        imputed_studies.append(
-            [study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold, study.category,
-             study.sample_size, study.cis_trans, sum(rsids_to_add), time_taken])
+        new_imputed_study = pd.DataFrame(
+            [[study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold,
+            study.category, study.sample_size, study.cis_trans, sum(rsids_to_add), time_taken]],
+            columns=imputed_studies_columns
+        )
+        existing_imputed_studies = pd.concat(existing_imputed_studies, new_imputed_study)
+        existing_imputed_studies.drop_duplicates(inplace=True)
+        existing_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
 
+        time_taken = str(datetime.datetime.now() - start_time)
         print(f'Time: {time_taken}, imputed: {sum(rsids_to_add)} '
               f'for {os.path.basename(gwas_file)} with dimension {missing_ld_matrix.shape}')
 
-    imputed_studies = pd.DataFrame(imputed_studies, columns=imputed_studies_columns)
-    imputed_studies = existing_imputed_studies._append(imputed_studies, ignore_index=True)
-    imputed_studies.drop_duplicates(inplace=True)
 
-    imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
     Path(completed_output_file).touch()
 
 

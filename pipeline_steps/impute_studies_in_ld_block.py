@@ -88,7 +88,7 @@ def main(ld_block, completed_output_file):
             study.category, study.sample_size, study.cis_trans, sum(rsids_to_add), time_taken]],
             columns=imputed_studies_columns
         )
-        existing_imputed_studies = pd.concat(existing_imputed_studies, new_imputed_study)
+        existing_imputed_studies = pd.concat([existing_imputed_studies, new_imputed_study])
         existing_imputed_studies.drop_duplicates(inplace=True)
         existing_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
 

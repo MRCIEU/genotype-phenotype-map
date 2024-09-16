@@ -44,10 +44,12 @@ def main(ld_block, completed_output_file):
         gwas_file = study['file']
         imputed_file = gwas_file.replace('standardised', 'imputed')
         if imputed_file in existing_imputed_studies['file'].values:
+            print(f'{imputed_file} already exists')
             continue
 
         gwas = pd.read_csv(gwas_file, delimiter='\t')
         if gwas is None or len(gwas) == 0:
+            print(f'{gwas_file} is empty')
             continue
 
         min_bp = gwas['BP'].min() - 10000
@@ -82,6 +84,7 @@ def main(ld_block, completed_output_file):
         gwas.set_index(gwas['SNP'], inplace=True)
         gwas = gwas.loc[lds_in_gwas.SNP]
 
+        time_taken = str(datetime.datetime.now() - start_time)
         gwas.to_csv(imputed_file, sep='\t', index=False)
         new_imputed_study = pd.DataFrame(
             [[study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold,
@@ -92,7 +95,6 @@ def main(ld_block, completed_output_file):
         existing_imputed_studies.drop_duplicates(inplace=True)
         existing_imputed_studies.to_csv(imputed_studies_file, sep='\t', index=False)
 
-        time_taken = str(datetime.datetime.now() - start_time)
         print(f'Time: {time_taken}, imputed: {sum(rsids_to_add)} '
               f'for {os.path.basename(gwas_file)} with dimension {missing_ld_matrix.shape}')
 

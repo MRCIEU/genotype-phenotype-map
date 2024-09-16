@@ -23,7 +23,7 @@ main <- function(args) {
                                                     p_value_threshold = vroom::col_number(),
                                                     snps_removed_by_reference_panel=vroom::col_number(),
                                                     eaf_from_reference_panel=vroom::col_logical(),
-                                                    time_taken=vroom::col_time()
+                                                    time_taken=vroom::col_character()
                                                   )
     )
   } else {

@@ -3,3 +3,4 @@
 */.Renviron
 .snakemake
 node_modules
+scratch

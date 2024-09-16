@@ -41,7 +41,7 @@ main <- function(args) {
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
-  gene_name_map <- vroom::vroom(paste0(thousand_genomes_dir, 'gene_name_map.tsv'), show_col_types=F)
+  gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
   gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]
@@ -95,27 +95,51 @@ aggregate_pipeline_metadata <- function(ld_info) {
       return(data.frame())
     }
     extracted_studies <- vroom::vroom(paste0(ld_block_data, '/extracted_studies.tsv'), show_col_types = F)
+    standardised_studies <- vroom::vroom(paste0(ld_block_data, '/standardised_studies.tsv'), show_col_types = F)
     imputed_studies <- vroom::vroom(paste0(ld_block_data, '/imputed_studies.tsv'), show_col_types = F)
     finemapped_studies <- vroom::vroom(paste0(ld_block_data, '/finemapped_studies.tsv'), show_col_types = F)
     above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
 
     return(data.frame(ld_region = ld['block'],
                       extracted_regions=nrow(extracted_studies),
+                      standardised_time_taken=mean(as.difftime(standardised_studies$time_taken), na.rm=T),
+                      mean_snps_removed_by_reference_panel=mean(standardised_studies$snps_removed_by_reference_panel, na.rm=T),
                       studies_imputed=nrow(imputed_studies),
+                      imputed_time_taken=mean(as.difftime(imputed_studies$time_taken), na.rm=T),
                       mean_snps_imputed=mean(imputed_studies$rows_imputed, na.rm=T),
                       number_finemapped=nrow(finemapped_studies),
                       number_finemapped_above_threshold=above_threshold,
+                      finemapped_time_taken=mean(as.difftime(finemapped_studies$time_taken), na.rm=T),
                       finemap_failed=sum(finemapped_studies$message == 'failed', na.rm=T),
                       finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs', na.rm=T)
     ))
   }) |> dplyr::bind_rows()
 
-  means <- colMeans(metadata_per_ld_region[-1])
-  means$ld_region <- 'mean'
-  totals <- colSums(metadata_per_ld_region[-1])
-  totals$ld_region <- 'total'
-  metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means, totals)
+  # means <- colMeans(metadata_per_ld_region[-1])
+  # means$ld_region <- 'mean'
+  # totals <- colSums(metadata_per_ld_region[-1])
+  # totals$ld_region <- 'total'
+  # metadata_per_ld_region <- dplyr::bind_rows(metadata_per_ld_region, means, totals)
   return(metadata_per_ld_region)
+}
+
+#TODO: what should be checked here?
+ingested_data_integrity_check <- function() {
+  ld_regions <- vroom::vroom('data/ld_regions.tsv')
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+
+  lapply(ld_info$ld_block_data, function(ld_block) {
+    extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
+    imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
+    finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
+    if (!file.exists(extracted_studies_file)) return()
+
+    extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    imputed_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    finemapped_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+
+  })
+
 }
 
 compile_coloc_results <- function(raw_coloc_results, studies_processed) {
@@ -150,6 +174,15 @@ compile_coloc_results <- function(raw_coloc_results, studies_processed) {
   #remove duplicate rows (of either study_a, study_b or study_b, study_a)
   cols <- c('unique_study_a','unique_study_b')
   pairwise_significant_results <- pairwise_significant_results[!duplicated(t(apply(pairwise_significant_results[cols], 1, sort))), ]
+
+  #remove duplicates where the same 2 studies are colocalising on the same candidate SNP
+  duplicate_candidate_snps <- data.frame(
+    study_a=sub('_.*', '', pairwise_significant_results$unique_study_a),
+    study_b=sub('_.*', '', pairwise_significant_results$unique_study_b),
+    candidate_snp=pairwise_significant_results$candidate_snp
+  )
+  same_candidate_snp_duplicates <- duplicated(duplicate_candidate_snps)
+  pairwise_significant_results <- pairwise_significant_results[!same_candidate_snp_duplicates,]
 
   return(pairwise_significant_results)
 }

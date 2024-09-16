@@ -1,3 +1,4 @@
 snakemake==7.25.4
 pulp<=2.7.0
 hail
+cupy-cuda12x<=13.3.0

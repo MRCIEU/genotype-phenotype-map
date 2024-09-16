@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Use environment variables for input and output directories
+input_dir="$INPUT_DIR"
+output_dir="$PROCESSED_DIR"
+
+
+
+# Function to process a single .gz file
+process_gz_file() {
+    local file=$1
+    local output=$2
+    base_name=$(basename "$file" .gz)
+    output_file="$output/${base_name}_processed.gz"
+
+    zcat "$file" | awk 'NR > 1 {
+        # Split column 3 by ":" and keep the first two parts
+        split($3, parts, ":")
+        $3 = parts[1] ":" parts[2]
+        base_position = parts[2]
+
+        # get p-value from log10p
+        log10p = $13
+        p_value = 10^(-log10p)
+
+        # Print fields separated by tabs
+        print $1 "\t" $3 "\t" base_position "\t" $5 "\t" $4 "\t" $6 "\t" $10 "\t" $11 "\t" p_value
+    }' | gzip > "$output_file"
+
+    echo "Processed $file and saved to $output_file"
+}
+
+export -f process_gz_file
+
+
+# loop through all .tar archives
+for tar_file in "$input_dir"/*.tar; do
+    # create a temporary directory for this tar file
+    tmp_dir=$(mktemp -d)
+
+    # extract the .tar archive to the temporary directory
+    tar -xvf "$tar_file" -C "$tmp_dir"
+
+    # get the name of the directory created by the tar extraction
+    extracted_dir=$(basename "$tar_file" .tar)
+    extracted_path="$tmp_dir/$extracted_dir"
+
+    # create a subdirectory for the processed files
+    output_subdir="$output_dir/$extracted_dir"
+    mkdir -p "$output_subdir"
+
+    # check if there are any .gz files in the extracted directory
+    gz_files=("$extracted_path"/*.gz)
+
+    if [ -e "${gz_files[0]}" ]; then
+        # process each .gz file in the extracted directory using GNU Parallel
+        parallel -j 12 process_gz_file ::: "${gz_files[@]}" ::: "$output_subdir"
+
+
+    else
+        echo "No .gz files found in $tar_file"
+    fi
+
+    # clean up the temp directory for next archive
+    rm -rf "$tmp_dir"
+
+    echo "Processed all files in $tar_file"
+done
+
+echo "All tar archives processed."

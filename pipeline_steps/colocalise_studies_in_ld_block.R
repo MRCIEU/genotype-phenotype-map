@@ -20,14 +20,13 @@ main <- function(args) {
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
     vroom::vroom_write(data.frame(), args$coloc_result_file)
-    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data ,', skipping.'))
+    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data, ', skipping.'))
     return()
   }
 
   finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
 
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
-  #studies_to_colocalise <- Filter(function(study) nrow(study) > MINIMUM_STUDY_REGION_SIZE, studies_to_colocalise)
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
@@ -113,7 +112,7 @@ colocalise_based_on_group <- function(studies, groupings, metadata) {
 
     if (length(specific_group) == 0 || nrow(specific_group[[1]])==0) return()
 
-    snps <- specific_group[[1]]$RSID
+    snps <- specific_group[[1]]$SNP
     trait_names <- names(specific_group)
     categories <- dplyr::filter(metadata, study %in% trait_names)$category
     binary_outcomes <- lapply(categories, function(category) {

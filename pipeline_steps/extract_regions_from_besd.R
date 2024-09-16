@@ -18,13 +18,12 @@ main <- function(args) {
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
-  p_value_threshold <- ifelse(is.na(study$p_value_threshold), DEFAULT_P_VALUE_THRESHOLD, study$p_value_threshold)
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(paste0(study$study_location, '.json'))
 
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),
                                                            bp=numeric(),
                                                            log_p=numeric(),
-                                                           ancestry=character(),
                                                            ld_region=character(),
                                                            file=character(),
                                                            cis_trans=character()
@@ -33,7 +32,7 @@ main <- function(args) {
     extracted_cis_snps <- extract_cis_region(study, p_value_threshold)
   }
   if (metadata$cis_trans == cis_trans$trans_only || metadata$cis_trans == cis_trans$cis_trans) {
-    extracted_trans_snps <- extract_trans_regions(study, p_value_threshold)
+    extracted_trans_snps <- extract_trans_regions(extracted_cis_snps, study, p_value_threshold)
   }
 
   extracted_snps <- dplyr::bind_rows(extracted_cis_snps, extracted_trans_snps)
@@ -50,10 +49,16 @@ extract_cis_region <- function(study, p_value_threshold) {
                            '--out ', tmp_cis_snp
   )
 
-  system(extract_top_snp, wait=T)
+  system(extract_top_snp, wait=T, ignore.stdout = T)
   if (!file.exists(paste0(tmp_cis_snp, '.txt'))) return()
   top_cis_snp <- vroom::vroom(paste0(tmp_cis_snp, '.txt'), show_col_types = F)
   if (nrow(top_cis_snp) < 1) return()
+
+  dir.create(paste0(study$extracted_location, '/original'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/standardised'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/imputed'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/finemapped'), showWarnings = F, recursive = T)
+
   top_cis_snp <- top_cis_snp[top_cis_snp$p == min(top_cis_snp$p), ][1, ]
 
   tmp_cis_region <- paste0('/tmp/', study$study_name, '_cis_region')
@@ -64,7 +69,7 @@ extract_cis_region <- function(study, p_value_threshold) {
                               '--probe ', study$probe,
                               '--out ', tmp_cis_region
   )
-  system(extract_region, wait=T)
+  system(extract_region, wait=T, ignore.stdout = T)
   cis_region <- vroom::vroom(paste0(tmp_cis_region, '.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region)
 
@@ -77,7 +82,6 @@ extract_cis_region <- function(study, p_value_threshold) {
   extracted_snps <- data.frame(chr = as.character(top_cis_snp$Chr),
                                bp = top_cis_snp$BP,
                                log_p = -log10(top_cis_snp$p),
-                               ancestry = study$ancestry,
                                ld_region = ld_block_string,
                                file = extracted_file,
                                cis_trans = 'cis'
@@ -91,7 +95,7 @@ extract_cis_region <- function(study, p_value_threshold) {
 #' 1: get all hits above p-value threshold
 #' 2: clump results, somehow filter out cis region
 #' 3: loop through clumped results to get all regions
-extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
+extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) {
   tmp_trans_snps <- paste0('/tmp/', study$study_name, '_top_trans_snps')
   extract_top_snps <- paste('smr --beqtl-summary', study$study_location,
                            '--query', p_value_threshold,
@@ -99,7 +103,7 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
                            '--cis-wind 1',
                            '--out ', tmp_trans_snps
   )
-  system(extract_top_snps, wait=T)
+  system(extract_top_snps, wait=T, ignore.stdout = T)
   if (!file.exists(paste0(tmp_trans_snps, '.txt'))) return()
   probe_top_hits <- vroom::vroom(paste0(tmp_smr_result, '.txt'), show_col_types = F)
 
@@ -111,14 +115,15 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
     probe_top_hits <- dplyr::filter(probe_top_hits, !(Chr == extracted_cis_snps$Chr[1] & BP > min_bp & BP < max_bp))
   }
 
-  plink_command <- paste0('plink1.9 --bfile', thousand_genomes_dir, '/', study$ancestry,
+  plink_command <- paste0('plink1.9 --bfile', ld_reference_panel_dir, '/', study$ancestry, '/full',
                           '--clump ', probe_top_hits,'.txt',
                           ' --clump-snp-field SNP ',
                           '--clump-p1 ', p_value_threshold, ' --clump-kb 1000',
+                          '--clump-r2 0.001 ',
                           '--out ', tmp_trans_snps
   )
 
-  system(plink_command, wait=T)
+  system(plink_command, wait=T, ignore.stdout = T)
 
   clumped_trans_snps <- data.table::fread(paste0(tmp_trans_snps, '.clumped'))
   if (nrow(clumped_trans_snps) < 1) return()
@@ -128,33 +133,33 @@ extract_trans_regions <- function(extracted_cis_snps, p_value_threshold) {
     extract_region <- paste('smr --beqtl-summary', study$study_location,
                             '--query 1',
                             '--snp', clumped_snp['SNP'],
-                            '--snp-wind 4000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
+                            '--snp-wind 1000', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
                             '--probe ', study$probe,
                             '--out ', tmp_trans_region
     )
-    system(extract_region, wait=T)
+    system(extract_region, wait=T, ignore.stdout = T)
     trans_region <- vroom::vroom(paste0(tmp_trans_region, '.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region)
 
-    extracted_file <- paste0(study$extracted_location, '/original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
+    extracted_file <- paste0(study$extracted_location, 'original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
     vroom::vroom_write(trans_region, extracted_file)
     ld_block <- dplyr::filter(ld_regions, chr == clumped_snp['CHR'] & start < clumped_snp['BP'] & stop > clumped_snp['BP'] & ancestry == study$ancestry)
 
     ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
     top_hit_per_probe <- data.frame(chr = as.character(clumped_snp['CHR']),
-                                     bp = clumped_snp['BP'],
-                                     log_p = -log10(clumped_snp['P']),
-                                     ancestry = study$ancestry,
-                                     ld_region = ld_block_string,
-                                     file = extracted_file,
-                                     cis_trans = 'trans'
+                                    bp = clumped_snp['BP'],
+                                    log_p = -log10(clumped_snp['P']),
+                                    ancestry = study$ancestry,
+                                    ld_region = ld_block_string,
+                                    file = extracted_file,
+                                    cis_trans = 'trans',
+                                    reference_build=study$reference_build
     )
     return(top_hit_per_probe)
   }) |> dplyr::bind_rows()
 
   return(top_trans_hits_per_probe)
-
 }
 
 format_gwas <- function(gwas) {
@@ -163,6 +168,5 @@ format_gwas <- function(gwas) {
 
   return(gwas)
 }
-
 
 main(args)

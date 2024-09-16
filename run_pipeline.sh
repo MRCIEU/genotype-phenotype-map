@@ -12,7 +12,7 @@ snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake.log
 mkdir -p $(dirname $snakemake_log)
 
 export IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
-export APPTAINER_VARS="-B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
+export APPTAINER_VARS="--nv -B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
 
 echo "Start time $(date)"
 apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log

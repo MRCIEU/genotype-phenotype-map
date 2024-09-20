@@ -6,6 +6,8 @@ library(data.table)
 library(dplyr)
 library(here)
 
+here()
+
 # Open GWAS ebi-a studies from the EBI GWAS Catalog
 studies <- fread("/local-scratch/projects/genotype-phenotype-map/data/pipeline_metadata/studies_to_process.tsv")
 
@@ -40,13 +42,15 @@ study_efos_unique <- study_efos[,{
   .SD[sample_size == max(sample_size), .(study_name, data_type, data_format, ancestry, sample_size, num_clumped, efoTraits, study_name_collapsed, top_num_clumped)]
 }, by = trait]
 
+print("Writing output...")
+
 # Write out info, index study and duplicate study IDs
 fwrite(study_efos_unique, 
-       here("/pipeline_steps/data/collapsed_studies_info.tsv"), sep = "\t")
+       here("pipeline_steps/data/collapsed_studies_info.tsv"), sep = "\t")
 
 fwrite(as.data.frame(study_efos_unique[,study_name]), 
-       here("/pipeline_steps/data/index_studies.tsv"), col.names = F)
+       here("pipeline_steps/data/index_studies.tsv"), col.names = F)
 
 fwrite(as.data.frame(
   unlist(strsplit(paste(study_efos_unique[nchar(study_name_collapsed)>0,study_name_collapsed], collapse = ","),","))),
-  here("/pipeline_steps/data/ignore_studies.tsv"), col.names = F)
+  here("pipeline_steps/data/ignore_studies.tsv"), col.names = F)

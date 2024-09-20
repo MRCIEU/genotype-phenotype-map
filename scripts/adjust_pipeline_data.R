@@ -2,7 +2,10 @@ source('../pipeline_steps/constants.R')
 
 remove_studies_from_pipeline <- function(study_pattern) {
   NUM_PARALLEL_JOBS <- 100
-  all_studies <- Sys.glob(paste0(extracted_study_dir, study_pattern, '*/'))
+  # all_studies <- Sys.glob(paste0(extracted_study_dir, study_pattern, '*/'))
+  studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
+  all_studies <- paste0(extracted_study_dir, studies_to_ignore)
+
   results <- parallel::mclapply(X=all_studies, mc.cores=NUM_PARALLEL_JOBS, FUN=function(study) {
     print(paste('changing:', study))
     extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
@@ -14,8 +17,31 @@ remove_studies_from_pipeline <- function(study_pattern) {
     if (nrow(extracted_snps) == 0) return()
 
     apply(extracted_snps, 1, function(extraction) {
-      ld_block <- extraction[['ld_region']]
-      print('actually doing')
+      ld_block <- paste0(ld_block_data_dir, extraction[['ld_region']])
+
+      extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
+      if (!file.exists(extracted_studies_file)) {
+        print(paste('extracted STUDIES FILE MISSING:', extracted_studies_file))
+        return()
+      }
+
+      extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+      entries <- nrow(extracted_studies)
+      extracted_studies <- dplyr::filter(extracted_studies, !study == study_id)
+      print(paste('removed', entries - nrow(extracted_studies), 'rows from extracted_studies'))
+      vroom::vroom_write(extracted_studies, extracted_studies_file)
+
+      standardised_studies_file <- paste0(ld_block, '/standardised_studies.tsv')
+      if (!file.exists(standardised_studies_file)) {
+        print(paste('standardised STUDIES FILE MISSING:', standardised_studies_file))
+        return()
+      }
+
+      standardised_studies <- vroom::vroom(standardised_studies_file, show_col_types = F)
+      entries <- nrow(standardised_studies)
+      standardised_studies <- dplyr::filter(standardised_studies, !study == study_id)
+      print(paste('removed', entries - nrow(standardised_studies), 'rows from standardised_studies'))
+      vroom::vroom_write(standardised_studies, standardised_studies_file)
 
       imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
       if (!file.exists(imputed_studies_file)) {
@@ -28,8 +54,6 @@ remove_studies_from_pipeline <- function(study_pattern) {
       imputed_studies <- dplyr::filter(imputed_studies, !study == study_id)
       print(paste('removed', entries - nrow(imputed_studies), 'rows from imputed_studies'))
       vroom::vroom_write(imputed_studies, imputed_studies_file)
-      imputed_files <- Sys.glob(paste0(study_dir, '/imputed/*'))
-      file.remove(imputed_files)
 
       finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
       if (!file.exists(finemapped_studies_file)) {
@@ -42,6 +66,8 @@ remove_studies_from_pipeline <- function(study_pattern) {
       finemapped_studies <- dplyr::filter(finemapped_studies, !study == study_id)
       print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
       vroom::vroom_write(finemapped_studies, finemapped_studies_file)
+
+      unlink(study_dir, recursive = T)
     })
   })
 }
@@ -62,6 +88,48 @@ cleanup_empty_dirs <- function(study_pattern) {
       file.remove(paste0(study, 'imputed'), recursive=T)
       file.remove(paste0(study, 'finemapped'), recursive=T)
     }
+  })
+}
+
+# FileNotFoundError: [Errno 2] No such file or directory: '/local-scratch/projects/genotype-phenotype-map/data/study/ebi-a-GCST90002298/standardised/EUR_9_28677700.tsv.gz'
+# Waiting at most 5 seconds for missing files.
+# MissingOutputException in rule simple_impute_per_ld_block in file /home/pipeline/Snakefile, line 141:
+# Job 0 completed successfully, but some output files are missing. Missing files after 5 seconds. This might be due to filesystem latency. If that is the case, consider to increase the wait time with --lat>
+# /local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/9/28224283_28811583/imputation_complete
+
+remove_missing_extracted_regions <- function() {
+  NUM_PARALLEL_JOBS <- 10
+  ld_regions <- vroom::vroom('../pipeline_steps/data/ld_regions.tsv')
+  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  results <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores=NUM_PARALLEL_JOBS, FUN=function(ld_block) {
+    standardised_studies_file <- paste0(ld_block, '/standardised_studies.tsv')
+    print(standardised_studies_file)
+    standardised_studies <- vroom::vroom(standardised_studies_file, show_col_types = F)
+    orig_rows <- nrow(standardised_studies)
+    files_to_remove <- apply(standardised_studies, 1, function(study) {
+      if (!file.exists(study['file'])) {
+        return(study['file'])
+      }
+      return()
+    }) |> purrr::discard(is.null)
+    print(files_to_remove)
+
+    print(orig_rows)
+    standardised_studies <- dplyr::filter(standardised_studies, !file %in% files_to_remove)
+    print(glue::glue('removing {orig_rows - nrow(standardised_studies)} rows, now {nrow(standardised_studies)}'))
+    vroom::vroom_write(standardised_studies, standardised_studies_file)
+
+    files_to_remove <- sub('standardised', 'original', files_to_remove)
+    extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
+    extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+    orig_ext_rows <- nrow(extracted_studies)
+
+    extracted_studies <- dplyr::filter(extracted_studies, !file %in% files_to_remove)
+    print(glue::glue('removing {orig_rows - nrow(extracted_studies)} rows, now {nrow(extracted_studies)}'))
+
+    vroom::vroom_write(extracted_studies, extracted_studies_file)
   })
 }
 
@@ -175,4 +243,4 @@ skip_steps <- function() {
   }
 }
 
-update_ld_matrix_data() 
+

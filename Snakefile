@@ -87,7 +87,7 @@ rule all:
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
-    threads: 1
+    threads: 2
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]
         if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
@@ -142,8 +142,8 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
         output: temporary(imputation_pattern)
-        retries: 3
-        threads: 56 if name == 'complex' else 24
+        retries: 5
+        threads: 56 if name == 'complex' else 18
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -170,7 +170,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 4
+        threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

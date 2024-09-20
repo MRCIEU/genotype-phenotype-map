@@ -5,6 +5,7 @@ minimum_snps_in_opengwas_study <- 1000000
 
 gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
+studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
 studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
 
 if (!is.na(TEST_RUN)) {
@@ -26,7 +27,8 @@ main <- function() {
 
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
-    dplyr::filter(!study_name %in% studies_processed$study_name)
+    dplyr::filter(!study_name %in% studies_processed$study_name) |>
+    dplyr::filter(!study_name %in% studies_to_ignore$study_name)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
     dir.create(extracted_location, showWarnings = F, recursive = T)

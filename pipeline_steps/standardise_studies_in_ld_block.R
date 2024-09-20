@@ -132,7 +132,9 @@ standardise_alleles <- function(gwas) {
 
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
   if (any(to_flip)) {
-    gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
+    if ('EAF' %in% names(gwas)) {
+      gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
+    }
     if ('BETA' %in% names(gwas)) {
       gwas$BETA[to_flip] <- -1 * gwas$BETA[to_flip]
     }

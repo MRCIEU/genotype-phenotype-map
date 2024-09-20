@@ -1,0 +1,20 @@
+
+svg {
+    font-family: arial
+}
+
+.tick line {
+    stroke: black;
+    stroke-opacity: 0.0;
+    shape-rendering: crispEdges;
+}
+
+div.tooltip { 
+    position: absolute;
+    display: flex;
+    background-color: #beb9db;
+    border: black 1px solid;
+    padding: 2px;
+    opacity: 0.8;
+    border-radius: 10px;
+}

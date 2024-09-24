@@ -68,6 +68,7 @@ perform_standardisation <- function(study, ld_region) {
     standardise_alleles() |>
     standardise_extracted_gwas(ld_region)
 
+  study['ld_block'] <- args$ld_block
   study['file'] <- standardised_file
   study['eaf_from_reference_panel'] <- response$eaf_from_reference_panel
   study['snps_removed_by_reference_panel'] <- response$snps_removed_by_reference_panel

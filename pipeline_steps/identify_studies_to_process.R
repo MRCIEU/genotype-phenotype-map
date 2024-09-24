@@ -28,7 +28,7 @@ main <- function() {
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
-    dplyr::filter(!study_name %in% studies_to_ignore$study_name)
+    dplyr::filter(!study_name %in% studies_to_ignore$study)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
     dir.create(extracted_location, showWarnings = F, recursive = T)

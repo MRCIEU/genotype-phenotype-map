@@ -17,7 +17,7 @@ LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_reference_panel/'
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5
 
-imputed_studies_columns = ['study', 'file', 'ancestry', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
+imputed_studies_columns = ['study', 'ld_block', 'file', 'ancestry', 'chr', 'bp', 'p_value_threshold', 'category', 'sample_size',
                            'cis_trans', 'rows_imputed', 'time_taken']
 
 
@@ -87,7 +87,7 @@ def main(ld_block, completed_output_file):
         time_taken = str(datetime.datetime.now() - start_time)
         gwas.to_csv(imputed_file, sep='\t', index=False)
         new_imputed_study = pd.DataFrame(
-            [[study.study, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold,
+            [[study.study, ld_block, imputed_file, study.ancestry, study.chr, study.bp, study.p_value_threshold,
             study.category, study.sample_size, study.cis_trans, sum(rsids_to_add), time_taken]],
             columns=imputed_studies_columns
         )

@@ -180,6 +180,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   unique_id <- paste0(study['study'], "_", study['ancestry'], '_', study['chr'], "_", trimws(study['bp']), "_1")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
+                                    ld_block = args$ld_block,
                                     file=failed_finemap_file,
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
@@ -220,6 +221,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
+                                           ld_block = args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
                                            chr=as.character(study[['chr']]),

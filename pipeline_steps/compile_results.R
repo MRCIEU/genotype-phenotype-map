@@ -17,69 +17,26 @@ args <- argparser::parse_args(parser)
 
 main <- function(args) {
   ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
-  ld_regions$block <- ld_block_string(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
   ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
-  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-  data <- merge_all_processed_data(ld_info)
+  coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
+
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+    dplyr::filter(!is.na(traits) & traits != 'None')
 
   all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(data$raw_coloc_results, all_studies_processed)
+  coloc_results <- compile_coloc_results(raw_coloc_results, all_studies_processed)
 
   all_study_regions <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
   results_metadata <- aggregate_pipeline_metadata(ld_info)
 
-  vroom::vroom_write(data$raw_coloc_results, args$raw_coloc_results_file)
+  vroom::vroom_write(raw_coloc_results, args$raw_coloc_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(all_study_regions, args$all_study_regions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
   vroom::vroom_write(all_studies_processed, args$studies_processed)
   file.copy(args$studies_processed, dirname(args$coloc_results))
-}
-
-merge_all_processed_data <- function(ld_info) {
-  coloc_input_files <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
-  coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
-  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
-    dplyr::filter(!is.na(traits) & traits != 'None')
-
-  finemapped_input_files <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
-  finemapped_input_files <- Filter(function(file) file.exists(file), finemapped_input_files)
-  finemapped_studies <- vroom::vroom(finemapped_input_files, show_col_types = F) |>
-    dplyr::mutate()
-
-
-
-  merged_data <- apply(ld_info, 1, function(ld_block) {
-    finemapped <- vroom::vroom(glue::glue('{ld_block["ld_block_data"]}/finemapped_studies.tsv'), show_col_types = F, col_types = vroom::cols(
-                          chr = vroom::col_character(),
-                          bp = vroom::col_number(),
-                          min_p = vroom::col_number(),
-                          sample_size = vroom::col_number(),
-                          p_value_threshold = vroom::col_number(),
-                          first_finemap_num_results = vroom::col_number(),
-                          second_finemap_num_results = vroom::col_number(),
-                          qc_step_run = vroom::col_logical(),
-                          snps_removed_by_qc = vroom::col_number(),
-                          time_taken = vroom::col_character()
-                        )
-     ) |>
-      dplyr::mutate(ld_block = ld_block['block'])
-
-    imputed <- vroom::vroom(glue::glue('{ld_block["ld_block_data"]}/imputed_studies.tsv'), show_col_types = F) |>
-      dplyr::mutate(ld_block = ld_block['block'])
-
-    return(list(finemapped = finemapped, imputed = imputed))
-  })
-
-  finemapped_studies <- vroom::vroom(finemapped_input_files, delim='\t', show_col_types = F)
-
-  return(list(
-    raw_coloc_results = raw_coloc_results,
-    finemapped_studies = finemapped_studies,
-    imputed_studies = imputed_studies,
-    standardise_studies = standardise_studies
-  ))
 }
 
 update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
@@ -114,75 +71,6 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
   all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
   return(all_finemapped_studies)
-}
-
-annotate_snp_using_biomart <- function(raw_coloc_results) {
-vars_hb <- unique(raw_coloc_results$candidate_snp)
-#maybe change this into RSID
- 
-ensembl <- useEnsembl("snp", dataset = "hsapiens_snp", GRCh = "37")
-
-annots_vars <- biomaRt::getBM(attributes = 
-                       c("refsnp_id",
-                         "chr_name",
-                         "chrom_start",
-                         "chrom_end",
-                         "allele_1",
-                         "minor_allele",
-                         "minor_allele_freq",
-                         "associated_gene",
-                         "consequence_type_tv",
-                         "ensembl_gene_stable_id",
-                         "ensembl_gene_name",
-                         "ensembl_peptide_allele",
-                         "reg_consequence_types",
-                         "motif_consequence_types"),
-                     filters = "snp_filter", values = vars_hb, mart = ensembl, uniqueRows = TRUE)
-
-  annots_vars[annots_vars == ""] <- NA
-  annots_vars <- annots_vars |> dplyr::filter(chr_name %in% c(1:22,"X","Y")) %>% 
-    arrange(refsnp_id, desc(associated_gene))
-
-  # Where ENSEMBL gene name exists, but symbols is missing, populate using bioMart gene based search
-  ensembl_gene <- useEnsembl("genes", dataset = "hsapiens_gene_ensembl", GRCh = 37)
-
-  gene_info <- getBM(attributes = 
-                      c("ensembl_gene_id",
-                        "hgnc_symbol"),
-                    filters = "ensembl_gene_id", values = unique(annots_vars$ensembl_gene_stable_id), mart = ensembl_gene, uniqueRows = TRUE)
-
-  gene_info[gene_info$hgnc_symbol == "","hgnc_symbol"] <- NA
-
-  ## Add additional gene annotations
-  annots_vars <- annots_vars |>
-    left_join(gene_info, by = c("ensembl_gene_stable_id" = "ensembl_gene_id"))
-
-  # Populate associated gene column for duplicated variant IDs and add additionally sourced gene symbols
-  annots_vars <- dplyr::group_by(annots_vars, refsnp_id) |>
-    dplyr::mutate(linked_gene = paste(na.exclude(unique(c(unlist(strsplit(associated_gene,",")),hgnc_symbol))), collapse = "|"))
-
-  # Concatenate consequences and remove duplicates rows
-  annot_vars_min <- annots_vars |>
-    dplyr::select(refsnp_id, chr_name, chrom_start, consequence_type_tv, reg_consequence_types, linked_gene)|>
-    dplyr::group_by(refsnp_id) |> 
-    dplyr::mutate(consequence_full = paste(na.exclude(unique(c(consequence_type_tv,reg_consequence_types))), collapse = "|")) |> 
-    dplyr::arrange(refsnp_id) |> 
-    dplyr::filter(duplicated(refsnp_id) == FALSE)
-
-  # Assign highest ranking consequence for plotting
-  var_conseq <- unique(annot_vars_min$consequence_full)
-  rank_conseq <- c("NMD","missense","splice","synonymous","UTR","intron","regulatory_region","non_coding")
-
-  annot_vars_min$top_consequence <- NA
-
-  for (i in rank_conseq){
-    annot_vars_min <- annot_vars_min |> 
-      dplyr::mutate(top_consequence = ifelse(grepl(i, consequence_full) & is.na(top_consequence), i, top_consequence))
-  }
-
-  annot_vars_min$top_consequence[is.na(annot_vars_min$top_consequence)] <- "Unannotated"
-
-  return(annot_vars_min)
 }
 
 find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {

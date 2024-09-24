@@ -1,11 +1,2 @@
 id_pattern,data_type,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold
 ebi-a-*,phenotype,opengwas,none,/local-scratch/data/opengwas/igd,EUR,GRCh37,1.5e-4
-*,gene_expression,besd,none,/local-scratch/data/GTEx-cis,EUR,GRCh37,1.5e-4
-*,gene_expression,besd,none,/local-scratch/data/Brain-eMeta,EUR,GRCh37,1.5e-4
-*,gene_expression,besd,none,/local-scratch/data/BrainMeta-cis-eQTL,EUR,GRCh37,1.5e-4
-Adipose*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4
-Artery*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4
-Whole_Blood*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4
-Cells_Cult*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4
-Nerve_Tibial*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4
-Heart_Atrial_Appendage_chr21*,splice_variant,besd,gtex_sqtl,/local-scratch/data/GTEx-sQTL-cis,EUR,GRCh37,1.5e-4

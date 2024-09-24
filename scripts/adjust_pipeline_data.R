@@ -83,12 +83,6 @@ cleanup_empty_dirs <- function(study_pattern) {
   })
 }
 
-# FileNotFoundError: [Errno 2] No such file or directory: '/local-scratch/projects/genotype-phenotype-map/data/study/ebi-a-GCST90002298/standardised/EUR_9_28677700.tsv.gz'
-# Waiting at most 5 seconds for missing files.
-# MissingOutputException in rule simple_impute_per_ld_block in file /home/pipeline/Snakefile, line 141:
-# Job 0 completed successfully, but some output files are missing. Missing files after 5 seconds. This might be due to filesystem latency. If that is the case, consider to increase the wait time with --lat>
-# /local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/9/28224283_28811583/imputation_complete
-
 remove_missing_extracted_regions <- function() {
   NUM_PARALLEL_JOBS <- 10
   ld_regions <- vroom::vroom('../pipeline_steps/data/ld_regions.tsv')

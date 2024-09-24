@@ -143,7 +143,7 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         input: standardisation_pattern
         output: temporary(imputation_pattern)
         retries: 5
-        threads: 56 if name == 'complex' else 18
+        threads: 56 if name == 'complex' else 24
         priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -170,7 +170,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 2
+        threads: 4
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

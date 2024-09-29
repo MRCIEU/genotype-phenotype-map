@@ -12,7 +12,7 @@ args <- argparser::parse_args(parser)
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names = F, show_col_types = F) |>
-    as.matrix()
+    data.matrix()
   ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
 
   standardised_studies_file <- paste0(ld_info$ld_block_data, '/standardised_studies.tsv')
@@ -50,8 +50,7 @@ main <- function() {
         dplyr::select(ld_region_from_reference_panel, -EAF),
         dplyr::select(gwas, -CHR, -BP, -EA, -OA),
         by=dplyr::join_by(SNP)
-      ) |> 
-        dplyr::mutate(EAF = 1-EAF)
+      ) 
 
       rows_to_impute <- !ld_region_from_reference_panel$SNP %in% gwas$SNP
       print(sum(rows_to_impute))

@@ -20,11 +20,39 @@ main <- function() {
   metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{study$study_name}.json'))
   vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
 
+  if (study$reference_build == reference_builds$GRCh37) {
+    vcf_file <- convert_reference_build_using_picard(study, vcf_file)
+  }
+
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
   vroom::vroom_write(clumped_snps, glue::glue('{args$extracted_study_location}/clumped_snps.tsv'))
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
+}
+
+convert_reference_build_using_picard <- function(study,
+                                                 vcf_file,
+                                                 input_reference_build=reference_builds$GRCh37,
+                                                 output_reference_build=reference_builds$GRCh38) {
+
+  liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
+  if (is.null(liftover_conversion)) {
+    stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
+                 "Reference builds must be one of:", reference_builds), collapse = " "))
+  }
+  dir.create(glue::glue('{study$extracted_location}vcf', showWarnings = F, recursive = T))
+  output_file<- glue::glue('{study$extracted_location}vcf/hg38.tsv.gz')
+  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.tsv.gz')
+  ha_file <- glue::glue('{liftover_dir}/hg38.fa')
+
+  # https://broadinstitute.github.io/picard/command-line-overview.html
+  picard_command <- glue::glue('java -jar picard.jar LiftoverVcf ',
+    'I={vcf_file} O={output_file} ',
+    'CHAIN={liftover_conversion} REJECT={rejected_file}') #dont know what R does
+  system(picard_command, wait = T, ignore.stdout = T)
+
+  return(output_file)
 }
 
 find_clumped_hits <- function(study, vcf_file, p_value_threshold) {

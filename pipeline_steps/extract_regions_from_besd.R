@@ -29,13 +29,17 @@ main <- function(args) {
                                                            cis_trans=character()
   )
   if (metadata$cis_trans == cis_trans$cis_only || metadata$cis_trans == cis_trans$cis_trans) {
-    extracted_cis_snps <- extract_cis_region(study, p_value_threshold)
+    cis_results <- extract_cis_region(study, p_value_threshold)
   }
   if (metadata$cis_trans == cis_trans$trans_only || metadata$cis_trans == cis_trans$cis_trans) {
-    extracted_trans_snps <- extract_trans_regions(extracted_cis_snps, study, p_value_threshold)
+    trans_results <- extract_trans_regions(extracted_cis_snps, study, p_value_threshold)
   }
 
-  extracted_snps <- dplyr::bind_rows(extracted_cis_snps, extracted_trans_snps)
+  #TODO: save clumped_snps here
+  # clumped_snps <- dplyr::bind_rows(cis_results$clumped_snps, trans_results$clumped_snps)
+  # vroom::vroom_write(clumped_snps, glue::glue('{extracted_study_location}/clumped_snps.tsv'))
+
+  extracted_snps <- dplyr::bind_rows(cis_results$snp_data, trans_results$snp_data)
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
 }
 
@@ -86,10 +90,10 @@ extract_cis_region <- function(study, p_value_threshold) {
                                file = extracted_file,
                                cis_trans = 'cis'
   )
-  return(extracted_snps)
+  return(list(snp_data=extracted_snps, clumped_snps=NULL)
 }
 
-# TODO: untested
+# TODO: WARNING - UNTESTED 
 #' extract_trans_regions
 #' @param extracted_cis_snps: region of extracted cis snps, to be filtered out of trans results
 #' 1: get all hits above p-value threshold
@@ -119,7 +123,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
                           '--clump ', probe_top_hits,'.txt',
                           ' --clump-snp-field SNP ',
                           '--clump-p1 ', p_value_threshold, ' --clump-kb 1000',
-                          '--clump-r2 0.001 ',
+                          '--clump-r2 0.1 ',
                           '--out ', tmp_trans_snps
   )
 
@@ -128,7 +132,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
   clumped_trans_snps <- data.table::fread(paste0(tmp_trans_snps, '.clumped'))
   if (nrow(clumped_trans_snps) < 1) return()
 
-  top_trans_hits_per_probe <- apply(clumped_trans_snps, 1, function(clumped_snp) {
+  extracted_trans_snps <- apply(clumped_trans_snps, 1, function(clumped_snp) {
     tmp_trans_region <- paste0('/tmp/', study$study_name, '_cis_region')
     extract_region <- paste('smr --beqtl-summary', study$study_location,
                             '--query 1',
@@ -147,7 +151,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
 
     ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
-    top_hit_per_probe <- data.frame(chr = as.character(clumped_snp['CHR']),
+    extracted_trans_hit <- data.frame(chr = as.character(clumped_snp['CHR']),
                                     bp = clumped_snp['BP'],
                                     log_p = -log10(clumped_snp['P']),
                                     ancestry = study$ancestry,
@@ -156,10 +160,10 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
                                     cis_trans = 'trans',
                                     reference_build=study$reference_build
     )
-    return(top_hit_per_probe)
+    return(extracted_trans_hit)
   }) |> dplyr::bind_rows()
 
-  return(top_trans_hits_per_probe)
+  return(list(snp_data=extracted_trans_snps, clumped_snps=NULL)
 }
 
 format_gwas <- function(gwas) {

@@ -11,7 +11,7 @@ args <- argparser::parse_args(parser)
 
 ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
 
-main <- function(args) {
+main <- function() {
   study <- vroom::vroom(paste0(pipeline_metadata_dir, '/studies_to_process.tsv'), show_col_types = F) |>
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
@@ -21,6 +21,7 @@ main <- function(args) {
   vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
 
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
+  vroom::vroom_write(clumped_snps, glue::glue('{args$extracted_study_location}/clumped_snps.tsv'))
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
@@ -42,16 +43,18 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
   plink_command <- glue::glue('plink2 --bfile {bfile} ',
     '--clump {significant_hits_file} ',
     '--clump-p1 {p_value_threshold} ',
-    '--clump-r2 0.001 ',
+    '--clump-r2 0.1 ',
     '--clump-kb 1000 ',
     '--clump-snp-field rsid ',
     '--clump-field pval ',
     '--out {clumped_hits_file}')
   system(plink_command, wait = T, ignore.stdout = T)
 
+  clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps'))
+
   clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps')) |>
-    dplyr::rename(CHR='#CHROM', BP='POS') |>
-    dplyr::select(CHR, BP, P) |>
+    dplyr::rename(RSID='ID', CHR='#CHROM', BP='POS') |>
+    dplyr::select(RSID, CHR, BP, P) |>
     dplyr::arrange(P)
 
   return(clumped_snps)
@@ -81,16 +84,15 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   ld_regions$string_region <- ld_block_string(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
   clumped_snps <- apply(clumped_snps, 1, function(clump) {
-    region <- dplyr::filter(ld_regions, chr == clump['CHR'] & start < clump['BP'] & stop > clump['BP'] & ancestry == study$ancestry)
+    region <- dplyr::filter(ld_regions, chr == clump['CHR'] & start < as.numeric(clump['BP']) & stop > as.numeric(clump['BP']) & ancestry == study$ancestry)
     if (nrow(region) == 0) return()
 
-    return(data.frame(CHR = clump['CHR'], BP = clump['BP'], P=clump['P'], bcf_region = region$bcf_region, string_region = region$string_region))
-  })
+    return(data.frame(CHR = clump['CHR'], BP = as.numeric(clump['BP']), P=clump['P'], bcf_region = region$bcf_region, string_region = region$string_region))
+  }) |> dplyr::bind_rows()
   
-  clumped_snps <- clumped_snps |> dplyr::bind_rows()
-
   #removing duplicate entries per region, so we only grab the region once.
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
+  print(glue::glue('num to extract: {nrow(clumped_snps)}'))
 
   extracted_snps <- apply(clumped_snps, 1, function(clump) {
     bcf_query <- glue::glue('/home/bcftools/bcftools query ',
@@ -121,4 +123,4 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   return(extracted_snps)
 }
 
-main(args)
+main()

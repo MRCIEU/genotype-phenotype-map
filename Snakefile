@@ -143,8 +143,9 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         input: standardisation_pattern
         output: temporary(imputation_pattern)
         retries: 5
-        threads: 56 if name == 'complex' else 24
-        priority: 1 if name == 'complex' else 0
+        threads: 16
+        # threads: 56 if name == 'complex' else 24
+        # priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -152,15 +153,10 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if name == 'complex':
-                env_vars = "export LD_PRELOAD="
-            else:
-                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
-
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
-                command = f"{env_vars} && python3 impute_studies_in_ld_block.py \
+                command = f"Rscript impute_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
             subprocess.run(command, shell=True)

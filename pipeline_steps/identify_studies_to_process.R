@@ -28,7 +28,7 @@ main <- function() {
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
-    dplyr::filter(!study_name %in% studies_to_ignore$study_name)
+    dplyr::filter(!study_name %in% studies_to_ignore$study)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
     dir.create(extracted_location, showWarnings = F, recursive = T)
@@ -50,6 +50,8 @@ calculate_besd_studies_to_process <- function(entries) {
     all_studies <- Sys.glob(file_regex)
     studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
 
+    if (length(all_studies) == 0) return(data.frame())
+
     return(data.frame(
       data_type = entry[['data_type']],
       data_format = entry[['data_format']],
@@ -62,6 +64,8 @@ calculate_besd_studies_to_process <- function(entries) {
       ancestry = entry[['ancestry']]
     ))
   })|> dplyr::bind_rows()
+
+  if (length(expanded_studies) == 0) return(data.frame())
 
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
     all_files_present <- Sys.glob(paste0(besd_study['study'], '.*'))

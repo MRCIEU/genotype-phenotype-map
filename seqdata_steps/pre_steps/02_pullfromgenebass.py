@@ -42,7 +42,7 @@ for study in range(1, n_studies + 1):
     print("pheno:", col_key['description'])
 
     outname_rare = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_rare_filtered.tsv"])
-    outcome_common = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_common_filtered.tsv"])
+    outname_common = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_common_filtered.tsv"])
 
     # Return entries (summary statistics)
     study_stats = mt_study.entries()
@@ -60,9 +60,8 @@ for study in range(1, n_studies + 1):
     # Write out rare summary statistics
     study_stats_rare.export(os.path.join(SEQDATA_DIR, "downloads/genebass/rare", outname_rare))
 
-    # Filter common (p<0.1, MAF>0.01)
+    # Filter common (MAF>0.01) - no p-value filter to match common variant GWAS input
     study_stats_common = study_stats.filter(
-        (study_stats.Pvalue <= max_pval) &
         (study_stats.AF > max_maf) & 
         (study_stats.AF < 1 - max_maf))
 

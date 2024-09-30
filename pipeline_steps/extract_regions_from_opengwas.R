@@ -36,21 +36,37 @@ convert_reference_build_using_picard <- function(study,
                                                  input_reference_build=reference_builds$GRCh37,
                                                  output_reference_build=reference_builds$GRCh38) {
 
+  if (input_reference_build == output_reference_build) return(vcf_file)
+
+  dir.create(glue::glue('{study$extracted_location}/vcf'), showWarnings = F, recursive = T)
   liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
   if (is.null(liftover_conversion)) {
     stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
                  "Reference builds must be one of:", reference_builds), collapse = " "))
   }
-  dir.create(glue::glue('{study$extracted_location}vcf', showWarnings = F, recursive = T))
-  output_file<- glue::glue('{study$extracted_location}vcf/hg38.tsv.gz')
-  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.tsv.gz')
-  ha_file <- glue::glue('{liftover_dir}/hg38.fa')
+  output_file <- glue::glue('{study$extracted_location}vcf/hg38.vcf.gz')
+  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf.gz')
+  fasta_file <- glue::glue('{liftover_dir}/hg38.fa')
 
   # https://broadinstitute.github.io/picard/command-line-overview.html
-  picard_command <- glue::glue('java -jar picard.jar LiftoverVcf ',
-    'I={vcf_file} O={output_file} ',
-    'CHAIN={liftover_conversion} REJECT={rejected_file}') #dont know what R does
-  system(picard_command, wait = T, ignore.stdout = T)
+  # picard_command <- glue::glue(
+    # 'java -jar /usr/bin/picard.jar LiftoverVcf ',
+    # 'I={vcf_file} O={output_file} ',
+    # 'CHAIN={liftover_conversion} REJECT={rejected_file} R={fasta_file}') #dont know what R does
+
+  bcf_liftover_command <- glue::glue(
+    '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_conversion.txt {vcf_file} | ',
+      '/home/bcftools/bcftools +liftover --no-version -Ou -- ',
+      '-s {liftover_dir}/hg19.fa ',
+      '-f {liftover_dir}/hg38.fa ',
+      '-c {liftover_conversion} ',
+      '--reject {rejected_file} | ',
+      # '--reject-type z'
+      # '--reject-type z | ',
+        '/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi'
+  )
+  message(bcf_liftover_command)
+  system(bcf_liftover_command, wait = T, ignore.stdout = T)
 
   return(output_file)
 }

@@ -22,9 +22,11 @@ RUN cd /home && \
     cp gcta-1.94.1-linux-kernel-3-x86_64/gcta64 /bin/gcta64 && \
     wget https://github.com/Kitware/CMake/releases/download/v3.30.0-rc1/cmake-3.30.0-rc1-linux-x86_64.tar.gz && \
     tar xf cmake-3.30.0-rc1-linux-x86_64.tar.gz && \
-    git clone https://github.com/jwr-git/pwcoco.git && cd pwcoco && \
+    git clone https://github.com/jwr-git/pwcoco.git && \
+    cd pwcoco && \
     mkdir build && cd build && /home/cmake-3.30.0-rc1-linux-x86_64/bin/cmake .. && make && \
     mv pwcoco /bin/pwcoco && \
+    cd /home && \
     wget https://github.com/zkutalik/ssimp_software/raw/master/compiled/ssimp-linux-0.5.6 && \
     chmod 775 ssimp-linux-0.5.6 && \
     mv ssimp-linux-0.5.6 /bin/ssimp && \
@@ -37,9 +39,19 @@ RUN cd /home && \
     mv plink2 /usr/bin/ && \
     wget https://github.com/broadinstitute/picard/releases/download/3.2.0/picard.jar && \
     chmod 775 picard.jar && \
-    mv picard.jar /usr/bin
+    mv picard.jar /usr/bin && \
+    rm -r bcftools htslib || true && \
+    git clone --recurse-submodules https://github.com/samtools/htslib.git && \
+    git clone https://github.com/samtools/bcftools.git && \
+    cd bcftools && \
+    make && \
+    wget https://software.broadinstitute.org/software/score/score_1.20-20240505.zip && \
+    unzip score_1.20-20240505.zip && \
+    cd /home
 
+ENV BCFTOOLS_PLUGINS=/home/bcftools
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.2/lib/libmkl_rt.so
+
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R
 RUN pip install -r docker/requirements.txt

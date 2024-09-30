@@ -34,9 +34,9 @@ reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 
 reference_builds <- list(GRCh36="GRCh36", GRCh37="GRCh37", GRCh38="GRCh38")
 available_liftover_conversions <- list(
-  'GRCh36GRCh37' = 'hg18ToHg19.over.chain.gz',
-  'GRCh38GRCh37' = 'hg18ToHg19.over.chain.gz',
-  'GRCh37GRCh38' = 'hg18ToHg19.over.chain.gz'
+  'GRCh36GRCh37' = glue::glue('{liftover_dir}hg18ToHg19.over.chain.gz'),
+  'GRCh38GRCh37' = glue::glue('{liftover_dir}hg38ToHg19.over.chain.gz'),
+  'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
 
 file_prefix <- function(file_path) {

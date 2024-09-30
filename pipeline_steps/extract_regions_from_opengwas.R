@@ -54,20 +54,21 @@ convert_reference_build_using_picard <- function(study,
     # 'I={vcf_file} O={output_file} ',
     # 'CHAIN={liftover_conversion} REJECT={rejected_file} R={fasta_file}') #dont know what R does
 
+  start_time <- Sys.time()
   bcf_liftover_command <- glue::glue(
-    '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_conversion.txt {vcf_file} | ',
+    '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/num_to_chr.txt {vcf_file} | ',
       '/home/bcftools/bcftools +liftover --no-version -Ou -- ',
       '-s {liftover_dir}/hg19.fa ',
       '-f {liftover_dir}/hg38.fa ',
       '-c {liftover_conversion} ',
       '--reject {rejected_file} | ',
-      # '--reject-type z'
-      # '--reject-type z | ',
-        '/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi'
+        '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_to_num.txt | ',
+          '/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi'
   )
   message(bcf_liftover_command)
   system(bcf_liftover_command, wait = T, ignore.stdout = T)
 
+  message(hms::as_hms(difftime(Sys.time(), start_time)))
   return(output_file)
 }
 

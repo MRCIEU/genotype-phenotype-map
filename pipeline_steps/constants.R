@@ -9,7 +9,7 @@ lowest_p_value_threshold <- 1.5e-4
 
 pipeline_metadata_dir <- paste0(data_dir, 'pipeline_metadata/')
 ld_block_data_dir <- paste0(data_dir, 'ld_blocks/')
-ld_reference_panel_dir <- paste0(data_dir, 'ld_reference_panel/')
+ld_reference_panel_dir <- paste0(data_dir, 'ld_reference_panel_hg38/')
 liftover_dir <- paste0(data_dir, 'liftover/')
 extracted_study_dir <- paste0(data_dir, 'study/')
 
@@ -60,5 +60,5 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 }
 
 ld_block_string <- function(ancestry, chr, start, stop) {
-  return(paste0(ancestry, '/', chr, '/', start, '_', stop))
+  return(paste0(ancestry, '/', chr, '/', start, '-', stop))
 }

@@ -1,0 +1,5 @@
+id_pattern,data_type,source_study,data_location,ancestry,reference_build,p_value_threshold
+ukb-wes-bm-*,wes_singlevar,backman,/local-scratch/data/ukb-seq/backman,EUR,GRCh38,1.5e-4
+ukb-wes-gb-*,wes_singlevar,genebass,/local-scratch/data/ukb-seq/genebass,EUR,GRCh38,1.5e-4
+ukb-wes-az-*,wes_singlevar,azphewas,/local-scratch/data/ukb-seq/azphewas,EUR,GRCh38,1.5e-4
+ukb-wgs-hd-*,wgs_singlevar,halldorsson,/local-scratch/data/ukb-seq/halldorsson,EUR,GRCh38,1.5e-4

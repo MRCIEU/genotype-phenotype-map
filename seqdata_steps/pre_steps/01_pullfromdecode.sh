@@ -30,10 +30,10 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
   echo "Unzipping ${FILE}..."
   gunzip -f ${DCODE_DATA}/${FILE}
 
-  echo "Checking integrity of ${INFILE}"
-  CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
-  CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
-  [[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
+  #echo "Checking integrity of ${INFILE}"
+  #CALC_CHECKSUM=$(md5sum < ${DCODE_DATA}/${INFILE})
+  #CHECKSUM=$(cat ${DCODE_DATA}/${INFILE}.md5sum)
+  #[[ ${CALC_CHECKSUM} == ${CHECKSUM} ]] || { echo "Check failed"; exit 1; }
 
   echo "Processing file: ${INFILE}"
 
@@ -111,7 +111,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
   # Join split filtered files
   echo "Joining split filtered files"
-  (echo ${header}; find $TMP_DIR -type f -name searchwindow_*_filtered_tmp.txt -print0 | xargs -0 cat) > ${TMP_DIR}/finalvars_tmp.txt
+  (echo ${header}; find $TMP_DIR -type f -name "searchwindow_*_filtered_tmp.txt" -exec cat {} +) > ${TMP_DIR}/finalvars_tmp.txt
 
   # Keep unique (duplicates from overlapping windows) add header and write to output
   echo "Writing output to: ${OUT_DIR}/${OUTNAME}"

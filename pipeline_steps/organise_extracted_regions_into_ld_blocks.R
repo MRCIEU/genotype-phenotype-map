@@ -31,7 +31,8 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
                                   category = merged_data$category,
                                   sample_size = merged_data$sample_size,
                                   cis_trans = merged_data$cis_trans,
-                                  reference_build = merged_data$reference_build
+                                  reference_build = merged_data$reference_build,
+                                  ld_block = ld_info$block
   )
 
   if (!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive = T)
@@ -48,7 +49,7 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
 })
 
 ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
-ld_regions$ld_block <- paste0(ld_regions$ancestry, '/', ld_regions$chr, '/', ld_regions$start, '_', ld_regions$stop) 
+ld_regions$ld_block <- ld_info$block 
 ld_regions$data_dir <- ld_info$ld_block_data
 ld_regions$results_dir <- ld_info$ld_block_results
 all_updated_ld_blocks <- dplyr::filter(ld_regions, ld_block %in% names(extracted_snps_by_region)) |> dplyr::arrange(chr)

@@ -5,7 +5,7 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-main <- function(args) {
+main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_region <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
 
@@ -33,7 +33,7 @@ main <- function(args) {
   if (nrow(extracted_studies) > 0) {
     standardised_studies <- apply(extracted_studies, 1, function (study) {
       start_time <- Sys.time()
-      standardised_file <- sub('original', 'standardised', study[['file']])
+      standardised_file <- sub('extracted', 'standardised', study[['file']])
 
       if (standardised_file %in% existing_standardised_studies$file) {
         return()
@@ -61,13 +61,14 @@ main <- function(args) {
 }
 
 perform_standardisation <- function(study, ld_region) {
-  standardised_file <- sub('original', 'standardised', study[['file']])
+  standardised_file <- sub('extracted', 'standardised', study[['file']])
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
   response <- convert_reference_build_via_liftover(gwas, study[['reference_build']], reference_builds$GRCh37) |>
     standardise_alleles() |>
     standardise_extracted_gwas(ld_region)
 
+  study['ld_block'] <- args$ld_block
   study['file'] <- standardised_file
   study['eaf_from_reference_panel'] <- response$eaf_from_reference_panel
   study['snps_removed_by_reference_panel'] <- response$snps_removed_by_reference_panel
@@ -234,4 +235,4 @@ use_bed_file_to_update_gwas <- function(gwas, bed_file) {
   return(gwas)
 }
 
-main(args)
+main()

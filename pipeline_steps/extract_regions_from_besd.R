@@ -58,7 +58,7 @@ extract_cis_region <- function(study, p_value_threshold) {
   top_cis_snp <- vroom::vroom(paste0(tmp_cis_snp, '.txt'), show_col_types = F)
   if (nrow(top_cis_snp) < 1) return()
 
-  dir.create(paste0(study$extracted_location, '/original'), showWarnings = F, recursive = T)
+  dir.create(paste0(study$extracted_location, '/extracted'), showWarnings = F, recursive = T)
   dir.create(paste0(study$extracted_location, '/standardised'), showWarnings = F, recursive = T)
   dir.create(paste0(study$extracted_location, '/imputed'), showWarnings = F, recursive = T)
   dir.create(paste0(study$extracted_location, '/finemapped'), showWarnings = F, recursive = T)
@@ -77,10 +77,10 @@ extract_cis_region <- function(study, p_value_threshold) {
   cis_region <- vroom::vroom(paste0(tmp_cis_region, '.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region)
 
-  extracted_file <-paste0(study$extracted_location, 'original/', study$ancestry, '_', top_cis_snp$Chr, '_', top_cis_snp$BP, '.tsv.gz')
+  extracted_file <-paste0(study$extracted_location, 'extracted/', study$ancestry, '_', top_cis_snp$Chr, '_', top_cis_snp$BP, '.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
 
-  ld_block <- dplyr::filter(ld_regions, chr == top_cis_snp$Chr & start < top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
+  ld_block <- dplyr::filter(ld_regions, chr == top_cis_snp$Chr & start <= top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
   ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
   extracted_snps <- data.frame(chr = as.character(top_cis_snp$Chr),
@@ -145,9 +145,9 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     trans_region <- vroom::vroom(paste0(tmp_trans_region, '.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region)
 
-    extracted_file <- paste0(study$extracted_location, 'original/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
+    extracted_file <- paste0(study$extracted_location, 'extracted/', study$ancestry, '_', clumped_snp['CHR'], '_', clumped_snp['BP'], '.tsv.gz')
     vroom::vroom_write(trans_region, extracted_file)
-    ld_block <- dplyr::filter(ld_regions, chr == clumped_snp['CHR'] & start < clumped_snp['BP'] & stop > clumped_snp['BP'] & ancestry == study$ancestry)
+    ld_block <- dplyr::filter(ld_regions, chr == clumped_snp['CHR'] & start <= clumped_snp['BP'] & stop > clumped_snp['BP'] & ancestry == study$ancestry)
 
     ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 

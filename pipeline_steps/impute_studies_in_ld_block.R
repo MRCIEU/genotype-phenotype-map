@@ -8,6 +8,8 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
+#TODO: 
+r <- 0.01 #for a stricter threshold
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
@@ -58,21 +60,27 @@ main <- function() {
       print(nrow(ld_region_from_reference_panel))
       gwas_to_impute$EAF[rows_to_impute] <- ld_region_from_reference_panel$EAF[rows_to_impute]
       print(gwas[, c(9, 6, 7)])
-      print(ld_region_from_reference_panel[, c(1,5)])
-      print(gwas_to_impute[, c(1, 7, 8)])
+      print(ld_region_from_reference_panel[, c(1,2,5)])
+      print(gwas_to_impute[, c(2, 5, 6, 7)])
 
       print(all(ld_region_from_reference_panel$SNP == gwas_to_impute$SNP))
+      print(nrow(gwas_to_impute) == nrow(ld_matrix))
+      print(nrow(gwas_to_impute) == ncol(ld_matrix))
 
-      # if we want to use all the clumped hits
-      #given clumped snps, find the corresponding row numbers in the gwas
+      # if we want to use all the clumped hits from the extraction phase...
+      # given clumped snps, find the corresponding row numbers in the gwas
       # clumped_snp_index <- dplyr::mutate(gwas_to_impute, rn = dplyr::row_number()) |>
       #   dplyr::filter(BP %in% clumped_snps$BP) |>
       #   dplyr::group_by(BP) |>
       #   dplyr::arrange(P) |>
       #   dplyr::filter(dplyr::row_number() == 1)
 
-      print(min(gwas_to_impute$P, na.rm=T))
-      clumped_snp_index <- which(gwas_to_impute$P == min(gwas_to_impute$P, na.rm = T))
+      # if we want to use just the top hit in the region...
+      # print(min(gwas_to_impute$P, na.rm=T))
+      # clumped_snp_index <- which(gwas_to_impute$P == min(gwas_to_impute$P, na.rm = T))
+
+      # if we want to re-clump
+      clumped_snp_index <- clump_ld_region(gwas$Z, ld_matrix)
       print(gwas_to_impute[clumped_snp_index, ])
 
       result <- perform_imputation(gwas_to_impute, ld_matrix, clumped_snp_index)
@@ -119,6 +127,19 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
+clump_ld_region <- function(z, R, zthresh = qnorm(1e-5, low=F), rthresh = 0.01) {
+  z <- abs(z)
+  z[z < zthresh] <- NA
+  k <- c()
+
+  while(!all(is.na(z))) {
+    i <- which.max(z)
+    k <- c(k, i)
+    z[i] <- NA
+    z[which(R[i,]^2 > rthresh)] <- NA
+  }
+  return(k)
+}
 
 #' Basic imputation function
 #' 
@@ -199,7 +220,13 @@ perform_imputation <- function(gwas, ld_matrix, index) {
 
     return(
       list(
-        gwas = gwas, b_adj = beta_scale, se_adj = se_scale, b_cor = b_cor, se_cor = se_cor, indices = length(index), rows_imputed = num_to_impute
+        gwas = gwas,
+        b_adj = beta_scale,
+        se_adj = se_scale,
+        b_cor = b_cor,
+        se_cor = se_cor,
+        indices = length(index),
+        rows_imputed = num_to_impute
       )
     )
 }

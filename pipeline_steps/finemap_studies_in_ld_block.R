@@ -10,7 +10,7 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
-main <- function(args) {
+main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names=F, show_col_types = F)
   ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
@@ -180,6 +180,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   unique_id <- paste0(study['study'], "_", study['ancestry'], '_', study['chr'], "_", trimws(study['bp']), "_1")
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
+                                    ld_block = args$ld_block,
                                     file=failed_finemap_file,
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
@@ -220,6 +221,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
+                                           ld_block = args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
                                            chr=as.character(study[['chr']]),
@@ -330,4 +332,4 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   return(gwas)
 }
 
-main(args)
+main()

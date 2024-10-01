@@ -27,23 +27,23 @@ ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
 
 relevant_ancestries = np.isin(ld_regions['ancestry'], studies_to_process['ancestry'].unique())
 ld_regions = ld_regions[relevant_ancestries]
-ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_regions.iterrows()]
 
-complex_ld_blocks = ['EUR/6/19207487_21684064',
-                     'EUR/8/116096495_119685456',
-                     'EUR/6/29737971_30798167',
-                     'EUR/6/30798168_31571217',
-                     'EUR/6/31571218_32682663',
-                     'EUR/10/4572274_5983761',
-                     'EUR/11/1213590_3665480'
+complex_ld_blocks = ['EUR/6/19207487-21684064',
+                     'EUR/8/116096495-119685456',
+                     'EUR/6/29737971-30798167',
+                     'EUR/6/30798168-31571217',
+                     'EUR/6/31571218-32682663',
+                     'EUR/10/4572274-5983761',
+                     'EUR/11/1213590-3665480'
 ]
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-# complex_ld_blocks = ['EUR/6/19207487_21684064',
-#                      'EUR/6/29737971_30798167',
-#                      'EUR/8/116096495_119685456',
-#                      'EUR/10/4572274_5983761',
-#                      'EUR/11/1213590_3665480'
+# complex_ld_blocks = ['EUR/6/19207487-21684064',
+#                      'EUR/6/29737971-30798167',
+#                      'EUR/8/116096495-119685456',
+#                      'EUR/10/45722745983761',
+#                      'EUR/11/1213590-3665480'
 # ]
 # if TEST_RUN == 'test':
 #     complex_ld_blocks = []

@@ -21,7 +21,7 @@ main <- function() {
   vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
 
   if (study$reference_build == reference_builds$GRCh37) {
-    vcf_file <- convert_reference_build_using_picard(study, vcf_file)
+    vcf_file <- convert_reference_build(study, vcf_file)
   }
 
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
@@ -31,10 +31,10 @@ main <- function() {
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
 }
 
-convert_reference_build_using_picard <- function(study,
-                                                 vcf_file,
-                                                 input_reference_build=reference_builds$GRCh37,
-                                                 output_reference_build=reference_builds$GRCh38) {
+convert_reference_build <- function(study,
+                                    vcf_file,
+                                    input_reference_build=reference_builds$GRCh37,
+                                    output_reference_build=reference_builds$GRCh38) {
 
   if (input_reference_build == output_reference_build) return(vcf_file)
 
@@ -52,7 +52,12 @@ convert_reference_build_using_picard <- function(study,
   # picard_command <- glue::glue(
     # 'java -jar /usr/bin/picard.jar LiftoverVcf ',
     # 'I={vcf_file} O={output_file} ',
-    # 'CHAIN={liftover_conversion} REJECT={rejected_file} R={fasta_file}') #dont know what R does
+    # 'CHAIN={liftover_conversion} REJECT={rejected_file} R={fasta_file}')
+
+  if (file.exists(output_file)) {
+    message(glue::glue('{vcf_file} already converted to hg38.'))
+    return(output_file)
+  }
 
   start_time <- Sys.time()
   bcf_liftover_command <- glue::glue(
@@ -92,14 +97,14 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
     '--clump-kb 1000 ',
     '--clump-snp-field rsid ',
     '--clump-field pval ',
-    '--out {clumped_hits_file}')
+    '--out {clumped_hits_file}'
+  )
   system(plink_command, wait = T, ignore.stdout = T)
-
-  clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps'))
 
   clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps')) |>
     dplyr::rename(RSID='ID', CHR='#CHROM', BP='POS') |>
     dplyr::select(RSID, CHR, BP, P) |>
+    dplyr::mutate(CHR=as.numeric(CHR), BP=as.numeric(BP), P=as.numeric(P))
     dplyr::arrange(P)
 
   return(clumped_snps)
@@ -120,7 +125,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     return(extracted_snps)
   }
 
-  dir.create(glue::glue('{study$extracted_location}/original'), showWarnings = F, recursive = T)
+  dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
@@ -129,10 +134,16 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   ld_regions$string_region <- ld_block_string(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
 
   clumped_snps <- apply(clumped_snps, 1, function(clump) {
-    region <- dplyr::filter(ld_regions, chr == clump['CHR'] & start < as.numeric(clump['BP']) & stop > as.numeric(clump['BP']) & ancestry == study$ancestry)
-    if (nrow(region) == 0) return()
+    clump_chr <- as.numeric(clump['CHR']) 
+    clump_bp <- as.numeric(clump['BP']) 
 
-    return(data.frame(CHR = clump['CHR'], BP = as.numeric(clump['BP']), P=clump['P'], bcf_region = region$bcf_region, string_region = region$string_region))
+    region <- dplyr::filter(ld_regions, chr == clump_chr & start <= clump_bp & stop > clump_bp & ancestry == study$ancestry)
+    if (nrow(region) == 0) {
+      message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
+      return()
+    }
+
+    return(data.frame(CHR = clump_chr, BP = clump_bp, P=as.numeric(clump['P']), bcf_region = region$bcf_region, string_region = region$string_region))
   }) |> dplyr::bind_rows()
   
   #removing duplicate entries per region, so we only grab the region once.
@@ -142,7 +153,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   extracted_snps <- apply(clumped_snps, 1, function(clump) {
     bcf_query <- glue::glue('/home/bcftools/bcftools query ',
       '--regions {clump[["bcf_region"]]} ',
-      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%REF]\t[%ALT]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" ',
+      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%ALT]\t[%REF]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" ',
       '{vcf_file}'
     )
 
@@ -150,7 +161,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     extracted_region <- data.table::fread(text = extracted_region)
     colnames(extracted_region) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
 
-    extracted_file <- glue::glue('{study$extracted_location}original/{study$ancestry}_{clump["CHR"]}_{clump["BP"]}.tsv.gz')
+    extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{clump["CHR"]}_{clump["BP"]}.tsv.gz')
     extracted_file <- gsub(' ', '', extracted_file)
     vroom::vroom_write(extracted_region, extracted_file)
 

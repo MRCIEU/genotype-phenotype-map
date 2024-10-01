@@ -53,7 +53,7 @@ Both data `DATA_DIR` and `RESULTS_DIR` directories will be populated
 
 `DATA_DIR`
 * `study`: each study will have `extracted_snps.tsv`, and a file in each of the 3 subdirectories related to the extraciton
-  * `original`, `imputed`, and `finemapped`
+  * `extracted`, `standardised`, `imputed`, and `finemapped`
 * `ld_blocks`: each ld block will have data related to the extracted study regions inside the block, primarily for colocalisation
 * `pipeline_metadata`:
   * `updated_ld_blocks_to_colocalise.tsv`: not all ld blocks need to be run, depending on the studies ingested.  This stores the list of ld regions that need to be run

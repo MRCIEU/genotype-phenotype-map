@@ -76,7 +76,8 @@ cleanup_empty_dirs <- function(study_pattern) {
     }
     extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
     if (nrow(extracted_snps) == 0) {
-      file.remove(paste0(study, 'original'), recursive=T)
+      file.remove(paste0(study, 'extracted'), recursive=T)
+      file.remove(paste0(study, 'standardised'), recursive=T)
       file.remove(paste0(study, 'imputed'), recursive=T)
       file.remove(paste0(study, 'finemapped'), recursive=T)
     }
@@ -107,7 +108,7 @@ remove_missing_extracted_regions <- function() {
     print(glue::glue('removing {orig_rows - nrow(standardised_studies)} rows, now {nrow(standardised_studies)}'))
     vroom::vroom_write(standardised_studies, standardised_studies_file)
 
-    files_to_remove <- sub('standardised', 'original', files_to_remove)
+    files_to_remove <- sub('standardised', 'extracted', files_to_remove)
     extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
     extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
     orig_ext_rows <- nrow(extracted_studies)

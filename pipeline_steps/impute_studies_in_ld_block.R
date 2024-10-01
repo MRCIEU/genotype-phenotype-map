@@ -8,9 +8,6 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-#TODO: 
-r <- 0.01 #for a stricter threshold
-
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names = F, show_col_types = F) |>
@@ -55,17 +52,15 @@ main <- function() {
       ) 
 
       rows_to_impute <- !ld_region_from_reference_panel$SNP %in% gwas$SNP
-      print(sum(rows_to_impute))
-      print(nrow(gwas))
-      print(nrow(ld_region_from_reference_panel))
+      print(glue::glue('rows to impute: {sum(rows_to_impute)}'))
+      print(glue::glue('rows in gwas: {nrow(gwas)}'))
+      print(glue::glue('rows in ld matrix: {nrow(ld_region_from_reference_panel)}'))
       gwas_to_impute$EAF[rows_to_impute] <- ld_region_from_reference_panel$EAF[rows_to_impute]
       print(gwas[, c(9, 6, 7)])
       print(ld_region_from_reference_panel[, c(1,2,5)])
       print(gwas_to_impute[, c(2, 5, 6, 7)])
 
-      print(all(ld_region_from_reference_panel$SNP == gwas_to_impute$SNP))
-      print(nrow(gwas_to_impute) == nrow(ld_matrix))
-      print(nrow(gwas_to_impute) == ncol(ld_matrix))
+      print(glue::glue('gwas order matches ld matrix: {all(ld_region_from_reference_panel$SNP == gwas_to_impute$SNP)}'))
 
       # if we want to use all the clumped hits from the extraction phase...
       # given clumped snps, find the corresponding row numbers in the gwas
@@ -79,11 +74,14 @@ main <- function() {
       # print(min(gwas_to_impute$P, na.rm=T))
       # clumped_snp_index <- which(gwas_to_impute$P == min(gwas_to_impute$P, na.rm = T))
 
-      # if we want to re-clump
-      clumped_snp_index <- clump_ld_region(gwas$Z, ld_matrix)
+      # if we want to re-clump from the ld ref panel
+      clumped_snp_index <- clump_ld_region(gwas_to_impute$Z, ld_matrix)
+      print('clumped snps:')
       print(gwas_to_impute[clumped_snp_index, ])
 
       result <- perform_imputation(gwas_to_impute, ld_matrix, clumped_snp_index)
+      print(result$gwas[, c(2,6,7,8,11,12)])
+      print(result$gwas[is.na(gwas_to_impute$BETA), c(2,6,7,8,11,12)])
       print(result)
 
       if(result$b_cor >= imputation_correlation_threshold) {
@@ -127,7 +125,7 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-clump_ld_region <- function(z, R, zthresh = qnorm(1e-5, low=F), rthresh = 0.01) {
+clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
   z <- abs(z)
   z[z < zthresh] <- NA
   k <- c()
@@ -143,7 +141,8 @@ clump_ld_region <- function(z, R, zthresh = qnorm(1e-5, low=F), rthresh = 0.01) 
 
 #' Basic imputation function
 #' 
-#' @param gwas A data frame with columns betahat2 = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed; se = as with betahat2 but for available standard errors, af = allele frequencies (no missing values allowed, so use reference panel if there are missing values)
+#' @param gwas A data frame with columns betahat2 = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed;
+#'  se = as with betahat2 but for available standard errors, af = allele frequencies (no missing values allowed, so use reference panel if there are missing values)
 #' @param ld_matrix The correlation matrix - must be complete for the set of SNPs that need to be imputed
 #' @param index The positions of the SNPs that are causal and will be used to generate the simulated summary statistics. This can just be the top hit.
 #' 
@@ -151,7 +150,8 @@ clump_ld_region <- function(z, R, zthresh = qnorm(1e-5, low=F), rthresh = 0.01) 
 #' - gwas: The input data frame with the imputed values added
 #' - b_adj: The adjustment factor for the effect sizes
 #' - se_adj: The adjustment factor for the standard errors
-#' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation, it should be close to 1 e.g > 0.7 would be a reasonable threshold
+#' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
+#'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
 perform_imputation <- function(gwas, ld_matrix, index) {
     b <- gwas$BETA

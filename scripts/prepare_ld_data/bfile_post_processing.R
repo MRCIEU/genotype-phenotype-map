@@ -15,9 +15,10 @@ create_tsv_from_afreq <- function() {}
   lapply(ld_info$ld_reference_panel_prefix, function(prefix) {
     freq <- vroom::vroom(glue::glue('{prefix}.afreq'), show_col_types = F) |>
       dplyr::rename(CHR='#CHROM', SNP='ID', EA='ALT', OA='REF', EAF='ALT_FREQS') |>
+      dplyr::mutate(BP=as.numeric(sub('.*:(\\d+)_.*', '\\1', SNP))) |>
       dplyr::select(-`PROVISIONAL_REF?`, -OBS_CT)
     print(head(freq))
-      
+
     vroom::vroom_write(freq, glue::glue('{prefix}.tsv'))
   })
 }

@@ -60,7 +60,6 @@ main <- function() {
         qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
         study <- qc_results$study
         if (study['snps_removed_by_qc'] > 0) {
-          message('doing second finemapping...')
           results <- run_susie_finemapping(qc_results$gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time)
           if (!is.null(results$failed_finemap_info)) {
             results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
@@ -79,6 +78,7 @@ main <- function() {
       } else {
         study['qc_step_run'] <- F
         study['snps_removed_by_qc'] <- NA
+        study['second_finemap_num_results'] <- NA
       }
 
       succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
@@ -221,19 +221,19 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
-                                           ld_block = args$ld_block,
+                                           ld_block=args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
-                                           p_value_threshold=as.numeric(study['p_value_threshold']),
+                                           p_value_threshold=as.numeric(study[['p_value_threshold']]),
                                            min_p=min_ps,
-                                           category=study['category'],
+                                           category=study[['category']],
                                            sample_size=sample_size,
-                                           cis_trans=study['cis_trans'],
+                                           cis_trans=study[['cis_trans']],
                                            finemap_message='success',
-                                           first_finemap_num_results=as.numeric(study['first_finemap_num_results']),
-                                           second_finemap_num_results=as.numeric(study['second_finemap_num_results']),
+                                           first_finemap_num_results=as.numeric(study[['first_finemap_num_results']]),
+                                           second_finemap_num_results=as.numeric(study[['second_finemap_num_results']]),
                                            qc_step_run=as.logical(study[['qc_step_run']]),
                                            snps_removed_by_qc=as.numeric(study[['snps_removed_by_qc']]),
                                            time_taken=time_taken

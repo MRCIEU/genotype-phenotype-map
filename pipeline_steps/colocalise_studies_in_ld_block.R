@@ -4,7 +4,7 @@ bp_range <- 10000
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
-parser <- argparser::add_argument(parser, '--coloc_result_file', help = 'Coloc result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function(args) {
@@ -19,7 +19,7 @@ main <- function(args) {
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    vroom::vroom_write(data.frame(), args$coloc_result_file)
+    vroom::vroom_write(data.frame(), args$completed_output_file)
     message(paste0('Nothing to process for LD region ', ld_info$ld_block_data, ', skipping.'))
     return()
   }
@@ -31,7 +31,7 @@ main <- function(args) {
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
   if (length(grouped_studies) == 0) {
-    vroom::vroom_write(data.frame(), args$coloc_result_file)
+    vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
 
@@ -40,7 +40,7 @@ main <- function(args) {
 
   coloc_results_file <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
-  vroom::vroom_write(data.frame(), args$coloc_result_file)
+  vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
 post_coloc_filtering <- function(hyprcoloc_results) {

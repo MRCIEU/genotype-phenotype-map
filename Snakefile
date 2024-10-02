@@ -143,8 +143,6 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         input: standardisation_pattern
         output: temporary(imputation_pattern)
         threads: 4
-        # threads: 56 if name == 'complex' else 24
-        # priority: 1 if name == 'complex' else 0
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -201,7 +199,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             else:
                 command = f"Rscript colocalise_studies_in_ld_block.R \
                     --ld_block {ld_block} \
-                    --coloc_result_file {output}"
+                    --completed_output_file {output}"
 
             subprocess.run(command, shell=True)
 

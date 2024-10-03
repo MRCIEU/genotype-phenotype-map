@@ -15,7 +15,7 @@ parser <- argparser::arg_parser('Extract genomic regions from Backman et al. sum
 parser <- argparser::add_argument(parser, '--extracted_study_file', help = 'Summary stats file', type = 'character')
 args <- argparser::parse_args(parser)
 
-ld_regions <- vroom::vroom(file.path(pipeline_dir,"pipeline_steps/data/ld_regions_hg38.tsv"), show_col_types = F)
+ld_regions <- vroom::vroom(file.path(pipeline_dir,"pipeline_steps/data/ld_regions_hg38_updated.tsv"), show_col_types = F)
 
 p_value_threshold <- 1.5e-4
 maf_max_threshold <- 0.01
@@ -94,8 +94,7 @@ find_regions <- function(top_vars, writeto) {
 
 	ld_regions$string_region <- paste0(ld_regions$ancestry, "/", ld_regions$chr, "/", ld_regions$start, "_", ld_regions$end)
 
-	vars_regions <- apply(top_vars, 1, function(variant){
-		print(variant)	
+	vars_regions <- apply(top_vars, 1, function(variant){	
 	
 		extraction_info <- data.frame(
 			chr = as.numeric(variant["chromosome"]),

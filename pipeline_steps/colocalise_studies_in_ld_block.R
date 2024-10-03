@@ -9,10 +9,10 @@ args <- argparser::parse_args(parser)
 
 main <- function(args) {
   ld_info <- ld_block_dirs(args$ld_block)
-  block <- vroom::vroom(paste0(pipeline_metadata_dir, 'updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
+  block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
-  finemapped_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
+  finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, delim = '\t', show_col_types = F) |>
       dplyr::filter(min_p <= p_value_threshold)
@@ -20,11 +20,11 @@ main <- function(args) {
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
     vroom::vroom_write(data.frame(), args$completed_output_file)
-    message(paste0('Nothing to process for LD region ', ld_info$ld_block_data, ', skipping.'))
+    message(glue::glue('Nothing to process for LD region {ld_info$ld_block_data}, skipping.'))
     return()
   }
 
-  finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, "_", file_prefix(finemapped_studies$file))
+  finemapped_studies$unique_study_id <- glue::glue('{finemapped_studies$study}_{file_prefix(finemapped_studies$file)}')
 
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
@@ -38,7 +38,7 @@ main <- function(args) {
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
   hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
-  coloc_results_file <- paste0(ld_info$ld_block_results, '/coloc_results.tsv')
+  coloc_results_file <- glue::glue('{ld_info$ld_block_results}/coloc_results.tsv')
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }

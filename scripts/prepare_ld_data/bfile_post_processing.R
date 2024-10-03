@@ -1,7 +1,7 @@
 source('../../pipeline_steps/constants.R')
-ld_regions <- vroom::vroom('../../pipeline_steps/data/ld_regions.tsv', show_col_types = F) |>
+ld_blocks <- vroom::vroom('../../pipeline_steps/data/ld_blocks.tsv', show_col_types = F) |>
   dplyr::filter(ancestry == 'EUR')
-ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 
 merge_all_bfiles <- function() {
   mergefile <- tempfile()
@@ -11,7 +11,7 @@ merge_all_bfiles <- function() {
 }
 
 
-create_tsv_from_afreq <- function() {}
+create_tsv_from_afreq <- function() {
   lapply(ld_info$ld_reference_panel_prefix, function(prefix) {
     freq <- vroom::vroom(glue::glue('{prefix}.afreq'), show_col_types = F) |>
       dplyr::rename(CHR='#CHROM', SNP='ID', EA='ALT', OA='REF', EAF='ALT_FREQS') |>

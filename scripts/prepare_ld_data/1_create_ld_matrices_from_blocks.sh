@@ -21,4 +21,4 @@ count=1
     count=$(( count + 1 ))
     [ $(( $count % $NUM_PARALLEL )) -eq 0 ] && wait
   done
-} < ../../pipeline_steps/data/ld_regions.tsv
+} < ../../pipeline_steps/data/ld_blocks.tsv

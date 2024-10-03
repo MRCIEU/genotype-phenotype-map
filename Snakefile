@@ -23,11 +23,11 @@ if len(studies_to_process) == 0:
     print('No studies to process, exiting.')
     sys.exit()
 
-ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
+ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
 
-relevant_ancestries = np.isin(ld_regions['ancestry'], studies_to_process['ancestry'].unique())
-ld_regions = ld_regions[relevant_ancestries]
-ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_regions.iterrows()]
+relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestry'].unique())
+ld_blocks = ld_blocks[relevant_ancestries]
+ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
 complex_ld_blocks = ['EUR/6/19207487-21684064',
                      'EUR/8/116096495-119685456',
@@ -66,7 +66,7 @@ studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
-all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
+all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 
@@ -81,7 +81,7 @@ rule all:
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
         raw_coloc_results,
         coloc_results,
-        all_study_regions,
+        all_study_blocks,
         results_metadata
 
 rule extract_regions_from_studies:
@@ -106,7 +106,7 @@ rule extract_regions_from_studies:
 
         subprocess.run(command, shell=True)
 
-rule organise_extracted_studies_into_ld_regions:
+rule organise_extracted_studies_into_ld_blocks:
     input: expand(extracted_study_pattern, study_location=extracted_studies)
     output: temporary(ld_blocks_to_process)
     threads: 1
@@ -222,7 +222,7 @@ rule compile_results:
     output:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
-        all_study_regions = all_study_regions,
+        all_study_blocks = all_study_blocks,
         results_metadata = results_metadata
     shell:
        """
@@ -230,7 +230,7 @@ rule compile_results:
        Rscript compile_results.R \
            --studies_to_process {studies_to_process_file} \
            --studies_processed {studies_processed_file} \
-           --all_study_regions_file {output.all_study_regions} \
+           --all_study_blocks_file {output.all_study_blocks} \
            --raw_coloc_results_file {output.raw_coloc_results} \
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata}
@@ -238,19 +238,19 @@ rule compile_results:
 
 # rule perform_mr_analysis:
 #     input:
-#         all_study_regions: all_study_regions,
+#         all_study_blocks: all_study_blocks,
 #         coloc_results: coloc_results,
 #     output: mr_results
 #     shell:
 #         """
-#         Rscript perform_mr_analysis.R --all_study_regions {input.all_study_regions} --coloc_results {input.coloc_results} --mr_result_file {output}
+#         Rscript perform_mr_analysis.R --all_study_blocks {input.all_study_blocks} --coloc_results {input.coloc_results} --mr_result_file {output}
 #         """
 
 onsuccess:
     print('Yay!  Please look here:')
     print(raw_coloc_results)
     print(coloc_results)
-    print(all_study_regions)
+    print(all_study_blocks)
     print(results_metadata)
     print(mr_results)
 

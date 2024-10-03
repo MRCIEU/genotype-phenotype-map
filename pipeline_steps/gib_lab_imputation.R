@@ -2,6 +2,34 @@ ld_matrix_file <- '/local-scratch/projects/genotype-phenotype-map/data/ld_refere
 ld_matrix_info_file <- '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.tsv'
 gwas_file <- '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_12_104476236.tsv.gz'
 
+
+
+simulate_ss <- function(X, af, ncause, sigmag, seed=1234) {
+    set.seed(seed)
+    nsnp <- length(af)
+    nid <- nrow(X)
+    b <- rep(0, nsnp)
+    b[sample(1:nsnp, ncause)] <- rnorm(ncause, sd=sigmag)
+
+    e <- rnorm(nid)
+    y <- X %*% b + e 
+
+    betahat <- sapply(1:nsnp, \(i) {cov(X[,i], y) / var(X[,i])})
+    se <- sapply(1:nsnp, \(i) {sqrt(var(y) / (var(X[,i] * sqrt(nid))))})
+    zhat <- betahat/se
+    pval <- 2 * pnorm(-abs(zhat))
+
+    return(tibble(betahat, b, se, zhat, pval, af))
+}
+
+generate_missing <- function(ss, frac) {
+    ss <- ss %>% mutate(
+        betahat2 = ifelse(runif(n()) < frac, NA, betahat),
+        se2 = ifelse(is.na(betahat2), NA, se),
+        zhat2 = ifelse(is.na(betahat2), NA, zhat))
+    return(ss)
+}
+
 #' Basic imputation function
 #' 
 #' @param R The correlation matrix - must be complete for the set of SNPs that need to be imputed
@@ -112,23 +140,22 @@ clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01
 }
 
 ld_matrix <- vroom::vroom(ld_matrix_file, col_names = F, show_col_types = F) |> data.matrix()
-ld_region_from_reference_panel <- vroom::vroom(ld_matrix_info_file, show_col_types = F)
+ld_matrix_info <- vroom::vroom(ld_matrix_info_file, show_col_types = F)
 gwas <- vroom::vroom(gwas_file, show_col_types = F)
 
 gwas_to_impute <- dplyr::left_join(
-    dplyr::select(ld_region_from_reference_panel, -EAF),
+    dplyr::select(ld_matrix_info, -EAF),
     dplyr::select(gwas, -CHR, -BP, -EA, -OA),
     by=dplyr::join_by(SNP)
 )
 
-rows_to_impute <- !ld_region_from_reference_panel$SNP %in% gwas$SNP
+rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
 print(glue::glue('rows to impute: {sum(rows_to_impute)}'))
 print(glue::glue('rows in gwas: {nrow(gwas)}'))
-print(glue::glue('rows in ld matrix: {nrow(ld_region_from_reference_panel)}'))
-print(glue::glue('gwas order matches ld matrix: {all(ld_region_from_reference_panel$SNP == gwas_to_impute$SNP)}'))
+print(glue::glue('rows in ld matrix: {nrow(ld_matrix_info)}'))
+print(glue::glue('gwas order matches ld matrix: {all(ld_matrix_info$SNP == gwas_to_impute$SNP)}'))
 
-gwas_to_impute$EAF[rows_to_impute] <- ld_region_from_reference_panel$EAF[rows_to_impute]
-
+gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
 clumped_snp_index <- clump_ld_region(gwas_to_impute$Z, ld_matrix)
 print('clumped snps:')
@@ -139,3 +166,8 @@ print(result$ss[, c(2,6,7,8,11,12)])
 print(result$ss[is.na(gwas_to_impute$BETA), c(2,6,7,8,11,12)])
 print(result)
 
+
+
+#Gib's example:
+
+load(url("https://github.com/explodecomputer/lab-book/raw/refs/heads/main/posts/2024-09-18-conditional-summary-stats/1kg_region.rdata"))

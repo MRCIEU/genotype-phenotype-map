@@ -9,10 +9,10 @@ parser <- argparser::add_argument(parser, '--extracted_study_location', help = '
 parser <- argparser::add_argument(parser, '--extracted_output_file', help = 'Extracted Output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-ld_regions <- vroom::vroom('data/ld_regions.tsv', show_col_types = F)
+ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
 
 main <- function() {
-  study <- vroom::vroom(paste0(pipeline_metadata_dir, '/studies_to_process.tsv'), show_col_types = F) |>
+  study <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F) |>
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
@@ -39,7 +39,7 @@ convert_reference_build <- function(study,
   if (input_reference_build == output_reference_build) return(vcf_file)
 
   dir.create(glue::glue('{study$extracted_location}/vcf'), showWarnings = F, recursive = T)
-  liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
+  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
   if (is.null(liftover_conversion)) {
     stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
                  "Reference builds must be one of:", reference_builds), collapse = " "))
@@ -115,7 +115,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     chr=character(),
     bp=numeric(),
     log_p=numeric(),
-    ld_region=character(),
+    ld_block=character(),
     file=character(),
     cis_trans=character()
   )
@@ -130,14 +130,14 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
 
-  ld_regions$bcf_region <- glue::glue('{ld_regions$chr}:{ld_regions$start}-{ld_regions$stop}') 
-  ld_regions$string_region <- ld_block_string(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+  ld_blocks$bcf_region <- glue::glue('{ld_blocks$chr}:{ld_blocks$start}-{ld_blocks$stop}') 
+  ld_blocks$string_region <- ld_block_string(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 
   clumped_snps <- apply(clumped_snps, 1, function(clump) {
     clump_chr <- as.numeric(clump['CHR']) 
     clump_bp <- as.numeric(clump['BP']) 
 
-    region <- dplyr::filter(ld_regions, chr == clump_chr & start <= clump_bp & stop > clump_bp & ancestry == study$ancestry)
+    region <- dplyr::filter(ld_blocks, chr == clump_chr & start <= clump_bp & stop > clump_bp & ancestry == study$ancestry)
     if (nrow(region) == 0) {
       message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
       return()
@@ -168,7 +168,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     extraction_info <- data.frame(chr = as.character(clump[['CHR']]),
                                   bp = as.numeric(clump[['BP']]),
                                   log_p = -log10(as.numeric(clump[['P']])),
-                                  ld_region = clump[['string_region']],
+                                  ld_block = clump[['string_region']],
                                   file = extracted_file,
                                   cis_trans = NA
     )

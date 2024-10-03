@@ -5,21 +5,25 @@ Scoping document: https://uob.sharepoint.com/:w:/r/teams/grp-brs-tds/Shared%20Do
 
 ## How to use:
 
-### 1. Clone the repo on to ieu-p1
-
-`git clone git@github.com:MRCIEU/genotype-phenotype-map.git && cd genotype-phenotype-map`
-
-### 2. Populate .env file
-You will most likely want to use the default set in .env_example
-`cp .env_example .env`
-
-### 3. Add info in pipeline_steps/data/study_list.csv
-
-This is the file that specifies which studies will be ingested by the pipeline, if you want to add a study or set of studies,
+1. Step 1. Clone the repo on to ieu-p1
+    * `git clone git@github.com:MRCIEU/genotype-phenotype-map.git && cd genotype-phenotype-map`
+2. Populate .env file
+    * You will most likely want to use the default set in .env_example
+    * `cp .env_example .env`
+3. Add info in pipeline_steps/data/study_list.csv
+    * This is the file that specifies which studies will be ingested by the pipeline, if you want to add a study or set of studies,
 add a row to this csv indicating where they are on disk, and what script to ingest them with
+4. `./run_pipeline.sh`
+    * This will first calculate the studies that haven't been processed, then start the snakemake pipeline
 
-### 4. ./run_pipeline.sh
+Notes: Snakemake slows down if you try to run the pipeline with too many studies at once.  Please keep it to less than 200,000 studies.
 
+## Concepts
+
+**Study:** Any individual summary statistic study to ingest.  A GWAS is a study (ex. BMI), a specific gene-tissue-expression is a study (ex. GTEx Whole Blood WASH7P)
+**LD Block**: The human genome has been chunked into regions which have minimal LD overlap, as calculated by [ldetect](https://github.com/jmacdon/LDblocks_GRCh38)
+**Docker / Apptainer**: 
+**Pipeline / Snakemake**:
 
 
 ## How to contribute 
@@ -29,7 +33,8 @@ This has only been run on `ieu-p1.epi.bris.ac.uk`, please get access to there.
 To make changes and test them, there is a `test pipeline`.
 1. Make updates to the `data/test_list.csv` file to include the data you want, be sure to ingest data from a different place than the real data lives
 2. Make your code changes
-3. Run the `./test_pipeline.sh` script, which will save the data in 
+3. Run the `./test_pipeline.sh` script (with an optional `--delete` flag for deleting existing test data)
+    * This will save the data in `/local-scratch/projects/genotype-phenotype-map/test/data/`
 
 ## How it works
 

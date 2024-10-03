@@ -10,14 +10,14 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names = F, show_col_types = F) |>
+  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names = F, show_col_types = F) |>
     data.matrix()
-  ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
+  ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-  standardised_studies_file <- paste0(ld_info$ld_block_data, '/standardised_studies.tsv')
+  standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   standardised_studies  <- vroom::vroom(standardised_studies_file , show_col_types = F)
 
-  imputed_studies_file <- paste0(ld_info$ld_block_data, '/imputed_studies.tsv')
+  imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (file.exists(imputed_studies_file)) {
     existing_imputed_studies <- vroom::vroom(imputed_studies_file,
                                                   show_col_types = F,
@@ -46,21 +46,21 @@ main <- function() {
       # clumped_snps <- vroom::vroom(glue::glue('{extracted_study_dir}{study["study"]}/clumped_snps.tsv'))
 
       gwas_to_impute <- dplyr::left_join(
-        dplyr::select(ld_region_from_reference_panel, -EAF),
+        dplyr::select(ld_matrix_info, -EAF),
         dplyr::select(gwas, -CHR, -BP, -EA, -OA),
         by=dplyr::join_by(SNP)
       ) 
 
-      rows_to_impute <- !ld_region_from_reference_panel$SNP %in% gwas$SNP
+      rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
       print(glue::glue('rows to impute: {sum(rows_to_impute)}'))
       print(glue::glue('rows in gwas: {nrow(gwas)}'))
-      print(glue::glue('rows in ld matrix: {nrow(ld_region_from_reference_panel)}'))
-      gwas_to_impute$EAF[rows_to_impute] <- ld_region_from_reference_panel$EAF[rows_to_impute]
+      print(glue::glue('rows in ld matrix: {nrow(ld_matrix_info)}'))
+      gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
       print(gwas[, c(9, 6, 7)])
-      print(ld_region_from_reference_panel[, c(1,2,5)])
+      print(ld_matrix_info[, c(1,2,5)])
       print(gwas_to_impute[, c(2, 5, 6, 7)])
 
-      print(glue::glue('gwas order matches ld matrix: {all(ld_region_from_reference_panel$SNP == gwas_to_impute$SNP)}'))
+      print(glue::glue('gwas order matches ld matrix: {all(ld_matrix_info$SNP == gwas_to_impute$SNP)}'))
 
       # if we want to use all the clumped hits from the extraction phase...
       # given clumped snps, find the corresponding row numbers in the gwas
@@ -75,7 +75,7 @@ main <- function() {
       # clumped_snp_index <- which(gwas_to_impute$P == min(gwas_to_impute$P, na.rm = T))
 
       # if we want to re-clump from the ld ref panel
-      clumped_snp_index <- clump_ld_region(gwas_to_impute$Z, ld_matrix)
+      clumped_snp_index <- clump_gwas(gwas_to_impute$Z, ld_matrix)
       print('clumped snps:')
       print(gwas_to_impute[clumped_snp_index, ])
 
@@ -128,7 +128,7 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
+clump_gwas <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
   z <- abs(z)
   z[z < zthresh] <- NA
   k <- c()

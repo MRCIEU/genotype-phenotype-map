@@ -1,8 +1,26 @@
-ld_matrix_file <- '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.unphased.vcor1'
-ld_matrix_info_file <- '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.tsv'
-gwas_file <- '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_12_104476236.tsv.gz'
+weak_signal_example <- list(
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.unphased.vcor1',
+    ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.tsv',
+    gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_12_104476236.tsv.gz'
+)
 
+strong_signal_example <- list(
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.unphased.vcor1',
+    ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.tsv',
+    gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_2_46126027.tsv.gz'
+)
 
+complex_ld_region_example <- list(
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.unphased.vcor1',
+    ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.tsv',
+    gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_6_31344761.tsv.gz'
+)
+
+example <- weak_signal_example 
+
+ld_matrix <- vroom::vroom(example$ld_matrix_file, col_names = F, show_col_types = F) |> data.matrix()
+ld_matrix_info <- vroom::vroom(example$ld_matrix_info_file, show_col_types = F)
+gwas <- vroom::vroom(example$gwas_file, show_col_types = F)
 
 simulate_ss <- function(X, af, ncause, sigmag, seed=1234) {
     set.seed(seed)
@@ -139,9 +157,6 @@ clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01
   return(k)
 }
 
-ld_matrix <- vroom::vroom(ld_matrix_file, col_names = F, show_col_types = F) |> data.matrix()
-ld_matrix_info <- vroom::vroom(ld_matrix_info_file, show_col_types = F)
-gwas <- vroom::vroom(gwas_file, show_col_types = F)
 
 gwas_to_impute <- dplyr::left_join(
     dplyr::select(ld_matrix_info, -EAF),
@@ -169,5 +184,4 @@ print(result)
 
 
 #Gib's example:
-
-load(url("https://github.com/explodecomputer/lab-book/raw/refs/heads/main/posts/2024-09-18-conditional-summary-stats/1kg_region.rdata"))
+# load(url("https://github.com/explodecomputer/lab-book/raw/refs/heads/main/posts/2024-09-18-conditional-summary-stats/1kg_region.rdata"))

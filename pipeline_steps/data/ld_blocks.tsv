@@ -1,4 +1,4 @@
-chr	start	end	ancestry
+chr	start	stop	ancestry
 1	16103	1170099	AFR
 1	1170099	2047216	AFR
 1	2047216	3356191	AFR

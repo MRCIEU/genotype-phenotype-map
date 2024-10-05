@@ -104,7 +104,7 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
   clumped_snps <- data.table::fread(glue::glue('{clumped_hits_file}.clumps')) |>
     dplyr::rename(RSID='ID', CHR='#CHROM', BP='POS') |>
     dplyr::select(RSID, CHR, BP, P) |>
-    dplyr::mutate(CHR=as.numeric(CHR), BP=as.numeric(BP), P=as.numeric(P))
+    dplyr::mutate(CHR=as.numeric(CHR), BP=as.numeric(BP), P=as.numeric(P)) |>
     dplyr::arrange(P)
 
   return(clumped_snps)
@@ -150,6 +150,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
   print(glue::glue('num to extract: {nrow(clumped_snps)}'))
 
+  #TODO: this is quite slow, it could be sped up by running this once, and splitting out the results somehow afterwards
   extracted_snps <- apply(clumped_snps, 1, function(clump) {
     bcf_query <- glue::glue('/home/bcftools/bcftools query ',
       '--regions {clump[["bcf_region"]]} ',

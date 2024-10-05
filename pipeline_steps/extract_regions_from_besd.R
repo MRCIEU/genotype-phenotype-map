@@ -28,6 +28,7 @@ main <- function(args) {
                                                            file=character(),
                                                            cis_trans=character()
   )
+  cis_results <- trans_results <- list()
   if (metadata$cis_trans == cis_trans$cis_only || metadata$cis_trans == cis_trans$cis_trans) {
     cis_results <- extract_cis_region(study, p_value_threshold)
   }
@@ -90,7 +91,7 @@ extract_cis_region <- function(study, p_value_threshold) {
                                file = extracted_file,
                                cis_trans = 'cis'
   )
-  return(list(snp_data=extracted_snps, clumped_snps=NULL)
+  return(list(snp_data=extracted_snps, clumped_snps=NULL))
 }
 
 # TODO: WARNING - UNTESTED 
@@ -165,7 +166,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     return(extracted_trans_hit)
   }) |> dplyr::bind_rows()
 
-  return(list(snp_data=extracted_trans_snps, clumped_snps=NULL)
+  return(list(snp_data=extracted_trans_snps, clumped_snps=NULL))
 }
 
 format_gwas <- function(gwas) {

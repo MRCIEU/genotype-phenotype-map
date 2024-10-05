@@ -1,6 +1,6 @@
 source('constants.R')
 
-POSTERIOR_PROB_THRESHOLD <- 0.8
+POSTERIOR_PROB_THRESHOLD <- 0.5
 
 parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT

@@ -94,7 +94,6 @@ main <- function() {
       }
 
       time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
-      print(time_taken)
 
       imputation_info <- data.frame(
         study=study[['study']],

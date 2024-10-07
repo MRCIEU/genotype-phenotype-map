@@ -69,23 +69,23 @@ compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info)
   }) |> dplyr::bind_rows()
 
   all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
-  all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
+  # all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
   return(all_finemapped_studies)
 }
 
-find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
-  coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
-  gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
+# find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
+#   coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
+#   gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
 
-  genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
-    dplyr::mutate(chrom=glue::glue('chr{chrom}')) |>
-    GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
-  genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
+#   genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
+#     dplyr::mutate(chrom=glue::glue('chr{chrom}')) |>
+#     GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
+#   genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
 
-  genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
-  all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]
-  return(all_finemapped_studies)
-}
+#   genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
+#   all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]
+#   return(all_finemapped_studies)
+# }
 
 aggregate_pipeline_metadata <- function(ld_info) {
   metadata_per_ld_block <- apply(ld_info, 1, function(ld) {

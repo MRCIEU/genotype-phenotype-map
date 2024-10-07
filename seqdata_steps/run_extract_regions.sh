@@ -24,11 +24,11 @@ halldorsson=""
 if [ ${input} == "bm" ]; then
 	
 	infile=${backman}
-	echo Reading study metadata from: ${infile}	
+	(echo Reading study metadata from: ${infile}	
 	
-	for file in $(awk 'NR != 1 {print $5}' ${infile} | xargs -n 1 basename | head -n 6); do
+	for file in $(awk 'NR != 1 {print $5}' ${infile} | xargs -n 1 basename); do
     	Rscript extract_regions_from_backman.R --extracted_study_file ${file}
-	done
+	done) 2>&1 | tee $(dirname ${backman})/studies_extract.log
 
 elif [ ${input} == "az" ]; then
 	infile=${azphewas}

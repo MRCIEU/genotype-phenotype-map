@@ -17,6 +17,18 @@ args <- argparser::parse_args(parser)
 
 ld_regions <- vroom::vroom(file.path(pipeline_dir,"pipeline_steps/data/ld_regions_hg38_updated.tsv"), show_col_types = F)
 
+# Add chromosome ends to ld_regions
+ld_split <- split(ld_regions, paste0(ld_regions$chr, ld_regions$ancestry))
+ld_split <- lapply(ld_split, function(x){
+	chr_start <- x[1,] |> dplyr::mutate(end = start, start = 0)
+	chr_end <- x[nrow(x),] |> dplyr::mutate(start = end, end = 250000000)
+	chr_join <- rbind(chr_start, x, chr_end)
+	return(chr_join)
+})
+
+ld_regions <- do.call("rbind", ld_split) |> dplyr::arrange(ancestry, chr, start)
+ld_regions$string_region <- paste0(ld_regions$ancestry, "/", ld_regions$chr, "/", ld_regions$start, "_", ld_regions$end)
+
 p_value_threshold <- 1.5e-4
 maf_max_threshold <- 0.01
 maf_min_threshold <- 0.000012 # Lower MAF theshold (for 10 expected observations of minor allele in 430,998 Europeans)
@@ -91,11 +103,9 @@ find_regions <- function(top_vars, writeto) {
 		log_p = numeric(),
 		ld_region = character(),
 		file = character())
-
-	ld_regions$string_region <- paste0(ld_regions$ancestry, "/", ld_regions$chr, "/", ld_regions$start, "_", ld_regions$end)
-
-	vars_regions <- apply(top_vars, 1, function(variant){	
 	
+	vars_regions <- apply(top_vars, 1, function(variant){	
+
 		extraction_info <- data.frame(
 			chr = as.numeric(variant["chromosome"]),
 			bp = as.numeric(variant["base_pair_location"]),
@@ -121,7 +131,7 @@ extract_regions <- function(study, vars_regions){
 		
 		region_min <- as.numeric(strsplit(as.character(variant["ld_region"]), "_|/")[[1]][3])
 		region_max <- as.numeric(strsplit(as.character(variant["ld_region"]), "_|/")[[1]][4])
-		message("Extracting from region: ", region_min, "-", region_max) 
+		message("Extracting from region: ", variant["chr"], ":", region_min, "-", region_max) 
 
 		study_region <- study |> dplyr::filter(chromosome == as.numeric(variant["chr"]),
 			((effect_allele_frequency <= maf_max_threshold & effect_allele_frequency >= maf_min_threshold) |

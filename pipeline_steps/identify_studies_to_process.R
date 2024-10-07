@@ -3,10 +3,10 @@ source('constants.R')
 
 minimum_snps_in_opengwas_study <- 1000000
 
-gene_name_map <- vroom::vroom(paste0(liftover_dir, 'gene_name_map.tsv'), show_col_types=F)
+gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
-studies_processed_file <- paste0(paste0(results_dir, 'studies_processed.tsv'))
+studies_processed_file <- glue::glue('{results_dir}studies_processed.tsv')
 
 if (!is.na(TEST_RUN)) {
   study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
@@ -28,14 +28,14 @@ main <- function() {
   #TODO: check if there exists a study with that study_name already.  Can't be duplicates
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process) |>
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
-    dplyr::filter(!study_name %in% studies_to_ignore$study_name)
+    dplyr::filter(!study_name %in% studies_to_ignore$study)
 
   lapply(studies_to_process$extracted_location, function(extracted_location) {
     dir.create(extracted_location, showWarnings = F, recursive = T)
   })
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
-  vroom::vroom_write(studies_to_process, paste0(pipeline_metadata_dir, 'studies_to_process.tsv'))
+  vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 }
 
 #' calculate_besd_studies_to_process
@@ -45,10 +45,12 @@ main <- function() {
 calculate_besd_studies_to_process <- function(entries) {
   if (nrow(entries) == 0) return(data.frame())
   expanded_studies <- apply(entries, 1, function(entry) {
-    file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
+    file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
     data_source <- basename(entry['data_location'])
     all_studies <- Sys.glob(file_regex)
     studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
+
+    if (length(all_studies) == 0) return(data.frame())
 
     return(data.frame(
       data_type = entry[['data_type']],
@@ -63,19 +65,21 @@ calculate_besd_studies_to_process <- function(entries) {
     ))
   })|> dplyr::bind_rows()
 
+  if (length(expanded_studies) == 0) return(data.frame())
+
   processing_information <- apply(expanded_studies, 1, function(besd_study) {
-    all_files_present <- Sys.glob(paste0(besd_study['study'], '.*'))
+    all_files_present <- Sys.glob(glue::glue('{besd_study["study"]}.*'))
     if (length(all_files_present) < 4) {
       stop(paste('BESD study must include besd, epi, esi, and json files:', besd_study['study']))
     }
 
-    metadata <- jsonlite::fromJSON(paste0(besd_study['study'], '.json'))
+    metadata <- jsonlite::fromJSON(glue::glue('{besd_study["study"]}.json'))
 
     if (is.null(metadata$tissue) || is.null(metadata$sample_size)) {
       stop(paste('json file is missing tissue or sample_size', besd_study['study']))
     }
 
-    epi <- vroom::vroom(paste0(besd_study['study'], '.epi'), col_names = F, show_col_types = F)
+    epi <- vroom::vroom(glue::glue('{besd_study["study"]}.epi'), col_names = F, show_col_types = F)
     probes <- epi$X2
     genes <- epi$X5
     specifier <- basename(besd_study['study'])
@@ -83,7 +87,7 @@ calculate_besd_studies_to_process <- function(entries) {
     studies <- gsub('_', '-', studies)
     studies <- gsub('\\.', '-', studies)
 
-    data_study_dir <- paste0(data_dir, 'study/', studies, '/')
+    data_study_dir <- glue::glue('{data_dir}study/{studies}/')
 
     if (besd_study['bespoke_parsing'] == bespoke_parsing_options$gtex_sqtl) {
       probe_strings <- sub('chr\\d+:(\\d+):(\\d+):clu_(\\d+):.*', 'cluster:\\3 bp:\\1-\\2', probes)
@@ -116,7 +120,7 @@ calculate_besd_studies_to_process <- function(entries) {
 calculate_opengwas_studies_to_process <- function(entries) {
   if (nrow(entries) == 0) return(data.frame())
   expanded_studies <- apply(entries, 1, function(entry) {
-    file_regex <- paste0(entry[['data_location']], '/', entry[['id_pattern']])
+    file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
     all_directories <- Sys.glob(file_regex)
     return(data.frame(
       data_type = entry[['data_type']],
@@ -131,9 +135,9 @@ calculate_opengwas_studies_to_process <- function(entries) {
   processing_information <- apply(expanded_studies, 1, function(opengwas_study) {
     directory <- opengwas_study[['directory']]
     study <- basename(directory)
-    data_study_dir <- paste0(data_dir, 'study/', study, '/')
+    data_study_dir <- glue::glue('{data_dir}study/{study}/')
 
-    study_metadata <- jsonlite::fromJSON(paste0(directory, '/', study, '.json'))
+    study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
     ancestry <- study_metadata$population
     category <- study_metadata$category
     if (is.null(category)) category <- NA

@@ -3,8 +3,8 @@ source('../pipeline_steps/constants.R')
 remove_studies_from_pipeline <- function(study_pattern) {
   studies_to_ignore <- vroom::vroom('../pipeline_steps/data/ignore_studies.tsv', delim='\t', show_col_types=F)
 
-  ld_regions <- vroom::vroom('../pipeline_steps/data/ld_regions.tsv')
-  ld_info <- construct_ld_block(ld_regions$ancestry, ld_regions$chr, ld_regions$start, ld_regions$stop)
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
   ya <- lapply(ld_info$ld_block_data, function(ld_block) {
@@ -76,7 +76,8 @@ cleanup_empty_dirs <- function(study_pattern) {
     }
     extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
     if (nrow(extracted_snps) == 0) {
-      file.remove(paste0(study, 'original'), recursive=T)
+      file.remove(paste0(study, 'extracted'), recursive=T)
+      file.remove(paste0(study, 'standardised'), recursive=T)
       file.remove(paste0(study, 'imputed'), recursive=T)
       file.remove(paste0(study, 'finemapped'), recursive=T)
     }
@@ -107,7 +108,7 @@ remove_missing_extracted_regions <- function() {
     print(glue::glue('removing {orig_rows - nrow(standardised_studies)} rows, now {nrow(standardised_studies)}'))
     vroom::vroom_write(standardised_studies, standardised_studies_file)
 
-    files_to_remove <- sub('standardised', 'original', files_to_remove)
+    files_to_remove <- sub('standardised', 'extracted', files_to_remove)
     extracted_studies_file <- paste0(ld_block, '/extracted_studies.tsv')
     extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
     orig_ext_rows <- nrow(extracted_studies)

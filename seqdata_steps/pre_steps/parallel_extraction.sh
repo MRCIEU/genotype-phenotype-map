@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LIST=$1
-NUM_PARALLEL=20
+NUM_PARALLEL=40
 
 parallel --jobs $NUM_PARALLEL \
   'DIR_NAME=/local-scratch/data/ukb-seq/downloads/halldorexwas/decode_data; 

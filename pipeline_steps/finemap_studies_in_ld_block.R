@@ -10,15 +10,15 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
-main <- function(args) {
+main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_matrix <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.unphased.vcor1'), col_names=F, show_col_types = F)
-  ld_region_from_reference_panel <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
+  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
+  ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-  imputed_studies_file <- paste0(ld_info$ld_block_data, '/imputed_studies.tsv')
+  imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
-  finemapped_results_file <- paste0(ld_info$ld_block_data, '/finemapped_studies.tsv')
+  finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 
   if (nrow(imputed_studies) == 0) {
@@ -42,7 +42,7 @@ main <- function(args) {
         return()
       }
 
-      results <- run_susie_finemapping(gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time)
+      results <- run_susie_finemapping(gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
       if (!is.null(results$failed_finemap_info)) {
         results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
           first_finemap_num_results = 0,
@@ -60,8 +60,7 @@ main <- function(args) {
         qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
         study <- qc_results$study
         if (study['snps_removed_by_qc'] > 0) {
-          message('doing second finemapping...')
-          results <- run_susie_finemapping(qc_results$gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time)
+          results <- run_susie_finemapping(qc_results$gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
           if (!is.null(results$failed_finemap_info)) {
             results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
               first_finemap_num_results = as.numeric(study['first_finemap_num_results']),
@@ -79,6 +78,7 @@ main <- function(args) {
       } else {
         study['qc_step_run'] <- F
         study['snps_removed_by_qc'] <- NA
+        study['second_finemap_num_results'] <- NA
       }
 
       succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
@@ -137,7 +137,7 @@ empty_finemapped_info <- function() {
   )
 }
 
-run_susie_finemapping <- function(gwas, study, ld_region_from_reference_panel, ld_matrix, finemap_file_prefix, sample_size, start_time) {
+run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time) {
   failed_finemap_info <- NULL
   susie_result <- list(converged=F)
 
@@ -147,7 +147,7 @@ run_susie_finemapping <- function(gwas, study, ld_region_from_reference_panel, l
     return(list(susie_result=susie_result, failed_finemap_info=failed_finemap_info))
   }
 
-  keep <- ld_region_from_reference_panel$SNP %in% gwas$SNP
+  keep <- ld_matrix_info$SNP %in% gwas$SNP
   ld_matrix_subset <- ld_matrix[keep, keep]
   ld_matrix_subset <- matrix(as.vector(data.matrix(ld_matrix_subset)), nrow=nrow(ld_matrix_subset), ncol=ncol(ld_matrix_subset))
   if (nrow(gwas) != nrow(ld_matrix_subset)) {
@@ -176,10 +176,12 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
 
-  failed_finemap_file <- paste0(finemap_file_prefix, '_1.tsv.gz')
-  unique_id <- paste0(study['study'], "_", study['ancestry'], '_', study['chr'], "_", trimws(study['bp']), "_1")
+  failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
+  unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_1')
+
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
+                                    ld_block = args$ld_block,
                                     file=failed_finemap_file,
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
@@ -205,8 +207,9 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       for (i in susie_result$sets$cs_index) {
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-        finemap_file <- paste0(finemap_file_prefix, '_', finemap_num, '.tsv.gz')
-        unique_id <- paste0(study['study'], '_', study['ancestry'], '_', study['chr'], '_', trimws(study['bp']), '_', finemap_num)
+        finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
+        unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_{finemap_num}')
+
         vroom::vroom_write(conditioned_gwas, finemap_file)
 
         #this finds the lead SNP in new credible set
@@ -220,18 +223,19 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
+                                           ld_block=args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
-                                           p_value_threshold=as.numeric(study['p_value_threshold']),
+                                           p_value_threshold=as.numeric(study[['p_value_threshold']]),
                                            min_p=min_ps,
-                                           category=study['category'],
+                                           category=study[['category']],
                                            sample_size=sample_size,
-                                           cis_trans=study['cis_trans'],
+                                           cis_trans=study[['cis_trans']],
                                            finemap_message='success',
-                                           first_finemap_num_results=as.numeric(study['first_finemap_num_results']),
-                                           second_finemap_num_results=as.numeric(study['second_finemap_num_results']),
+                                           first_finemap_num_results=as.numeric(study[['first_finemap_num_results']]),
+                                           second_finemap_num_results=as.numeric(study[['second_finemap_num_results']]),
                                            qc_step_run=as.logical(study[['qc_step_run']]),
                                            snps_removed_by_qc=as.numeric(study[['snps_removed_by_qc']]),
                                            time_taken=time_taken
@@ -258,8 +262,9 @@ perform_qc <- function(gwas, study, bfile) {
   )
   system(dentist_command, wait = T, ignore.stdout = T)
 
-  dentist_file_to_remove <- paste0(dentist_tmp_file, '.DENTIST.short.txt')
-  dentist_full_file <- paste0(dentist_tmp_file, '.DENTIST.full.txt')
+  dentist_file_to_remove <- glue::glue('{dentist_tmp_file}.DENTIST.short.txt')
+  dentist_full_file <- glue::glue('{dentist_tmp_file}.DENTIST.full.txt')
+
   if (!file.exists(dentist_file_to_remove)) {
     message('DENTIST command failed')
     study['snps_removed_by_qc'] <- 0
@@ -330,4 +335,4 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   return(gwas)
 }
 
-main(args)
+main()

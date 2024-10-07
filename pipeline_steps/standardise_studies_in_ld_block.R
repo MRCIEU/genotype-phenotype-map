@@ -5,14 +5,14 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-main <- function(args) {
+main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_region <- vroom::vroom(paste0(ld_info$ld_reference_panel_prefix, '.tsv'), show_col_types = F)
+  ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-  extracted_studies_file <- paste0(ld_info$ld_block_data, '/extracted_studies.tsv')
+  extracted_studies_file <- glue::glue('{ld_info$ld_block_data}/extracted_studies.tsv')
   extracted_studies  <- vroom::vroom(extracted_studies_file , show_col_types = F)
 
-  standardised_studies_file <- paste0(ld_info$ld_block_data, '/standardised_studies.tsv')
+  standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   if (file.exists(standardised_studies_file)) {
     existing_standardised_studies <- vroom::vroom(standardised_studies_file,
                                                   show_col_types = F,
@@ -33,12 +33,12 @@ main <- function(args) {
   if (nrow(extracted_studies) > 0) {
     standardised_studies <- apply(extracted_studies, 1, function (study) {
       start_time <- Sys.time()
-      standardised_file <- sub('original', 'standardised', study[['file']])
+      standardised_file <- sub('extracted', 'standardised', study[['file']])
 
       if (standardised_file %in% existing_standardised_studies$file) {
         return()
       }
-      result <- perform_standardisation(study, ld_region)
+      result <- perform_standardisation(study, ld_matrix_info)
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
@@ -60,14 +60,15 @@ main <- function(args) {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-perform_standardisation <- function(study, ld_region) {
-  standardised_file <- sub('original', 'standardised', study[['file']])
+perform_standardisation <- function(study, ld_matrix_info) {
+  standardised_file <- sub('extracted', 'standardised', study[['file']])
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
   response <- convert_reference_build_via_liftover(gwas, study[['reference_build']], reference_builds$GRCh37) |>
     standardise_alleles() |>
-    standardise_extracted_gwas(ld_region)
+    standardise_extracted_gwas(ld_matrix_info)
 
+  study['ld_block'] <- args$ld_block
   study['file'] <- standardised_file
   study['eaf_from_reference_panel'] <- response$eaf_from_reference_panel
   study['snps_removed_by_reference_panel'] <- response$snps_removed_by_reference_panel
@@ -92,7 +93,7 @@ empty_standardised_studies <- function() {
   ))
 }
 
-standardise_extracted_gwas <- function(gwas, ld_region) {
+standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
   eaf_from_reference_panel <- FALSE
   original_gwas_size <- nrow(gwas)
   gwas <- dplyr::distinct(gwas, CHR, BP, EA, OA, .keep_all = TRUE)
@@ -106,18 +107,18 @@ standardise_extracted_gwas <- function(gwas, ld_region) {
       dplyr::select(-LP)
   }
 
-  gwas <- dplyr::filter(gwas, SNP %in% ld_region$SNP)
-  ld_region <- dplyr::filter(ld_region, SNP %in% gwas$SNP)
+  gwas <- dplyr::filter(gwas, SNP %in% ld_matrix_info$SNP)
+  ld_matrix_info <- dplyr::filter(ld_matrix_info, SNP %in% gwas$SNP)
 
   if (all(is.na(gwas$EAF))) {
     gwas <- dplyr::select(gwas, -EAF) |>
-      dplyr::left_join(ld_region |> dplyr::select(SNP, EAF), by = 'SNP')
+      dplyr::left_join(ld_matrix_info |> dplyr::select(SNP, EAF), by = 'SNP')
     eaf_from_reference_panel <- TRUE
   }
 
   columns_to_coerce <- c("EAF") # Add BETA and SE if needed
   gwas <- tidyr::drop_na(gwas, dplyr::all_of(columns_to_coerce)) |>
-    dplyr::arrange(match(SNP, ld_region$SNP))
+    dplyr::arrange(match(SNP, ld_matrix_info$SNP))
   
   return(list(gwas = gwas,
               eaf_from_reference_panel = eaf_from_reference_panel,
@@ -149,8 +150,9 @@ standardise_alleles <- function(gwas) {
 
   compressed_ea <- compress_alleles(gwas$EA)
   compressed_oa <- compress_alleles(gwas$OA)
+  formatted_bp <- format(gwas$BP, scientific = F, trim = T)
 
-  gwas$SNP <- paste0(gwas$CHR, ":", format(gwas$BP, scientific = F, trim = T), "_", compressed_ea, "_", compressed_oa)
+  gwas$SNP <- glue::glue('{gwas$CHR}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
   return(gwas)
 }
 
@@ -171,7 +173,7 @@ convert_reference_build_via_liftover <- function(gwas,
     return(gwas)
   }
 
-  liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
+  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
   if (is.null(liftover_conversion)) {
     stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
                  "Reference builds must be one of:", reference_builds), collapse = " "))
@@ -198,10 +200,10 @@ convert_reference_build_via_liftover <- function(gwas,
 
 create_bed_file_from_gwas <- function(gwas, output_file) {
   bed_format <- tibble::tibble(
-    CHR = paste0("chr", gwas$CHR),
+    CHR = glue::glue('chr{gwas$CHR}'),
     BP1 = gwas$BP,
     BP2 = gwas$BP+1,
-    CHRBP = paste0(CHR, ":", BP1, "-", BP2)
+    CHRBP = glue::glue('{CHR}:{BP1}-{BP2}')
   )
 
   vroom::vroom_write(bed_format, output_file, col_names=F, delim=" ")
@@ -209,10 +211,10 @@ create_bed_file_from_gwas <- function(gwas, output_file) {
 }
 
 run_liftover <- function(bed_file_input, bed_file_output, input_build, output_build, unmapped) {
-  lifover_binary <- paste0(liftover_dir, "liftOver")
-  liftover_conversion <- available_liftover_conversions[[paste0(input_build, output_build)]]
+  lifover_binary <- glue::glue('{liftover_dir}liftOver')
+  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_build}{output_build}')]]
 
-  chain_file <- paste0(liftover_dir, liftover_conversion)
+  chain_file <- glue::glue('{liftover_dir}{liftover_conversion}')
   liftover_command <- paste(lifover_binary, bed_file_input, chain_file, bed_file_output, unmapped)
   system(liftover_command, wait=T)
 }
@@ -234,4 +236,4 @@ use_bed_file_to_update_gwas <- function(gwas, bed_file) {
   return(gwas)
 }
 
-main(args)
+main()

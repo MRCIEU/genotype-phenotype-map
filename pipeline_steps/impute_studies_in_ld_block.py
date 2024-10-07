@@ -12,7 +12,7 @@ import scipy.linalg
 pd.options.mode.copy_on_write = True
 DATA_DIR = os.getenv("DATA_DIR")
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_reference_panel/'
+LD_BLOCK_MATRICES_DIR = DATA_DIR + 'ld_reference_panel_hg38/'
 
 imputed_r2_threshold = 0.9
 ld_score_threshold = 5

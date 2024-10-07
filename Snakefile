@@ -23,27 +23,27 @@ if len(studies_to_process) == 0:
     print('No studies to process, exiting.')
     sys.exit()
 
-ld_regions = pd.read_csv('data/ld_regions.tsv', sep='\t')
+ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
 
-relevant_ancestries = np.isin(ld_regions['ancestry'], studies_to_process['ancestry'].unique())
-ld_regions = ld_regions[relevant_ancestries]
-ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}_{ld.stop}' for i, ld in ld_regions.iterrows()]
+relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestry'].unique())
+ld_blocks = ld_blocks[relevant_ancestries]
+ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
-complex_ld_blocks = ['EUR/6/19207487_21684064',
-                     'EUR/8/116096495_119685456',
-                     'EUR/6/29737971_30798167',
-                     'EUR/6/30798168_31571217',
-                     'EUR/6/31571218_32682663',
-                     'EUR/10/4572274_5983761',
-                     'EUR/11/1213590_3665480'
+complex_ld_blocks = ['EUR/6/19207487-21684064',
+                     'EUR/8/116096495-119685456',
+                     'EUR/6/29737971-30798167',
+                     'EUR/6/30798168-31571217',
+                     'EUR/6/31571218-32682663',
+                     'EUR/10/4572274-5983761',
+                     'EUR/11/1213590-3665480'
 ]
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-# complex_ld_blocks = ['EUR/6/19207487_21684064',
-#                      'EUR/6/29737971_30798167',
-#                      'EUR/8/116096495_119685456',
-#                      'EUR/10/4572274_5983761',
-#                      'EUR/11/1213590_3665480'
+# complex_ld_blocks = ['EUR/6/19207487-21684064',
+#                      'EUR/6/29737971-30798167',
+#                      'EUR/8/116096495-119685456',
+#                      'EUR/10/45722745983761',
+#                      'EUR/11/1213590-3665480'
 # ]
 # if TEST_RUN == 'test':
 #     complex_ld_blocks = []
@@ -66,7 +66,7 @@ studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
-all_study_regions = f'{RESULTS_DIR}{TIMESTAMP}/all_study_regions.tsv'
+all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 
@@ -81,13 +81,13 @@ rule all:
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
         raw_coloc_results,
         coloc_results,
-        all_study_regions,
+        all_study_blocks,
         results_metadata
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
-    threads: 2
+    threads: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]
         if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
@@ -106,7 +106,7 @@ rule extract_regions_from_studies:
 
         subprocess.run(command, shell=True)
 
-rule organise_extracted_studies_into_ld_regions:
+rule organise_extracted_studies_into_ld_blocks:
     input: expand(extracted_study_pattern, study_location=extracted_studies)
     output: temporary(ld_blocks_to_process)
     threads: 1
@@ -120,7 +120,7 @@ def standardise_rule(standardisation_pattern, name):
         name: f'{name}_standardise_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(standardisation_pattern)
-        threads: 2
+        threads: 1
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -142,9 +142,11 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
         output: temporary(imputation_pattern)
-        retries: 5
-        threads: 56 if name == 'complex' else 24
-        priority: 1 if name == 'complex' else 0
+        retries: 1
+        # retries: 5
+        # threads: 28 if name == 'complex' else 12
+        # priority: 1 if name == 'complex' else 0
+        threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -152,15 +154,16 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if name == 'complex':
-                env_vars = "export LD_PRELOAD="
-            else:
-                env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
+            # if name == 'complex':
+            #     env_vars = "export LD_PRELOAD="
+            # else:
+            #     env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
 
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
-                command = f"{env_vars} && python3 impute_studies_in_ld_block.py \
+                # command = f"Rscript impute_studies_in_ld_block.py \
+                command = f"Rscript impute_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
             subprocess.run(command, shell=True)
@@ -170,7 +173,8 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         name: f'{name}_finemap_per_ld_block'
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
-        threads: 4
+        retries: 1
+        threads: 2
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -190,7 +194,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
-        threads: 2
+        threads: 1
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
@@ -206,7 +210,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             else:
                 command = f"Rscript colocalise_studies_in_ld_block.R \
                     --ld_block {ld_block} \
-                    --coloc_result_file {output}"
+                    --completed_output_file {output}"
 
             subprocess.run(command, shell=True)
 
@@ -225,11 +229,11 @@ coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
 rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
-    threads: 2
+    threads: 1
     output:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
-        all_study_regions = all_study_regions,
+        all_study_blocks = all_study_blocks,
         results_metadata = results_metadata
     shell:
        """
@@ -237,7 +241,7 @@ rule compile_results:
        Rscript compile_results.R \
            --studies_to_process {studies_to_process_file} \
            --studies_processed {studies_processed_file} \
-           --all_study_regions_file {output.all_study_regions} \
+           --all_study_blocks_file {output.all_study_blocks} \
            --raw_coloc_results_file {output.raw_coloc_results} \
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata}
@@ -245,19 +249,19 @@ rule compile_results:
 
 # rule perform_mr_analysis:
 #     input:
-#         all_study_regions: all_study_regions,
+#         all_study_blocks: all_study_blocks,
 #         coloc_results: coloc_results,
 #     output: mr_results
 #     shell:
 #         """
-#         Rscript perform_mr_analysis.R --all_study_regions {input.all_study_regions} --coloc_results {input.coloc_results} --mr_result_file {output}
+#         Rscript perform_mr_analysis.R --all_study_blocks {input.all_study_blocks} --coloc_results {input.coloc_results} --mr_result_file {output}
 #         """
 
 onsuccess:
     print('Yay!  Please look here:')
     print(raw_coloc_results)
     print(coloc_results)
-    print(all_study_regions)
+    print(all_study_blocks)
     print(results_metadata)
     print(mr_results)
 

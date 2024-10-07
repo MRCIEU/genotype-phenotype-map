@@ -16,37 +16,12 @@ complex_ld_region_example <- list(
     gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_6_31344761.tsv.gz'
 )
 
-example <- weak_signal_example 
+example <- complex_ld_region_example 
 
 ld_matrix <- vroom::vroom(example$ld_matrix_file, col_names = F, show_col_types = F) |> data.matrix()
 ld_matrix_info <- vroom::vroom(example$ld_matrix_info_file, show_col_types = F)
 gwas <- vroom::vroom(example$gwas_file, show_col_types = F)
 
-simulate_ss <- function(X, af, ncause, sigmag, seed=1234) {
-    set.seed(seed)
-    nsnp <- length(af)
-    nid <- nrow(X)
-    b <- rep(0, nsnp)
-    b[sample(1:nsnp, ncause)] <- rnorm(ncause, sd=sigmag)
-
-    e <- rnorm(nid)
-    y <- X %*% b + e 
-
-    betahat <- sapply(1:nsnp, \(i) {cov(X[,i], y) / var(X[,i])})
-    se <- sapply(1:nsnp, \(i) {sqrt(var(y) / (var(X[,i] * sqrt(nid))))})
-    zhat <- betahat/se
-    pval <- 2 * pnorm(-abs(zhat))
-
-    return(tibble(betahat, b, se, zhat, pval, af))
-}
-
-generate_missing <- function(ss, frac) {
-    ss <- ss %>% mutate(
-        betahat2 = ifelse(runif(n()) < frac, NA, betahat),
-        se2 = ifelse(is.na(betahat2), NA, se),
-        zhat2 = ifelse(is.na(betahat2), NA, zhat))
-    return(ss)
-}
 
 #' Basic imputation function
 #' 
@@ -60,13 +35,59 @@ generate_missing <- function(ss, frac) {
 #' - se_adj: The adjustment factor for the standard errors
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation, it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-imp <- function(ss, R, index) {
-    b <- ss$BETA
-    se <- ss$SE
-    af <- ss$EAF
+outlier_detection <- function(r) {
+    sd1 <- sd(r, na.rm=T)
+    m <- median(r, na.rm=T)
+    r[r < (m - 3 * sd1)] <- NA
+    r[r > (m + 3 * sd1)] <- NA
+    sd2 <- sd(r, na.rm=T)
+    r[r < (m - 3 * sd2)] <- NA
+    r[r > (m + 3 * sd2)] <- NA
+    outliers <- is.na(r)
+    return(outliers)
+}
+
+
+adjust <- function(truth, predicted) {
+    outs <- outlier_detection(truth / predicted)
+    reg <- lm(truth[!outs] ~ predicted[!outs])
+    adj <- predicted * reg$coef[2] - reg$coef[1]
+    corr <- cor(adj[!outs], truth[!outs], use="pair")
+    return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr))
+}
+
+
+#' Basic imputation function
+#' 
+#' @param gwas A data frame with columns betahat2 = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed;
+#'  se = as with betahat2 but for available standard errors, af = allele frequencies (no missing values allowed, so use reference panel if there are missing values)
+#' @param ld_matrix The correlation matrix - must be complete for the set of SNPs that need to be imputed
+#' @param index The positions of the SNPs that are causal and will be used to generate the simulated summary statistics. This can just be the top hit.
+#' 
+#' @return A list with the following elements:
+#' - gwas: The input data frame with the imputed values added
+#' - b_adj: The adjustment factor for the effect sizes
+#' - se_adj: The adjustment factor for the standard errors
+#' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
+#'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
+#' - se_cor: The correlation between the true and imputed standard errors
+imp <- function(gwas, ld_matrix, index) {
+    b <- gwas$BETA
+    se <- gwas$SE
+    af <- gwas$EAF
+    to_impute <- is.na(b)
+    num_to_impute <- sum(to_impute)
+
+    if (num_to_impute == 0) {
+      return(list(
+          gwas = gwas, b_cor = NA, se_cor = NA, b_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      ))
+    }
+
+    message("Checking data")
     nsnp <- length(b)
-    stopifnot(ncol(R) == nsnp)
-    stopifnot(nrow(R) == nsnp)
+    stopifnot(ncol(ld_matrix) == nsnp)
+    stopifnot(nrow(ld_matrix) == nsnp)
     stopifnot(length(af) == nsnp)
     stopifnot(length(se) == nsnp)
     stopifnot(all(index) %in% 1:nsnp)
@@ -74,73 +95,79 @@ imp <- function(ss, R, index) {
     stopifnot(all(af > 0 & af < 1))
     stopifnot(all(!is.na(af)))
     stopifnot(all(se > 0, na.rm=TRUE))
-    if(all(!is.na(b))) {
-        message("No missing values in b, imputation not required")
-        b_cor=1
-        se_cor=1
-        mod1=1
-        mod2=1
+
+    # Calculate the diagonal matrix of variances and the inverse
+    message("Generating D")
+    D <- diag(sqrt(2 * af * (1 - af)))
+    Di <- diag(1 / diag(D))
+
+    # Get the conditional estimates of the index SNP effects
+    message("Conditional index variant estimates")
+    if(length(index) == 1) {
+        bhat2 <- b[index]
     } else {
-        # Calculate the diagonal matrix of variances and the inverse
-        D <- diag(sqrt(2 * af * (1 - af)))
-        Di <- diag(1 / diag(D))
-
-        # Get the conditional estimates of the index SNP effects
-        if(length(index) == 1) {
-            bhat2 <- b[index]
-        } else {
-            bhat2 <- D[index,index] %*% MASS::ginv(R[index,index]) %*% Di[index,index] %*% b[index]
-        }
-        b2 <- rep(0, nsnp)
-        b2[index] <- bhat2
-
-        # Get the simulated effect sizes
-        betahat_sim <- as.numeric(Di %*% R %*% D %*% b2)
-
-        # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
-        sehat <- sqrt(diag(Di))
-
-        # Re-scale effect sizes and standard errors
-        # vb <- var(b, na.rm=TRUE)
-        # vse <- var(se, na.rm=TRUE)
-        # mod1 <- cov(b, betahat_sim, use="pair") / vb
-        mod1 <- lm(betahat_sim ~ b)$coef[2]
-        # mod2 <- cov(se, sehat, use="pair") / vse
-        mod2 <- lm(sehat ~ se)$coef[2]
-
-        # Performance metrics
-        # b_cor = mod1 * sqrt(vb) / sd(betahat_sim, na.rm=TRUE)
-        b_cor <- cor(b, betahat_sim, use="pair")
-        # se_cor = mod2 * sqrt(vse) / sd(sehat, na.rm=TRUE)
-        se_cor <- cor(se, sehat, use="pair")
-
-        # Re-scale
-        betahat_sim <- betahat_sim / mod1
-        sehat <- sehat / mod2
-
-        # Fill in missing values
-        b[is.na(b)] <- betahat_sim[is.na(b)]
-        se[is.na(se)] <- sehat[is.na(se)]
-
-        stopifnot(all(!is.na(b)))
-        stopifnot(all(!is.na(se)))
+        bhat2 <- D[index,index] %*% MASS::ginv(ld_matrix[index,index]) %*% Di[index,index] %*% b[index]
     }
+    b2 <- rep(0, nsnp)
+    b2[index] <- bhat2
 
-    ss$betahatimp <- b
-    ss$seimp <- se
-    ss$zimp <- b / se
-    ss$pimp <- 2 * pnorm(-abs(ss$zimp))
+    # Get the simulated effect sizes
+    message("Simulated effects")
+    betahat_sim <- as.numeric(Di %*% ld_matrix %*% D %*% b2)
 
-    # Output
-    out <- list(
-        ss = ss,
-        b_adj = mod1,
-        se_adj = mod2,
-        b_cor = b_cor,
-        se_cor = se_cor,
-        n_ind = length(index)
+    # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
+    sehat <- (diag(Di))
+
+    # Re-scale effect sizes and standard errors
+    message("Rescaling")
+    b_adj <- adjust(b, betahat_sim)
+    se_adj <- adjust(se, sehat)
+
+    # str(b_adj)
+    # str(se_adj)
+
+    # png("temp4.png")
+    # plot(b_adj$adj[!b_adj$outliers], b[!b_adj$outliers])
+    # abline(0, 1)
+    # dev.off()
+
+    # png("temp5.png")
+    # plot(se_adj$adj[!se_adj$outliers], se[!se_adj$outliers])
+    # abline(0, 1)
+    # dev.off()
+
+    gwas$BETA_IMPUTED <- b_adj$adj
+    gwas$SE_IMPUTED <- se_adj$adj
+    stopifnot(all(!is.na(gwas$BETA_IMPUTED)))
+    stopifnot(all(!is.na(gwas$SE_IMPUTED)))
+
+    message("Finalising")
+    gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+    gwas$Z[to_impute] <- gwas$BETA_IMPUTED[to_impute] / gwas$SE_IMPUTED[to_impute]
+    gwas$P[to_impute] <- 2 * pnorm(-abs(gwas$Z[to_impute]))
+    gwas$imp <- to_impute
+
+
+    # png("temp4.png")
+    # plot(BETA ~ BETA_IMPUTED, gwas)
+    # abline(0,1)
+    # dev.off()
+
+    return(
+      list(
+        gwas = gwas,
+        b_adj = b_adj$adj_slope,
+        b_adj_intercept = b_adj$adj_intercept,
+        se_adj = se_adj$adj_slope,
+        se_adj_intercept = se_adj$adj_intercept,
+        b_cor = b_adj$corr,
+        se_cor = se_adj$corr,
+        indices = length(index),
+        rows_imputed = num_to_impute,
+        rows_region = nrow(gwas)
+      )
     )
-    return(out)
 }
 
 clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {

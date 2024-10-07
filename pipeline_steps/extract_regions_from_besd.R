@@ -18,6 +18,10 @@ main <- function(args) {
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
+  if (study$reference_build != reference_builds$GRCh38) {
+    stop(glue::glue('Error: Only BESD files using {reference_builds$GRCh38} is allowed right now'))
+  }
+
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}.json'))
 

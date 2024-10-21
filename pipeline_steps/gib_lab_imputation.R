@@ -35,27 +35,43 @@ gwas <- vroom::vroom(example$gwas_file, show_col_types = F)
 #' - se_adj: The adjustment factor for the standard errors
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation, it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-outlier_detection <- function(r) {
+outlier_detection <- function(r, thresh=3) {
     sd1 <- sd(r, na.rm=T)
     m <- median(r, na.rm=T)
-    r[r < (m - 3 * sd1)] <- NA
-    r[r > (m + 3 * sd1)] <- NA
+    r[r < (m - thresh * sd1)] <- NA
+    r[r > (m + thresh * sd1)] <- NA
     sd2 <- sd(r, na.rm=T)
-    r[r < (m - 3 * sd2)] <- NA
-    r[r > (m + 3 * sd2)] <- NA
+    r[r < (m - thresh * sd2)] <- NA
+    r[r > (m + thresh * sd2)] <- NA
     outliers <- is.na(r)
     return(outliers)
 }
 
-
-adjust <- function(truth, predicted) {
-    outs <- outlier_detection(truth / predicted)
-    reg <- lm(truth[!outs] ~ predicted[!outs])
-    adj <- predicted * reg$coef[2] - reg$coef[1]
-    corr <- cor(adj[!outs], truth[!outs], use="pair")
-    return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr))
+make_drd <- function(ld_matrix, af) {
+    D <- diag(sqrt(2 * af * (1 - af)))
+    Di <- diag(1 / diag(D))
+    DRD <- Di %*% ld_matrix %*% D
+    DRD
 }
 
+make_drd2 <- function(ld_matrix, af) {
+    D <- diag(sqrt(2 * af * (1 - af)))
+    Di <- diag(1 / diag(D))
+    # DRD <- Di %*% ld_matrix %*% D
+    DRD <- exvatools::multd(exvatools::dmult(Di, ld_matrix), D)
+    DRD
+}
+
+adjust <- function(truth, predicted, eval_frac = 0.5) {
+    outs <- outlier_detection(truth / predicted)
+    reg <- lm(truth[!outs] ~ predicted[!outs])
+    adj <- predicted * reg$coef[2] + reg$coef[1]
+    corr <- cor(adj[!outs], truth[!outs], use="pair")
+    iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
+    corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
+
+    return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr, corrw=corrw))
+}
 
 #' Basic imputation function
 #' 
@@ -71,7 +87,7 @@ adjust <- function(truth, predicted) {
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-imp <- function(gwas, ld_matrix, index) {
+perform_imputation <- function(gwas, ld_matrix, index, eval_frac=0.25) {
     b <- gwas$BETA
     se <- gwas$SE
     af <- gwas$EAF
@@ -113,7 +129,10 @@ imp <- function(gwas, ld_matrix, index) {
 
     # Get the simulated effect sizes
     message("Simulated effects")
-    betahat_sim <- as.numeric(Di %*% ld_matrix %*% D %*% b2)
+    # betahat_sim <- as.numeric(Di %*% ld_matrix %*% D %*% b2)
+    # betahat_sim <- as.numeric(DRD %*% b2)
+    drd <- exvatools::multd(exvatools::dmult(Di, ld_matrix), D)
+    betahat_sim <- as.numeric(drd %*% b2)
 
     # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
     sehat <- (diag(Di))
@@ -162,7 +181,9 @@ imp <- function(gwas, ld_matrix, index) {
         se_adj = se_adj$adj_slope,
         se_adj_intercept = se_adj$adj_intercept,
         b_cor = b_adj$corr,
+        b_corr_top = b_adj$corrw,
         se_cor = se_adj$corr,
+        se_corr_top = se_adj$corrw,
         indices = length(index),
         rows_imputed = num_to_impute,
         rows_region = nrow(gwas)
@@ -170,7 +191,8 @@ imp <- function(gwas, ld_matrix, index) {
     )
 }
 
-clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
+
+clump_gwas <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
   z <- abs(z)
   z[z < zthresh] <- NA
   k <- c()

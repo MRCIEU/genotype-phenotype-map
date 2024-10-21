@@ -16,7 +16,7 @@ complex_ld_region_example <- list(
     gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_6_31344761.tsv.gz'
 )
 
-example <- complex_ld_region_example 
+example <- weak_signal_example 
 
 ld_matrix <- vroom::vroom(example$ld_matrix_file, col_names = F, show_col_types = F) |> data.matrix()
 ld_matrix_info <- vroom::vroom(example$ld_matrix_info_file, show_col_types = F)
@@ -192,7 +192,7 @@ perform_imputation <- function(gwas, ld_matrix, index, eval_frac=0.25) {
 }
 
 
-clump_gwas <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
+clump_ld_region <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
   z <- abs(z)
   z[z < zthresh] <- NA
   k <- c()
@@ -224,7 +224,7 @@ gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 clumped_snp_index <- clump_ld_region(gwas_to_impute$Z, ld_matrix)
 print('clumped snps:')
 print(gwas_to_impute[clumped_snp_index, ])
-result <- imp(gwas_to_impute, ld_matrix, clumped_snp_index)
+result <- perform_imputation(gwas_to_impute, ld_matrix, clumped_snp_index)
 
 print(result$ss[, c(2,6,7,8,11,12)])
 print(result$ss[is.na(gwas_to_impute$BETA), c(2,6,7,8,11,12)])

@@ -55,5 +55,6 @@ ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.2/lib/libmkl_rt.so
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R
 RUN pip install -r docker/requirements.txt
+RUN Rscript -e 'install.packages("exvatools")'
 
 COPY . /home/pipeline

@@ -1,4 +1,4 @@
-# Date: 30-09-2024
+# Date: 10-10-2024
 # Author: A.Hanson
 
 # STEPS:
@@ -9,9 +9,9 @@ pipeline_dir <- "/home/kf23130/Projects/021_GenoPhenoMap/genotype-phenotype-map"
 rawdata_dir <- "/local-scratch/data/ukb-seq"
 output_dir <- "/local-scratch/projects/genotype-phenotype-map/data/study_sequencing"
 
-metadata_file <- file.path(rawdata_dir,"downloads/backmanexwas/ukb-wes-bm-studies.tsv")
+metadata_file <- file.path(rawdata_dir,"downloads/azexwas/ukb-wes-az-studies.tsv")
 
-parser <- argparser::arg_parser('Extract genomic regions from Backman et al. summary statistics')
+parser <- argparser::arg_parser('Extract genomic regions from AstraZeneca PheWas portal summary statistics')
 parser <- argparser::add_argument(parser, '--extracted_study_file', help = 'Summary stats file', type = 'character')
 args <- argparser::parse_args(parser)
 
@@ -34,9 +34,10 @@ maf_max_threshold <- 0.01
 maf_min_threshold <- 0.000012 # Lower MAF theshold (for 10 expected observations of minor allele in 430,998 Europeans)
 study_ancestry <- "EUR"
 
-input_columns <- c("Name","chromosome","base_pair_location","effect_allele","other_allele","beta","standard_error","effect_allele_frequency","p_value")
+input_columns <- c("Variant","Chromosome","Base pair location","Effect allele","Other allele","AAF","Effect size","Effect size standard error","p-value")
 
-main <- function() {
+main <- function(args) {
+	
 	message("\nInput file: ", args$extracted_study_file)
 	metadata <- vroom::vroom(metadata_file, show_col_types = F) |>
 		dplyr::filter(file_name == args$extracted_study_file)
@@ -58,7 +59,7 @@ main <- function() {
 	if(nrow(top_vars) == 0) {
 		stop(paste0(metadata$study_id, " (", metadata$accession, "): no top hits"))
 	} else {
-		vroom::vroom_write(top_vars["Name"], file.path(writeto,"top_vars.txt"), col_names = F)
+		vroom::vroom_write(top_vars["Variant"], file.path(writeto,"top_vars.txt"), col_names = F)
 		message("Writing top hits to: ", writeto, "/top_vars.txt")
 	}
 
@@ -73,13 +74,28 @@ main <- function() {
 }
 
 check_gwas <- function(study){
-	study_cols <- colnames(study)
 
+	# Add missing columns
+	study$Chromosome <- as.numeric(gsub("-.*","",study$Variant))
+	study$`Base pair location` <- as.numeric(sub("^.*-(.*)-.*-.*","\\1",study$Variant))
+	study$`Effect allele` <- sub(".*-(.*$)","\\1",study$Variant)
+	study$`Other allele` <- sub(".*-(.*)-.*$","\\1",study$Variant)
+
+	# Update variant ID
+	study$Variant <- gsub("-",":",study$Variant)
+
+	study_cols <- colnames(study)
+	
 	if(all(input_columns %in% study_cols)) {
 		message("All required columns present")
-	}else if("odds_ratio" %in% study_cols){
-		message("Converting ORs to betas")
-		study$beta <- log(study$odds_ratio)
+	}else if("Odds ratio" %in% study_cols){
+		message("Converting ORs to betas, calculating SE and AAF")
+		study$`Odds ratio` <- ifelse(study$`Odds ratio` == 0, 0.01, study$`Odds ratio`)
+		study$`Effect size` <- log(study$`Odds ratio`)
+		UCI <-	log(study$`Odds ratio UCI`)
+		study$`Effect size standard error` <- (UCI - study$`Effect size`)/1.96
+		study$`Effect size standard error` <- ifelse(study$`Odds ratio` == 0.01, 0, study$`Effect size standard error`)
+		study$AAF <- study$`Control AAF`
 	}else{
 		message("Cannot find effect estimate column")
 	}
@@ -88,10 +104,11 @@ check_gwas <- function(study){
 
 find_hits <- function(study) {
 	study_filt <- study |>
-		dplyr::filter(chromosome %in% seq(1,22),
-			p_value <= p_value_threshold,
-			((effect_allele_frequency <= maf_max_threshold & effect_allele_frequency >= maf_min_threshold) |
-			(1-effect_allele_frequency <= maf_max_threshold & 1-effect_allele_frequency >= maf_min_threshold)))
+		dplyr::filter(Chromosome %in% seq(1,22),
+			`p-value` <= p_value_threshold,
+			((AAF <= maf_max_threshold & AAF >= maf_min_threshold) |
+			(1-AAF <= maf_max_threshold & 1-AAF >= maf_min_threshold)))
+	study_filt <- study_filt |> dplyr::arrange(Chromosome, `Base pair location`)
 	return(study_filt)
 }
 
@@ -106,13 +123,13 @@ find_regions <- function(top_vars, writeto) {
 	vars_regions <- apply(top_vars, 1, function(variant){	
 
 		extraction_info <- data.frame(
-			chr = as.numeric(variant["chromosome"]),
-			bp = as.numeric(variant["base_pair_location"]),
-			log_p = -log10(as.numeric(variant["p_value"])),
+			chr = as.numeric(variant["Chromosome"]),
+			bp = as.numeric(variant["Base pair location"]),
+			log_p = -log10(as.numeric(variant["p-value"])),
 			ld_region = ld_regions |> 
-				dplyr::filter(chr == as.numeric(variant["chromosome"]),
-					start <= as.numeric(variant["base_pair_location"]), 
-					end > as.numeric(variant["base_pair_location"]),
+				dplyr::filter(chr == as.numeric(variant["Chromosome"]),
+					start <= as.numeric(variant["Base pair location"]), 
+					end > as.numeric(variant["Base pair location"]),
 					ancestry == study_ancestry) |> 
 				dplyr::pull(string_region))
 			
@@ -132,26 +149,26 @@ extract_regions <- function(study, vars_regions){
 		region_max <- as.numeric(strsplit(as.character(variant["ld_region"]), "_|/")[[1]][4])
 		message("Extracting from region: ", variant["chr"], ":", region_min, "-", region_max) 
 
-		study_region <- study |> dplyr::filter(chromosome == as.numeric(variant["chr"]),
-			((effect_allele_frequency <= maf_max_threshold & effect_allele_frequency >= maf_min_threshold) |
-            (1-effect_allele_frequency <= maf_max_threshold & 1-effect_allele_frequency >= maf_min_threshold)),			
-			base_pair_location >= region_min,
-			base_pair_location < region_max)
+		study_region <- study |> dplyr::filter(Chromosome == as.numeric(variant["chr"]),
+			((AAF <= maf_max_threshold & AAF >= maf_min_threshold) |
+            (1-AAF <= maf_max_threshold & 1-AAF >= maf_min_threshold)),			
+			`Base pair location` >= region_min,
+			`Base pair location` < region_max)
 		
 		extracted_vars <- data.frame(
-			NAME = study_region$Name,
-			CHR = study_region$chromosome,
-			BP = study_region$base_pair_location,
-			EA = study_region$effect_allele,
-			OA = study_region$other_allele,
-			EAF = study_region$effect_allele_frequency,
-			BETA = study_region$beta,
-			SE = study_region$standard_error,
-			LP = -log10(study_region$p_value))
+			NAME = study_region$Variant,
+			CHR = study_region$Chromosome,
+			BP = study_region$`Base pair location`,
+			EA = study_region$`Effect allele`,
+			OA = study_region$`Other allele`,
+			EAF = study_region$AAF,
+			BETA = study_region$`Effect size`,
+			SE = study_region$`Effect size standard error`,
+			LP = -log10(study_region$`p-value`))
 		
 		# Write out to region file
         vroom::vroom_write(extracted_vars, file.path(as.character(variant["file"])))	
 	}))
 }
 
-main()
+main(args)

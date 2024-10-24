@@ -29,24 +29,23 @@ relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestr
 ld_blocks = ld_blocks[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
-complex_ld_blocks = ['EUR/6/19207487-21684064',
-                     'EUR/8/116096495-119685456',
-                     'EUR/6/29737971-30798167',
-                     'EUR/6/30798168-31571217',
-                     'EUR/6/31571218-32682663',
-                     'EUR/10/4572274-5983761',
-                     'EUR/11/1213590-3665480'
+#TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
+
+complex_ld_blocks = [
+    # 'EUR/6/19207487-21684064',
+    # 'EUR/8/116096495-119685456',
+    'EUR/8/80453471-82816871'
+    # 'EUR/6/29737971-30798167',
+    # 'EUR/6/30798168-31571217',
+    # 'EUR/6/31571218-32682663',
+    # 'EUR/10/4572274-5983761',
+    # 'EUR/11/1213590-3665480'
 ]
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-# complex_ld_blocks = ['EUR/6/19207487-21684064',
-#                      'EUR/6/29737971-30798167',
-#                      'EUR/8/116096495-119685456',
-#                      'EUR/10/45722745983761',
-#                      'EUR/11/1213590-3665480'
-# ]
 # if TEST_RUN == 'test':
-#     complex_ld_blocks = []
+#     complex_ld_blocks = ['EUR/8/80453471-82816871']
+complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'

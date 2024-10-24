@@ -31,7 +31,7 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
                                   category = merged_data$category,
                                   sample_size = merged_data$sample_size,
                                   cis_trans = merged_data$cis_trans,
-                                  reference_build = merged_data$reference_build,
+                                  reference_build = reference_builds$GRCh38,
                                   ld_block = ld_info$block
   )
 

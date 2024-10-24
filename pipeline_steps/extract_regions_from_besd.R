@@ -13,7 +13,7 @@ args <- argparser::parse_args(parser)
 
 ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
 
-main <- function(args) {
+main <- function() {
   study <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F) |>
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
@@ -180,4 +180,4 @@ format_gwas <- function(gwas) {
   return(gwas)
 }
 
-main(args)
+main()

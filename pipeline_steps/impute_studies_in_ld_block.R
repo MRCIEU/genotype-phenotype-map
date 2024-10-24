@@ -1,6 +1,5 @@
 source('constants.R')
 
-#https://explodecomputer.github.io/lab-book/posts/2024-09-21-summary-imputation/
 imputation_correlation_threshold <- 0
 
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
@@ -10,9 +9,8 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names = F, show_col_types = F) |>
-    data.matrix()
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
+  ld_matrix_eig <- readRDS(glue::glue('{ld_info$ld_reference_panel_prefix}.ldeig.rds'))
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   standardised_studies  <- vroom::vroom(standardised_studies_file , show_col_types = F)
@@ -51,32 +49,9 @@ main <- function() {
       ) 
 
       rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
-      print(glue::glue('rows to impute: {sum(rows_to_impute)}'))
-      print(glue::glue('rows in gwas: {nrow(gwas)}'))
-      print(glue::glue('rows in ld matrix: {nrow(ld_matrix_info)}'))
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
-      # print(gwas[, c(9, 6, 7)])
-      # print(ld_matrix_info[, c(1,2,5)])
-      # print(gwas_to_impute[, c(2, 5, 6, 7)])
 
-      print(glue::glue('gwas order matches ld matrix: {all(ld_matrix_info$SNP == gwas_to_impute$SNP)}'))
-
-      # if we want to use all the clumped hits from the extraction phase...
-      # given clumped snps, find the corresponding row numbers in the gwas
-      # clumped_snp_index <- dplyr::mutate(gwas_to_impute, rn = dplyr::row_number()) |>
-      #   dplyr::filter(BP %in% clumped_snps$BP) |>
-      #   dplyr::group_by(BP) |>
-      #   dplyr::arrange(P) |>
-      #   dplyr::filter(dplyr::row_number() == 1)
-
-      # if we want to use just the top hit in the region...
-      # print(min(gwas_to_impute$P, na.rm=T))
-      # clumped_snp_index <- which(gwas_to_impute$P == min(gwas_to_impute$P, na.rm = T))
-
-      # if we want to re-clump from the ld ref panel
-      clumped_snp_index <- clump_gwas(gwas_to_impute$Z, ld_matrix)
-
-      result <- perform_imputation(gwas_to_impute, ld_matrix, clumped_snp_index)
+      result <- perform_imputation(gwas_to_impute, ld_matrix_eig)
 
       if(result$b_cor >= imputation_correlation_threshold) {
         vroom::vroom_write(result$gwas, imputed_file)
@@ -118,26 +93,14 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-clump_gwas <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
-  z <- abs(z)
-  z[z < zthresh] <- NA
-  k <- c()
-
-  while(!all(is.na(z))) {
-    i <- which.max(z)
-    k <- c(k, i)
-    z[i] <- NA
-    z[which(R[i,]^2 > rthresh)] <- NA
-  }
-  return(k)
-}
 
 #' Basic imputation function
 #' 
-#' @param gwas A data frame with columns betahat2 = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed;
-#'  se = as with betahat2 but for available standard errors, af = allele frequencies (no missing values allowed, so use reference panel if there are missing values)
-#' @param ld_matrix The correlation matrix - must be complete for the set of SNPs that need to be imputed
-#' @param index The positions of the SNPs that are causal and will be used to generate the simulated summary statistics. This can just be the top hit.
+#' @param gwas A data frame with columns BETA = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed;
+#'  SE = as with BETA but for available standard errors, EAF = allele frequencies (no missing values allowed, so use reference panel if there are missing values)
+#' @param pc list of values and vectors from PCA of LD matrix
+#' @param thresh Fraction of variance of LD matrix to use for projection.
+#' @param eval_frac Fraction of largest betas to use to test for agreement of imputation and observed betas
 #' 
 #' @return A list with the following elements:
 #' - gwas: The input data frame with the imputed values added
@@ -146,13 +109,13 @@ clump_gwas <- function(z, R, zthresh = qnorm(1.5e-4, low=F), rthresh = 0.01) {
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-perform_imputation <- function(gwas, ld_matrix, index) {
+perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     b <- gwas$BETA
     se <- gwas$SE
     af <- gwas$EAF
+
     to_impute <- is.na(b)
     num_to_impute <- sum(to_impute)
-
     if (num_to_impute == 0) {
       return(list(
           gwas = gwas, b_cor = NA, se_cor = NA, b_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
@@ -160,44 +123,50 @@ perform_imputation <- function(gwas, ld_matrix, index) {
     }
 
     nsnp <- length(b)
-    stopifnot(ncol(ld_matrix) == nsnp)
-    stopifnot(nrow(ld_matrix) == nsnp)
+    stopifnot(nrow(pc$vectors) == nsnp)
     stopifnot(length(af) == nsnp)
     stopifnot(length(se) == nsnp)
-    stopifnot(all(index) %in% 1:nsnp)
-    stopifnot(length(index) < nsnp)
     stopifnot(all(af > 0 & af < 1))
     stopifnot(all(!is.na(af)))
     stopifnot(all(se > 0, na.rm=TRUE))
 
-    # Calculate the diagonal matrix of variances and the inverse
+    # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
+
     D <- diag(sqrt(2 * af * (1 - af)))
     Di <- diag(1 / diag(D))
-
-    # Get the conditional estimates of the index SNP effects
-    if(length(index) == 1) {
-        bhat2 <- b[index]
-    } else {
-        bhat2 <- D[index,index] %*% MASS::ginv(ld_matrix[index,index]) %*% Di[index,index] %*% b[index]
-    }
-    b2 <- rep(0, nsnp)
-    b2[index] <- bhat2
-
-    # Get the simulated effect sizes
-    betahat_sim <- as.numeric(Di %*% ld_matrix %*% D %*% b2)
-
-    # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
     sehat <- (diag(Di))
+    se_adj <- adjust(se, sehat)
+    gwas$SE_IMPUTED <- se_adj$adj
+    stopifnot(all(!is.na(gwas$SE_IMPUTED)))
+
+    # Sometimes SE is very far away from SE_IMPUTED.
+    # This could cause problems if the beta is instable but still used for imputation
+    # Set those betas to NA to be imputed
+    # This is a form of smoothing of the data
+    # Those excluded betas should now be a function of neighbouring LD
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+    se_outliers <- set_se_outliers_missing(gwas$SE, gwas$SE_IMPUTED)
+    b[se_outliers] <- NA
+    to_impute <- is.na(b) | se_outliers
+    num_se_outliers <- sum(se_outliers)
+
+    # Readjust SE
+    gwas$SE[se_outliers] <- gwas$SE_IMPUTED[se_outliers]
+    se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED)
+    gwas$SE_IMPUTED <- se_adj2$adj
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+
+    # Perform beta imputation
+    imp <- eig_imp(pc, thresh, b)
+    betahat_sim <- imp$dat$X
+
 
     # Re-scale effect sizes and standard errors
     b_adj <- adjust(b, betahat_sim)
-    se_adj <- adjust(se, sehat)
 
     gwas$BETA_IMPUTED <- b_adj$adj
-    gwas$SE_IMPUTED <- se_adj$adj
     stopifnot(all(!is.na(gwas$BETA_IMPUTED)))
-    stopifnot(all(!is.na(gwas$SE_IMPUTED)))
-
+    
     gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
     gwas$Z[to_impute] <- gwas$BETA_IMPUTED[to_impute] / gwas$SE_IMPUTED[to_impute]
@@ -212,35 +181,59 @@ perform_imputation <- function(gwas, ld_matrix, index) {
         se_adj = se_adj$adj_slope,
         se_adj_intercept = se_adj$adj_intercept,
         b_cor = b_adj$corr,
+        b_corr_top = b_adj$corrw,
         se_cor = se_adj$corr,
-        indices = length(index),
+        se_corr_top = se_adj$corrw,
         rows_imputed = num_to_impute,
-        rows_region = nrow(gwas)
+        num_se_outliers = num_se_outliers,
+        rows_region = nrow(gwas),
+        n_components = imp$ncomp
       )
     )
 }
 
-adjust <- function(truth, predicted) {
-    outs <- outlier_detection(truth / predicted)
-    reg <- lm(truth[!outs] ~ predicted[!outs])
-    adj <- predicted * reg$coef[2] - reg$coef[1]
-    corr <- cor(adj[!outs], truth[!outs], use="pair")
-
-    return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr))
+outlier_detection <- function(r, thresh=3) {
+    sd1 <- sd(r, na.rm=T)
+    m <- median(r, na.rm=T)
+    r[r < (m - thresh * sd1)] <- NA
+    r[r > (m + thresh * sd1)] <- NA
+    sd2 <- sd(r, na.rm=T)
+    r[r < (m - thresh * sd2)] <- NA
+    r[r > (m + thresh * sd2)] <- NA
+    outliers <- is.na(r)
+    return(outliers)
 }
 
-outlier_detection <- function(r) {
-  sd1 <- sd(r, na.rm=T)
-  m <- median(r, na.rm=T)
-  r[r < (m - 3 * sd1)] <- NA
-  r[r > (m + 3 * sd1)] <- NA
+adjust <- function(truth, predicted, eval_frac = 0.5) {
+    outs <- outlier_detection(truth / predicted)
+    reg <- lm(truth[!outs] ~ predicted[!outs])
+    adj <- predicted * reg$coef[2] + reg$coef[1]
+    corr <- cor(adj[!outs], truth[!outs], use="pair")
+    iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
+    corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
 
-  sd2 <- sd(r, na.rm=T)
-  r[r < (m - 3 * sd2)] <- NA
-  r[r > (m + 3 * sd2)] <- NA
-  outliers <- is.na(r)
+    return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr, corrw=corrw))
+}
 
-  return(outliers)
+eig_imp <- function(pc, thresh, X) {
+    i <- which(cumsum(pc$values) / sum(pc$values) >= thresh)[1]
+    E <- pc$vectors[,1:i]
+    mask <- is.na(X)
+    dat <- dplyr::bind_cols(tibble::tibble(X), tibble::as_tibble(E))
+    mod <- lm(X ~ ., data=dat)
+    rsq <- summary(mod)$adj.r.squared
+    p <- predict(mod, dat)
+    co <- cor(p, X, use="pair")
+
+    temp <- tibble::tibble(X=p, mask, pos=1:length(X))
+    return(list(dat=temp, rsq=rsq, cor=co, ncomp=i))
+}
+
+set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
+    mod <- lm(se ~ se_imputed)
+    cd <- cooks.distance(mod)
+    i <- outlier_detection(cd, outthresh)
+    return(i)
 }
 
 empty_imputed_studies <- function() {

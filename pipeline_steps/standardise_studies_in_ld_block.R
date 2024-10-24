@@ -64,8 +64,7 @@ perform_standardisation <- function(study, ld_matrix_info) {
   standardised_file <- sub('extracted', 'standardised', study[['file']])
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
 
-  response <- convert_reference_build_via_liftover(gwas, study[['reference_build']], reference_builds$GRCh37) |>
-    standardise_alleles() |>
+  response <- standardise_alleles(gwas) |>
     standardise_extracted_gwas(ld_matrix_info)
 
   study['ld_block'] <- args$ld_block
@@ -103,6 +102,7 @@ standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
   }
   
   if (!"P" %in% colnames(gwas) && "LP" %in% colnames(gwas)) {
+    gwas$LP <- as.numeric(gwas$LP)
     gwas <- dplyr::mutate(gwas, P = 10^(-LP)) |>
       dplyr::select(-LP)
   }
@@ -128,7 +128,7 @@ standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
 standardise_alleles <- function(gwas) {
   gwas$EA <- toupper(gwas$EA)
   gwas$OA <- toupper(gwas$OA)
-  columns_to_coerce <- c("EAF") # Add BETA and SE if needed
+  columns_to_coerce <- c("EAF", "BETA", "SE")
   gwas <- dplyr::mutate(gwas, dplyr::across(dplyr::all_of(columns_to_coerce), as.numeric))
 
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
@@ -160,6 +160,7 @@ compress_alleles <- function(alleles) {
   sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else allele)
 }
 
+# TODO: if we need this in the future, maybe move it to the extract step
 #' convert_reference_build_via_liftover: Change reference build of BP marker from allow list of liftOver conversions
 #'
 #' @param gwas: GWAS (file or dataframe) of standardised GWAS
@@ -173,8 +174,8 @@ convert_reference_build_via_liftover <- function(gwas,
     return(gwas)
   }
 
-  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
-  if (is.null(liftover_conversion)) {
+  chain_file <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
+  if (is.null(chain_file)) {
     stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
                  "Reference builds must be one of:", reference_builds), collapse = " "))
   }
@@ -186,7 +187,7 @@ convert_reference_build_via_liftover <- function(gwas,
   unmapped <- tempfile(fileext = ".unmapped")
 
   create_bed_file_from_gwas(gwas, bed_file_input)
-  run_liftover(bed_file_input, bed_file_output, input_reference_build, output_reference_build, unmapped)
+  run_liftover(bed_file_input, bed_file_output, chain_file, unmapped)
   gwas <- use_bed_file_to_update_gwas(gwas, bed_file_output)
 
   updated_gwas_size <- nrow(gwas)
@@ -210,11 +211,9 @@ create_bed_file_from_gwas <- function(gwas, output_file) {
   return(bed_format)
 }
 
-run_liftover <- function(bed_file_input, bed_file_output, input_build, output_build, unmapped) {
+run_liftover <- function(bed_file_input, bed_file_output, chain_file, unmapped) {
   lifover_binary <- glue::glue('{liftover_dir}liftOver')
-  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_build}{output_build}')]]
 
-  chain_file <- glue::glue('{liftover_dir}{liftover_conversion}')
   liftover_command <- paste(lifover_binary, bed_file_input, chain_file, bed_file_output, unmapped)
   system(liftover_command, wait=T)
 }

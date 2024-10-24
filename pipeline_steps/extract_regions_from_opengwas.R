@@ -81,9 +81,9 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
   gwasvcf::set_bcftools('/home/bcftools/bcftools')
 
   significant_hits <- gwasvcf::query_gwas(vcf_file, pval=p_value_threshold) |>
-		gwasvcf::vcf_to_tibble() |>
-		dplyr::mutate(pval=10^{-LP}) |>
-		dplyr::select(rsid, pval)
+    gwasvcf::vcf_to_tibble() |>
+    dplyr::mutate(pval=10^{-LP}, rsid=ID) |>
+    dplyr::select(rsid, pval)
 
   significant_hits_file <- tempfile()
   clumped_hits_file <- tempfile()

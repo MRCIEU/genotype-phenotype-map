@@ -36,8 +36,7 @@ study_ancestry <- "EUR"
 
 input_columns <- c("Name","chromosome","base_pair_location","effect_allele","other_allele","beta","standard_error","effect_allele_frequency","p_value")
 
-main <- function(args) {
-	
+main <- function() {
 	message("\nInput file: ", args$extracted_study_file)
 	metadata <- vroom::vroom(metadata_file, show_col_types = F) |>
 		dplyr::filter(file_name == args$extracted_study_file)
@@ -155,4 +154,4 @@ extract_regions <- function(study, vars_regions){
 	}))
 }
 
-main(args)
+main()

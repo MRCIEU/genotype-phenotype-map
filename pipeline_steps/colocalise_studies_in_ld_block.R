@@ -7,7 +7,7 @@ parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that th
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 args <- argparser::parse_args(parser)
 
-main <- function(args) {
+main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
     dplyr::filter(data_dir == ld_info$ld_block_data)
@@ -153,4 +153,4 @@ harmonise_gwases <- function(...) {
   return(gwases)
 }
 
-main(args)
+main()

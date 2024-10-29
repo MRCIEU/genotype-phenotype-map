@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-keys='/local-scratch/data/ukb-seq/downloads/genebass/study_keys.txt'
+#keys='/local-scratch/data/ukb-seq/downloads/genebass/study_keys.txt'
+keys=$1
 
 while read -r k1 k2 k3 k4 k5; do
     echo "$k1 $k2 $k3 $k4 $k5"

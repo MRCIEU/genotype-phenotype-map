@@ -18,6 +18,7 @@ SEQDATA_DIR = "/local-scratch/data/ukb-seq/"
 @click.option('--pheno_sex', help='Phenotype sex', required=True)
 @click.option('--coding', help='Coding', required=True)
 @click.option('--modifier', help='Modifier', required=True)
+
 def main(trait_type, phenocode, pheno_sex, coding, modifier):
     trait_type = trait_type.replace('"', '')
     phenocode = phenocode.replace('"', '')
@@ -59,7 +60,7 @@ def main(trait_type, phenocode, pheno_sex, coding, modifier):
     desc =  mt_study.cols().select('description').collect()
     print("pheno:", desc[0].description)
 
-    outname_rare = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_rare_filtered.tsv"])
+    outname_rare = "".join(["genebass_ukbwes_","p",phenocode, "_", coding, "_rare_filtered.tsv"])
     #outname_common = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_common_filtered.tsv"])
 
     # Return entries (summary statistics)

@@ -34,10 +34,11 @@ outlier_detection <- function(r, thresh=3) {
     return(outliers)
 }
 
-adjust <- function(truth, predicted, eval_frac = 0.5) {
+adjust <- function(truth, predicted, eval_frac = 0.5, npoly=3) {
     outs <- outlier_detection(truth / predicted)
-    reg <- lm(truth[!outs] ~ predicted[!outs])
-    adj <- predicted * reg$coef[2] + reg$coef[1]
+    reg <- lm(truth[!outs] ~ poly(predicted[!outs], npoly, raw=T))
+    # adj <- predict(reg, newdata=data.frame(predicted=predicted))
+    adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
     corr <- cor(adj[!outs], truth[!outs], use="pair")
     iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
     corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
@@ -312,9 +313,96 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-perform_imputation_eig <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
+perform_imputation_eig <- function(gwas, pc, thresh=0.9, eval_frac=0.25, npoly=1) {
     b <- gwas$BETA
     se <- gwas$SE
+    af <- gwas$EAF
+    to_impute <- is.na(b)
+    num_to_impute <- sum(to_impute)
+
+    if (num_to_impute == 0) {
+      return(list(
+          gwas = gwas, b_cor = NA, se_cor = NA, b_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      ))
+    }
+
+    message("Checking data")
+    nsnp <- length(b)
+    stopifnot(nrow(pc$vectors) == nsnp)
+    stopifnot(length(af) == nsnp)
+    stopifnot(length(se) == nsnp)
+    stopifnot(all(af > 0 & af < 1))
+    stopifnot(all(!is.na(af)))
+    stopifnot(all(se > 0, na.rm=TRUE))
+
+    # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
+
+    D <- diag(sqrt(2 * af * (1 - af)))
+    Di <- diag(1 / diag(D))
+    sehat <- (diag(Di))
+    se_adj <- adjust(se, sehat, npoly=npoly)
+    gwas$SE_IMPUTED <- se_adj$adj
+    stopifnot(all(!is.na(gwas$SE_IMPUTED)))
+
+    # Sometimes SE is very far away from SE_IMPUTED.
+    # This could cause problems if the beta is instable but still used for imputation
+    # Set those betas to NA to be imputed
+    # This is a form of smoothing of the data
+    # Those excluded betas should now be a function of neighbouring LD
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+    se_outliers <- set_se_outliers_missing(gwas$SE, gwas$SE_IMPUTED)
+    b[se_outliers] <- NA
+    to_impute <- is.na(b) | se_outliers
+    num_se_outliers <- sum(se_outliers)
+
+    # Readjust SE
+    gwas$SE[se_outliers] <- gwas$SE_IMPUTED[se_outliers]
+    se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED, npoly=npoly)
+    gwas$SE_IMPUTED <- se_adj2$adj
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+
+    # Perform beta imputation
+    imp <- eig_imp(pc, thresh, b)
+    betahat_sim <- imp$dat$X
+
+
+    # Re-scale effect sizes and standard errors
+    message("Rescaling")
+    b_adj <- adjust(b, betahat_sim, npoly=npoly)
+
+    gwas$BETA_IMPUTED <- b_adj$adj
+    stopifnot(all(!is.na(gwas$BETA_IMPUTED)))
+    
+    message("Finalising")
+    gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
+    gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
+    gwas$Z[to_impute] <- gwas$BETA_IMPUTED[to_impute] / gwas$SE_IMPUTED[to_impute]
+    gwas$P[to_impute] <- 2 * pnorm(-abs(gwas$Z[to_impute]))
+    gwas$imp <- to_impute
+
+    return(
+      list(
+        gwas = gwas,
+        b_adj = b_adj$adj_slope,
+        b_adj_intercept = b_adj$adj_intercept,
+        se_adj = se_adj$adj_slope,
+        se_adj_intercept = se_adj$adj_intercept,
+        b_cor = b_adj$corr,
+        b_corr_top = b_adj$corrw,
+        se_cor = se_adj$corr,
+        se_corr_top = se_adj$corrw,
+        rows_imputed = num_to_impute,
+        num_se_outliers = num_se_outliers,
+        rows_region = nrow(gwas),
+        n_components = imp$ncomp
+      )
+    )
+}
+
+perform_imputation_eig_z <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
+    b <- gwas$BETA
+    se <- gwas$SE
+    z <- b/se
     af <- gwas$EAF
     to_impute <- is.na(b)
     num_to_impute <- sum(to_impute)
@@ -351,7 +439,8 @@ perform_imputation_eig <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
     se_outliers <- set_se_outliers_missing(gwas$SE, gwas$SE_IMPUTED)
     b[se_outliers] <- NA
-    to_impute <- is.na(b) | se_outliers
+    z[se_outliers] <- NA
+    to_impute <- is.na(z) | se_outliers
     num_se_outliers <- sum(se_outliers)
 
     # Readjust SE
@@ -361,17 +450,20 @@ perform_imputation_eig <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
 
     # Perform beta imputation
-    imp <- eig_imp(pc, thresh, b)
-    betahat_sim <- imp$dat$X
+    imp <- eig_imp(pc, thresh, z)
+    z_sim <- imp$dat$X
 
 
     # Re-scale effect sizes and standard errors
     message("Rescaling")
-    b_adj <- adjust(b, betahat_sim)
+    z_adj <- adjust(z, z_sim)
 
-    gwas$BETA_IMPUTED <- b_adj$adj
-    stopifnot(all(!is.na(gwas$BETA_IMPUTED)))
-    
+    gwas$Z_IMPUTED <- z_adj$adj
+    stopifnot(all(!is.na(gwas$Z_IMPUTED)))
+
+    gwas$BETA_IMPUTED <- gwas$Z_IMPUTED * gwas$SE_IMPUTED    
+
+
     message("Finalising")
     gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
@@ -382,12 +474,12 @@ perform_imputation_eig <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     return(
       list(
         gwas = gwas,
-        b_adj = b_adj$adj_slope,
-        b_adj_intercept = b_adj$adj_intercept,
+        z_adj = z_adj$adj_slope,
+        z_adj_intercept = z_adj$adj_intercept,
         se_adj = se_adj$adj_slope,
         se_adj_intercept = se_adj$adj_intercept,
-        b_cor = b_adj$corr,
-        b_corr_top = b_adj$corrw,
+        b_cor = z_adj$corr,
+        b_corr_top = z_adj$corrw,
         se_cor = se_adj$corr,
         se_corr_top = se_adj$corrw,
         rows_imputed = num_to_impute,
@@ -487,6 +579,21 @@ run_test_eig <- function(testdat, param) {
     return(param)
 }
 
+run_test_eig_z <- function(testdat, param) {
+    param$bcor <- NA
+    for(i in 1:nrow(param)) {
+        td <- add_missing_data(testdat, param$frac[i])
+        # o1 <- perform_imputation(td$s, td$ld, clump_gwas(td$s$Z, td$ld, param$zthresh[i], param$rthresh[i]))
+        o1 <- perform_imputation_eig_z(td$s, td$pc, param$eigthresh[i])
+        m <- is.na(td$s$BETA)
+        ev <- cor_out(o1$gwas$BETA[m], o1$gwas$BETA_TRUE[m])
+        param$nout[i] <- ev$nout
+        param$bcor[i] <- ev$c
+        param$nmiss[i] <- sum(m)
+    }
+    return(param)
+}
+
 
 ###########################################
 
@@ -501,7 +608,7 @@ a <- list.files("/local-scratch/projects/genotype-phenotype-map/test/data/study/
 # Perform analysis on one region
 
 sfile <- a[1]
-testdat <- setup_data_for_tests(A, maxsnps = 100000, remove_missing=FALSE)
+testdat <- setup_data_for_tests(sfile, maxsnps = 100000, remove_missing=FALSE)
 str(testdat)
 o <- perform_imputation_eig(testdat$s, testdat$pc, 0.9)
 o
@@ -510,14 +617,14 @@ ggsave(
     ggplot(o$gwas %>% filter(!imp), aes(BETA, BETA_IMPUTED)) +
     geom_point(alpha=0.5) +
     geom_abline(),
-    file="temp.png"
+    file="temp_beta.png"
 )
 
 ggsave(
     ggplot(o$gwas %>% filter(!imp), aes(SE, SE_IMPUTED)) +
     geom_point(alpha=0.5) +
     geom_abline(),
-    file="temp.png"
+    file="temp_se.png"
 )
 
 
@@ -559,9 +666,22 @@ res_eig <- mclapply(a, \(A) {
     testdat <- try(setup_data_for_tests(A))
     if(class(testdat) == "try-error") { return(NULL) }
     pt <- run_test_eig(testdat, subset(param, sfile==A))    
-}, mc.cores=50) %>% bind_rows()
+}, mc.cores=200) %>% bind_rows()
 
-res <- bind_rows(res_eig, res_th) %>% as_tibble()
+param <- expand.grid(
+    sfile = a,
+    method = "eig_z",
+    eigthresh = c(0.5, 0.6, 0.7, 0.8, 0.9, 0.99),
+    frac = c(0.1, 0.5)
+) %>% mutate(sfile = as.character(sfile))
+
+res_eig_z <- mclapply(a, \(A) {
+    testdat <- try(setup_data_for_tests(A))
+    if(class(testdat) == "try-error") { return(NULL) }
+    pt <- run_test_eig_z(testdat, subset(param, sfile==A))    
+}, mc.cores=200) %>% bind_rows()
+
+res <- bind_rows(res_eig, res_eig_z) %>% as_tibble()
 
 
 #########################################
@@ -587,9 +707,233 @@ summary(res_best2$bcor)
 #########################################
 
 ggsave(
-    ggplot(res, aes(x=method, y=bcor)) +
-    geom_boxplot(aes(fill=as.factor(eigthresh))) +
+    ggplot(res, aes(x=as.factor(eigthresh), y=bcor)) +
+    geom_boxplot(aes(fill=as.factor(method))) +
     facet_grid(. ~ frac, label=label_both),
     file="method_eval.png"
 )
+
+
+############################################
+
+# Issues
+
+
+a <- list.files("/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/", full.names=TRUE) %>% sample(100, replace=F)
+
+
+
+###########################################
+
+# Perform analysis on one region
+
+sfile <- "/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_2_157625480.tsv.gz"
+
+testdat <- setup_data_for_tests(sfile, maxsnps = 100000, remove_missing=FALSE)
+str(testdat)
+dim(testdat$s)
+sum(is.na(testdat$s$BETA))
+o <- perform_imputation_eig(testdat$s, testdat$pc, 0.9, npoly=3)
+o
+
+
+p1 <- ggplot(o$gwas, aes(x=BP, y=BETA)) +
+    geom_point(alpha=0.5, aes(colour=imp))
+ggsave(p1, file="temp1.png")
+
+p1 <- ggplot(o$gwas, aes(x=BP, y=1/SE)) +
+    geom_point(alpha=0.5, aes(colour=imp))
+ggsave(p1, file="temp2.png")
+
+p1 <- ggplot(o$gwas, aes(x=1/SE, y=1/SE_IMPUTED)) +
+    geom_point(alpha=0.5, aes(colour=imp)) +
+    geom_abline()
+ggsave(p1, file="temp32.png")
+
+p1 <- ggplot(o$gwas, aes(x=BETA^2, y=BETA_IMPUTED^2)) +
+    geom_point(alpha=0.5, aes(colour=imp)) +
+    geom_abline()
+ggsave(p1, file="temp4.png")
+
+
+oz <- perform_imputation_eig_z(testdat$s, testdat$pc, 0.9)
+oz
+o
+
+
+
+p1 <- ggplot(oz$gwas, aes(x=BP, y=BETA)) +
+    geom_point(alpha=0.5, aes(colour=imp))
+ggsave(p1, file="temp1z.png")
+
+p1 <- ggplot(oz$gwas, aes(x=BP, y=1/SE)) +
+    geom_point(alpha=0.5, aes(colour=imp))
+ggsave(p1, file="temp2z2.png")
+
+p1 <- ggplot(oz$gwas, aes(x=1/SE, y=1/SE_IMPUTED)) +
+    geom_point(alpha=0.5, aes(colour=imp)) +
+    geom_abline()
+ggsave(p1, file="temp3z.png")
+
+p1 <- ggplot(oz$gwas, aes(x=BETA^2, y=BETA_IMPUTED^2)) +
+    geom_point(alpha=0.5, aes(colour=imp)) +
+    geom_abline()
+ggsave(p1, file="temp4z.png")
+
+p1 <- ggplot(oz$gwas, aes(x=BP, y=abs(Z))) +
+geom_point(aes(colour=imp)) +
+geom_hline(yintercept=qnorm(1e-5, low=F), col="red")
+ggsave(p1, file="temp5z.png")
+
+
+p1 <- ggplot(o$gwas, aes(x=BP, y=abs(BETA/SE))) +
+geom_point(aes(colour=imp)) +
+geom_hline(yintercept=qnorm(1e-5, low=F), col="red")
+ggsave(p1, file="temp5.png")
+
+##########
+
+bootstrap_se <- function(beta, se, nboot=1000) {
+    boot <- matrix(NA, nrow=nboot, ncol=length(beta))
+    for(i in 1:nboot) {
+        boot[i,] <- beta + rnorm(length(beta)) * se
+    }
+    boot
+
+}
+
+eig_imp_se <- function(pc, thresh, X, se, nboot=1000) {
+    message("Getting threshold")
+    i <- which(cumsum(pc$values) / sum(pc$values) >= thresh)[1]
+    E <- pc$vectors[,1:i]
+    mask <- is.na(X)
+    dat <- bind_cols(tibble(X), as_tibble(E))
+    message("Fitting model")
+    mod <- lm(X ~ ., data=dat)
+    rsq <- summary(mod)$adj.r.squared
+    message("Imputing")
+    p <- predict(mod, dat)
+    co <- cor(p, X, use="pair")
+
+    message("Getting standard errors")
+    betamat <- matrix(NA, nboot, length(X))
+    s <- sum(!mask)
+    Xm <- X[!mask]
+    sem <- se[!mask]
+    for(i in 1:nboot) {
+        message(i)
+        Xi <- rnorm(s, Xm, sem)
+        dat$X[!mask] <- Xi
+        mod <- lm(X ~ ., data=dat[!mask,])
+        betamat[i,] <- predict(mod, dat)
+    }
+    se <- apply(betamat, 2, sd)
+
+    # png("temp2.png")
+    # plot(p, X)
+    # abline(0,1)
+    # dev.off()
+
+    temp <- tibble(X=p, se=se, mask, pos=1:length(X))
+    return(list(dat=temp, rsq=rsq, cor=co, ncomp=i))
+}
+
+
+temp <- eig_imp_se(testdat$pc, 0.9, testdat$s$BETA, testdat$s$SE, nboot=50)
+
+png("temp4.png")
+plot((temp$dat$se), testdat$s$SE)
+abline(0,1)
+dev.off()
+
+
+se = var / [ var(x) * sqrt(n)]
+
+n varx se = var
+sqrt(n) = var / (varx * se)
+
+est_n <- function(se, af)  {
+    n <- 1 / (4 * se^2 * af * (1 - af))
+    n
+}
+
+
+testdat$s$N_est <- est_n(testdat$s$SE, testdat$s$EAF)
+
+summary(testdat$s$N_est)
+
+png("temp5.png")
+hist(testdat$s$N_est, breaks=20)
+dev.off()
+
+s <- apply(testdat$pc$vectors, 2, \(x) sum(abs(x) * testdat$s$N_est / sum(abs(x)), na.rm=T))
+
+png("temp6.png")
+hist(s, breaks=20)
+dev.off()
+
+
+eig_imp_sen <- function(pc, thresh, X, se, af) {
+    message("Getting threshold")
+    i <- which(cumsum(pc$values) / sum(pc$values) >= thresh)[1]
+    E <- pc$vectors[,1:i]
+    mask <- is.na(X)
+    dat <- bind_cols(tibble(X), as_tibble(E))
+    message("Fitting model")
+    mod <- lm(X ~ ., data=dat)
+    rsq <- summary(mod)$adj.r.squared
+    message("Imputing")
+    p <- predict(mod, dat)
+    co <- cor(p, X, use="pair")
+
+
+    message("Get n")
+    n <- est_n(se, af)
+    message("Transform PC")
+    s <- apply(E, 2, \(x) sum(abs(x) * n / sum(abs(x)), na.rm=T))
+    message()
+
+    message("Getting standard errors")
+
+
+
+    betamat <- matrix(NA, nboot, length(X))
+    s <- sum(!mask)
+    Xm <- X[!mask]
+    sem <- se[!mask]
+    for(i in 1:nboot) {
+        message(i)
+        Xi <- rnorm(s, Xm, sem)
+        dat$X[!mask] <- Xi
+        mod <- lm(X ~ ., data=dat[!mask,])
+        betamat[i,] <- predict(mod, dat)
+    }
+    se <- apply(betamat, 2, sd)
+
+    # png("temp2.png")
+    # plot(p, X)
+    # abline(0,1)
+    # dev.off()
+
+    temp <- tibble(X=p, se=se, mask, pos=1:length(X))
+    return(list(dat=temp, rsq=rsq, cor=co, ncomp=i))
+}
+
+
+
+
+x <- rnorm(1000)
+y <- x + rnorm(1000)
+
+lm(y ~ x)
+reg <- lm(y ~ poly(x, 2, raw=T))
+
+predict(reg, newdata=data.frame(x=1))
+
+
+lm(y ~ x + I(x^2) + I(x^3))
+
+
+
+
 

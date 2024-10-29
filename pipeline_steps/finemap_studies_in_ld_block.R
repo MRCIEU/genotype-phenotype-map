@@ -59,6 +59,7 @@ main <- function() {
         message('performing qc')
         qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
         study <- qc_results$study
+
         if (study['snps_removed_by_qc'] > 0) {
           results <- run_susie_finemapping(qc_results$gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
           if (!is.null(results$failed_finemap_info)) {
@@ -97,18 +98,7 @@ load_existing_finemapped_results <- function(finemapped_results_file) {
   if (file.exists(finemapped_results_file)) {
     return(vroom::vroom(finemapped_results_file,
                         show_col_types = F,
-                        col_types = vroom::cols(
-                          chr = vroom::col_character(),
-                          bp = vroom::col_number(),
-                          min_p = vroom::col_number(),
-                          sample_size = vroom::col_number(),
-                          p_value_threshold = vroom::col_number(),
-                          first_finemap_num_results = vroom::col_number(),
-                          second_finemap_num_results = vroom::col_number(),
-                          qc_step_run = vroom::col_logical(),
-                          snps_removed_by_qc = vroom::col_number(),
-                          time_taken = vroom::col_character()
-                        )
+                        col_types = finemapped_column_types 
     ))
   } else {
     return(empty_finemapped_info())
@@ -161,9 +151,14 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   })
 
   if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
-    message(paste('Finemapping:', study['file'], 'susie either didnt converge'))
     failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time)
-    if (susie_result$converged == T) failed_finemap_info$finemap_message <- 'less_than_2_cs'
+    if (susie_result$converged == F) {
+      message(paste('Finemapping:', study['file'], 'susie didnt converge'))
+    }
+    else if (susie_result$converged == T) {
+      message(paste('Finemapping:', study['file'], 'susie only found 1 credible set'))
+      failed_finemap_info$finemap_message <- 'less_than_2_cs'
+    }
   }
   else {
     message(paste('Finemapping:', study['file'], 'found', length(susie_result$sets$cs_index), 'credible sets in', susie_result$niter, 'iterations!'))
@@ -274,11 +269,15 @@ perform_qc <- function(gwas, study, bfile) {
     if (nrow(dentist_to_remove) > 0) {
       gwas <- dplyr::filter(gwas, !SNP %in% dentist_to_remove$X1) |>
         dplyr::select(SNP, RSID, dplyr::everything())
+
       dentist_file <- sub('.tsv.gz', '_dentist_removed.tsv', study['file'])
       dentist_full_remove <- vroom::vroom(dentist_full_file, col_names = F, show_col_types = F) |>
         dplyr::filter(X1 %in% dentist_to_remove$X1) |>
         dplyr::rename(SNP='X1', chisq='X2', nlogp='X3', dup='X4')
+
       vroom::vroom_write(dentist_full_remove, dentist_file)
+      study_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', study['file'])
+      vroom::vroom_write(gwas, study_file)
     }
 
     study['snps_removed_by_qc'] <- nrow(dentist_to_remove)

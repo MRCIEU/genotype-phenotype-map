@@ -16,15 +16,7 @@ main <- function() {
   if (file.exists(standardised_studies_file)) {
     existing_standardised_studies <- vroom::vroom(standardised_studies_file,
                                                   show_col_types = F,
-                                                  col_types = vroom::cols(
-                                                    chr = vroom::col_character(),
-                                                    bp = vroom::col_number(),
-                                                    sample_size = vroom::col_number(),
-                                                    p_value_threshold = vroom::col_number(),
-                                                    snps_removed_by_reference_panel=vroom::col_number(),
-                                                    eaf_from_reference_panel=vroom::col_logical(),
-                                                    time_taken=vroom::col_character()
-                                                  )
+                                                  col_types = standardised_column_types 
     )
   } else {
     existing_standardised_studies <- empty_standardised_studies()

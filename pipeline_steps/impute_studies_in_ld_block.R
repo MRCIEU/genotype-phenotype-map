@@ -17,16 +17,7 @@ main <- function() {
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (file.exists(imputed_studies_file)) {
-    existing_imputed_studies <- vroom::vroom(imputed_studies_file,
-                                                  show_col_types = F,
-                                                  col_types = vroom::cols(
-                                                    chr = vroom::col_character(),
-                                                    bp = vroom::col_number(),
-                                                    sample_size = vroom::col_number(),
-                                                    p_value_threshold = vroom::col_number(),
-                                                    time_taken=vroom::col_character()
-                                                  )
-    )
+    existing_imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F, col_types = imputed_column_types)
   } else {
     existing_imputed_studies <- empty_imputed_studies()
   }
@@ -53,8 +44,11 @@ main <- function() {
 
       result <- perform_imputation(gwas_to_impute, ld_matrix_eig)
 
+      only_keep_inside_gwas_range <- gwas_to_impute$BP > min(gwas$BP) & gwas_to_impute$BP < max(gwas$BP)
+      imputed_gwas <- result$gwas[only_keep_inside_gwas_range, ]
+
       if(result$b_cor >= imputation_correlation_threshold) {
-        vroom::vroom_write(result$gwas, imputed_file)
+        vroom::vroom_write(imputed_gwas, imputed_file)
       } else {
         vroom::vroom_write(gwas, imputed_file)
       }
@@ -112,10 +106,11 @@ main <- function() {
 perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     b <- gwas$BETA
     se <- gwas$SE
+    z <- b/se
     af <- gwas$EAF
-
     to_impute <- is.na(b)
     num_to_impute <- sum(to_impute)
+
     if (num_to_impute == 0) {
       return(list(
           gwas = gwas, b_cor = NA, se_cor = NA, b_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
@@ -147,7 +142,8 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
     se_outliers <- set_se_outliers_missing(gwas$SE, gwas$SE_IMPUTED)
     b[se_outliers] <- NA
-    to_impute <- is.na(b) | se_outliers
+    z[se_outliers] <- NA
+    to_impute <- is.na(z) | se_outliers
     num_se_outliers <- sum(se_outliers)
 
     # Readjust SE
@@ -157,16 +153,19 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
 
     # Perform beta imputation
-    imp <- eig_imp(pc, thresh, b)
-    betahat_sim <- imp$dat$X
+    imp <- eig_imp(pc, thresh, z)
+    z_sim <- imp$dat$X
 
 
     # Re-scale effect sizes and standard errors
-    b_adj <- adjust(b, betahat_sim)
+    z_adj <- adjust(z, z_sim)
 
-    gwas$BETA_IMPUTED <- b_adj$adj
-    stopifnot(all(!is.na(gwas$BETA_IMPUTED)))
-    
+    gwas$Z_IMPUTED <- z_adj$adj
+    stopifnot(all(!is.na(gwas$Z_IMPUTED)))
+
+    gwas$BETA_IMPUTED <- gwas$Z_IMPUTED * gwas$SE_IMPUTED
+
+
     gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
     gwas$Z[to_impute] <- gwas$BETA_IMPUTED[to_impute] / gwas$SE_IMPUTED[to_impute]
@@ -176,12 +175,12 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     return(
       list(
         gwas = gwas,
-        b_adj = b_adj$adj_slope,
-        b_adj_intercept = b_adj$adj_intercept,
+        z_adj = z_adj$adj_slope,
+        z_adj_intercept = z_adj$adj_intercept,
         se_adj = se_adj$adj_slope,
         se_adj_intercept = se_adj$adj_intercept,
-        b_cor = b_adj$corr,
-        b_corr_top = b_adj$corrw,
+        b_cor = z_adj$corr,
+        b_corr_top = z_adj$corrw,
         se_cor = se_adj$corr,
         se_corr_top = se_adj$corrw,
         rows_imputed = num_to_impute,
@@ -204,10 +203,11 @@ outlier_detection <- function(r, thresh=3) {
     return(outliers)
 }
 
-adjust <- function(truth, predicted, eval_frac = 0.5) {
+adjust <- function(truth, predicted, eval_frac = 0.5, npoly=3) {
     outs <- outlier_detection(truth / predicted)
-    reg <- lm(truth[!outs] ~ predicted[!outs])
-    adj <- predicted * reg$coef[2] + reg$coef[1]
+    reg <- lm(truth[!outs] ~ poly(predicted[!outs], npoly, raw=T))
+    # adj <- predict(reg, newdata=data.frame(predicted=predicted))
+    adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
     corr <- cor(adj[!outs], truth[!outs], use="pair")
     iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
     corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")

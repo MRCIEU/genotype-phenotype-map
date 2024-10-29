@@ -1,5 +1,4 @@
 source('constants.R')
-library(argparser, quietly = TRUE)
 bp_range <- 10000
 
 parser <- argparser::arg_parser('Colocalise studies per region')

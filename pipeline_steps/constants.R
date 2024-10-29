@@ -39,6 +39,37 @@ available_liftover_conversions <- list(
   'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
 
+standardised_column_types <- vroom::cols(
+  chr = vroom::col_character(),
+  bp = vroom::col_number(),
+  sample_size = vroom::col_number(),
+  p_value_threshold = vroom::col_number(),
+  snps_removed_by_reference_panel=vroom::col_number(),
+  eaf_from_reference_panel=vroom::col_logical(),
+  time_taken=vroom::col_character()
+)
+
+imputed_column_types <- vroom::cols(
+  chr = vroom::col_character(),
+  bp = vroom::col_number(),
+  sample_size = vroom::col_number(),
+  p_value_threshold = vroom::col_number(),
+  time_taken=vroom::col_character()
+)
+
+finemapped_column_types <- vroom::cols(
+  chr = vroom::col_character(),
+  bp = vroom::col_number(),
+  min_p = vroom::col_number(),
+  sample_size = vroom::col_number(),
+  p_value_threshold = vroom::col_number(),
+  first_finemap_num_results = vroom::col_number(),
+  second_finemap_num_results = vroom::col_number(),
+  qc_step_run = vroom::col_logical(),
+  snps_removed_by_qc = vroom::col_number(),
+  time_taken = vroom::col_character()
+)
+
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
   file_prefix <- sub('\\..*', '', file_name)

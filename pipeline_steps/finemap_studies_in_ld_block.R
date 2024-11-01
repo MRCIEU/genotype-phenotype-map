@@ -72,6 +72,7 @@ main <- function() {
             return(results$failed_finemap_info)
           }
           study['second_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
+          gwas <- qc_results$gwas
         }
         else {
           study['second_finemap_num_results'] <- NA

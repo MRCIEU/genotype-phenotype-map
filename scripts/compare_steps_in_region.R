@@ -16,35 +16,41 @@ main <- function() {
     dplyr::filter(study == args$study)
   imputed_gwas <- vroom::vroom(imputed_study$file, show_col_types=F)
 
-  dentist_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', imputed_study$file)
-  dentist_gwas <- vroom::vroom(dentist_file, show_col_types=F)
+  pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_study$file)
+  pre_filter_gwas <- vroom::vroom(pre_filter_file, show_col_types=F)
 
-  # finemapped_studies <- vroom::vroom(glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'), show_col_types=F) |>
-    # dplyr::filter(study == args$study)
+  # dentist_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', imputed_study$file)
+  # dentist_gwas <- vroom::vroom(dentist_file, show_col_types=F)
 
-  # finemapped_gwases <- lapply(finemapped_studies$file, function(file) {
-    # vroom::vroom(file, show_col_types=F)
-  # })
+  finemapped_studies <- vroom::vroom(glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'), show_col_types=F) |>
+    dplyr::filter(study == args$study)
+
+  finemapped_gwases <- lapply(finemapped_studies$file, function(file) {
+    vroom::vroom(file, show_col_types=F)
+  })
 
   manhattan(standardised_gwas, glue::glue('{standardised_study$study}_standardised.png'))
   manhattan(imputed_gwas, glue::glue('{imputed_study$study}_imputed.png'))
-  manhattan(dentist_gwas, glue::glue('{imputed_study$study}_dentist.png'))
-  # apply(finemapped_studies, 1, function(study) {
-  #   print(study["file"])
-  #   gwas <- vroom::vroom(study["file"], show_col_types=F)
-  #   manhattan(gwas, glue::glue('{study["unique_study_id"]}_finemapped.png'))
-  # })
+  manhattan(pre_filter_gwas, glue::glue('{imputed_study$study}_imputed_pre_filter.png'))
+  # manhattan(dentist_gwas, glue::glue('{imputed_study$study}_dentist.png'))
+  apply(finemapped_studies, 1, function(study) {
+    print(study["file"])
+    gwas <- vroom::vroom(study["file"], show_col_types=F)
+    manhattan(gwas, glue::glue('{study["unique_study_id"]}_finemapped.png'))
+  })
 }
 
 
-manhattan <- function(first_gwas, manhattan_filename) {
+manhattan <- function(gwas, manhattan_filename) {
+  print(manhattan_filename)
+  print(glue::glue('rows: {nrow(gwas)}'))
   manhattan_columns <- c("SNP", "CHR", "BP", "P")
 
-  first_gwas$P[first_gwas$P == 0] <- .Machine$double.xmin
-  x_range <- c(min(first_gwas$BP), max(first_gwas$BP))
+  gwas$P[gwas$P == 0] <- .Machine$double.xmin
+  x_range <- c(min(gwas$BP), max(gwas$BP))
 
   grDevices::png(manhattan_filename, width = 750, height = 250)
-  qqman::manhattan(first_gwas, xlim = x_range, main = "Manhattan plot of GWAS")
+  qqman::manhattan(gwas, xlim = x_range, main = "Manhattan plot of GWAS")
   grDevices::dev.off()
 }
 

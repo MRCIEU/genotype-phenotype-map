@@ -1,6 +1,7 @@
 source('constants.R')
 
-imputation_correlation_threshold <- 0
+imputation_correlation_threshold <- 0.7
+p_value_filter_correlation_threshold <- 0.6
 
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -10,6 +11,7 @@ args <- argparser::parse_args(parser)
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
+  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
   ld_matrix_eig <- readRDS(glue::glue('{ld_info$ld_reference_panel_prefix}.ldeig.rds'))
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
@@ -44,8 +46,10 @@ main <- function() {
 
       result <- perform_imputation(gwas_to_impute, ld_matrix_eig)
 
-      only_keep_inside_gwas_range <- gwas_to_impute$BP > min(gwas$BP) & gwas_to_impute$BP < max(gwas$BP)
-      imputed_gwas <- result$gwas[only_keep_inside_gwas_range, ]
+      pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_file)
+      vroom::vroom_write(result$gwas, pre_filter_file)
+
+      imputed_gwas <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
       if(result$b_cor >= imputation_correlation_threshold) {
         vroom::vroom_write(imputed_gwas, imputed_file)
@@ -68,7 +72,7 @@ main <- function() {
         rows_imputed=result$rows_imputed,
         b_cor=result$b_cor,
         se_cor=result$se_cor,
-        b_adj=result$b_adj,
+        z_adj=result$z_adj,
         se_adj=result$se_adj,
         time_taken=as.character(time_taken)
       )
@@ -98,7 +102,7 @@ main <- function() {
 #' 
 #' @return A list with the following elements:
 #' - gwas: The input data frame with the imputed values added
-#' - b_adj: The adjustment factor for the effect sizes
+#' - z_adj: The adjustment factor for the effect sizes
 #' - se_adj: The adjustment factor for the standard errors
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
@@ -113,7 +117,7 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
 
     if (num_to_impute == 0) {
       return(list(
-          gwas = gwas, b_cor = NA, se_cor = NA, b_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+          gwas = gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
       ))
     }
 
@@ -170,7 +174,7 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
     gwas$Z[to_impute] <- gwas$BETA_IMPUTED[to_impute] / gwas$SE_IMPUTED[to_impute]
     gwas$P[to_impute] <- 2 * pnorm(-abs(gwas$Z[to_impute]))
-    gwas$imp <- to_impute
+    gwas$IMPUTED <- to_impute
 
     return(
       list(
@@ -236,6 +240,35 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
     return(i)
 }
 
+#' Filter imputed results, and remove results with over-inflated p-vlaues
+#' @param imputed gwas
+#' @param ld correlation matrix
+#' 
+#' First, filters the imputation results to inside the range of the original gwas
+#' Second, finds imputed variants with low pvalues, non-imputed rows that are correlated
+#' If imputed variant is more significant the non-imputed rows, drop that variant
+filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
+  snps_to_remove <- c()
+
+  only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
+  gwas <- gwas[only_keep_inside_gwas_range, ]
+
+  snps_to_investigate <- which(gwas$P < lowest_p_value_threshold & gwas$IMPUTED == T)
+  for (snp_location in snps_to_investigate) {
+    snp <- gwas[snp_location, ]
+
+    ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
+    ld_correlations <- ld_correlations[ld_correlations != snp_location]
+    gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
+
+    if (min(gwas_correlations$P) > snp$P) {
+      snps_to_remove <- c(snps_to_remove, snp_location)
+    }
+  }
+
+  gwas <- gwas[-snps_to_remove,]
+}
+
 empty_imputed_studies <- function() {
   return(
     data.frame(
@@ -251,7 +284,7 @@ empty_imputed_studies <- function() {
       rows_imputed=numeric(),
       b_cor=numeric(),
       se_cor=numeric(),
-      b_adj=numeric(),
+      z_adj=numeric(),
       se_adj=numeric(),
       time_taken=character()
     )

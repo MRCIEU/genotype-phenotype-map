@@ -49,10 +49,10 @@ main <- function() {
       pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_file)
       vroom::vroom_write(result$gwas, pre_filter_file)
 
-      imputed_gwas <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
+      filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
       if(result$b_cor >= imputation_correlation_threshold) {
-        vroom::vroom_write(imputed_gwas, imputed_file)
+        vroom::vroom_write(filtered_results$gwas, imputed_file)
       } else {
         vroom::vroom_write(gwas, imputed_file)
       }
@@ -70,6 +70,8 @@ main <- function() {
         sample_size=as.numeric(study['sample_size']),
         cis_trans=study['cis_trans'],
         rows_imputed=result$rows_imputed,
+        significant_rows_imputed=filtered_results$significant_rows_imputed,
+        significant_rows_filtered=filtered_results$significant_rows_filtered,
         b_cor=result$b_cor,
         se_cor=result$se_cor,
         z_adj=result$z_adj,
@@ -248,25 +250,24 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
 #' Second, finds imputed variants with low pvalues, non-imputed rows that are correlated
 #' If imputed variant is more significant the non-imputed rows, drop that variant
 filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
-  snps_to_remove <- c()
-
   only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
+  snps_to_remove <- c()
   snps_to_investigate <- which(gwas$P < lowest_p_value_threshold & gwas$IMPUTED == T)
   for (snp_location in snps_to_investigate) {
-    snp <- gwas[snp_location, ]
-
     ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
     ld_correlations <- ld_correlations[ld_correlations != snp_location]
     gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
 
-    if (min(gwas_correlations$P) > snp$P) {
+    snp <- gwas[snp_location, ]
+    if (min(gwas_correlations$P * 0.1) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)
     }
   }
 
-  gwas <- gwas[-snps_to_remove,]
+  if (length(snps_to_remove) > 0) gwas <- gwas[-snps_to_remove, ]
+  return(list(gwas=gwas, significant_rows_imputed=length(snps_to_investigate), significant_rows_filtered=length(snps_to_remove)))
 }
 
 empty_imputed_studies <- function() {

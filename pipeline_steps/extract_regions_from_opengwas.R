@@ -48,18 +48,11 @@ convert_reference_build <- function(study,
   rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf.gz')
   fasta_file <- glue::glue('{liftover_dir}/hg38.fa')
 
-  # https://broadinstitute.github.io/picard/command-line-overview.html
-  # picard_command <- glue::glue(
-    # 'java -jar /usr/bin/picard.jar LiftoverVcf ',
-    # 'I={vcf_file} O={output_file} ',
-    # 'CHAIN={liftover_conversion} REJECT={rejected_file} R={fasta_file}')
-
   if (file.exists(output_file)) {
     message(glue::glue('{vcf_file} already converted to hg38.'))
     return(output_file)
   }
 
-  start_time <- Sys.time()
   bcf_liftover_command <- glue::glue(
     '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/num_to_chr.txt {vcf_file} | ',
       '/home/bcftools/bcftools +liftover --no-version -Ou -- ',
@@ -70,10 +63,8 @@ convert_reference_build <- function(study,
         '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_to_num.txt | ',
           '/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi'
   )
-  message(bcf_liftover_command)
   system(bcf_liftover_command, wait = T, ignore.stdout = T)
 
-  message(hms::as_hms(difftime(Sys.time(), start_time)))
   return(output_file)
 }
 
@@ -143,24 +134,34 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
       return()
     }
 
-    return(data.frame(CHR = clump_chr, BP = clump_bp, P=as.numeric(clump['P']), bcf_region = region$bcf_region, string_region = region$string_region))
+    return(data.frame(CHR = clump_chr,
+      BP = clump_bp,
+      P=as.numeric(clump['P']),
+      bcf_region = region$bcf_region,
+      region_start = region$start,
+      region_stop = region$stop,
+      string_region = region$string_region)
+    )
   }) |> dplyr::bind_rows()
   
   #removing duplicate entries per region, so we only grab the region once.
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
-  print(glue::glue('num to extract: {nrow(clumped_snps)}'))
+  message(glue::glue('num to extract: {nrow(clumped_snps)}'))
 
-  #TODO: this is quite slow, it could be sped up by running this once, and splitting out the results somehow afterwards
-  extracted_snps <- apply(clumped_snps, 1, function(clump) {
-    bcf_query <- glue::glue('/home/bcftools/bcftools query ',
-      '--regions {clump[["bcf_region"]]} ',
-      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%ALT]\t[%REF]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" ',
-      '{vcf_file}'
-    )
+  regions_file <- tempfile()
+  vroom::vroom_write(dplyr::select(clumped_snps, CHR, region_start, region_stop), regions_file, delim = '\t', col_names = F)
+  
+  bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+    '--regions-file {regions_file} ',
+    '--format "[%ID]\t[%CHROM]\t[%POS]\t[%ALT]\t[%REF]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" ',
+    '{vcf_file}'
+  )
+  extracted_regions <- system(bcf_query, wait = T, intern = T)
+  extracted_regions <- data.table::fread(text = extracted_regions)
+  colnames(extracted_regions) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
 
-    extracted_region <- system(bcf_query, wait = T, intern = T)
-    extracted_region <- data.table::fread(text = extracted_region)
-    colnames(extracted_region) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
+  extracted_snp_info <- apply(clumped_snps, 1, function(clump) {
+    extracted_region <- dplyr::filter(extracted_regions, CHR == as.numeric(clump['CHR']) & BP >= as.numeric(clump['region_start']) & BP <= as.numeric(clump['region_stop']))
 
     extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{clump["CHR"]}_{clump["BP"]}.tsv.gz')
     extracted_file <- gsub(' ', '', extracted_file)
@@ -176,8 +177,8 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     return(extraction_info)
   }) |> dplyr::bind_rows()
 
-  message(glue::glue('{study["extracted_location"]}: Extracted {nrow(extracted_snps)} regions'))
-  return(extracted_snps)
+  message(glue::glue('{study["extracted_location"]}: Extracted {nrow(extracted_snp_info)} regions'))
+  return(extracted_snp_info)
 }
 
 main()

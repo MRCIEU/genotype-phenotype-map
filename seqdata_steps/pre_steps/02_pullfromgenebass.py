@@ -8,6 +8,9 @@ import hail as hl
 import os
 import sys
 
+# Initialize Hail with a specified number of cores
+hl.init(spark_conf={'spark.master': 'local[10]'})
+
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 10g --executor-memory 10g pyspark-shell'
 DATA_DIR = "/local-scratch/data/genebass/"
 SEQDATA_DIR = "/local-scratch/data/ukb-seq/"

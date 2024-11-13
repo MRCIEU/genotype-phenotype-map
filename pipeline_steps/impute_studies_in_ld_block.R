@@ -44,7 +44,7 @@ main <- function() {
       rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
-      result <- perform_imputation(gwas_to_impute, ld_matrix_eig)
+      result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
 
       pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_file)
       vroom::vroom_write(result$gwas, pre_filter_file)
@@ -109,7 +109,7 @@ main <- function() {
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
+perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
     b <- gwas$BETA
     se <- gwas$SE
     z <- b/se
@@ -127,8 +127,15 @@ perform_imputation <- function(gwas, pc, thresh=0.9, eval_frac=0.25) {
     stopifnot(nrow(pc$vectors) == nsnp)
     stopifnot(length(af) == nsnp)
     stopifnot(length(se) == nsnp)
+
+    if (any(af <= 0 | af >= 1)) {
+      stop(glue::glue('{file} has funky EAF values :()'))
+    }
     stopifnot(all(af > 0 & af < 1))
     stopifnot(all(!is.na(af)))
+    if (any(se <= 0, na.rm=TRUE)) {
+      stop(glue::glue('{file} has funky SE values :()'))
+    }
     stopifnot(all(se > 0, na.rm=TRUE))
 
     # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
@@ -216,7 +223,12 @@ adjust <- function(truth, predicted, eval_frac = 0.5, npoly=3) {
     adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
     corr <- cor(adj[!outs], truth[!outs], use="pair")
     iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
-    corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
+
+    if(length(adj[!outs & iqr]) == 0) {
+      corrw <- NA
+    } else {
+      corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
+    }
 
     return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr, corrw=corrw))
 }

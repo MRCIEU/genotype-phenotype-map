@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-EXTRA_ARG=$1
+EXTRA_SNAKEMAKE_ARG=$1
 
 if [ -f .env ]
 then

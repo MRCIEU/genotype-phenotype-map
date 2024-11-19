@@ -31,12 +31,7 @@ ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_bloc
 
 #TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
 complex_ld_blocks = [
-    'EUR/5/42858112-52881116',
-    'EUR/8/41866032-45930525',
     'EUR/8/80453471-82816871',
-    'EUR/10/37545448-41707258',
-    'EUR/11/46868162-54537872',
-    'EUR/20/22799227-31989284',
 ]
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
@@ -134,16 +129,17 @@ def standardise_rule(standardisation_pattern, name):
             subprocess.run(command, shell=True)
 
 
+# TODO: clean this code up (and delete the .py file) if new imputation method is successful
 def impute_rule(standardisation_pattern, imputation_pattern, name):
     rule:
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
         output: temporary(imputation_pattern)
-        retries: 1
         # retries: 5
         # threads: 28 if name == 'complex' else 12
         # priority: 1 if name == 'complex' else 0
-        threads: 3
+        retries: 1
+        threads: 4
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -171,7 +167,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
         retries: 1
-        threads: 2
+        threads: 4
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

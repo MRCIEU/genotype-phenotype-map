@@ -13,7 +13,6 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
@@ -51,8 +50,8 @@ finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complet
 complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
 
 ### OUTPUT DATA FILES
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/coloc_complete'
-complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_coloc_complete'
+coloc_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/coloc_complete'
+complex_coloc_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_coloc_complete'
 
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
@@ -194,9 +193,9 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.results_dir == params.ld_dir]) == 0
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"

@@ -36,7 +36,6 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
   )
 
   if (!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive = T)
-  if (!dir.exists(ld_info$ld_block_results)) dir.create(ld_info$ld_block_results, recursive = T)
   extracted_studies_file <- glue::glue('{ld_info$ld_block_data}/extracted_studies.tsv')
 
   if (file.exists(extracted_studies_file)) {
@@ -51,7 +50,6 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_blocks$ld_block <- ld_info$block 
 ld_blocks$data_dir <- ld_info$ld_block_data
-ld_blocks$results_dir <- ld_info$ld_block_results
 all_updated_ld_blocks <- dplyr::filter(ld_blocks, ld_block %in% names(extracted_snps_by_region)) |> dplyr::arrange(chr)
 
 if (args$include_all) {

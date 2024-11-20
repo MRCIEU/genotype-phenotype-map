@@ -13,7 +13,6 @@ ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
 liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
 
-ld_block_results_dir <- glue::glue('{results_dir}ld_blocks/')
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
@@ -79,7 +78,6 @@ file_prefix <- function(file_path) {
 ld_block_dirs <- function(block) {
   ld_info <- data.frame(block = block,
                         ld_block_data = glue::glue('{ld_block_data_dir}{block}'),
-                        ld_block_results = glue::glue('{ld_block_results_dir}{block}'),
                         ld_reference_panel_prefix=glue::glue('{ld_reference_panel_dir}{block}')
   )
   return(ld_info)
@@ -92,4 +90,25 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+}
+
+gwas_health_check <- function(gwas) {
+  if (any(gwas$P < 0 | gwas$P > 1)) {
+    stop("GWAS has some P values outside accepted range.  Please fix GWAS or remove it from pipeline")
+  }
+  if (any(gwas$EAF < 0 | gwas$EAF > 1)) {
+    stop("GWAS has some EAF values outside accepted range.  Please fix GWAS or remove it from pipeline")
+  }
+  if (any(gwas$SE < 0) {
+    stop("GWAS has some EAF values outside accepted range.  Please fix GWAS or remove it from pipeline")
+  }
+}
+
+filter_gwas <- function(gwas, common=T) {
+  gwas <- dplyr::filter(gwas,
+    (is.na(EAF) | (EAF < 0.99 & EAF > 0.01)) &
+    !is.na(CHR) & !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) &
+    !is.na(P) & !is.na(BETA)
+  )
+  return(gwas)
 }

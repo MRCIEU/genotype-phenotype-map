@@ -160,6 +160,9 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   extracted_regions <- data.table::fread(text = extracted_regions)
   colnames(extracted_regions) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
 
+  extracted_regions <- gwas_health_check(extracted_regions) |>
+    filter_gwas()
+
   extracted_snp_info <- apply(clumped_snps, 1, function(clump) {
     extracted_region <- dplyr::filter(extracted_regions, CHR == as.numeric(clump['CHR']) & BP >= as.numeric(clump['region_start']) & BP <= as.numeric(clump['region_stop']))
 

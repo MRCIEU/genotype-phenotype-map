@@ -125,13 +125,10 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
 
     nsnp <- length(b)
     stopifnot(nrow(pc$vectors) == nsnp)
-    stopifnot(length(af) == nsnp)
-    stopifnot(length(se) == nsnp)
 
     if (any(af <= 0 | af >= 1)) {
       stop(glue::glue('{file} has funky EAF values :()'))
     }
-    stopifnot(all(af > 0 & af < 1))
     stopifnot(all(!is.na(af)))
     if (any(se <= 0, na.rm=TRUE)) {
       stop(glue::glue('{file} has funky SE values :()'))

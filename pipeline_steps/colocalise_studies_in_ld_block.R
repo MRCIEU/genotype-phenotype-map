@@ -37,7 +37,7 @@ main <- function() {
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
   hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
-  coloc_results_file <- glue::glue('{ld_info$ld_block_results}/coloc_results.tsv')
+  coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }

@@ -270,6 +270,7 @@ perform_qc <- function(gwas, study, bfile) {
     if (nrow(dentist_to_remove) > 0) {
       gwas <- dplyr::filter(gwas, !SNP %in% dentist_to_remove$X1) |>
         dplyr::select(SNP, RSID, dplyr::everything())
+      vroom::vroom_write(gwas, study['file'])
 
       dentist_file <- sub('.tsv.gz', '_dentist_removed.tsv', study['file'])
       dentist_full_remove <- vroom::vroom(dentist_full_file, col_names = F, show_col_types = F) |>
@@ -277,8 +278,6 @@ perform_qc <- function(gwas, study, bfile) {
         dplyr::rename(SNP='X1', chisq='X2', nlogp='X3', dup='X4')
 
       vroom::vroom_write(dentist_full_remove, dentist_file)
-      study_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', study['file'])
-      vroom::vroom_write(gwas, study_file)
     }
 
     study['snps_removed_by_qc'] <- nrow(dentist_to_remove)

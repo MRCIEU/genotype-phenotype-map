@@ -45,10 +45,6 @@ main <- function() {
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
       result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
-
-      pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_file)
-      vroom::vroom_write(result$gwas, pre_filter_file)
-
       filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
       if(result$b_cor >= imputation_correlation_threshold) {

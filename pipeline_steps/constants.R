@@ -99,16 +99,15 @@ gwas_health_check <- function(gwas) {
   if (any(gwas$EAF < 0 | gwas$EAF > 1)) {
     stop("GWAS has some EAF values outside accepted range.  Please fix GWAS or remove it from pipeline")
   }
-  if (any(gwas$SE < 0) {
+  if (any(gwas$SE < 0)) {
     stop("GWAS has some EAF values outside accepted range.  Please fix GWAS or remove it from pipeline")
   }
 }
 
-filter_gwas <- function(gwas, common=T) {
+filter_gwas <- function(gwas, common = T) {
   gwas <- dplyr::filter(gwas,
-    (is.na(EAF) | (EAF < 0.99 & EAF > 0.01)) &
-    !is.na(CHR) & !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) &
-    !is.na(P) & !is.na(BETA)
+    (is.na(EAF) | (EAF < 0.995 & EAF > 0.005)) &
+    !is.na(CHR) & !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(BETA)
   )
   return(gwas)
 }

@@ -35,7 +35,7 @@ vep -i variant_info_hg38_forVEP_runset_posupdate.txt \
 -o vep_variantannotations_hg38.txt
 ```
 
-The `--pick` argument returns one consequence per variant as per the criteria described [here](https://www.ensembl.org/info/docs/tools/vep/script/vep_other.html#pick). Variants are preferentially annotated relative to the MANE select transcript, variant consequenced can be ranked according to [this table](https://www.ensembl.org/info/genome/variation/prediction/predicted_data.html#consequences). The diagram below shows the location of each class of variant relative the transcript structure.
+The `--pick` argument returns one consequence per variant as per the criteria described [here](https://www.ensembl.org/info/docs/tools/vep/script/vep_other.html#pick). Variants are preferentially annotated relative to the MANE select transcript, variant consequence can be ranked according to [this table](https://www.ensembl.org/info/genome/variation/prediction/predicted_data.html#consequences). The diagram below shows the location of each class of variant relative the transcript structure.
 
 ![](https://www.ensembl.org/info/genome/variation/prediction/consequences.svg)
 

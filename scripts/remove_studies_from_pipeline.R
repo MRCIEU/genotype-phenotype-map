@@ -1,6 +1,6 @@
 source('../pipeline_steps/constants.R')
 
-studies_to_remove <- basename(Sys.glob('/local-scratch/projects/genotype-phenotype-map/test/data/study/some-regex-here-*'))
+studies_to_remove <- c('ebi-a-GCST001592', 'ebi-a-GCST006980') 
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)

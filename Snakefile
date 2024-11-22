@@ -30,21 +30,19 @@ ld_blocks = ld_blocks[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
 #TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
-
 complex_ld_blocks = [
-    # 'EUR/6/19207487-21684064',
-    # 'EUR/8/116096495-119685456',
-    'EUR/8/80453471-82816871'
-    # 'EUR/6/29737971-30798167',
-    # 'EUR/6/30798168-31571217',
-    # 'EUR/6/31571218-32682663',
-    # 'EUR/10/4572274-5983761',
-    # 'EUR/11/1213590-3665480'
+    'EUR/5/42858112-52881116',
+    'EUR/8/41866032-45930525',
+    'EUR/8/80453471-82816871',
+    'EUR/10/37545448-41707258',
+    'EUR/11/46868162-54537872',
+    'EUR/20/22799227-31989284',
 ]
 
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 # if TEST_RUN == 'test':
 #     complex_ld_blocks = ['EUR/8/80453471-82816871']
+# TODO: this is just removing badly behaving regions, this shouldn't be kept around later
 complex_ld_blocks = []
 
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
@@ -145,7 +143,7 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         # retries: 5
         # threads: 28 if name == 'complex' else 12
         # priority: 1 if name == 'complex' else 0
-        threads: 2
+        threads: 3
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

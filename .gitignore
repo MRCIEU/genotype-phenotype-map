@@ -3,3 +3,4 @@
 */.Renviron
 .snakemake
 scratch
+seqdata_steps/pre_steps/*.log

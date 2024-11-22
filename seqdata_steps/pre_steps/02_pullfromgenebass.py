@@ -2,51 +2,74 @@
 # Author: A.Hanson
 # Access Genebass matrix table format summary statistics for UKB WES with hail and export top hits per study
 
+import click
 import pandas as pd
 import hail as hl
 import os
+import sys
+
+# Initialize Hail with a specified number of cores
+hl.init(spark_conf={'spark.master': 'local[10]'})
 
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 10g --executor-memory 10g pyspark-shell'
-
 DATA_DIR = "/local-scratch/data/genebass/"
 SEQDATA_DIR = "/local-scratch/data/ukb-seq/"
 
-max_pval = 0.1
-max_maf = 0.01
-min_mac = 10
+@click.command(name='Pull data from genebass')
+@click.option('--trait_type', help='Trait type', required=True)
+@click.option('--phenocode', help='Phenotype code', required=True)
+@click.option('--pheno_sex', help='Phenotype sex', required=True)
+@click.option('--coding', help='Coding', required=True)
+@click.option('--modifier', help='Modifier', required=True)
 
-mt = hl.read_matrix_table(os.path.join(DATA_DIR, "variant_results.mt"))
+def main(trait_type, phenocode, pheno_sex, coding, modifier):
+    trait_type = trait_type.replace('"', '')
+    phenocode = phenocode.replace('"', '')
+    pheno_sex = pheno_sex.replace('"', '')
+    coding = coding.replace('"', '')
+    modifier = modifier.replace('"', '')
+    max_pval = 0.1
+    max_maf = 0.01
+    min_mac = 10
 
-# Write out study metadata
-col_df = mt.cols().to_pandas()
-col_df.to_csv(os.path.join(SEQDATA_DIR, "downloads/genebass/genebass_wes_studymetadata.tsv"), sep = '\t', index = False)
+    # Read in hail matix table
+    mt = hl.read_matrix_table(os.path.join(DATA_DIR, "variant_results.mt"))
 
-#n_studies = mt.cols().count()
-n_studies = 2
+    # Write out study metadata
+    #col_df = mt.cols().to_pandas()
+    #col_df['file_name'] = "genebass_ukbwes_" + "p" + col_df['phenocode'] + "_" + col_df['coding'] + "_rare_filtered.tsv"
+    #col_df.to_csv(os.path.join(SEQDATA_DIR, "downloads/genebass/genebass_wes_studymetadata.tsv"), sep = '\t', index = False)
 
-for study in range(1, n_studies + 1):
+    # E.g to extract column key for first study
+    # col_key = mt.cols().take(1)[0]
 
-    print("Study number:", study)
-
-    # Extract column key
-    col_key = mt.cols().take(study)[study - 1]
+    print("Filtering with values:")
+    print("trait_type:", trait_type)
+    print("phenocode:", phenocode)
+    print("pheno_sex:", pheno_sex)
+    print("coding:", coding)
+    print("modifier:", modifier)
 
     # Filter the matrix table by the column key
     mt_study = mt.filter_cols(
-        (mt.trait_type == col_key['trait_type']) &
-        (mt.phenocode == col_key['phenocode']) &
-        (mt.pheno_sex == col_key['pheno_sex']) &
-        (mt.coding == col_key['coding']) &
-        (mt.modifier == col_key['modifier']))
+        (mt.trait_type == trait_type) &
+        (mt.phenocode == phenocode) &
+        (mt.pheno_sex == pheno_sex) &
+        (mt.coding == coding) &
+        (mt.modifier == modifier))
 
-    print("pheno:", col_key['description'])
+    print("Check dimension:", mt_study.count())
 
-    outname_rare = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_rare_filtered.tsv"])
-    outname_common = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_common_filtered.tsv"])
+    desc =  mt_study.cols().select('description').collect()
+    print("pheno:", desc[0].description)
+
+    outname_rare = "".join(["genebass_ukbwes_","p",phenocode, "_", coding, "_rare_filtered.tsv"])
+    #outname_common = "".join(["genebass_ukbwes_","p",col_key['phenocode'], "_", col_key['coding'], "_common_filtered.tsv"])
 
     # Return entries (summary statistics)
     study_stats = mt_study.entries()
 
+    # Filter by p-value, MAF and MAC
     print("Filtering...")
 
     # Filter rare (p<0.1, MAF<0.01, MAC>10)
@@ -61,11 +84,14 @@ for study in range(1, n_studies + 1):
     study_stats_rare.export(os.path.join(SEQDATA_DIR, "downloads/genebass/rare", outname_rare))
 
     # Filter common (MAF>0.01) - no p-value filter to match common variant GWAS input
-    study_stats_common = study_stats.filter(
-        (study_stats.AF > max_maf) & 
-        (study_stats.AF < 1 - max_maf))
+    ## study_stats_common = study_stats.filter(
+    #     (study_stats.AF > max_maf) & 
+    #     (study_stats.AF < 1 - max_maf))
 
-    study_stats_common = study_stats_common.drop('saige_version','description_more','category')
+    # study_stats_common = study_stats_common.drop('saige_version','description_more','category')
 
-    # Write out common summary statistics
-    study_stats_common.export(os.path.join(SEQDATA_DIR, "downloads/genebass/common", outname_common))
+    # # Write out common summary statistics
+    # study_stats_common.export(os.path.join(SEQDATA_DIR, "downloads/genebass/common", outname_common))
+
+if __name__ == "__main__":
+    main()

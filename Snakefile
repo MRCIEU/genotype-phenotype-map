@@ -60,6 +60,7 @@ coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
+variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -166,7 +167,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
         retries: 1
-        threads: 4
+        threads: 3
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -226,7 +227,8 @@ rule compile_results:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
         all_study_blocks = all_study_blocks,
-        results_metadata = results_metadata
+        results_metadata = results_metadata,
+        variant_annotations = variant_annotations
     shell:
        """
        mkdir -p $(dirname {output})
@@ -236,7 +238,8 @@ rule compile_results:
            --all_study_blocks_file {output.all_study_blocks} \
            --raw_coloc_results_file {output.raw_coloc_results} \
            --coloc_results_file {output.coloc_results} \
-           --compiled_results_metadata_file {output.results_metadata}
+           --compiled_results_metadata_file {output.results_metadata} \
+           --variant_annotations_file {output.variant_annotations}
        """
 
 # rule perform_mr_analysis:

@@ -12,6 +12,7 @@ ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
 liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
+variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
 
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 

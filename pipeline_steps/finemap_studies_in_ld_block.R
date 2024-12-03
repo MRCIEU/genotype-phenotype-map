@@ -210,6 +210,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
+        # new_snps <- c(new_bps, as.numeric(gwas[important_row, ]$SNP))
         new_bps <- c(new_bps, as.numeric(gwas[important_row, ]$BP))
         new_files <- c(new_files, finemap_file)
         min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
@@ -222,6 +223,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            ld_block=args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
+                                          #  snp=new_snps,
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
                                            p_value_threshold=as.numeric(study[['p_value_threshold']]),

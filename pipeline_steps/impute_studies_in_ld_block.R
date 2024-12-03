@@ -72,7 +72,8 @@ main <- function() {
         se_cor=result$se_cor,
         z_adj=result$z_adj,
         se_adj=result$se_adj,
-        time_taken=as.character(time_taken)
+        time_taken=as.character(time_taken),
+        ld_block=args$ld_block
       )
 
       return(imputation_info)
@@ -292,7 +293,8 @@ empty_imputed_studies <- function() {
       se_cor=numeric(),
       z_adj=numeric(),
       se_adj=numeric(),
-      time_taken=character()
+      time_taken=character(),
+      ld_block=character()
     )
   )
 }

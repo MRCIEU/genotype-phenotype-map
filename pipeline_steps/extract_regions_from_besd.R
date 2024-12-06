@@ -22,7 +22,7 @@ main <- function() {
     stop(glue::glue('Error: Only BESD files using {reference_builds$GRCh38} is allowed right now'))
   }
 
-  p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}.json'))
 
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),
@@ -69,6 +69,10 @@ extract_cis_region <- function(study, p_value_threshold) {
   dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
 
   top_cis_snp <- top_cis_snp[top_cis_snp$p == min(top_cis_snp$p), ][1, ]
+  ld_block <- dplyr::filter(ld_blocks, chr == top_cis_snp$Chr & start <= top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
+  ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
+
+  if (nrow(ld_block) != 1) stop(glue::glue('Couldnt find matching LD Block for {top_cis_snp$Chr}:{top_cis_snp:BP}'))
 
   tmp_cis_region <- glue::glue('/tmp/{study$study_name}_cis_region')
   extract_region <- paste('smr --beqtl-summary', study$study_location,
@@ -79,16 +83,15 @@ extract_cis_region <- function(study, p_value_threshold) {
                               '--out ', tmp_cis_region
   )
   system(extract_region, wait=T, ignore.stdout = T)
+
   cis_region <- vroom::vroom(glue::glue('{tmp_cis_region}.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region) |>
+    dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) |>
     gwas_health_check() |>
-    filter_gwas()
+    filter_gwas() 
 
   extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_cis_snp$Chr}_{top_cis_snp$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
-
-  ld_block <- dplyr::filter(ld_blocks, chr == top_cis_snp$Chr & start <= top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
-  ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
   extracted_snps <- data.frame(chr = as.character(top_cis_snp$Chr),
                                bp = top_cis_snp$BP,

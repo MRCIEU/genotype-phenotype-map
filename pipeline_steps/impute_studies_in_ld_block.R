@@ -76,15 +76,12 @@ main <- function() {
         ld_block=args$ld_block
       )
 
+      imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputation_info) |>
+        dplyr::distinct()
+
+      vroom::vroom_write(imputed_studies, imputed_studies_file)
       return(imputation_info)
     }) |> dplyr::bind_rows()
-  }
-
-  if (nrow(imputed_studies) > 0) {
-    imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
-      dplyr::distinct()
-
-    vroom::vroom_write(imputed_studies, imputed_studies_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)

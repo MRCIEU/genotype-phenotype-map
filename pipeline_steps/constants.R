@@ -103,6 +103,7 @@ gwas_health_check <- function(gwas) {
   if (any(gwas$SE < 0)) {
     stop("GWAS has some EAF values outside accepted range.  Please fix GWAS or remove it from pipeline")
   }
+  return(gwas)
 }
 
 filter_gwas <- function(gwas, common = T) {

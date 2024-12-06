@@ -48,6 +48,7 @@ calculate_besd_studies_to_process <- function(entries) {
     file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
     data_source <- basename(entry['data_location'])
     all_studies <- Sys.glob(file_regex)
+    all_studies <- all_studies[!file.info(all_studies)$isdir]
     studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
 
     if (length(all_studies) == 0) return(data.frame())

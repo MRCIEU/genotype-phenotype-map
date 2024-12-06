@@ -1,2 +1,3 @@
 id_pattern,data_type,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold
 ebi-a-*,phenotype,opengwas,none,/local-scratch/data/opengwas/igd,EUR,GRCh37,1.5e-4
+*,gene_expression,besd,none,/local-scratch/data/hg38/BrainMeta-cis-eQTL,EUR,GRCh38,1.5e-4

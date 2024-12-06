@@ -2,3 +2,5 @@ snakemake==7.25.4
 pulp<=2.7.0
 hail
 cupy-cuda12x<=13.3.0
+pandas<= 2.2.3
+pyarrow<=18.1.0

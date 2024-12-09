@@ -9,7 +9,9 @@ parser <- argparser::add_argument(parser, '--extracted_study_location', help = '
 parser <- argparser::add_argument(parser, '--extracted_output_file', help = 'Extracted Output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
+blocks <- c(20653557, 23850554, 13987433, 17238266, 82816871)
+ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F) |>
+  dplyr::filter(stop %in% blocks)
 
 main <- function() {
   study <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F) |>
@@ -19,13 +21,15 @@ main <- function() {
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{study$study_name}.json'))
   vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
+  clumped_hits_file <- glue::glue('{args$extracted_study_location}/clumped_snps.tsv')
 
   if (study$reference_build == reference_builds$GRCh37) {
     vcf_file <- convert_reference_build(study, vcf_file)
   }
 
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
-  vroom::vroom_write(clumped_snps, glue::glue('{args$extracted_study_location}/clumped_snps.tsv'))
+  vroom::vroom_write(clumped_snps, clumped_hits_file)
+
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
@@ -130,23 +134,29 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
 
     region <- dplyr::filter(ld_blocks, chr == clump_chr & start <= clump_bp & stop > clump_bp & ancestry == study$ancestry)
     if (nrow(region) == 0) {
-      message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
+      # message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
       return()
     }
 
     return(data.frame(CHR = clump_chr,
       BP = clump_bp,
-      P=as.numeric(clump['P']),
+      P = as.numeric(clump['P']),
       bcf_region = region$bcf_region,
       region_start = region$start,
       region_stop = region$stop,
       string_region = region$string_region)
     )
   }) |> dplyr::bind_rows()
+
+  message(glue::glue('extracting regions {clumped_snps$bcf_region}'))
   
   #removing duplicate entries per region, so we only grab the region once.
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
   message(glue::glue('num to extract: {nrow(clumped_snps)}'))
+
+  if (nrow(clumped_snps) == 0) {
+    return(data.frame())
+  }
 
   regions_file <- tempfile()
   vroom::vroom_write(dplyr::select(clumped_snps, CHR, region_start, region_stop), regions_file, delim = '\t', col_names = F)

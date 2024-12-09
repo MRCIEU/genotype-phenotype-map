@@ -29,10 +29,7 @@ ld_blocks = ld_blocks[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
 #TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
-complex_ld_blocks = [
-    'EUR/8/80453471-82816871',
-]
-
+complex_ld_blocks = []
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 # if TEST_RUN == 'test':
 #     complex_ld_blocks = ['EUR/8/80453471-82816871']

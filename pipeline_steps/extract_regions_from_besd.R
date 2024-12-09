@@ -72,7 +72,11 @@ extract_cis_region <- function(study, p_value_threshold) {
   ld_block <- dplyr::filter(ld_blocks, chr == top_cis_snp$Chr & start <= top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
   ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
-  if (nrow(ld_block) != 1) stop(glue::glue('Couldnt find matching LD Block for {top_cis_snp$Chr}:{top_cis_snp:BP}'))
+  if (nrow(ld_block) == 0) {
+    missing <- data.frame(study=study$study_name, chr=top_cis_snp$Chr, bp=top_cis_snp$BP)
+    vroom::vroom_write(missing, glue::glue('{pipeline_metadata_dir}/missing_ld_blocks.tsv'), append = T)
+    message('Missing LD block for ', top_cis_snp$SNP)
+  }
 
   tmp_cis_region <- glue::glue('/tmp/{study$study_name}_cis_region')
   extract_region <- paste('smr --beqtl-summary', study$study_location,

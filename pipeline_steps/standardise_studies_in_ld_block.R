@@ -30,7 +30,12 @@ main <- function() {
       if (standardised_file %in% existing_standardised_studies$file) {
         return()
       }
+
       result <- perform_standardisation(study, ld_matrix_info)
+
+      if (nrow(result$gwas) < 100) {
+        return()
+      }
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 

@@ -1,12 +1,14 @@
 source('../pipeline_steps/constants.R')
 
-studies_to_remove <- c('ebi-a-GCST001592', 'ebi-a-GCST006980') 
+studies_to_remove <- sub('.*study/', '',Sys.glob('/local-scratch/projects/genotype-phenotype-map/data/study/BrainMeta-*'))
+message('removing ', length(studies_to_remove), ' studies')
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-delete_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
+# delete_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
+delete_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores = 100, FUN=function(ld_block) {
   print(glue::glue('block: {ld_block}'))
   extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
   if (!file.exists(extracted_studies_file)) {
@@ -65,7 +67,7 @@ delete_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
 })
 
 delete_study_directories <- lapply(studies_to_remove, function(study) {
-extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
+  extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
   print(paste('deleting:', study))
   unlink(extracted_study_dir, recursive = T)
 })

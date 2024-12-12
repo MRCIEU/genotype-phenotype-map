@@ -53,7 +53,7 @@ main <- function() {
         vroom::vroom_write(gwas, imputed_file)
       }
 
-      time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
+      time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
 
       imputation_info <- data.frame(
         study=study[['study']],
@@ -72,8 +72,8 @@ main <- function() {
         se_cor=result$se_cor,
         z_adj=result$z_adj,
         se_adj=result$se_adj,
-        time_taken=as.character(time_taken),
-        ld_block=args$ld_block
+        time_taken=time_taken,
+        ld_block=ld_info$block
       )
 
       imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputation_info) |>
@@ -136,6 +136,10 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
     sehat <- (diag(Di))
     se_adj <- adjust(se, sehat)
     gwas$SE_IMPUTED <- se_adj$adj
+
+    if (any(is.na(gwas$SE_IMPUTED))) {
+      stop(glue::glue('{file} has funky gwas$SE_IMPUTED values :()'))
+    }
     stopifnot(all(!is.na(gwas$SE_IMPUTED)))
 
     # Sometimes SE is very far away from SE_IMPUTED.

@@ -76,6 +76,7 @@ extract_cis_region <- function(study, p_value_threshold) {
     missing <- data.frame(study=study$study_name, chr=top_cis_snp$Chr, bp=top_cis_snp$BP)
     vroom::vroom_write(missing, glue::glue('{pipeline_metadata_dir}/missing_ld_blocks.tsv'), append = T)
     message('Missing LD block for ', top_cis_snp$SNP)
+    return()
   }
 
   tmp_cis_region <- glue::glue('/tmp/{study$study_name}_cis_region')

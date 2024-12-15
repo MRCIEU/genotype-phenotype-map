@@ -16,6 +16,8 @@ main <- function() {
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   standardised_studies  <- vroom::vroom(standardised_studies_file , show_col_types = F)
+  # TODO: delete me
+  standardised_studies <- tail(standardised_studies)
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (file.exists(imputed_studies_file)) {
@@ -32,6 +34,7 @@ main <- function() {
       if (imputed_file %in% existing_imputed_studies$file) {
         return()
       }
+      message('Imputing ', imputed_file)
 
       gwas <- vroom::vroom(study['file'], show_col_types = F)
 
@@ -66,22 +69,24 @@ main <- function() {
         sample_size=as.numeric(study['sample_size']),
         cis_trans=study['cis_trans'],
         rows_imputed=result$rows_imputed,
-        significant_rows_imputed=filtered_results$significant_rows_imputed,
-        significant_rows_filtered=filtered_results$significant_rows_filtered,
         b_cor=result$b_cor,
         se_cor=result$se_cor,
         z_adj=result$z_adj,
         se_adj=result$se_adj,
         time_taken=time_taken,
+        significant_rows_imputed=filtered_results$significant_rows_imputed,
+        significant_rows_filtered=filtered_results$significant_rows_filtered,
         ld_block=ld_info$block
       )
 
-      imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputation_info) |>
-        dplyr::distinct()
-
-      vroom::vroom_write(imputed_studies, imputed_studies_file)
       return(imputation_info)
     }) |> dplyr::bind_rows()
+
+    if (nrow(imputed_studies) > 0) {
+      imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
+        dplyr::distinct()
+      vroom::vroom_write(imputed_studies, imputed_studies_file)
+    }
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -164,7 +169,6 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
     imp <- eig_imp(pc, thresh, z)
     z_sim <- imp$dat$X
 
-
     # Re-scale effect sizes and standard errors
     z_adj <- adjust(z, z_sim)
 
@@ -172,7 +176,6 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
     stopifnot(all(!is.na(gwas$Z_IMPUTED)))
 
     gwas$BETA_IMPUTED <- gwas$Z_IMPUTED * gwas$SE_IMPUTED
-
 
     gwas$BETA[to_impute] <- gwas$BETA_IMPUTED[to_impute]
     gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
@@ -268,7 +271,8 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
 
     snp <- gwas[snp_location, ]
-    if (min(gwas_correlations$P * 0.1) > snp$P) {
+
+    if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)
     }
   }

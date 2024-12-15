@@ -9,9 +9,7 @@ parser <- argparser::add_argument(parser, '--extracted_study_location', help = '
 parser <- argparser::add_argument(parser, '--extracted_output_file', help = 'Extracted Output file', type = 'character')
 args <- argparser::parse_args(parser)
 
-blocks <- c(20653557, 23850554, 13987433, 17238266, 82816871)
-ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F) |>
-  dplyr::filter(stop %in% blocks)
+ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
 
 main <- function() {
   study <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F) |>
@@ -148,8 +146,6 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     )
   }) |> dplyr::bind_rows()
 
-  message(glue::glue('extracting regions {clumped_snps$bcf_region}'))
-  
   #removing duplicate entries per region, so we only grab the region once.
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
   message(glue::glue('num to extract: {nrow(clumped_snps)}'))
@@ -169,9 +165,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   extracted_regions <- system(bcf_query, wait = T, intern = T)
   extracted_regions <- data.table::fread(text = extracted_regions)
   colnames(extracted_regions) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
-
-  extracted_regions <- gwas_health_check(extracted_regions) |>
-    filter_gwas()
+  vroom::vroom_write(extracted_regions, glue::glue('test_extraction.tsv'), delim = '\t')
 
   extracted_snp_info <- apply(clumped_snps, 1, function(clump) {
     extracted_region <- dplyr::filter(extracted_regions, CHR == as.numeric(clump['CHR']) & BP >= as.numeric(clump['region_start']) & BP <= as.numeric(clump['region_stop']))

@@ -92,25 +92,3 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
 }
-
-gwas_health_check <- function(gwas) {
-  if (any(gwas$P < 0 | gwas$P > 1, na.rm = T)) {
-    stop("GWAS has some P values outside accepted range.  Please fix GWAS or remove it from pipeline")
-  }
-  if (any(as.numeric(gwas$SE) < 0, na.rm = T)) {
-    stop("GWAS has some SE values outside accepted range.  Please fix GWAS or remove it from pipeline")
-  }
-  return(gwas)
-}
-
-filter_gwas <- function(gwas, common = T) {
-  gwas[, c('EAF', 'BETA', 'SE')] <- lapply(gwas[, c('EAF', 'BETA', 'SE')], as.numeric)
-
-  gwas <- dplyr::filter(gwas,
-    (is.na(EAF) | (EAF < 0.995 & EAF > 0.005)) &
-    !is.na(CHR) & !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) &
-    !is.na(BETA) & !is.na(SE)
-  )
-
-  return(gwas)
-}

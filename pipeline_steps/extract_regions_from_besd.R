@@ -91,9 +91,7 @@ extract_cis_region <- function(study, p_value_threshold) {
 
   cis_region <- vroom::vroom(glue::glue('{tmp_cis_region}.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region) |>
-    dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) |>
-    gwas_health_check() |>
-    filter_gwas() 
+    dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 
 
   extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_cis_snp$Chr}_{top_cis_snp$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
@@ -160,9 +158,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
     )
     system(extract_region, wait=T, ignore.stdout = T)
     trans_region <- vroom::vroom(glue::glue('{tmp_trans_region}.txt'), show_col_types = F)
-    trans_region <- format_gwas(trans_region) |>
-      gwas_health_check() |>
-      filter_gwas()
+    trans_region <- format_gwas(trans_region) 
 
     extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{clumped_snp["CHR"]}_{clumped_snp["BP"]}.tsv.gz')
     vroom::vroom_write(trans_region, extracted_file)

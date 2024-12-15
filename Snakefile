@@ -109,6 +109,7 @@ def standardise_rule(standardisation_pattern, name):
         name: f'{name}_standardise_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(standardisation_pattern)
+        retries: 1
         threads: 1
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -126,15 +127,11 @@ def standardise_rule(standardisation_pattern, name):
             subprocess.run(command, shell=True)
 
 
-# TODO: clean this code up (and delete the .py file) if new imputation method is successful
 def impute_rule(standardisation_pattern, imputation_pattern, name):
     rule:
         name: f'{name}_impute_per_ld_block'
         input: standardisation_pattern
         output: temporary(imputation_pattern)
-        # retries: 5
-        # threads: 28 if name == 'complex' else 12
-        # priority: 1 if name == 'complex' else 0
         retries: 1
         threads: 4
         params:
@@ -144,15 +141,9 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            # if name == 'complex':
-            #     env_vars = "export LD_PRELOAD="
-            # else:
-            #     env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
-
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
-                # command = f"Rscript impute_studies_in_ld_block.py \
                 command = f"Rscript impute_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
@@ -164,7 +155,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
         retries: 1
-        threads: 3
+        threads: 4
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -184,7 +175,8 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
-        threads: 1
+        retries: 1
+        threads: 3
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)

@@ -1,14 +1,26 @@
 source('../pipeline_steps/constants.R')
 
-studies_to_remove <- sub('.*study/', '',Sys.glob('/local-scratch/projects/genotype-phenotype-map/data/study/BrainMeta-*'))
-message('removing ', length(studies_to_remove), ' studies')
+studies_to_remove <- vroom::vroom('redo_studies.txt', show_col_types = F, col_names = F, delim=' ')$X1 
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-# delete_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
-delete_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores = 100, FUN=function(ld_block) {
+length(studies_to_remove)
+
+safe_lapply <- function(X, FUN, ...) {
+  lapply(X, function(x) {
+    tryCatch(
+      FUN(x, ...),
+      error = function(e) {
+        stop("An error occurred: ", conditionMessage(e))
+      }
+    )
+  })
+}
+
+delete_data_in_ld_blocks <- safe_lapply(ld_info$ld_block_data, function(ld_block) {
+# delete_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores = 100, FUN=function(ld_block) {
   print(glue::glue('block: {ld_block}'))
   extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
   if (!file.exists(extracted_studies_file)) {

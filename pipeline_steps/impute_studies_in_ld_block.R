@@ -16,8 +16,6 @@ main <- function() {
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   standardised_studies  <- vroom::vroom(standardised_studies_file , show_col_types = F)
-  # TODO: delete me
-  standardised_studies <- tail(standardised_studies)
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (file.exists(imputed_studies_file)) {

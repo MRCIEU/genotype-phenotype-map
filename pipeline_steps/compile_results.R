@@ -112,9 +112,10 @@ aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
     unique_finemapped_per_block <- dplyr::filter(finemapped_per_block, grepl('_1$', unique_study_id))
 
     return(data.frame(ld_block = block,
-                      extracted_regions=nrow(extracted_per_block),
+                      number_extracted=nrow(extracted_per_block),
+                      number_standardised=nrow(standardised_per_block),
                       mean_snps_removed_by_reference_panel=mean(standardised_per_block$snps_removed_by_reference_panel, na.rm=T),
-                      studies_imputed=nrow(imputed_per_block),
+                      number_imputed=nrow(imputed_per_block),
                       significant_snps_imputed=mean(imputed_per_block$significant_rows_imputed, na.rm=T),
                       significant_imputed_snps_filtered=mean(imputed_per_block$significant_rows_filtered, na.rm=T),
                       number_finemapped=nrow(dplyr::filter(finemapped_per_block, min_p <= p_value_threshold)),
@@ -150,6 +151,7 @@ ingested_data_integrity_check <- function() {
 compile_coloc_results <- function(pipeline_data) {
   significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
 
+  # TODO: could parallelize this using mclapply 1:nrow(significant_results) and significant_results[i,]
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)

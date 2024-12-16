@@ -175,8 +175,8 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
-        retries: 1
-        threads: 3
+        retries: 2
+        threads: 4
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)

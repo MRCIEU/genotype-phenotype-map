@@ -122,7 +122,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
   )
   system(extract_top_snps, wait=T, ignore.stdout = T)
   if (!file.exists(glue::glue('{tmp_trans_snps}.txt'))) return()
-  probe_top_hits <- vroom::vroom(glue::glue('{tmp_smr_result}.txt'), show_col_types = F)
+  probe_top_hits <- vroom::vroom(glue::glue('{tmp_trans_snps}.txt'), show_col_types = F)
 
   #filter out all cis snps (if there are any)
   if (nrow(extracted_cis_snps) > 0) {
@@ -131,6 +131,7 @@ extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) 
 
     probe_top_hits <- dplyr::filter(probe_top_hits, !(Chr == extracted_cis_snps$Chr[1] & BP > min_bp & BP < max_bp))
   }
+  print(probe_top_hits)
 
   full_bfile <- glue::glue('{ld_reference_panel_dir}/{study$ancestry}/full')
   plink_command <- glue::glue('plink1.9 --bfile {full_bfile} ', 

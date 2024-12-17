@@ -1,5 +1,4 @@
 source('constants.R')
-q()
 
 parser <- argparser::arg_parser('Organise Extracted Regions into LD regions')
 parser <- argparser::add_argument(parser, '--output_file', help = 'Output file', type = 'character')

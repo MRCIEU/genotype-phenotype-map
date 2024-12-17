@@ -165,7 +165,6 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
   extracted_regions <- system(bcf_query, wait = T, intern = T)
   extracted_regions <- data.table::fread(text = extracted_regions)
   colnames(extracted_regions) <- c('RSID', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'LP')
-  vroom::vroom_write(extracted_regions, glue::glue('test_extraction.tsv'), delim = '\t')
 
   extracted_snp_info <- apply(clumped_snps, 1, function(clump) {
     extracted_region <- dplyr::filter(extracted_regions, CHR == as.numeric(clump['CHR']) & BP >= as.numeric(clump['region_start']) & BP <= as.numeric(clump['region_stop']))

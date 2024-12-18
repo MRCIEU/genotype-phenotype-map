@@ -36,7 +36,9 @@ main <- function() {
   if (metadata$cis_trans == cis_trans$cis_only || metadata$cis_trans == cis_trans$cis_trans) {
     cis_results <- extract_cis_region(study, p_value_threshold)
   }
-  if (metadata$cis_trans == cis_trans$trans_only || metadata$cis_trans == cis_trans$cis_trans) {
+
+  if (metadata$cis_trans == cis_trans$trans_only ||
+     (metadata$cis_trans == cis_trans$cis_trans && !is.null(cis_results))) {
     trans_results <- extract_trans_regions(cis_results$snp_data, study, p_value_threshold)
   }
 
@@ -155,7 +157,7 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
 
   # removing duplicate entries per region, and the original cis region so we only grab the correct retions once.
   clumped_trans_snps <- clumped_trans_snps[!duplicated(clumped_trans_snps$ld_block_string), ]
-  if (is.data.frame(extracted_cis_snp) & nrow(extracted_cis_snp) == 1) {
+  if (is.data.frame(extracted_cis_snp) && nrow(extracted_cis_snp) == 1) {
     clumped_trans_snps <- dplyr::filter(clumped_trans_snps, 
       !is.na(ld_block_string) & ld_block_string != extracted_cis_snp$ld_block
     )

@@ -133,7 +133,7 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         input: standardisation_pattern
         output: temporary(imputation_pattern)
         retries: 1
-        threads: 4
+        threads: 5
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -155,7 +155,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
         retries: 1
-        threads: 4
+        threads: 3
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:

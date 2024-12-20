@@ -107,6 +107,7 @@ main <- function() {
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
 perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
+  unaltered_gwas <- gwas
   b <- gwas$BETA
   se <- gwas$SE
   z <- b/se
@@ -116,7 +117,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
 
   if (num_to_impute == 0) {
     return(list(
-      gwas = gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
     ))
   }
 
@@ -133,17 +134,19 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
   stopifnot(all(se > 0, na.rm=TRUE))
 
   # Initialise the SE - this doesn't account for var(y) or sample size, but those are constants that can be obtained from regression re-scaling
-
   D <- diag(sqrt(2 * af * (1 - af)))
   Di <- diag(1 / diag(D))
   sehat <- (diag(Di))
   se_adj <- adjust(se, sehat)
+  if (any(is.na(se_adj$adj))) {
+    warning(glue::glue('{file} could not be adjusted, skipping imputation'))
+    return(list(
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+    ))
+  }
+
   gwas$SE_IMPUTED <- se_adj$adj
 
-  if (any(is.na(gwas$SE_IMPUTED))) {
-    stop(glue::glue('{file} has funky gwas$SE_IMPUTED values :()'))
-  }
-  stopifnot(all(!is.na(gwas$SE_IMPUTED)))
 
   # Sometimes SE is very far away from SE_IMPUTED.
   # This could cause problems if the beta is instable but still used for imputation
@@ -216,13 +219,10 @@ outlier_detection <- function(r, thresh=3) {
 adjust <- function(truth, predicted, eval_frac = 0.5) {
   outs <- outlier_detection(truth / predicted)
 
-  if (sum(!is.na(truth)) > 400) {
-    npoly <- 3
-    reg <- lm(truth[!outs] ~ poly(predicted[!outs], npoly, raw=T))
-    adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
-  } else {
-    npoly <- 2
-    reg <- lm(truth[!outs] ~ poly(predicted[!outs], npoly, raw=T))
+  reg <- lm(truth[!outs] ~ poly(predicted[!outs], 3, raw=T))
+  adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
+  if (is.na(reg$coef[4])) {
+    reg <- lm(truth[!outs] ~ poly(predicted[!outs], 2, raw=T))
     adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + reg$coef[1]
   }
 

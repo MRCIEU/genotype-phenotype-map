@@ -10,7 +10,7 @@ library(dplyr)
 # here()
 
 # Open GWAS ebi-a studies from the EBI GWAS Catalog
-studies <- fread("/local-scratch/projects/genotype-phenotype-map/data/pipeline_metadata/extra_studies_to_process.tsv")
+studies <- fread("/local-scratch/projects/genotype-phenotype-map/data/pipeline_metadata/all_studies_to_dedup.tsv")
 
 # EBI experimental factor ontology (EFO) trait ID
 efos <- fread("/local-scratch/projects/genotype-phenotype-map/results/phenotype_categorisation/study_trait_map.tsv")

@@ -147,6 +147,9 @@ calculate_opengwas_studies_to_process <- function(entries) {
     } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {
       return(data.frame())
     }
+    if (is.null(study_metadata$sample_size)) {
+      return(data.frame())
+    }
 
     return(data.frame(
       data_type = opengwas_study[['data_type']],

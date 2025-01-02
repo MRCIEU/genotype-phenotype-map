@@ -48,7 +48,7 @@ main <- function() {
       result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
       filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
-      if(result$b_cor >= imputation_correlation_threshold) {
+      if(!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) {
         vroom::vroom_write(filtered_results$gwas, imputed_file)
       } else {
         vroom::vroom_write(gwas, imputed_file)

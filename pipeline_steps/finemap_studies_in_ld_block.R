@@ -272,6 +272,7 @@ perform_qc <- function(gwas, study, bfile) {
   vroom::vroom_write(dentist_gwas, dentist_tmp_file)
 
   dentist_command <- paste('DENTIST --bfile', bfile,
+                           '--thread-num 8 ',
                            '--gwas-summary', dentist_tmp_file,
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file

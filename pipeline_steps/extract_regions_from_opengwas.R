@@ -17,8 +17,10 @@ main <- function() {
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
-  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{study$study_name}.json'))
-  vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
+
+  orig_study_file_prefix <- sub('.*igd/', '', study$study_location)
+  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{orig_study_file_prefix}.json'))
+  vcf_file <- glue::glue('{study$study_location}/{orig_study_file_prefix}.vcf.gz')
   clumped_hits_file <- glue::glue('{args$extracted_study_location}/clumped_snps.tsv')
 
   if (study$reference_build == reference_builds$GRCh37) {
@@ -47,7 +49,7 @@ convert_reference_build <- function(study,
                  "Reference builds must be one of:", reference_builds), collapse = " "))
   }
   output_file <- glue::glue('{study$extracted_location}vcf/hg38.vcf.gz')
-  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf.gz')
+  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf')
   fasta_file <- glue::glue('{liftover_dir}/hg38.fa')
 
   if (file.exists(output_file)) {

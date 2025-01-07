@@ -77,6 +77,7 @@ rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
     threads: 1
+    retries: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]
         if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
@@ -176,7 +177,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
         retries: 2
-        threads: 4
+        threads: 2
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
@@ -229,6 +230,15 @@ rule compile_results:
            --coloc_results_file {output.coloc_results} \
            --compiled_results_metadata_file {output.results_metadata} \
            --variant_annotations_file {output.variant_annotations}
+       """
+
+rule backup_data:
+    input: coloc_results, raw_coloc_results, all_study_blocks, results_metadata, variant_annotations
+    threads: 1
+    output:
+    shell:
+       """
+       ./rsync_project.sh
        """
 
 # rule perform_mr_analysis:

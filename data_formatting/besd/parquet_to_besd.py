@@ -4,6 +4,8 @@ import numpy as np
 import subprocess
 import tempfile
 
+#TODO: this doesn't do much yet, just playing around with getting data from parquet
+
 @click.command(name='Convert Parquet file into besd format')
 @click.option('--input_parquet_file', help='Parquet File to read', required=True)
 @click.option('--output_besd_prefix', help='BESD File to save', required=True)

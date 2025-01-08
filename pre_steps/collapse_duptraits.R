@@ -1,15 +1,16 @@
 ## Date: 20-10-2024
 ## A. Hanson
 ## Collapsing duplicate study traits to derive index and duplicate study IDs
+source('../pipeline_steps/constants.R')
 
 library(data.table)
 library(dplyr)
-library(here)
+# library(here)
 
-here()
+# here()
 
 # Open GWAS ebi-a studies from the EBI GWAS Catalog
-studies <- fread("/local-scratch/projects/genotype-phenotype-map/data/pipeline_metadata/studies_to_process.tsv")
+studies <- fread("/local-scratch/projects/genotype-phenotype-map/data/pipeline_metadata/all_studies_to_dedup.tsv")
 
 # EBI experimental factor ontology (EFO) trait ID
 efos <- fread("/local-scratch/projects/genotype-phenotype-map/results/phenotype_categorisation/study_trait_map.tsv")
@@ -45,12 +46,10 @@ study_efos_unique <- study_efos[,{
 print("Writing output...")
 
 # Write out info, index study and duplicate study IDs
-fwrite(study_efos_unique, 
-       here("pipeline_steps/data/collapsed_studies_info.tsv"), sep = "\t")
+fwrite(study_efos_unique, "../pipeline_steps/data/more_collapsed_studies_info.tsv", sep = "\t")
 
-fwrite(as.data.frame(study_efos_unique[,study_name]), 
-       here("pipeline_steps/data/index_studies.tsv"), col.names = F)
+fwrite(as.data.frame(study_efos_unique[,study_name]), "../pipeline_steps/data/more_index_studies.tsv", col.names = F)
 
 fwrite(as.data.frame(
   unlist(strsplit(paste(study_efos_unique[nchar(study_name_collapsed)>0,study_name_collapsed], collapse = ","),","))),
-  here("pipeline_steps/data/ignore_studies.tsv"), col.names = F)
+  "../pipeline_steps/data/more_ignore_studies.tsv", col.names = F)

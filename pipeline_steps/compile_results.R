@@ -11,35 +11,54 @@ parser <- argparser::add_argument(parser, '--all_study_blocks_file', help = 'Com
 parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--variant_annotations_file', help = 'Variant Annotations of Candidate SNPs', type = 'character')
 
 args <- argparser::parse_args(parser)
-
+#storing pipeline_data globally, as passing around a big object causes issues when called with mclapply
+# pipeline_data <- list()
 
 main <- function() {
   ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 
-  coloc_input_files <- glue::glue('{ld_info$ld_block_results}/coloc_results.tsv')
-  coloc_input_files <- Filter(function(file) file.exists(file), coloc_input_files)
+  pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
 
-  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
-    dplyr::filter(!is.na(traits) & traits != 'None')
+  coloc_results <- compile_coloc_results(pipeline_data)
+  variant_annotations <- annotate_variants(pipeline_data)
+  all_study_blocks <- compile_study_blocks(pipeline_data)
+  results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
-  all_studies_processed <- update_processed_study_metadata(args$studies_to_process, args$studies_processed)
-  coloc_results <- compile_coloc_results(raw_coloc_results, all_studies_processed)
-
-  all_study_blocks <- compile_entire_list_of_extracted_study_regions(all_studies_processed, ld_info)
-  results_metadata <- aggregate_pipeline_metadata(ld_info)
-
-  vroom::vroom_write(raw_coloc_results, args$raw_coloc_results_file)
+  vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
+  vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(all_study_blocks, args$all_study_blocks_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
-  vroom::vroom_write(all_studies_processed, args$studies_processed)
+
+  vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
   file.copy(args$studies_processed, dirname(args$coloc_results))
 }
 
-update_processed_study_metadata <- function(studies_to_process_file, studies_processed_file) {
+aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {
+  #take all files in each ld_block, and concatenate the data into one dataframe each (for use in the rest of this script)
+  extracted_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/extracted_studies.tsv'))
+  extracted_studies <- vroom::vroom(extracted_studies_files, show_col_types = F)
+
+  standardised_studies_files <- Filter(function(file) file.exists(file),
+    glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
+  )
+  standardised_studies <- vroom::vroom(standardised_studies_files, show_col_types = F, col_types = standardised_column_types)
+
+  imputed_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv'))
+  imputed_studies <- vroom::vroom(imputed_studies_files, show_col_types = F, col_types = imputed_column_types)
+
+  finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'))
+  finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
+
+  coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_results.tsv'))
+  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+    dplyr::filter(!is.na(traits) & traits != 'None')
+
+  #update studies_processed.tsv with studies_to_process.tsv
   gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
@@ -53,72 +72,61 @@ update_processed_study_metadata <- function(studies_to_process_file, studies_pro
   } else {
     studies_processed <- studies_to_process
   }
-  return(studies_processed)
+
+  return(list(
+    extracted_studies = extracted_studies,
+    standardised_studies = standardised_studies,
+    imputed_studies = imputed_studies,
+    finemapped_studies = finemapped_studies,
+    raw_coloc_results = raw_coloc_results,
+    studies_processed = studies_processed
+  ))
 }
 
-compile_entire_list_of_extracted_study_regions <- function(all_studies, ld_info) {
-  all_finemapped_studies <- apply(ld_info, 1, function(ld_block) {
-    finemap_study <- glue::glue('{ld_block["ld_block_data"]}/finemapped_studies.tsv')
-    if (!file.exists(finemap_study) || file.size(finemap_study) == 0L) return(data.frame())
+compile_study_blocks <- function(pipeline_data) {
+  finemapped_studies <- pipeline_data$finemapped_studies |>
+    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans)
+  studies_processed <- pipeline_data$studies_processed
 
-    finemapped_studies <- vroom::vroom(finemap_study, delim = '\t', show_col_types = F) |>
-      dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans) |>
-      dplyr::mutate(chr = as.character(chr), bp = as.numeric(bp), min_p = as.numeric(min_p))
-    finemapped_studies$ld_block <- ld_block['block']
-    return(finemapped_studies)
-  }) |> dplyr::bind_rows()
-
-  all_finemapped_studies$known_gene <- all_studies$gene[match(all_finemapped_studies$study, all_studies$study_name)]
-  #all_finemapped_studies <- find_suspected_gene_associated_with_position(all_finemapped_studies)
-  return(all_finemapped_studies)
+  finemapped_studies$known_gene <- studies_processed$gene[match(finemapped_studies$study, studies_processed$study_name)]
+  return(finemapped_studies)
 }
 
-find_suspected_gene_associated_with_position <- function(all_finemapped_studies) {
-  coords <- GenomicFeatures::genes(TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene)
-  gene_names <- as.data.frame(org.Hs.eg.db::org.Hs.egSYMBOL)
-
-  genomic_ranges <- dplyr::select(all_finemapped_studies, chrom=chr, start=bp, end=bp, unique_study_id=unique_study_id) |>
-    dplyr::mutate(chrom=glue::glue('chr{chrom}')) |>
-    GenomicRanges::makeGRangesFromDataFrame(na.rm = T, keep.extra.columns = T)
-  genes <- IRanges::mergeByOverlaps(coords, genomic_ranges)
-
-  genes$gene_name <- gene_names$symbol[match(genes$gene_id, gene_names$gene_id)]
-  all_finemapped_studies$suspected_gene <- genes$gene_name[match(all_finemapped_studies$unique_study_id, genes$unique_study_id)]
-  return(all_finemapped_studies)
+# TODO: add all finemapped lead snps to this list in the future
+annotate_variants <- function(pipeline_data) {
+  coloc_candidate_snps <- unique(pipeline_data$raw_coloc_results$candidate_snp)
+  variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F) |>
+    dplyr::filter(SNP %in% coloc_candidate_snps)
+  
+  return(variant_annotations)
 }
 
-aggregate_pipeline_metadata <- function(ld_info) {
-  metadata_per_ld_block <- apply(ld_info, 1, function(ld) {
-    ld_block_data <- ld['ld_block_data']
-    if (!file.exists(glue::glue('{ld_block_data}/finemapped_studies.tsv'))) {
-      return(data.frame())
-    }
-    extracted_studies <- vroom::vroom(glue::glue('{ld_block_data}/extracted_studies.tsv'), show_col_types = F)
-    standardised_studies <- vroom::vroom(glue::glue('{ld_block_data}/standardised_studies.tsv'), show_col_types = F)
-    imputed_studies <- vroom::vroom(glue::glue('{ld_block_data}/imputed_studies.tsv'), show_col_types = F)
-    finemapped_studies <- vroom::vroom(glue::glue('{ld_block_data}/finemapped_studies.tsv'), show_col_types = F)
-    above_threshold <- nrow(dplyr::filter(finemapped_studies, min_p <= p_value_threshold))
+aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
+  # ld_info <- dplyr::filter(dir.exists(ld_block_data), ld_info)
+  metadata_per_ld_block <- lapply(ld_info$block, function(block) {
+    extracted_per_block <- dplyr::filter(pipeline_data$extracted_studies, ld_block == block)
+    standardised_per_block <- dplyr::filter(pipeline_data$standardised_studies, ld_block == block)
+    imputed_per_block <- dplyr::filter(pipeline_data$imputed_studies, ld_block == block)
+    finemapped_per_block <- dplyr::filter(pipeline_data$finemapped_studies, ld_block == block)
 
-    return(data.frame(ld_block = ld['block'],
-                      extracted_regions=nrow(extracted_studies),
-                      standardised_time_taken=mean(as.difftime(standardised_studies$time_taken), na.rm=T),
-                      mean_snps_removed_by_reference_panel=mean(standardised_studies$snps_removed_by_reference_panel, na.rm=T),
-                      studies_imputed=nrow(imputed_studies),
-                      imputed_time_taken=mean(as.difftime(imputed_studies$time_taken), na.rm=T),
-                      mean_snps_imputed=mean(imputed_studies$rows_imputed, na.rm=T),
-                      number_finemapped=nrow(finemapped_studies),
-                      number_finemapped_above_threshold=above_threshold,
-                      finemapped_time_taken=mean(as.difftime(finemapped_studies$time_taken), na.rm=T),
-                      finemap_failed=sum(finemapped_studies$message == 'failed', na.rm=T),
-                      finemap_no_need=sum(finemapped_studies$message == 'less_than_2_cs', na.rm=T)
+    unique_finemapped_per_block <- dplyr::filter(finemapped_per_block, grepl('_1$', unique_study_id))
+
+    return(data.frame(ld_block = block,
+                      number_extracted=nrow(extracted_per_block),
+                      number_standardised=nrow(standardised_per_block),
+                      mean_snps_removed_by_reference_panel=mean(standardised_per_block$snps_removed_by_reference_panel, na.rm=T),
+                      number_imputed=nrow(imputed_per_block),
+                      significant_snps_imputed=mean(imputed_per_block$significant_rows_imputed, na.rm=T),
+                      significant_imputed_snps_filtered=mean(imputed_per_block$significant_rows_filtered, na.rm=T),
+                      number_finemapped=nrow(dplyr::filter(finemapped_per_block, min_p <= p_value_threshold)),
+                      finemapped_per_imputed=nrow(finemapped_per_block) / nrow(unique_finemapped_per_block),
+                      num_finemap_failed=sum(finemapped_per_block$finemap_message == 'failed', na.rm=T),
+                      standardised_time_taken=mean(as.difftime(standardised_per_block$time_taken), na.rm=T),
+                      imputed_time_taken=mean(as.difftime(imputed_per_block$time_taken), na.rm=T),
+                      finemapped_time_taken=mean(as.difftime(finemapped_per_block$time_taken), na.rm=T)
     ))
   }) |> dplyr::bind_rows()
 
-  # means <- colMeans(metadata_per_ld_block[-1])
-  # means$ld_block <- 'mean'
-  # totals <- colSums(metadata_per_ld_block[-1])
-  # totals$ld_block <- 'total'
-  # metadata_per_ld_block <- dplyr::bind_rows(metadata_per_ld_block, means, totals)
   return(metadata_per_ld_block)
 }
 
@@ -138,15 +146,15 @@ ingested_data_integrity_check <- function() {
     finemapped_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
 
   })
-
 }
 
-compile_coloc_results <- function(raw_coloc_results, studies_processed) {
-  significant_results <- dplyr::filter(raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+compile_coloc_results <- function(pipeline_data) {
+  significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
 
+  # TODO: could parallelize this using mclapply 1:nrow(significant_results) and significant_results[i,]
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
-    ordered_traits <- order_trait_by_type(traits, studies_processed)
+    ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
     if (length(ordered_traits$unique_study_id) < 2) {
       return()
     }

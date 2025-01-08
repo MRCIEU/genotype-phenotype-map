@@ -152,7 +152,13 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   })
 
   if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
-    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time)
+    new_bp <- NA
+    if (length(susie_result$sets$cs) == 1) {
+      #this finds the lead SNP in new credible set
+      important_row <- susie_result$sets$cs[paste0('L', 1)][[1]][[1]]
+      new_bp <- as.numeric(gwas[important_row, ]$BP)
+    }
+    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)
     if (susie_result$converged == F) {
       message(paste('Finemapping:', study['file'], 'susie didnt converge'))
     }
@@ -167,7 +173,7 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   return(list(susie_result=susie_result, failed_finemap_info=failed_finemap_info))
 }
 
-process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed') {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA) {
   sample_size <- as.numeric(study['sample_size'])
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
@@ -210,10 +216,23 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        new_bps <- c(new_bps, as.numeric(gwas[important_row, ]$BP))
+        # new_snps <- c(new_bps, as.numeric(gwas[important_row, ]$SNP))
+        new_bp <- as.numeric(gwas[important_row, ]$BP)
+        new_bps <- c(new_bps, new_bp)
         new_files <- c(new_files, finemap_file)
         min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
         unique_ids <- c(unique_ids, unique_id)
+
+        # if the new credible set's bp is less than 1MB from the original bp, mark as cis, otherwise trans
+        if (!is.na(study['cis_trains']) && study['cis_trans'] == cis_trans$cis_only) {
+          if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
+            cis_trans <- cis_trans$cis_only
+          } else {
+            cis_trans <- cis_trans$trans_only
+          }
+        } else {
+          cis_trans <- study[['cis_trans']]
+        }
       }
       time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
 
@@ -222,6 +241,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            ld_block=args$ld_block,
                                            file=new_files,
                                            ancestry=study[['ancestry']],
+                                          #  snp=new_snps,
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
                                            p_value_threshold=as.numeric(study[['p_value_threshold']]),
@@ -252,6 +272,7 @@ perform_qc <- function(gwas, study, bfile) {
   vroom::vroom_write(dentist_gwas, dentist_tmp_file)
 
   dentist_command <- paste('DENTIST --bfile', bfile,
+                           '--thread-num 8 ',
                            '--gwas-summary', dentist_tmp_file,
                            '--chrID', study[['chr']],
                            '--out', dentist_tmp_file
@@ -270,6 +291,7 @@ perform_qc <- function(gwas, study, bfile) {
     if (nrow(dentist_to_remove) > 0) {
       gwas <- dplyr::filter(gwas, !SNP %in% dentist_to_remove$X1) |>
         dplyr::select(SNP, RSID, dplyr::everything())
+      vroom::vroom_write(gwas, study['file'])
 
       dentist_file <- sub('.tsv.gz', '_dentist_removed.tsv', study['file'])
       dentist_full_remove <- vroom::vroom(dentist_full_file, col_names = F, show_col_types = F) |>
@@ -277,8 +299,6 @@ perform_qc <- function(gwas, study, bfile) {
         dplyr::rename(SNP='X1', chisq='X2', nlogp='X3', dup='X4')
 
       vroom::vroom_write(dentist_full_remove, dentist_file)
-      study_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', study['file'])
-      vroom::vroom_write(gwas, study_file)
     }
 
     study['snps_removed_by_qc'] <- nrow(dentist_to_remove)

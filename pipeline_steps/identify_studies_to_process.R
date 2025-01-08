@@ -48,6 +48,7 @@ calculate_besd_studies_to_process <- function(entries) {
     file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
     data_source <- basename(entry['data_location'])
     all_studies <- Sys.glob(file_regex)
+    all_studies <- all_studies[!file.info(all_studies)$isdir]
     studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
 
     if (length(all_studies) == 0) return(data.frame())
@@ -135,7 +136,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
   processing_information <- apply(expanded_studies, 1, function(opengwas_study) {
     directory <- opengwas_study[['directory']]
     study <- basename(directory)
-    data_study_dir <- glue::glue('{data_dir}study/{study}/')
+    new_study_name <- gsub('_', '-', study)
+    data_study_dir <- glue::glue('{data_dir}study/{new_study_name}/')
 
     study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
     ancestry <- study_metadata$population
@@ -146,11 +148,14 @@ calculate_opengwas_studies_to_process <- function(entries) {
     } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {
       return(data.frame())
     }
+    if (is.null(study_metadata$sample_size)) {
+      return(data.frame())
+    }
 
     return(data.frame(
       data_type = opengwas_study[['data_type']],
       data_format = opengwas_study[['data_format']],
-      study_name = study,
+      study_name = new_study_name,
       trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
       sample_size = study_metadata$sample_size,

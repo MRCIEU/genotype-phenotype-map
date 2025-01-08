@@ -13,7 +13,6 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-LD_BLOCK_RESULTS_DIR = RESULTS_DIR + 'ld_blocks/'
 
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
@@ -30,15 +29,7 @@ ld_blocks = ld_blocks[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
 #TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
-complex_ld_blocks = [
-    'EUR/5/42858112-52881116',
-    'EUR/8/41866032-45930525',
-    'EUR/8/80453471-82816871',
-    'EUR/10/37545448-41707258',
-    'EUR/11/46868162-54537872',
-    'EUR/20/22799227-31989284',
-]
-
+complex_ld_blocks = []
 simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
 # if TEST_RUN == 'test':
 #     complex_ld_blocks = ['EUR/8/80453471-82816871']
@@ -56,8 +47,8 @@ finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complet
 complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
 
 ### OUTPUT DATA FILES
-coloc_pattern = LD_BLOCK_RESULTS_DIR + '{simple_ld_block}/coloc_complete'
-complex_coloc_pattern = LD_BLOCK_RESULTS_DIR + '{complex_ld_block}/complex_coloc_complete'
+coloc_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/coloc_complete'
+complex_coloc_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_coloc_complete'
 
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
@@ -66,6 +57,8 @@ coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
 all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
+variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
+pipeline_summary_rmd = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.Rmd'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -85,6 +78,7 @@ rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
     threads: 1
+    retries: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]
         if (len(study) != 1): raise ValueError(f'More than 1 study found for {str(params)}')
@@ -117,6 +111,7 @@ def standardise_rule(standardisation_pattern, name):
         name: f'{name}_standardise_per_ld_block'
         input: ld_blocks_to_process
         output: temporary(standardisation_pattern)
+        retries: 1
         threads: 1
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
@@ -140,10 +135,7 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         input: standardisation_pattern
         output: temporary(imputation_pattern)
         retries: 1
-        # retries: 5
-        # threads: 28 if name == 'complex' else 12
-        # priority: 1 if name == 'complex' else 0
-        threads: 3
+        threads: 5
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -151,15 +143,9 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            # if name == 'complex':
-            #     env_vars = "export LD_PRELOAD="
-            # else:
-            #     env_vars = "export LD_PRELOAD= && export OMP_NUM_THREADS=16 && export MKL_NUM_THREADS=16 && NUMEXPR_NUM_THREADS=16"
-
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
-                # command = f"Rscript impute_studies_in_ld_block.py \
                 command = f"Rscript impute_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
@@ -171,7 +157,7 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         input: imputation_pattern 
         output: temporary(finemaping_pattern)
         retries: 1
-        threads: 2
+        threads: 3
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
@@ -191,16 +177,17 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
-        threads: 1
+        retries: 2
+        threads: 2
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_RESULTS_DIR, '')
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.results_dir == params.ld_dir]) == 0
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if skip_block:
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
@@ -224,6 +211,16 @@ finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
 coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
 coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
+rule backup_data_dir:
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
+    threads: 1
+    output:
+    shell:
+        """
+        rsync -Lavzh $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+        rsync -Lavzh $DATA_DIR/study $BACKUP_DIR/data/
+        """
+
 rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
@@ -231,23 +228,46 @@ rule compile_results:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
         all_study_blocks = all_study_blocks,
-        results_metadata = results_metadata
+        results_metadata = results_metadata,
+        variant_annotations = variant_annotations
     shell:
-       """
-       mkdir -p $(dirname {output})
-       Rscript compile_results.R \
-           --studies_to_process {studies_to_process_file} \
-           --studies_processed {studies_processed_file} \
-           --all_study_blocks_file {output.all_study_blocks} \
-           --raw_coloc_results_file {output.raw_coloc_results} \
-           --coloc_results_file {output.coloc_results} \
-           --compiled_results_metadata_file {output.results_metadata}
-       """
+        """
+        mkdir -p $(dirname {output})
+        Rscript compile_results.R \
+            --studies_to_process {studies_to_process_file} \
+            --studies_processed {studies_processed_file} \
+            --all_study_blocks_file {output.all_study_blocks} \
+            --raw_coloc_results_file {output.raw_coloc_results} \
+            --coloc_results_file {output.coloc_results} \
+            --compiled_results_metadata_file {output.results_metadata} \
+            --variant_annotations_file {output.variant_annotations}
+
+        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
+        """
+
+# rule create_rmd_of_results:
+#     input:
+#         coloc_results = coloc_results,
+#         raw_coloc_results = raw_coloc_results,
+#         all_study_blocks = all_study_blocks,
+#         results_metadata = results_metadata,
+#         variant_annotations = variant_annotations
+#     output: pipeline_summary_rmd 
+#     shell:
+#         """
+#         Rscript -e 'rmarkdown::render("pipeline_summary.Rmd",
+#             params = list(coloc_results="{input.coloc_results}"),
+#             output_file = "{output}"
+#         )'
+#         """
 
 # rule perform_mr_analysis:
 #     input:
-#         all_study_blocks: all_study_blocks,
-#         coloc_results: coloc_results,
+#         coloc_results = coloc_results,
+#         raw_coloc_results = raw_coloc_results,
+#         all_study_blocks = all_study_blocks,
+#         results_metadata = results_metadata,
+#         variant_annotations = variant_annotations
 #     output: mr_results
 #     shell:
 #         """

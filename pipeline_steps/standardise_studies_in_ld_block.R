@@ -1,5 +1,7 @@
 source('constants.R')
 
+minimum_gwas_size <- 150
+
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
@@ -30,7 +32,12 @@ main <- function() {
       if (standardised_file %in% existing_standardised_studies$file) {
         return()
       }
+
       result <- perform_standardisation(study, ld_matrix_info)
+
+      if (nrow(result$gwas) < minimum_gwas_size) {
+        return()
+      }
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
@@ -58,6 +65,9 @@ perform_standardisation <- function(study, ld_matrix_info) {
 
   response <- standardise_alleles(gwas) |>
     standardise_extracted_gwas(ld_matrix_info)
+
+  response$gwas <- gwas_health_check(response$gwas) |>
+    filter_gwas()
 
   study['ld_block'] <- args$ld_block
   study['file'] <- standardised_file
@@ -120,7 +130,7 @@ standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
 standardise_alleles <- function(gwas) {
   gwas$EA <- toupper(gwas$EA)
   gwas$OA <- toupper(gwas$OA)
-  columns_to_coerce <- c("EAF", "BETA", "SE")
+  columns_to_coerce <- c('EAF', 'BETA', 'SE')
   gwas <- dplyr::mutate(gwas, dplyr::across(dplyr::all_of(columns_to_coerce), as.numeric))
 
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
@@ -145,6 +155,26 @@ standardise_alleles <- function(gwas) {
   formatted_bp <- format(gwas$BP, scientific = F, trim = T)
 
   gwas$SNP <- glue::glue('{gwas$CHR}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  return(gwas)
+}
+
+gwas_health_check <- function(gwas) {
+  if (any(gwas$P < 0 | gwas$P > 1, na.rm = T)) {
+    stop("GWAS has some P values outside accepted range.  Please fix GWAS or remove it from pipeline")
+  }
+  if (any(as.numeric(gwas$SE) < 0, na.rm = T)) {
+    stop("GWAS has some SE values outside accepted range.  Please fix GWAS or remove it from pipeline")
+  }
+  return(gwas)
+}
+
+filter_gwas <- function(gwas, common_gwas = T) {
+  gwas <- dplyr::filter(gwas,
+    (EAF < 0.995 & EAF > 0.005) &
+    !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) &
+    !is.na(BETA) & !is.na(SE)
+  )
+
   return(gwas)
 }
 

@@ -12,8 +12,8 @@ ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
 liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
+variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
 
-ld_block_results_dir <- glue::glue('{results_dir}ld_blocks/')
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
@@ -27,7 +27,7 @@ ordered_data_types <- list(splice_variant='splice_variant',
 )
 study_categories <- list(binary='Binary', continuous='Continuous')
 data_formats <- list(opengwas='opengwas', besd='besd', hail='hail')
-cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_and_trans')
+cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
 variant_type <- list(common='common', rare='rare')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African', SAS='South Asian')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
@@ -79,7 +79,6 @@ file_prefix <- function(file_path) {
 ld_block_dirs <- function(block) {
   ld_info <- data.frame(block = block,
                         ld_block_data = glue::glue('{ld_block_data_dir}{block}'),
-                        ld_block_results = glue::glue('{ld_block_results_dir}{block}'),
                         ld_reference_panel_prefix=glue::glue('{ld_reference_panel_dir}{block}')
   )
   return(ld_info)

@@ -17,15 +17,19 @@ main <- function() {
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
-  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{study$study_name}.json'))
-  vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
+
+  orig_study_file_prefix <- sub('.*igd/', '', study$study_location)
+  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{orig_study_file_prefix}.json'))
+  vcf_file <- glue::glue('{study$study_location}/{orig_study_file_prefix}.vcf.gz')
+  clumped_hits_file <- glue::glue('{args$extracted_study_location}/clumped_snps.tsv')
 
   if (study$reference_build == reference_builds$GRCh37) {
     vcf_file <- convert_reference_build(study, vcf_file)
   }
 
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
-  vroom::vroom_write(clumped_snps, glue::glue('{args$extracted_study_location}/clumped_snps.tsv'))
+  vroom::vroom_write(clumped_snps, clumped_hits_file)
+
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
@@ -45,7 +49,7 @@ convert_reference_build <- function(study,
                  "Reference builds must be one of:", reference_builds), collapse = " "))
   }
   output_file <- glue::glue('{study$extracted_location}vcf/hg38.vcf.gz')
-  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf.gz')
+  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf')
   fasta_file <- glue::glue('{liftover_dir}/hg38.fa')
 
   if (file.exists(output_file)) {
@@ -130,23 +134,27 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
 
     region <- dplyr::filter(ld_blocks, chr == clump_chr & start <= clump_bp & stop > clump_bp & ancestry == study$ancestry)
     if (nrow(region) == 0) {
-      message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
+      # message(glue::glue('no region for {clump_chr}:{clump_bp}:{study$ancestry}'))
       return()
     }
 
     return(data.frame(CHR = clump_chr,
       BP = clump_bp,
-      P=as.numeric(clump['P']),
+      P = as.numeric(clump['P']),
       bcf_region = region$bcf_region,
       region_start = region$start,
       region_stop = region$stop,
       string_region = region$string_region)
     )
   }) |> dplyr::bind_rows()
-  
+
   #removing duplicate entries per region, so we only grab the region once.
   clumped_snps <- clumped_snps[!duplicated(clumped_snps$bcf_region), ]
   message(glue::glue('num to extract: {nrow(clumped_snps)}'))
+
+  if (nrow(clumped_snps) == 0) {
+    return(data.frame())
+  }
 
   regions_file <- tempfile()
   vroom::vroom_write(dplyr::select(clumped_snps, CHR, region_start, region_stop), regions_file, delim = '\t', col_names = F)

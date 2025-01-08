@@ -18,8 +18,8 @@ main <- function() {
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    vroom::vroom_write(data.frame(), args$completed_output_file)
     message(glue::glue('Nothing to process for LD region {ld_info$ld_block_data}, skipping.'))
+    vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
 
@@ -37,7 +37,7 @@ main <- function() {
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
   hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
-  coloc_results_file <- glue::glue('{ld_info$ld_block_results}/coloc_results.tsv')
+  coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }

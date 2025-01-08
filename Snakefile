@@ -58,6 +58,7 @@ all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
+pipeline_summary_rmd = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.Rmd'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -210,6 +211,16 @@ finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
 coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
 coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
+rule backup_data_dir:
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
+    threads: 1
+    output:
+    shell:
+        """
+        rsync -Lavzh $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+        rsync -Lavzh $DATA_DIR/study $BACKUP_DIR/data/
+        """
+
 rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
@@ -220,31 +231,43 @@ rule compile_results:
         results_metadata = results_metadata,
         variant_annotations = variant_annotations
     shell:
-       """
-       mkdir -p $(dirname {output})
-       Rscript compile_results.R \
-           --studies_to_process {studies_to_process_file} \
-           --studies_processed {studies_processed_file} \
-           --all_study_blocks_file {output.all_study_blocks} \
-           --raw_coloc_results_file {output.raw_coloc_results} \
-           --coloc_results_file {output.coloc_results} \
-           --compiled_results_metadata_file {output.results_metadata} \
-           --variant_annotations_file {output.variant_annotations}
-       """
+        """
+        mkdir -p $(dirname {output})
+        Rscript compile_results.R \
+            --studies_to_process {studies_to_process_file} \
+            --studies_processed {studies_processed_file} \
+            --all_study_blocks_file {output.all_study_blocks} \
+            --raw_coloc_results_file {output.raw_coloc_results} \
+            --coloc_results_file {output.coloc_results} \
+            --compiled_results_metadata_file {output.results_metadata} \
+            --variant_annotations_file {output.variant_annotations}
 
-rule backup_data:
-    input: coloc_results, raw_coloc_results, all_study_blocks, results_metadata, variant_annotations
-    threads: 1
-    output:
-    shell:
-       """
-       ./rsync_project.sh
-       """
+        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
+        """
+
+# rule create_rmd_of_results:
+#     input:
+#         coloc_results = coloc_results,
+#         raw_coloc_results = raw_coloc_results,
+#         all_study_blocks = all_study_blocks,
+#         results_metadata = results_metadata,
+#         variant_annotations = variant_annotations
+#     output: pipeline_summary_rmd 
+#     shell:
+#         """
+#         Rscript -e 'rmarkdown::render("pipeline_summary.Rmd",
+#             params = list(coloc_results="{input.coloc_results}"),
+#             output_file = "{output}"
+#         )'
+#         """
 
 # rule perform_mr_analysis:
 #     input:
-#         all_study_blocks: all_study_blocks,
-#         coloc_results: coloc_results,
+#         coloc_results = coloc_results,
+#         raw_coloc_results = raw_coloc_results,
+#         all_study_blocks = all_study_blocks,
+#         results_metadata = results_metadata,
+#         variant_annotations = variant_annotations
 #     output: mr_results
 #     shell:
 #         """

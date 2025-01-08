@@ -18,9 +18,9 @@ RUN cd /home && \
     wget https://yanglab.westlake.edu.cn/software/smr/download/smr-1.3.1-linux-x86_64.zip && \
     unzip smr-1.3.1-linux-x86_64.zip && \
     mv smr-1.3.1-linux-x86_64/smr /bin/smr && \
-    wget https://yanglab.westlake.edu.cn/software/gcta/bin/gcta-1.94.1-linux-kernel-3-x86_64.zip && \
-    unzip gcta-1.94.1-linux-kernel-3-x86_64.zip && \
-    cp gcta-1.94.1-linux-kernel-3-x86_64/gcta64 /bin/gcta64 && \
+    # wget https://yanglab.westlake.edu.cn/software/gcta/bin/gcta-1.94.1-linux-kernel-3-x86_64.zip && \
+    # unzip gcta-1.94.1-linux-kernel-3-x86_64.zip && \
+    # cp gcta-1.94.1-linux-kernel-3-x86_64/gcta64 /bin/gcta64 && \
     wget https://github.com/Kitware/CMake/releases/download/v3.30.0-rc1/cmake-3.30.0-rc1-linux-x86_64.tar.gz && \
     tar xf cmake-3.30.0-rc1-linux-x86_64.tar.gz && \
     git clone https://github.com/jwr-git/pwcoco.git && \
@@ -51,7 +51,7 @@ RUN cd /home && \
     cd /home
 
 ENV BCFTOOLS_PLUGINS=/home/bcftools
-ENV LD_PRELOAD=/opt/intel/oneapi/mkl/2024.2/lib/libmkl_rt.so
+ENV LD_PRELOAD=/opt/intel/oneapi/mkl/latest/lib/libmkl_rt.so
 
 COPY docker/requirements.* docker/
 RUN Rscript docker/requirements.R

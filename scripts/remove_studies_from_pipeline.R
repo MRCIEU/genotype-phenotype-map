@@ -1,31 +1,13 @@
 source('../pipeline_steps/constants.R')
 
-studies_to_remove <- c(
-  'ukb-d-30120-irnt',
-  'ukb-d-30040-irnt',
-  'ukb-d-30130-irnt',
-  'ukb-d-J10-ASTHMA',
-  'ukb-d-BRONCHITIS',
-  'ukb-d-G6-CARPTU',
-  'ukb-d-K11-CHRONGASTR',
-  'ukb-d-F5-DEPRESSIO',
-  'ukb-d-I9-MI',
-  'ukb-d-I9-PAD',
-  'ukb-d-M13-RHEUMA',
-  'ukb-d-I9-UAP',
-  'ukb-d-30250-irnt',
-  'ukb-d-30260-irnt',
-  'ukb-d-30300-irnt',
-  'ukb-d-30270-irnt',
-  'ukb-d-30080-irnt',
-  'ukb-d-30110-irnt'
-)
+studies_to_remove <- vroom::vroom(glue::glue('{results_dir}/studies_processed.tsv')) |> 
+  dplyr::filter(data_type != 'phenotype')
+studies_to_remove <- studies_to_remove$study_name
+length(studies_to_remove)
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
-
-length(studies_to_remove)
 
 safe_lapply <- function(X, FUN, ...) {
   lapply(X, function(x) {
@@ -38,8 +20,9 @@ safe_lapply <- function(X, FUN, ...) {
   })
 }
 
-delete_data_in_ld_blocks <- safe_lapply(ld_info$ld_block_data, function(ld_block) {
-# delete_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores = 100, FUN=function(ld_block) {
+
+# delete_data_in_ld_blocks <- safe_lapply(ld_info$ld_block_data, function(ld_block) {
+delete_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores = 32, FUN=function(ld_block) {
   print(glue::glue('block: {ld_block}'))
   extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
   if (!file.exists(extracted_studies_file)) {

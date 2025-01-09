@@ -61,29 +61,29 @@ extract_cis_region <- function(study, p_value_threshold) {
 
   system(extract_top_snp, wait=T, ignore.stdout = T)
   if (!file.exists(glue::glue('{tmp_cis_snp}.txt'))) return()
-  top_cis_snp <- vroom::vroom(glue::glue('{tmp_cis_snp}.txt'), show_col_types = F)
-  if (nrow(top_cis_snp) < 1) return()
+  gene_start_site <- vroom::vroom(glue::glue('{tmp_cis_snp}.txt'), show_col_types = F)
+  if (nrow(gene_start_site) < 1) return()
 
   dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
 
-  top_cis_snp <- top_cis_snp[top_cis_snp$p == min(top_cis_snp$p), ][1, ]
-  ld_block <- dplyr::filter(ld_blocks, chr == top_cis_snp$Chr & start <= top_cis_snp$BP & stop > top_cis_snp$BP & ancestry == study$ancestry)
+  gene_start <- gene_start_site[gene_start_site$p == min(gene_start_site$p), ][1, ]
+  ld_block <- dplyr::filter(ld_blocks, chr == gene_start$Chr & start <= gene_start$BP & stop > gene_start$BP & ancestry == study$ancestry)
   ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
   if (nrow(ld_block) == 0) {
-    missing <- data.frame(study=study$study_name, chr=top_cis_snp$Chr, bp=top_cis_snp$BP)
+    missing <- data.frame(study=study$study_name, chr=gene_start$Chr, bp=gene_start$BP)
     vroom::vroom_write(missing, glue::glue('{pipeline_metadata_dir}/missing_ld_blocks.tsv'), append = T)
-    message('Missing LD block for ', top_cis_snp$SNP)
+    message('Missing LD block for ', gene_start$SNP)
     return()
   }
 
   tmp_cis_region <- glue::glue('/tmp/{study$study_name}_cis_region')
   extract_region <- paste('smr --beqtl-summary', study$study_location,
                               '--query 1',
-                              '--snp', top_cis_snp$SNP,
+                              '--snp', gene_start$SNP,
                               '--snp-wind 3000', # smr doesn't accept BP ranges, so take bigger reigon and filter 
                               '--probe ', study$probe,
                               '--out ', tmp_cis_region
@@ -93,15 +93,17 @@ extract_cis_region <- function(study, p_value_threshold) {
   cis_region <- vroom::vroom(glue::glue('{tmp_cis_region}.txt'), show_col_types = F)
   cis_region <- format_gwas(cis_region) |>
     dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 
+  
+  top_hit <- cis_region[which.min(cis_region$p), ]
 
   message(glue::glue('found {nrow(cis_region)} cis snps for {study$study_name}'))
 
   extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_cis_snp$Chr}_{top_cis_snp$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
 
-  extracted_snps <- data.frame(chr = as.character(top_cis_snp$Chr),
-                               bp = top_cis_snp$BP,
-                               log_p = -log10(top_cis_snp$p),
+  extracted_snps <- data.frame(chr = as.character(top_hit$Chr),
+                               bp = top_hit$BP,
+                               log_p = -log10(top_hit$p),
                                ld_block = ld_block_string,
                                file = extracted_file,
                                cis_trans = 'cis'

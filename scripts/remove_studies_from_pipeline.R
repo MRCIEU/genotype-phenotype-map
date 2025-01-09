@@ -1,6 +1,25 @@
 source('../pipeline_steps/constants.R')
 
-studies_to_remove <- vroom::vroom('redo_studies.txt', show_col_types = F, col_names = F, delim=' ')$X1 
+studies_to_remove <- c(
+  'ukb-d-30120-irnt',
+  'ukb-d-30040-irnt',
+  'ukb-d-30130-irnt',
+  'ukb-d-J10-ASTHMA',
+  'ukb-d-BRONCHITIS',
+  'ukb-d-G6-CARPTU',
+  'ukb-d-K11-CHRONGASTR',
+  'ukb-d-F5-DEPRESSIO',
+  'ukb-d-I9-MI',
+  'ukb-d-I9-PAD',
+  'ukb-d-M13-RHEUMA',
+  'ukb-d-I9-UAP',
+  'ukb-d-30250-irnt',
+  'ukb-d-30260-irnt',
+  'ukb-d-30300-irnt',
+  'ukb-d-30270-irnt',
+  'ukb-d-30080-irnt',
+  'ukb-d-30110-irnt'
+)
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)

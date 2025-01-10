@@ -94,16 +94,16 @@ extract_cis_region <- function(study, p_value_threshold) {
   cis_region <- format_gwas(cis_region) |>
     dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 
   
-  top_hit <- cis_region[which.min(cis_region$p), ]
+  top_hit <- cis_region[which.min(cis_region$P), ]
 
   message(glue::glue('found {nrow(cis_region)} cis snps for {study$study_name}'))
 
-  extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_cis_snp$Chr}_{top_cis_snp$BP}.tsv.gz')
+  extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_hit$CHR}_{top_hit$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
 
-  extracted_snps <- data.frame(chr = as.character(top_hit$Chr),
+  extracted_snps <- data.frame(chr = as.character(top_hit$CHR),
                                bp = top_hit$BP,
-                               log_p = -log10(top_hit$p),
+                               log_p = -log10(top_hit$P),
                                ld_block = ld_block_string,
                                file = extracted_file,
                                cis_trans = 'cis'
@@ -111,7 +111,6 @@ extract_cis_region <- function(study, p_value_threshold) {
   return(list(snp_data=extracted_snps, clumped_snps=data.frame()))
 }
 
-# TODO: WARNING - UNTESTED 
 #' extract_trans_regions
 #' @param extracted_cis_snps: region of extracted cis snps, to be filtered out of trans results
 #' @param study of interest to extract

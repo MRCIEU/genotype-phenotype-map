@@ -85,6 +85,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 
 compile_study_blocks <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
+    dplyr::filter(min_p <= p_value_threshold) |>
     dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans)
   studies_processed <- pipeline_data$studies_processed
 

@@ -1,0 +1,279 @@
+---
+title: "Disease Progression Results"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+
+```{r echo=F}
+source('constants.R')
+
+load_results_data <- function(pipeline_timestamp) {
+  latest_results_dir <- glue::glue('{results_dir}/{pipeline_timestamp}')
+  studies_processed <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv'), show_col_types=F)
+  all_study_results <- vroom::vroom(glue::glue('{latest_results_dir}/all_study_blocks.tsv'), show_col_types=F)
+  raw_coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/raw_coloc_results.tsv'), show_col_types=F)
+  coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/coloc_results.tsv'), show_col_types=F)
+  results_metadata <- vroom::vroom(glue::glue('{latest_results_dir}/results_metadata.tsv'), show_col_types=F)
+
+  studies <- merge(all_study_results, studies_processed, by.x='study', by.y='study_name')
+  studies$p_val_bucket <- cut(studies$min_p,
+    breaks = c(0, 1e-8, 1e-7, 1e-6, 1e-5, 1),
+    labels = c("< 1e-8", "1e-7 - 1e-8", "1e-6 - 1e-7", "1e-5 - 1e-6", "> 1e-5")
+  )
+
+  ebi <- vroom::vroom(glue::glue('{results_dir}/phenotype_categorisation/ebi_gwas_metadata.tsv'), col_select=c('accessionId', 'reportedTrait', 'efoTraits'), show_col_types=F) |>
+    tidyr::separate(sep=',', col = "efoTraits", into = c("efo_trait_1", "efo_trait_2", "efo_trait_3", "efo_trait_4", "efo_trait_5"), remove = F)
+  ebi <- dplyr::filter(ebi, accessionId %in% studies$study)
+  ebi_studies <- merge(studies, ebi, by.x='study', by.y='accessionId', all.x=T)
+
+  return(list(
+    studies_processed = studies_processed,
+    all_study_results = all_study_results,
+    raw_coloc_results = raw_coloc_results,
+    coloc_results = coloc_results,
+    results_metadata = results_metadata,
+    studies = studies,
+    ebi_studies = ebi_studies
+  ))
+}
+
+
+```
+
+
+## Current State of pipeline
+
+### Breakdown by dataset:
+
+```{r}
+last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
+latest_results <- load_results_data(last_two_pipeline_runs[1])
+
+data_types <- unique(latest_results$studies$data_type)
+
+summary_data <- lapply(data_types, function(used_data_type) {
+  latest_results$studies <- dplyr::filter(latest_results$studies, data_type == used_data_type)
+  num_studies <- length(unique(latest_results$studies$study))
+  finemapped_usable <- dplyr::filter(latest_results$studies, min_p < lowest_p_value_threshold)
+
+  more_1e5 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '> 1e-5'))
+  more_1e6 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '1e-5 - 1e-6'))
+  more_1e7 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '1e-6 - 1e-7'))
+  more_1e8 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '1e-7 - 1e-8'))
+  less_1e8 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '< 1e-8'))
+  cis_markers <- nrow(dplyr::filter(finemapped_usable, cis_trans == 'cis'))
+  trans_markers <- nrow(dplyr::filter(finemapped_usable, cis_trans == 'trans'))
+  
+  return(data.frame(
+    data_type = used_data_type,
+    studies = num_studies,
+    cis_markers = cis_markers,
+    trans_markers = trans_markers,
+    finemapped = nrow(finemapped_usable),
+    `> 1e-5` = more_1e5,
+    `1e-5 - 1e-6` = more_1e6,
+    `1e-6 - 1e-7` = more_1e7,
+    `1e-7 - 1e-8` = more_1e8,
+    `< 1e-8` = less_1e8,
+    check.names = F
+  ))
+}) |> dplyr::bind_rows()
+
+summary_data
+
+```
+
+### Number of hyprcoloc clusters by posterior_prob (across all studies)
+```{r}
+
+latest_results$raw_coloc_results$num_traits <- stringr::str_count(latest_results$raw_coloc_results$traits, ',') + 1
+more_than_50 <- dplyr::filter(latest_results$raw_coloc_results, posterior_prob > 0.5)
+more_than_60 <- dplyr::filter(latest_results$raw_coloc_results, posterior_prob > 0.6)
+more_than_70 <- dplyr::filter(latest_results$raw_coloc_results, posterior_prob > 0.7)
+more_than_80 <- dplyr::filter(latest_results$raw_coloc_results, posterior_prob > 0.8)
+more_than_90 <- dplyr::filter(latest_results$raw_coloc_results, posterior_prob > 0.9)
+
+tibble::tribble(~coloc_threshold, ~num_results, ~mean_studies, ~median_studies, ~max_studies,
+               ' > 0.5', nrow(more_than_50), mean(more_than_50$num_traits), median(more_than_50$num_traits), max(more_than_50$num_traits),
+               ' > 0.6', nrow(more_than_60), mean(more_than_60$num_traits), median(more_than_60$num_traits), max(more_than_60$num_traits),
+               ' > 0.7', nrow(more_than_70), mean(more_than_70$num_traits), median(more_than_70$num_traits), max(more_than_70$num_traits),
+               ' > 0.8', nrow(more_than_80), mean(more_than_80$num_traits), median(more_than_80$num_traits), max(more_than_80$num_traits),
+               ' > 0.9', nrow(more_than_90), mean(more_than_90$num_traits), median(more_than_90$num_traits), max(more_than_90$num_traits)
+)
+
+hist(latest_results$raw_coloc_results$num_traits, xlim = c(1,40), breaks=300, main='Frequency of # of studies in hyprcoloc result')
+```
+
+### Coloc Results Broken Down p-val threshold and data source:
+```{r}
+study_a_match <- match(latest_results$coloc_results$unique_study_a, latest_results$studies$unique_study_id)
+study_b_match <- match(latest_results$coloc_results$unique_study_b, latest_results$studies$unique_study_id)
+
+latest_results$coloc_results$data_type_a <- latest_results$studies$data_type[study_a_match]
+latest_results$coloc_results$data_type_b <- latest_results$studies$data_type[study_b_match]
+latest_results$coloc_results$cis_trans_a <- latest_results$studies$cis_trans[study_a_match]
+latest_results$coloc_results$cis_trans_b <- latest_results$studies$cis_trans[study_b_match]
+latest_results$coloc_results$tissue_a <- latest_results$studies$tissue[study_a_match]
+latest_results$coloc_results$tissue_b <- latest_results$studies$tissue[study_b_match]
+latest_results$coloc_results$p_val_bucket_a <- latest_results$studies$p_val_bucket[study_a_match]
+latest_results$coloc_results$p_val_bucket_b <- latest_results$studies$p_val_bucket[study_b_match]
+latest_results$coloc_results$gene_a <- latest_results$all_study_results$known_gene[match(latest_results$coloc_results$unique_study_a, latest_results$all_study_results$unique_study_id)]
+latest_results$coloc_results$gene_b <- latest_results$all_study_results$known_gene[match(latest_results$coloc_results$unique_study_b, latest_results$all_study_results$unique_study_id)]
+```
+
+Pairwise coloc results broken down by p-value threshold
+
+```{r}
+
+```
+
+Pairwise coloc results broken down by type pairs
+```{r}
+pheno_pheno <- dplyr::filter(latest_results$coloc_results, data_type_a == 'phenotype' & data_type_b == 'phenotype')
+
+tibble::tibble(~p_value_threshold, ~data_type_a, ~data_type_b, ~num_pairs, 
+               '> 1e-5', 'phenotype', ''
+)
+
+num_results = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200)),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300))
+)
+num_results_w_gtex_eqtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('GTEx-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('GTEx-cis', traits)))
+)
+num_results_unique_to_gtex_eqtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('GTEx-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-sQTL-cis|BrainMeta|Brain-eMeta', traits)))
+)
+num_results_w_gtex_sqtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('GTEx-sQTL-cis', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('GTEx-sQTL-cis', traits)))
+)
+num_results_unique_to_gtex_sqtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('GTEx-sQTL-cis', traits) & grepl('ebi-a-', traits) & !grepl('GTEx-cis|BrainMeta|Brain-eMeta', traits)))
+)
+
+num_results_w_brain_qtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('BrainMeta|Brain-eMeta', traits)))
+)
+
+num_results_unique_to_brain = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('BrainMeta|Brain-eMeta', traits) & grepl('ebi-a-', traits) & !grepl('GTEx', traits)))
+)
+
+num_results_w_any_qtl = c(
+  nrow(dplyr::filter(latest_results$raw_coloc_results, grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 5 & grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 10 & grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 50 & grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 100 & grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 200 & grepl('GTEx|BrainMeta|Brain-eMeta', traits))),
+  nrow(dplyr::filter(latest_results$raw_coloc_results, num_traits > 300 & grepl('GTEx|BrainMeta|Brain-eMeta', traits)))
+)
+
+coloc_data_source <- data.frame(min_num_traits = c(2, 5, 10, 50, 100, 200, 300),
+           num_results = num_results,
+           w_gtex_eqtl = num_results_w_gtex_eqtl,
+           unique_to_gtex_eqtl = num_results_unique_to_gtex_eqtl,
+           w_gtex_sqtl = num_results_w_gtex_sqtl,
+           unique_to_sqtl = num_results_unique_to_gtex_sqtl,
+           w_brain_qtl = num_results_w_brain_qtl,
+           unique_to_brain_qtl = num_results_unique_to_brain,
+           has_a_qtl_present = num_results_w_any_qtl/num_results
+)
+coloc_data_source
+
+
+
+#TODO: break this down int matching and not matching tissues
+IRdisplay::display_markdown(paste('* Total number of qtl <-> qtl pairs w/ matching gene:',
+                                  nrow(latest_results$coloc_results |> dplyr::filter(!grepl('ebi-', unique_study_a) & !is.na(gene_a) & !is.na(gene_b) & gene_a == gene_b & directed == F)))
+)
+
+IRdisplay::display_markdown(paste('* Total number of non-matching gene qtl <-> qtl pairs:',
+                                  nrow(dplyr::filter(latest_results$coloc_results, !is.na(gene_a) & !is.na(gene_b) & gene_a != gene_b)))
+)
+
+IRdisplay::display_markdown(paste('* Total number of non-matching gene OR tissue qtl <-> qtl pairs:',
+                                  nrow(dplyr::filter(latest_results$coloc_results, !is.na(gene_a) & !is.na(gene_b) & gene_a != gene_b & !is.na(tissue_a) & !is.na(tissue_b) & tissue_a != tissue_b)))
+)
+
+head(dplyr::filter(latest_results$coloc_results, !is.na(gene_a) & !is.na(gene_b) & gene_a != gene_b & !is.na(tissue_a) & !is.na(tissue_b) & tissue_a != tissue_b))
+
+IRdisplay::display_markdown(paste('* Total number of "directed" qtl <-> phenotype pairs:',
+                                  nrow(latest_results$coloc_results |> dplyr::filter(directed == T)))
+)
+IRdisplay::display_markdown(paste('* Total number of eQTL <-> phenotype pairs:',
+                                  nrow(latest_results$coloc_results |> dplyr::filter(directed == T & data_type_a == 'gene_expression')))
+)
+IRdisplay::display_markdown(paste('* Total number of sQTL <-> phenotype:',
+                                  nrow(latest_results$coloc_results |> dplyr::filter(data_type_a == 'splice_variant' & data_type_b == 'phenotype')))
+)
+IRdisplay::display_markdown(paste('* Total number of sQTL <-> eQTL pairs:',
+                                  nrow(latest_results$coloc_results |> dplyr::filter(data_type_a == 'splice_variant' & data_type_b == 'gene_expression')))
+)
+
+IRdisplay::display_markdown(paste('### Breakdown by tissue or gene:'))
+
+IRdisplay::display_markdown(paste('Most Common Genes that show up in coloc results'))
+gene_hits <- table(latest_results$coloc_results$gene_a) |>
+  as.data.frame() |>
+  dplyr::arrange(dplyr::desc(Freq))
+
+head(gene_hits, n=30)
+
+dplyr::filter(gene_hits, grepl('IL6', Var1))
+
+
+```
+
+
+# Comparing With Previous Results
+
+```{r echo=F}
+compare_results_dir <- glue::glue('{results_dir}/{last_two_pipeline_runs[2]}')
+previous_results <- load_results_data(last_two_pipeline_runs[2])
+```

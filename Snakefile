@@ -58,7 +58,7 @@ all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
-pipeline_summary_rmd = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.Rmd'
+pipeline_summary_output = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.html'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -245,21 +245,18 @@ rule compile_results:
         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
         """
 
-# rule create_rmd_of_results:
-#     input:
-#         coloc_results = coloc_results,
-#         raw_coloc_results = raw_coloc_results,
-#         all_study_blocks = all_study_blocks,
-#         results_metadata = results_metadata,
-#         variant_annotations = variant_annotations
-#     output: pipeline_summary_rmd 
-#     shell:
-#         """
-#         Rscript -e 'rmarkdown::render("pipeline_summary.Rmd",
-#             params = list(coloc_results="{input.coloc_results}"),
-#             output_file = "{output}"
-#         )'
-#         """
+rule create_summary_of_results:
+    input:
+        coloc_results = coloc_results,
+        raw_coloc_results = raw_coloc_results,
+        all_study_blocks = all_study_blocks,
+        results_metadata = results_metadata,
+        variant_annotations = variant_annotations
+    output: pipeline_summary_output
+    shell:
+        """
+        Rscript -e 'rmarkdown::render("pipeline_summary.Rmd", output_file = "{output}")'
+        """
 
 # rule perform_mr_analysis:
 #     input:
@@ -276,6 +273,7 @@ rule compile_results:
 
 onsuccess:
     print('Yay!  Please look here:')
+    print(pipeline_summary_output)
     print(raw_coloc_results)
     print(coloc_results)
     print(all_study_blocks)

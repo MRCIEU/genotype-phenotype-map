@@ -101,6 +101,9 @@ extract_cis_region <- function(study, p_value_threshold) {
   extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_hit$CHR}_{top_hit$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
 
+  unlink(glue::glue('{tmp_cis_snp}.txt'))
+  unlink(glue::glue('{tmp_cis_region}.txt'))
+
   extracted_snps <- data.frame(chr = as.character(top_hit$CHR),
                                bp = top_hit$BP,
                                log_p = -log10(top_hit$P),
@@ -197,6 +200,8 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
       # return()
     # }
 
+    unlink(glue::glue('{tmp_trans_region}.txt'))
+
     extracted_trans_hit <- data.frame(chr = as.character(trans_chr),
                                     bp = trans_bp,
                                     log_p = -log10(trans_p),
@@ -206,6 +211,8 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
     )
     return(extracted_trans_hit)
   }) |> dplyr::bind_rows()
+
+  unlink(glue::glue('{tmp_trans_snps}.txt'))
 
   return(list(snp_data=extracted_trans_snps, clumped_snps=clumped_trans_snps))
 }

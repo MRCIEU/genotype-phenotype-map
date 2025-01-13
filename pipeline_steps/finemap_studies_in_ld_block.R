@@ -155,7 +155,7 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
     new_bp <- NA
     if (length(susie_result$sets$cs) == 1) {
       #this finds the lead SNP in new credible set
-      important_row <- susie_result$sets$cs[paste0('L', 1)][[1]][[1]]
+      important_row <- susie_result$sets$cs[1][[1]][[1]]
       new_bp <- as.numeric(gwas[important_row, ]$BP)
     }
     failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)

@@ -55,6 +55,7 @@ calculate_besd_studies_to_process <- function(entries) {
 
     return(data.frame(
       data_type = entry[['data_type']],
+      source = entry[['source']],
       data_format = entry[['data_format']],
       bespoke_parsing = entry[['bespoke_parsing']],
       reference_build = entry[['reference_build']],
@@ -101,6 +102,7 @@ calculate_besd_studies_to_process <- function(entries) {
 
     return(data.frame(
       data_type = besd_study[['data_type']],
+      source = besd_study[['source']],
       data_format = besd_study[['data_format']],
       study_name = studies,
       trait = traits,
@@ -125,6 +127,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
     all_directories <- Sys.glob(file_regex)
     return(data.frame(
       data_type = entry[['data_type']],
+      source = entry[['source']],
       directory = all_directories,
       reference_build = entry[['reference_build']],
       ancestry = entry[['ancestry']],
@@ -155,6 +158,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
     return(data.frame(
       data_type = opengwas_study[['data_type']],
       data_format = opengwas_study[['data_format']],
+      source = opengwas_study[['source']],
       study_name = new_study_name,
       trait = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],

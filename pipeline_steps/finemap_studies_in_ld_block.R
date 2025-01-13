@@ -155,7 +155,7 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
     new_bp <- NA
     if (length(susie_result$sets$cs) == 1) {
       #this finds the lead SNP in new credible set
-      important_row <- susie_result$sets$cs[paste0('L', 1)][[1]][[1]]
+      important_row <- susie_result$sets$cs[1][[1]][[1]]
       new_bp <- as.numeric(gwas[important_row, ]$BP)
     }
     failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)
@@ -177,6 +177,10 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   sample_size <- as.numeric(study['sample_size'])
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
+
+  if (!is.na(new_bp)) {
+    study['bp'] <- new_bp
+  }
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
   unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_1')
@@ -223,7 +227,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
         min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
         unique_ids <- c(unique_ids, unique_id)
 
-        # if the new credible set's bp is less than 1MB from the original bp, mark as cis, otherwise trans
+        # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
         if (!is.na(study['cis_trains']) && study['cis_trans'] == cis_trans$cis_only) {
           if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
             cis_trans <- cis_trans$cis_only

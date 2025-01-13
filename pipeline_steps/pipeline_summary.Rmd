@@ -1,0 +1,316 @@
+---
+title: "Latest GPM Pipeline Run"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    css: pipeline_summary.css
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r echo=F}
+source('constants.R')
+
+load_results_data <- function(pipeline_timestamp) {
+  latest_results_dir <- glue::glue('{results_dir}/{pipeline_timestamp}')
+  studies_processed <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv'), show_col_types=F)
+  all_study_results <- vroom::vroom(glue::glue('{latest_results_dir}/all_study_blocks.tsv'), show_col_types=F)
+  raw_coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/raw_coloc_results.tsv'), show_col_types=F)
+  coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/coloc_results.tsv'), show_col_types=F)
+  results_metadata <- vroom::vroom(glue::glue('{latest_results_dir}/results_metadata.tsv'), show_col_types=F)
+
+  studies <- merge(all_study_results, studies_processed, by.x='study', by.y='study_name')
+  studies$p_val_bucket <- cut(studies$min_p,
+    breaks = c(0, 1e-8, 1e-5, 1),
+    labels = c("< 1e-8", "1e-5 - 1e-8","> 1e-5")
+  )
+
+  ebi <- vroom::vroom(glue::glue('{results_dir}/phenotype_categorisation/ebi_gwas_metadata.tsv'), col_select=c('accessionId', 'reportedTrait', 'efoTraits'), show_col_types=F) |>
+    tidyr::separate(sep=',', col = "efoTraits", into = c("efo_trait_1", "efo_trait_2", "efo_trait_3", "efo_trait_4", "efo_trait_5"), remove = F)
+  ebi <- dplyr::filter(ebi, accessionId %in% studies$study)
+  ebi_studies <- merge(studies, ebi, by.x='study', by.y='accessionId', all.x=T)
+
+  return(list(
+    studies_processed = studies_processed,
+    all_study_results = all_study_results,
+    raw_coloc_results = raw_coloc_results,
+    coloc_results = coloc_results,
+    results_metadata = results_metadata,
+    studies = studies,
+    ebi_studies = ebi_studies
+  ))
+}
+
+pad_data_frames <- function(df1, df2) {
+  df1 <- as.data.frame(df1)
+  df2 <- as.data.frame(df2)
+  nrow1 <- nrow(df1)
+  ncol1 <- ncol(df1)
+  nrow2 <- nrow(df2)
+  ncol2 <- ncol(df2)
+  
+  # Create column names for consistency
+  all_columns <- union(names(df1), names(df2))
+  
+  # Add missing columns filled with 0
+  df1 <- cbind(df1, setNames(as.data.frame(matrix(0, nrow = nrow1, ncol = length(setdiff(all_columns, names(df1))))), 
+                             setdiff(all_columns, names(df1))))
+  df2 <- cbind(df2, setNames(as.data.frame(matrix(0, nrow = nrow2, ncol = length(setdiff(all_columns, names(df2))))), 
+                             setdiff(all_columns, names(df2))))
+  
+  # Reorder columns to match
+  df1 <- df1[, all_columns]
+  df2 <- df2[, all_columns]
+  
+  # Add missing rows filled with 0
+  if (nrow1 < nrow2) {
+    df1 <- rbind(df1, as.data.frame(matrix(0, nrow = nrow2 - nrow1, ncol = ncol(df1))))
+  } else if (nrow2 < nrow1) {
+    df2 <- rbind(df2, as.data.frame(matrix(0, nrow = nrow1 - nrow2, ncol = ncol(df2))))
+  }
+  
+  return(list(df1 = df1, df2 = df2))
+}
+
+
+subtract_data_frames <- function(df1, df2) {
+  numeric_columns <- sapply(df1, is.numeric)
+  result <- df1[, numeric_columns] - df2[, numeric_columns]
+  final_result <- cbind(df1[, !numeric_columns, drop = FALSE], result)
+  return(final_result)
+}
+
+last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
+latest_results <- load_results_data(last_two_pipeline_runs[1])
+previous_results <- load_results_data(last_two_pipeline_runs[2])
+```
+
+
+# Current State of pipeline
+
+What has been ingested? Count of all finemapped regions
+```{r echo=F}
+latest_sources <- table(latest_results$studies$source)
+knitr::kable(latest_sources)
+```
+
+Difference from last pipeline run
+```{r echo=F}
+previous_sources <- table(previous_results$studies$source)
+summary_data <- pad_data_frames(latest_sources, previous_sources)
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+```
+
+## Breakdown by dataset:
+
+```{r echo=F}
+breakdown_by_dataset <- function(results) {
+  unique_data_types <- unique(results$studies$data_type)
+  unique_data_sources <- unique(results$studies$source)
+
+  summary_data <- lapply(unique_data_types, function(used_data_type) {
+    results$studies <- dplyr::filter(results$studies, data_type == used_data_type)
+    num_studies <- length(unique(results$studies$study))
+    finemapped_usable <- dplyr::filter(results$studies, min_p < lowest_p_value_threshold)
+
+    more_1e5 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '> 1e-5'))
+    more_1e6 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '1e-5 - 1e-8'))
+    less_1e8 <- nrow(dplyr::filter(finemapped_usable, p_val_bucket == '< 1e-8'))
+    cis_markers <- nrow(dplyr::filter(finemapped_usable, cis_trans == 'cis'))
+    trans_markers <- nrow(dplyr::filter(finemapped_usable, cis_trans == 'trans'))
+    
+    return(data.frame(
+      data_type = used_data_type,
+      studies = num_studies,
+      cis_markers = cis_markers,
+      trans_markers = trans_markers,
+      finemapped = nrow(finemapped_usable),
+      `> 1e-5` = more_1e5,
+      `1e-5 - 1e-8` = more_1e6,
+      `< 1e-8` = less_1e8,
+      check.names = F
+    ))
+  }) |> dplyr::bind_rows()
+
+  return(summary_data)
+}
+
+latest_summary_data <- breakdown_by_dataset(latest_results)
+knitr::kable(latest_summary_data)
+```
+
+Difference from last pipeline run:
+```{r echo=F}
+previous_summary_data <- breakdown_by_dataset(previous_results)
+summary_data <- pad_data_frames(latest_summary_data, previous_summary_data)
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+```
+
+
+# Number of hyprcoloc clusters by posterior_prob (across all studies)
+```{r echo=F}
+
+hyprcoloc_clusters <- function(results) {
+  more_than_50 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.5)
+  more_than_60 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.6)
+  more_than_70 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.7)
+  more_than_80 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.8)
+  more_than_90 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.9)
+
+  clusters <- tibble::tribble(~coloc_threshold, ~num_results, ~mean_studies, ~median_studies, ~max_studies,
+                ' > 0.5', nrow(more_than_50), mean(more_than_50$num_traits), median(more_than_50$num_traits), max(more_than_50$num_traits),
+                ' > 0.6', nrow(more_than_60), mean(more_than_60$num_traits), median(more_than_60$num_traits), max(more_than_60$num_traits),
+                ' > 0.7', nrow(more_than_70), mean(more_than_70$num_traits), median(more_than_70$num_traits), max(more_than_70$num_traits),
+                ' > 0.8', nrow(more_than_80), mean(more_than_80$num_traits), median(more_than_80$num_traits), max(more_than_80$num_traits),
+                ' > 0.9', nrow(more_than_90), mean(more_than_90$num_traits), median(more_than_90$num_traits), max(more_than_90$num_traits)
+  )
+  return(clusters)
+}
+
+latest_results$raw_coloc_results$num_traits <- stringr::str_count(latest_results$raw_coloc_results$traits, ',') + 1
+max_traits <- max(latest_results$raw_coloc_results$num_traits)
+hist(latest_results$raw_coloc_results$num_traits, xlim = c(1,25), breaks=seq(1,max_traits), main='Frequency of # of studies in hyprcoloc result')
+
+latest_clusters <- hyprcoloc_clusters(latest_results)
+knitr::kable(latest_clusters)
+```
+
+Difference from last pipeline run:
+```{r echo=F}
+previous_clusters <- hyprcoloc_clusters(previous_results)
+summary_data <- pad_data_frames(latest_clusters, previous_clusters)
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+```
+
+# Coloc Results Broken Down p-val threshold and data source:
+```{r echo=F}
+
+additional_coloc_columns <- function(results) {
+  study_a_match <- match(results$coloc_results$unique_study_a, results$studies$unique_study_id)
+  study_b_match <- match(results$coloc_results$unique_study_b, results$studies$unique_study_id)
+
+  results$coloc_results$source_a <- results$studies$source[study_a_match]
+  results$coloc_results$source_b <- results$studies$source[study_b_match]
+  results$coloc_results$data_type_a <- results$studies$data_type[study_a_match]
+  results$coloc_results$data_type_b <- results$studies$data_type[study_b_match]
+  results$coloc_results$cis_trans_a <- results$studies$cis_trans[study_a_match]
+  results$coloc_results$cis_trans_b <- results$studies$cis_trans[study_b_match]
+  results$coloc_results$tissue_a <- results$studies$tissue[study_a_match]
+  results$coloc_results$tissue_b <- results$studies$tissue[study_b_match]
+  results$coloc_results$p_val_bucket_a <- results$studies$p_val_bucket[study_a_match]
+  results$coloc_results$p_val_bucket_b <- results$studies$p_val_bucket[study_b_match]
+  results$coloc_results$gene_a <- results$all_study_results$known_gene[match(results$coloc_results$unique_study_a, results$all_study_results$unique_study_id)]
+  results$coloc_results$gene_b <- results$all_study_results$known_gene[match(results$coloc_results$unique_study_b, results$all_study_results$unique_study_id)]
+
+  return(results$coloc_results)
+
+}
+
+latest_coloc_results <- additional_coloc_columns(latest_results)
+previous_coloc_results <- additional_coloc_columns(previous_results)
+```
+
+```{r echo=F}
+coloc_by_p_val_and_type <- function(coloc_results) {
+  coloc_split_p_val <- split(coloc_results,
+    interaction(coloc_results$p_val_bucket_a, coloc_results$p_val_bucket_b)
+  )
+
+  coloc_split_p_val_results <- lapply(names(coloc_split_p_val), function(bucket_name) {
+    bucket <- coloc_split_p_val[[bucket_name]]
+    pheno_pheno <- dplyr::filter(bucket, data_type_a == 'phenotype' & data_type_b == 'phenotype')
+    pheno_ge <- dplyr::filter(bucket, data_type_a == 'gene_expression' & data_type_b == 'phenotype')
+    pheno_protein <- dplyr::filter(bucket, data_type_a == 'protein' & data_type_b == 'phenotype')
+    ge_ge <- dplyr::filter(bucket, data_type_a == 'gene_expression' & data_type_b == 'gene_expression')
+    protein_ge <- dplyr::filter(bucket, data_type_a == 'gene_expression' & data_type_b == 'protein')
+    protein_protein <- dplyr::filter(bucket, data_type_a == 'protein' & data_type_b == 'protein')
+
+    return(data.frame(
+      p_val = bucket_name,
+      pheno_pheno = nrow(pheno_pheno),
+      pheno_gene_exp = nrow(pheno_ge),
+      pheno_protein = nrow(pheno_protein),
+      gene_exp_gene_exp = nrow(ge_ge),
+      protein_ge = nrow(protein_ge),
+      protein_protein = nrow(protein_protein)
+    ))
+  }) |> dplyr::bind_rows()
+
+  return(coloc_split_p_val_results)
+}
+
+latest_coloc_split_results <- coloc_by_p_val_and_type(latest_coloc_results)
+knitr::kable(latest_coloc_split_results)
+```
+
+Difference from last pipeline run:
+```{r echo=F}
+previous_coloc_split_results <- coloc_by_p_val_and_type(previous_coloc_results)
+summary_data <- pad_data_frames(latest_coloc_split_results, previous_coloc_split_results)
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+```
+
+# Coloc results broken down by cis, trans, or phenotype
+```{r echo=F}
+
+coloc_cis_trans <- function(coloc_results) {
+  coloc_for_cis_trans <- coloc_results
+  coloc_for_cis_trans$cis_trans_a[is.na(coloc_for_cis_trans$cis_trans_a)] <- 'phenotype'
+  coloc_for_cis_trans$cis_trans_b[is.na(coloc_for_cis_trans$cis_trans_b)] <- 'phenotype'
+  coloc_for_cis_trans$cis_trans_a_order <- pmin(coloc_for_cis_trans$cis_trans_a, coloc_for_cis_trans$cis_trans_b)  # Smaller value first
+  coloc_for_cis_trans$cis_trans_b_order <- pmax(coloc_for_cis_trans$cis_trans_a, coloc_for_cis_trans$cis_trans_b)  # Smaller value first
+  coloc_split_cis_trans <- split(coloc_for_cis_trans,
+    interaction(coloc_for_cis_trans$cis_trans_a_order, coloc_for_cis_trans$cis_trans_b_order)
+  )
+
+  coloc_split_cis_trans_results <- lapply(names(coloc_split_cis_trans), function(bucket_name) {
+    bucket <- coloc_split_cis_trans[[bucket_name]]
+
+    return(data.frame(
+      cis_trans_pair = bucket_name,
+      num_pairs= nrow(bucket)
+    ))
+  }) |> dplyr::bind_rows()
+
+  return(dplyr::filter(coloc_split_cis_trans_results, num_pairs > 0) |>
+    dplyr::arrange(num_pairs, decreasing=T)
+  )
+}
+latest_coloc_cis_trans <- coloc_cis_trans(latest_coloc_results)
+knitr::kable(latest_coloc_cis_trans)
+```
+
+Difference from last pipeline run:
+```{r echo=F}
+previous_coloc_cis_trans <- coloc_cis_trans(previous_coloc_results)
+summary_data <- pad_data_frames(latest_coloc_cis_trans, previous_coloc_cis_trans)
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+```
+
+# Pipeline Metadata
+
+```{r echo=F}
+metadata <- latest_results$results_metadata |> dplyr::select(number_extracted, number_standardised, number_imputed, number_finemapped, num_finemap_failed)
+```
+
+sum of results across all LD blocks
+```{r echo=F}
+knitr::kable(colSums(metadata))
+```
+mean of results per LD block
+```{r echo=F}
+knitr::kable(colMeans(metadata))
+hist_size <- max(metadata$number_finemapped)
+hist(metadata$number_finemapped, xlim = c(1,hist_size), breaks=seq(1,hist_size), main='Finemapped results per LD Region')
+```
+
+Regions worst finemapping rate
+```{r echo=F}
+results_subset <- dplyr::select(latest_results$results_metadata, ld_block, number_finemapped, finemapped_per_imputed, num_finemap_failed) |>
+  dplyr::arrange(dplyr::desc(num_finemap_failed / number_finemapped))
+
+knitr::kable(head(results_subset, n=10))
+```

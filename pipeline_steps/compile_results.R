@@ -19,7 +19,8 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
-  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
+    dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
 
@@ -85,6 +86,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 
 compile_study_blocks <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
+    dplyr::filter(min_p <= p_value_threshold) |>
     dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans)
   studies_processed <- pipeline_data$studies_processed
 
@@ -102,7 +104,6 @@ annotate_variants <- function(pipeline_data) {
 }
 
 aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
-  # ld_info <- dplyr::filter(dir.exists(ld_block_data), ld_info)
   metadata_per_ld_block <- lapply(ld_info$block, function(block) {
     extracted_per_block <- dplyr::filter(pipeline_data$extracted_studies, ld_block == block)
     standardised_per_block <- dplyr::filter(pipeline_data$standardised_studies, ld_block == block)

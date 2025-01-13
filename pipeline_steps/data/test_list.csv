@@ -1,4 +1,4 @@
-id_pattern,data_type,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold
-*,phenotype,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/data/opengwas,EUR,GRCh37,1.5e-4
-ukb-ppp*,protein,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/qtl,EUR,GRCh38,1.5e-4
-BrainMeta*,gene_expression,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/qtl,EUR,GRCh38,1.5e-4
+id_pattern,data_type,source,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold
+*,phenotype,Open GWAS,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/data/opengwas,EUR,GRCh37,1.5e-4
+ukb-ppp*,protein,UK Biobank Proteomics,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/qtl,EUR,GRCh38,1.5e-4
+BrainMeta*,gene_expression,Brain Meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/qtl,EUR,GRCh38,1.5e-4

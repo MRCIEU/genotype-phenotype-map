@@ -1,5 +1,5 @@
-id_pattern,data_type,source_study,data_location,ancestry,reference_build,p_value_threshold
-ukb-wes-bm-*,wes_singlevar,backman,/local-scratch/data/ukb-seq/downloads/backmanexwas,EUR,GRCh38,1.5e-4
-ukb-wes-gb-*,wes_singlevar,genebass,/local-scratch/data/ukb-seq/downloads/genebass,EUR,GRCh38,1.5e-4
-ukb-wes-az-*,wes_singlevar,azphewas,/local-scratch/data/ukb-seq/downloads/azexwas,EUR,GRCh38,1.5e-4
-ukb-wgs-hd-*,wgs_singlevar,halldorsson,/local-scratch/data/ukb-seq/downloads/halldorexwas,EUR,GRCh38,1.5e-4
+id_pattern,data_type,source_study,data_location,ancestry,reference_build,p_value_threshold,metadata_location
+ukb-wes-bm-*,wes_singlevar,backman,/local-scratch/data/ukb-seq/downloads/backmanexwas,EUR,GRCh38,1.5e-4,/local-scratch/data/ukb-seq/downloads/backmanexwas/ukb-wes-bm-studies.tsv
+ukb-wes-gb-*,wes_singlevar,genebass,/local-scratch/data/ukb-seq/downloads/genebass,EUR,GRCh38,1.5e-4,/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-gb-studies.tsv
+ukb-wes-az-*,wes_singlevar,azphewas,/local-scratch/data/ukb-seq/downloads/azexwas,EUR,GRCh38,1.5e-4,/local-scratch/data/ukb-seq/downloads/azexwas/ukb-wes-az-studies.tsv
+ukb-wgs-hd-*,wgs_singlevar,halldorsson,/local-scratch/data/ukb-seq/downloads/halldorexwas,EUR,GRCh38,1.5e-4,

@@ -12,7 +12,7 @@ import sys
 hl.init(spark_conf={'spark.master': 'local[10]'})
 
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--driver-memory 10g --executor-memory 10g pyspark-shell'
-DATA_DIR = "/local-scratch/data/genebass/"
+DATA_DIR = "/local-scratch/data/hg38/genebass/"
 SEQDATA_DIR = "/local-scratch/data/ukb-seq/"
 
 @click.command(name='Pull data from genebass')

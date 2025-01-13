@@ -18,7 +18,7 @@ echo "Extracting top hits and ld regions from ${input} summary statistics"
 # Metadata files
 backman="/local-scratch/data/ukb-seq/downloads/backmanexwas/ukb-wes-bm-studies.tsv"
 azphewas="/local-scratch/data/ukb-seq/downloads/azexwas/ukb-wes-az-studies.tsv"
-genebass=""
+genebass="/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-gb-studies.tsv"
 halldorsson=""
 
 if [ ${input} == "bm" ]; then
@@ -41,6 +41,12 @@ elif [ ${input} == "az" ]; then
 
 elif [ ${input} == "gb" ]; then
     infile=${genebass}
+    (echo Reading study metadata from: ${infile}	
+	
+	for file in $(awk 'NR != 1 {print $5}' ${infile} | xargs -n 1 basename); do
+    	Rscript extract_regions_from_genebass.R --extracted_study_file ${file}
+	done) 2>&1 | tee $(dirname ${genebass})/studies_extract.log
+
 elif [ ${input} == "hd" ]; then
     infile=${halldorsson}
 else

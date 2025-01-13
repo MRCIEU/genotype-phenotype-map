@@ -1,5 +1,5 @@
 ---
-title: "Latest Genotype-Phenotype Map Pipeline Run"
+title: "Latest GPM Pipeline Run"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   prettydoc::html_pretty:
@@ -101,7 +101,7 @@ Difference from last pipeline run
 ```{r echo=F}
 previous_sources <- table(previous_results$studies$source)
 summary_data <- pad_data_frames(latest_sources, previous_sources)
-knitr::kable(subtract_data_frames(summary_data$df2, summary_data$df1))
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
 ```
 
 ## Breakdown by dataset:
@@ -146,7 +146,7 @@ Difference from last pipeline run:
 ```{r echo=F}
 previous_summary_data <- breakdown_by_dataset(previous_results)
 summary_data <- pad_data_frames(latest_summary_data, previous_summary_data)
-knitr::kable(subtract_data_frames(summary_data$df2, summary_data$df1))
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
 ```
 
 
@@ -182,7 +182,7 @@ Difference from last pipeline run:
 ```{r echo=F}
 previous_clusters <- hyprcoloc_clusters(previous_results)
 summary_data <- pad_data_frames(latest_clusters, previous_clusters)
-knitr::kable(subtract_data_frames(summary_data$df2, summary_data$df1))
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
 ```
 
 # Coloc Results Broken Down p-val threshold and data source:
@@ -250,7 +250,7 @@ Difference from last pipeline run:
 ```{r echo=F}
 previous_coloc_split_results <- coloc_by_p_val_and_type(previous_coloc_results)
 summary_data <- pad_data_frames(latest_coloc_split_results, previous_coloc_split_results)
-knitr::kable(subtract_data_frames(summary_data$df2, summary_data$df1))
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
 ```
 
 # Coloc results broken down by cis, trans, or phenotype
@@ -287,7 +287,7 @@ Difference from last pipeline run:
 ```{r echo=F}
 previous_coloc_cis_trans <- coloc_cis_trans(previous_coloc_results)
 summary_data <- pad_data_frames(latest_coloc_cis_trans, previous_coloc_cis_trans)
-knitr::kable(subtract_data_frames(summary_data$df2, summary_data$df1))
+knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
 ```
 
 # Pipeline Metadata

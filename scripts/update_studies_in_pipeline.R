@@ -5,6 +5,12 @@ ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
+main <- function() {
+  update_study_dirs()
+  update_ld_blocks()
+  update_process_studies()
+}
+
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
 update_method <- function(studies_file, type) {
   if (!file.exists(studies_file)) {
@@ -62,6 +68,4 @@ update_process_studies <- function() {
   # ...
 }
 
-update_study_dirs()
-update_ld_blocks()
-update_process_studies()
+main()

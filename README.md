@@ -20,11 +20,10 @@ Notes: Snakemake slows down if you try to run the pipeline with too many studies
 
 ## Concepts
 
-**Study:** Any individual summary statistic study to ingest.  A GWAS is a study (ex. BMI), a specific gene-tissue-expression is a study (ex. GTEx Whole Blood WASH7P)
-**LD Block**: The human genome has been chunked into regions which have minimal LD overlap, as calculated by [ldetect](https://github.com/jmacdon/LDblocks_GRCh38)
-**Docker / Apptainer**: 
-**Pipeline / Snakemake**:
-
+* **Study:** Any individual summary statistic study to ingest.  A GWAS is a study (ex. BMI), a specific gene-tissue-expression is a study (ex. GTEx Whole Blood WASH7P)
+* **LD Block**: The human genome has been chunked into regions which have minimal LD overlap, as calculated by [ldetect](https://github.com/jmacdon/LDblocks_GRCh38)
+* **Docker / Apptainer**: All of the needed command line tools, R and python packages are installed in [a docker image](https://hub.docker.com/repository/docker/mrcieu/genotype-phenotype-map): 
+* **Pipeline**: This is used to run the series of steps needed to ingest data and perform the calculations.  The pipeline uses [Snakemake version 7](https://snakemake.readthedocs.io/en/v7.25.4/index.html)
 
 ## How to contribute 
 
@@ -49,7 +48,6 @@ To make changes and test them, there is a `test pipeline`.
 
 There are a few mandatory data directories
 1. Precompiled ld matrices per ld region: `$DATA_DIR/ld_reference_panel_hg38/<ANCESTRY>/CHR/BP-RANGE.*`
-2. `1000genomes`: right now, only used to create ld block matrices, and store ENSEMBL <-> Gene name map
 3. Study data: can be anywhere on the box, specified in `data/study_list.csv`, however all study data is stored in `/local-scratch/data/`.  There does need to be a corresponding way to extract data from it though.
     * The folder and names of files matter.  The study id is constructed using the top level folder name and the name of the file 
 

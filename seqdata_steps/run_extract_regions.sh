@@ -13,7 +13,7 @@ input=$1
 echo "Extracting top hits and ld regions from ${input} summary statistics"
 
 # Launch docker container
-#apptainer run -B /local-scratch -B /projects  -B /home/${whoami} docker://andrewrrelmore/genotype_phenotype:latest /bin/bash
+#apptainer run -B /local-scratch -B /projects  -B /home/${whoami} docker://mrcieu/genotype-phenotype-map:1.0.0 /bin/bash
 
 # Metadata files
 backman="/local-scratch/data/ukb-seq/downloads/backmanexwas/ukb-wes-bm-studies.tsv"

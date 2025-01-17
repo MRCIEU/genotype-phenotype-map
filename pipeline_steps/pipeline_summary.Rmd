@@ -11,6 +11,8 @@ output:
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 ```
 
+Note: you should have some kind of finemapping / imputed ratio (broken down by data type / ld block)
+
 ```{r echo=F}
 source('constants.R')
 

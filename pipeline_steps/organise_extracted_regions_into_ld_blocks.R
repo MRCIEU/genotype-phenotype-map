@@ -2,7 +2,6 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Organise Extracted Regions into LD regions')
 parser <- argparser::add_argument(parser, '--output_file', help = 'Output file', type = 'character')
-parser <- argparser::add_argument(parser, '--include_all', help = 'Include all flag', flag = T)
 args <- argparser::parse_args(parser)
 
 ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
@@ -50,10 +49,6 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_blocks$ld_block <- ld_info$block 
 ld_blocks$data_dir <- ld_info$ld_block_data
-all_updated_ld_blocks <- dplyr::filter(ld_blocks, ld_block %in% names(extracted_snps_by_region)) |> dplyr::arrange(chr)
-
-if (args$include_all) {
-  all_updated_ld_blocks <- ld_blocks
-}
+all_updated_ld_blocks <- dplyr::filter(ld_blocks, dir.exists(data_dir)) |> dplyr::arrange(chr)
 
 vroom::vroom_write(all_updated_ld_blocks, args$output_file)

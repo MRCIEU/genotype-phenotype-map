@@ -59,6 +59,7 @@ mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
 variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
 pipeline_summary_output = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.html'
+backup_done_file = '/tmp/backup_done'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -72,7 +73,9 @@ rule all:
         raw_coloc_results,
         coloc_results,
         all_study_blocks,
-        results_metadata
+        results_metadata,
+        backup_done_file,
+        pipeline_summary_output
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -117,15 +120,9 @@ def standardise_rule(standardisation_pattern, name):
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
-
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                command = f"Rscript standardise_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
+            command = f"Rscript standardise_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 
@@ -140,15 +137,9 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
-
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                command = f"Rscript impute_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
+            command = f"Rscript impute_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 def finemap_rule(imputation_pattern, finemaping_pattern, name):
@@ -162,16 +153,10 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
-
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                command = f"Rscript finemap_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output} \
-                    --complex_block {name == 'complex'}"
+            command = f"Rscript finemap_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output} \
+                --complex_block {name == 'complex'}"
             subprocess.run(command, shell=True)
 
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
@@ -186,15 +171,9 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
-
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                command = f"Rscript colocalise_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
+            command = f"Rscript colocalise_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
 
             subprocess.run(command, shell=True)
 
@@ -214,11 +193,12 @@ coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 rule backup_data_dir:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
-    output:
+    output: temporary(backup_done_file)
     shell:
         """
         rsync -Lavzh $DATA_DIR/ld_blocks $BACKUP_DIR/data/
         rsync -Lavzh $DATA_DIR/study $BACKUP_DIR/data/
+        touch {output}
         """
 
 rule compile_results:
@@ -246,12 +226,7 @@ rule compile_results:
         """
 
 rule create_summary_of_results:
-    input:
-        coloc_results = coloc_results,
-        raw_coloc_results = raw_coloc_results,
-        all_study_blocks = all_study_blocks,
-        results_metadata = results_metadata,
-        variant_annotations = variant_annotations
+    input: coloc_results, raw_coloc_results, all_study_blocks, results_metadata, variant_annotations
     output: pipeline_summary_output
     shell:
         """

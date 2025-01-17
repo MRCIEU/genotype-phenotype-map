@@ -92,6 +92,10 @@ rule extract_regions_from_studies:
             command = f'Rscript extract_regions_from_besd.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
+        elif study.data_format == 'tsv' and study.variant_type == 'rare':
+            command = f'Rscript extract_regions_from_rare_tsv.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
         else:
             raise ValueError(f'Cant ingest unknown data format: {study.data_format}')
 
@@ -214,11 +218,12 @@ coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 rule backup_data_dir:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
-    output:
+    output: temporary('/tmp/backup_done')
     shell:
         """
         rsync -Lavzh $DATA_DIR/ld_blocks $BACKUP_DIR/data/
         rsync -Lavzh $DATA_DIR/study $BACKUP_DIR/data/
+        touch {output}
         """
 
 rule compile_results:

@@ -13,7 +13,7 @@
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.25) {
+perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   unaltered_gwas <- gwas
   b <- gwas$BETA
   se <- gwas$SE
@@ -164,4 +164,38 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
   cd <- cooks.distance(mod)
   i <- outlier_detection(cd, outthresh)
   return(i)
+}
+
+#' filter_imputation_results: remove results with over-inflated p-vlaues
+#' 
+#' @param imputed gwas
+#' @param ld correlation matrix
+#' 
+#' First, filters the imputation results to inside the range of the original gwas
+#' Second, finds imputed variants with low pvalues, non-imputed rows that are correlated
+#' If imputed variant is more significant the non-imputed rows, drop that variant
+#' @return filtered gwas
+filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
+  only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
+  gwas <- gwas[only_keep_inside_gwas_range, ]
+
+  snps_to_remove <- c()
+  snps_to_investigate <- which(gwas$P < lowest_p_value_threshold & gwas$IMPUTED == T)
+  for (snp_location in snps_to_investigate) {
+    ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
+    ld_correlations <- ld_correlations[ld_correlations != snp_location]
+    gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
+
+    snp <- gwas[snp_location, ]
+
+    if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
+      snps_to_remove <- c(snps_to_remove, snp_location)
+    }
+  }
+
+  if (length(snps_to_remove) > 0) gwas <- gwas[-snps_to_remove, ]
+  return(list(gwas = gwas,
+    significant_rows_imputed = length(snps_to_investigate),
+    significant_rows_filtered = length(snps_to_remove))
+  )
 }

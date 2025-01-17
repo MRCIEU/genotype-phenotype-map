@@ -5,6 +5,6 @@ ukb-d-*,phenotype,UK Biobank,opengwas,none,/local-scratch/data/opengwas/igd,EUR,
 *,gene_expression,Brain Meta,besd,none,/local-scratch/data/hg38/BrainMeta-cis-eQTL,EUR,GRCh38,1.5e-4,common,json
 *,gene_expression,Brain eMeta,besd,none,/local-scratch/data/hg38/Brain-eMeta,EUR,GRCh38,1.5e-4,common,json
 european*,protein,UK Biobank Proteomics,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,1.5e-4,common,json
-ukb-wes-bm-*,phenotype,Backman Whole Exome Sequencing,tsv,none,/local-scratch/data/ukb-seq/downloads/backmanexwas,EUR,GRCh38,1.5e-4,rare,tsv
-ukb-wes-gb-*,phenotype,Genebass,tsv,none,/local-scratch/data/ukb-seq/downloads/genebass,EUR,GRCh38,1.5e-4,rare,tsv
-ukb-wes-az-*,phenotype,UK Biobank AstraZeneca Whole Exome Sequencing,tsv,none,/local-scratch/data/ukb-seq/downloads/azexwas,EUR,GRCh38,1.5e-4,rare,tsv
+*.tsv.gz,phenotype,Backman WES,tsv,none,/local-scratch/data/ukb-seq/downloads/backmanexwas,EUR,GRCh38,1.5e-4,rare,tsv
+*.tsv.gz,phenotype,Genebass WES,tsv,none,/local-scratch/data/ukb-seq/downloads/genebass/rare,EUR,GRCh38,1.5e-4,rare,tsv
+*.tsv.gz,phenotype,UK Biobank AstraZeneca WES,tsv,none,/local-scratch/data/ukb-seq/downloads/azexwas,EUR,GRCh38,1.5e-4,rare,tsv

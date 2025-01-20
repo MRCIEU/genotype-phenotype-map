@@ -16,7 +16,8 @@ main <- function() {
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
-  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
+  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
+    dplyr::filter(variant_type == variant_type$common)
 
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)

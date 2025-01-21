@@ -32,7 +32,8 @@ results <- lapply(extracted_snps_by_region, function(extracted_snps) {
                                   sample_size = merged_data$sample_size,
                                   cis_trans = merged_data$cis_trans,
                                   reference_build = reference_builds$GRCh38,
-                                  ld_block = ld_info$block
+                                  ld_block = ld_info$block,
+                                  variant_type = merged_data$variant_type
   )
 
   if (!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive = T)

@@ -28,7 +28,7 @@ ordered_data_types <- list(splice_variant='splice_variant',
 study_categories <- list(binary='Binary', continuous='Continuous')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
-variant_type <- list(common='common', rare='rare')
+variant_types <- list(common='common', rare='rare')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African', SAS='South Asian')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 

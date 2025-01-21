@@ -8,7 +8,7 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 main <- function() {
   # update_study_dirs()
   update_ld_blocks()
-  # update_studies_processed()
+  update_studies_processed()
 }
 
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
@@ -19,9 +19,9 @@ update_method <- function(studies_file, type) {
   }
   studies <- vroom::vroom(studies_file, show_col_types = F)
   if (nrow(studies) == 0) return()
-  studies$variant_type <- variant_type$common
 
-  # ...
+  studies$variant_type <- variant_types$common
+  vroom::vroom_write(studies, studies_file)
 }
 
 update_study_dirs <- function() {
@@ -62,11 +62,20 @@ update_ld_blocks <- function() {
 }
 
 update_studies_processed <- function() {
-  print("starting update_process_studies")
-  studies_to_process_file <- glue::glue('{results_dir}/studies_processed.tsv') 
-  studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
+  print("starting stupdate_studies_processed")
+  studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv') 
+  if (file.exists(studies_to_process_file)) {
+    studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
+    #...
+    # vroom::vroom_write(studies_to_process, studies_to_process_file)
+  }
 
+  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv') 
+  processed_studies <- vroom::vroom(studies_to_process_file, show_col_types = F)
+  processed_studies$variant_type <- variant_types$common
   # ...
+  vroom::vroom_write(processed_studies, studies_processed_file)
+
 }
 
 main()

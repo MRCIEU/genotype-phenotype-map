@@ -209,7 +209,8 @@ rule compile_results:
         raw_coloc_results = raw_coloc_results,
         all_study_blocks = all_study_blocks,
         results_metadata = results_metadata,
-        variant_annotations = variant_annotations
+        variant_annotations = variant_annotations,
+        pipeline_summary = pipeline_summary_output
     shell:
         """
         mkdir -p $(dirname {output})
@@ -220,17 +221,10 @@ rule compile_results:
             --raw_coloc_results_file {output.raw_coloc_results} \
             --coloc_results_file {output.coloc_results} \
             --compiled_results_metadata_file {output.results_metadata} \
-            --variant_annotations_file {output.variant_annotations}
+            --variant_annotations_file {output.variant_annotations} \
+            --pipeline_summary_file {output.pipeline_summary}
 
         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
-        """
-
-rule create_summary_of_results:
-    input: coloc_results, raw_coloc_results, all_study_blocks, results_metadata, variant_annotations
-    output: pipeline_summary_output
-    shell:
-        """
-        Rscript -e 'rmarkdown::render("pipeline_summary.Rmd", output_file = "{output}")'
         """
 
 # rule perform_mr_analysis:

@@ -1,0 +1,9 @@
+source_id,name,url,doi
+ebi_catalog,EBI GWAS Catalog,https://www.ebi.ac.uk/gwas/,https://doi.org/10.1093/nar/gkae1070
+brain_meta,Brain Meta,https://yanglab.westlake.edu.cn/data/brainmeta,https://doi.org/10.1038/s41588-022-01154-4
+brain_emeta,Brain eMeta,https://www.nature.com/articles/s41467-018-04558-1,https://doi.org/10.1038/s41467-018-04558-1
+ukb_ppp,UK Biobank Proteomics,https://doi.org/10.1038/s41586-023-06592-6,https://doi.org/10.1038/s41586-023-06592-6
+ukb,UK Biobank,https://www.ukbiobank.ac.uk/,https://doi.org/10.1371/journal.pmed.1001779
+backman,UK Biobank something,a,a
+genebass,UK Biobank something,a,a
+az_exwas,UK Biobank something,a,a

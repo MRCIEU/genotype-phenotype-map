@@ -12,10 +12,9 @@ parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Ra
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--variant_annotations_file', help = 'Variant Annotations of Candidate SNPs', type = 'character')
+parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
 
 args <- argparser::parse_args(parser)
-#storing pipeline_data globally, as passing around a big object causes issues when called with mclapply
-# pipeline_data <- list()
 
 main <- function() {
   ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
@@ -37,6 +36,7 @@ main <- function() {
 
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
   file.copy(args$studies_processed, dirname(args$coloc_results))
+  rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {

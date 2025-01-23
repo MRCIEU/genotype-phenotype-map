@@ -25,10 +25,10 @@ ordered_data_types <- list(splice_variant='splice_variant',
                            metabolome='metabolome',
                            phenotype='phenotype'
 )
-study_categories <- list(binary='Binary', continuous='Continuous')
+study_categories <- list(binary='Binary', continuous='Continuous', categorical='Categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
-variant_types <- list(common='common', rare='rare')
+variant_types <- list(common='common', rare_exome='rare_exome', rare_wgs='rare_wgs')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African', SAS='South Asian')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 

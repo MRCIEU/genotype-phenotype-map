@@ -182,64 +182,35 @@ calculate_tsv_studies_to_process <- function(entries) {
   if (nrow(entries) == 0) return(data.frame())
 
   expanded_studies <- apply(entries, 1, function(entry) {
-    file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
-    all_directories <- Sys.glob(file_regex)
+    metadata_file <- glue::glue('{entry[["data_location"]]}/metadata.tsv')
+    if (!file.exists(metadata_file)) {
+      stop(glue::glue('metadata file is missing: {metadata_file}'))
+    }
+
+    tsv_metadata <- vroom::vroom(metadat_file, show_col_types=F) |>
+      dplyr::filter(grepl(entry[['id_pattern']], file_name))
+    data_study_dir <- glue::glue('{data_dir}study/{tsv_metadata$study_name}/')
+
     return(data.frame(
       data_type = entry[['data_type']],
+      data_format = entry[['data_format']],
       source = entry[['source']],
-      directory = all_directories,
-      reference_build = entry[['reference_build']],
+      study_name = tsv_metadata$study_name,
+      trait = tsv_metadata$trait,
       ancestry = entry[['ancestry']],
-      p_value_threshold = entry[['p_value_threshold']],
-      data_format = entry[['data_format']]
-    ))
-  }) |> dplyr::bind_rows()
-
-  processing_information <- apply(expanded_studies, 1, function(opengwas_study) {
-    directory <- opengwas_study[['directory']]
-    study <- basename(directory)
-    new_study_name <- gsub('_', '-', study)
-    data_study_dir <- glue::glue('{data_dir}study/{new_study_name}/')
-
-    study_metadata <- vroom::vroom(glue::glue('{directory}/metadata.tsv'), show_col_types=F) |> 
-      dplyr::filter(file_name == opengwas_study[['directory']])
-
-    ancestry <- study_metadata$ancestry
-    category <- study_metadata$category
-    if (is.null(category)) category <- NA
-    if (is.null(ancestry) || ancestry != ancestry_map[[opengwas_study[['ancestry']]]]) {
-      return(data.frame())
-    }
-    if (is.null(study_metadata$sample_size)) {
-      return(data.frame())
-    }
-
-    if (opengwas_study[['data_type']] == ordered_data_types$phenotype) {
-      gene <- NA
-      tissue <- NA
-    } else {
-      gene <- NA
-      tissue <- NA
-    }
-
-    return(data.frame(
-      data_type = opengwas_study[['data_type']],
-      data_format = opengwas_study[['data_format']],
-      source = opengwas_study[['source']],
-      study_name = new_study_name,
-      trait = study_metadata$trait,
-      ancestry = reverse_ancestry_map[[ancestry]],
-      sample_size = study_metadata$sample_size,
-      category = category,
-      study_location = directory,
+      sample_size = tsv_metadata$sample_size,
+      category = tsv_metadata$category,
+      study_location = tsv_metadata$file_path,
       extracted_location = data_study_dir,
-      reference_build = opengwas_study[['reference_build']],
-      p_value_threshold = format(opengwas_study[['p_value_threshold']], scientific=FALSE),
-      gene = gene,
+      reference_build = entry[['reference_build']],
+      p_value_threshold = format(entry[['p_value_threshold']], scientific=FALSE),
+      gene = ifelse(entry[['data_type']] != ordered_data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
-      tissue = tissue
+      tissue = ifelse(entry[['data_type']] != ordered_data_types$phenotype, tsv_metadata$tissue, NA)
     ))
   }) |> dplyr::bind_rows()
+
+  return(expanded_studies)
 }
 
 main()

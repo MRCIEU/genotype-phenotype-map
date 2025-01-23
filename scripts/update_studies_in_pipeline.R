@@ -7,7 +7,7 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   # update_study_dirs()
-  update_ld_blocks()
+  # update_ld_blocks()
   update_studies_processed()
 }
 
@@ -71,7 +71,7 @@ update_studies_processed <- function() {
   }
 
   studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv') 
-  processed_studies <- vroom::vroom(studies_to_process_file, show_col_types = F)
+  processed_studies <- vroom::vroom(studies_processed_file, show_col_types = F)
   processed_studies$variant_type <- variant_types$common
   # ...
   vroom::vroom_write(processed_studies, studies_processed_file)

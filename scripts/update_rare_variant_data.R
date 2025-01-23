@@ -1,65 +1,81 @@
-# backman_files <- Sys.glob('/local-scratch/data/ukb-seq/downloads/backmanexwas/*.tsv.gz')
-# backman_dir <- '/local-scratch/data/hg38/backman'
-# file.copy('/local-scratch/data/ukb-seq/downloads/backmanexwas/metadata.tsv', backman_dir)
-backman_files <- Sys.glob('/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/GCST*')
-backman_dir <- '/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/new/'
-file.copy('/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/backman_metadata.tsv', backman_dir)
-lapply(backman_files, function(file) {
-  new_basename <- basename(sub("\\..*$", "", file))
-  new_basename <- sub('_buildGRCh38', '', new_basename)
-  new_file_name <- paste0(backman_dir, new_basename, '.tsv.gz')
-  rv <- vroom::vroom(file)
-  if ("beta" %in% colnames(rv)) {
-    rv <- dplyr::rename(rv, CHR=chromosome, BP=base_pair_location, P=p_value, EA=effect_allele, OA=other_allele, trait=Trait, BETA=beta, EAF=effect_allele_frequency, SE=standard_error)
-  } else if ("odds_ratio" %in% colnames(rv)) {
-    rv <- dplyr::rename(rv, CHR=chromosome, BP=base_pair_location, P=p_value, EA=effect_allele, OA=other_allele, trait=Trait, OR=odds_ratio, CI_LOWER=ci_lower, CI_UPPER=ci_upper, EAF=effect_allele_frequency)
-  }
-  vroom::vroom_write(rv, new_file_name)
-})
+backman <- function() {
+  backman_metadata_file <- '/local-scratch/data/ukb-seq/downloads/backmanexwas/ukb-wes-bm-metadata.tsv'
+  new_backman_dir <- '/local-scratch/data/hg38/rare/backman/'
 
-# genebass_files <- Sys.glob('/local-scratch/data/ukb-seq/downloads/genebass/*.tsv.gz')
-# genebass_dir <- '/local-scratch/data/hg38/genebass_filtered'
-# file.copy('/local-scratch/data/ukb-seq/downloads/genebass/metadata.tsv', genebass_dir)
-genebass_files <- Sys.glob('/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/genebass*.tsv')
-genebass_dir <- '/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/new/'
-file.copy('/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/backman_metadata.tsv', backman_dir)
-lapply(genebass_files, function(file) {
-  new_basename <- basename(sub("\\..*$", "", file))
-  new_basename <- sub('genebass_ukbwes_', '', new_basename)
-  new_basename <- sub('_rare_filtered', '', new_basename)
-  new_file_name <- paste0(genebass_dir, new_basename, '.tsv.gz')
+  backman_metadata <- vroom::vroom(backman_metadata_file, show_col_types=F) |>
+    dplyr::select(-extracted_location)
 
-  print(new_file_name)
-  rv <- vroom::vroom(file) |>
-    tidyr::separate(col=markerID, into=c("CHR", "BP", "OA", "EA"), sep='[:_/]', remove = F) |>
-    dplyr::mutate(CHR=sub('chr', '', CHR)) |>
-    dplyr::rename(P=Pvalue, EAF=AF)
-  file <- sub('.tsv$', '.tsv.gz', file)
-  vroom::vroom_write(rv, new_file_name)
-})
+  new_metadata <- apply(backman_metadata, 1, function(study) {
+    rv <- vroom::vroom(study[['study_location']], show_col_types=F)
+    new_basename <- basename(sub("\\..*$", "", study[['study_location']]))
+    new_file_name <- paste0(new_backman_dir, new_basename, '.tsv.gz')
+    print(new_file_name)
+    study[['study_location']] <- new_file_name
+    if (file.exists(new_file_name)) return(study)
 
-# az_files <- Sys.glob('/local-scratch/data/ukb-seq/downloads/azexwas/*.csv.gz')
-# az_dir <- '/local-scratch/data/hg38/azexwas'
-# file.copy('/local-scratch/data/ukb-seq/downloads/azexwas/metadata.tsv', az_dir)
-az_metadata <- vroom::vroom('/local-scratch/data/ukb-seq/downloads/azexwas/metadata.tsv', show_col_types = F)
-az_metadata$trait <- sub('.*#', '', az_metadata$trait)
+    if ("beta" %in% colnames(rv)) {
+      rv <- dplyr::rename(rv, CHR=chromosome, BP=base_pair_location, P=p_value, EA=effect_allele, OA=other_allele, trait=Trait, BETA=beta, EAF=effect_allele_frequency, SE=standard_error)
+    } else if ("odds_ratio" %in% colnames(rv)) {
+      rv <- dplyr::rename(rv, CHR=chromosome, BP=base_pair_location, P=p_value, EA=effect_allele, OA=other_allele, trait=Trait, OR=odds_ratio, CI_LOWER=ci_lower, CI_UPPER=ci_upper, EAF=effect_allele_frequency)
+    }
+    vroom::vroom_write(rv, new_file_name)
+    return(study)
+  })
+  new_metadata <- dplyr::bind_rows(as.data.frame(t(new_metadata)))
+  vroom::vroom_write(new_metadata, glue::glue('{new_backman_dir}/metadata.tsv'))
+}
 
-az_files <- Sys.glob('/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/[1u]*')
-az_dir <- '/Users/wt23152/Documents/Projects/scratch/021/data/study/rare/new/'
-lapply(az_files, function(file) {
-  new_basename <- basename(sub("\\..*$", "", file))
-  new_basename <- sub('_buildGRCh38', '', new_basename)
-  new_file_name <- paste0(genebass_dir, new_basename, '.tsv.gz')
+genebass <- function() {
+  genebass_metadata_file <- '/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-bm-metadata.tsv'
+  new_genebass_dir <- '/local-scratch/data/hg38/rare/genebass/'
 
-  rv <- vroom::vroom(file)
-  if ("Effect size" %in% colnames(rv)) {
-    rv <- tidyr::separate(rv, col=Variant, into=c("CHR", "BP", "OA", "EA"), sep='-', remove = F) |>
-      dplyr::rename(P='p-value', EAF='AAF', BETA='Effect size', SE='Effect size standard error') |>
-      dplyr::mutate(Phenotype = sub(".*#", "", Phenotype))
-  } else if ("Odds ratio" %in% colnames(rv)) {
-    rv <- tidyr::separate(rv, col=Variant, into=c("CHR", "BP", "OA", "EA"), sep='-', remove = F) |>
-      dplyr::rename(P='p-value', EAF='Control AAF', OR='Odds ratio', CI_LOWER='Odds ratio LCI', CI_UPPER='Odds ratio UCI') |>
-      dplyr::mutate(Phenotype = sub(".*#", "", Phenotype))
-  }
-  vroom::vroom_write(rv, new_file_name)
-})
+  genebass_metadata <- vroom::vroom(genebass_metadata_file, show_col_types=F) |>
+    dplyr::select(-extracted_location)
+
+  new_metadata <- apply(genebass_metadata, 1, function(study) {
+    new_basename <- basename(sub("\\..*$", "", study[['study_location']]))
+    new_file_name <- paste0(new_genebass_dir, new_basename, '.tsv.gz')
+    if (file.exists(new_file_name)) return(study)
+
+    print(new_file_name)
+    rv <- vroom::vroom(file) |>
+      tidyr::separate(col=markerID, into=c("CHR", "BP", "OA", "EA"), sep='[:_/]', remove = F) |>
+      dplyr::mutate(CHR=sub('chr', '', CHR)) |>
+      dplyr::rename(P=Pvalue, EAF=AF, GENE='gene', ANNOTATION='annotation')
+    vroom::vroom_write(rv, new_file_name)
+  })
+  new_metadata <- dplyr::bind_rows(as.data.frame(t(new_metadata)))
+  vroom::vroom_write(new_metadata, glue::glue('{new_genebass_dir}/metadata.tsv'))
+}
+
+az <- function() {
+  az_metadata_file <- '/local-scratch/data/ukb-seq/downloads/azexwas/ukb-wes-az-metadata.tsv'
+  new_az_dir <- '/local-scratch/data/hg38/rare/azexwas/'
+
+  az_metadata <- vroom::vroom(az_metadata_file, show_col_types=F) |>
+    dplyr::select(-extracted_location)
+
+  new_metadata <- apply(az_metadata, 1, function(study) {
+    new_basename <- basename(sub("\\..*$", "", study[['study_location']]))
+    new_file_name <- paste0(new_az_dir, new_basename, '.tsv.gz')
+    if (file.exists(new_file_name)) return(study)
+
+    rv <- vroom::vroom(file)
+    if ("Effect size" %in% colnames(rv)) {
+      rv <- tidyr::separate(rv, col=Variant, into=c("CHR", "BP", "OA", "EA"), sep='-', remove = F) |>
+        dplyr::rename(P='p-value', EAF='AAF', BETA='Effect size', SE='Effect size standard error', GENE='Gene', ANNOTATION='Consequence type') |>
+        dplyr::mutate(Phenotype = sub(".*#", "", Phenotype))
+    } else if ("Odds ratio" %in% colnames(rv)) {
+      rv <- tidyr::separate(rv, col=Variant, into=c("CHR", "BP", "OA", "EA"), sep='-', remove = F) |>
+        dplyr::rename(P='p-value', EAF='Control AAF', OR='Odds ratio', CI_LOWER='Odds ratio LCI', CI_UPPER='Odds ratio UCI', GENE='Gene', ANNOTATION='Consequence type') |>
+        dplyr::mutate(Phenotype = sub(".*#", "", Phenotype))
+    }
+    vroom::vroom_write(rv, new_file_name)
+  })
+  new_metadata <- dplyr::bind_rows(as.data.frame(t(new_metadata)))
+  vroom::vroom_write(new_metadata, glue::glue('{new_az_dir}/metadata.tsv'))
+}
+
+backman()
+genebass()
+az()

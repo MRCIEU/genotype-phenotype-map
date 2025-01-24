@@ -26,23 +26,26 @@ backman <- function() {
 }
 
 genebass <- function() {
-  genebass_metadata_file <- '/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-bm-metadata.tsv'
+  genebass_metadata_file <- '/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-gb-metadata.tsv'
   new_genebass_dir <- '/local-scratch/data/hg38/rare/genebass/'
 
   genebass_metadata <- vroom::vroom(genebass_metadata_file, show_col_types=F) |>
     dplyr::select(-extracted_location)
 
   new_metadata <- apply(genebass_metadata, 1, function(study) {
+    original_study_location <- study[['study_location']]
     new_basename <- basename(sub("\\..*$", "", study[['study_location']]))
     new_file_name <- paste0(new_genebass_dir, new_basename, '.tsv.gz')
+    study[['study_location']] <- new_file_name
     if (file.exists(new_file_name)) return(study)
 
+    rv <- vroom::vroom(original_study_location, show_col_types=F)
     print(new_file_name)
-    rv <- vroom::vroom(file) |>
-      tidyr::separate(col=markerID, into=c("CHR", "BP", "OA", "EA"), sep='[:_/]', remove = F) |>
+    rv <- tidyr::separate(rv, col=markerID, into=c("CHR", "BP", "OA", "EA"), sep='[:_/]', remove = F) |>
       dplyr::mutate(CHR=sub('chr', '', CHR)) |>
       dplyr::rename(P=Pvalue, EAF=AF, GENE='gene', ANNOTATION='annotation')
     vroom::vroom_write(rv, new_file_name)
+    return(study)
   })
   new_metadata <- dplyr::bind_rows(as.data.frame(t(new_metadata)))
   vroom::vroom_write(new_metadata, glue::glue('{new_genebass_dir}/metadata.tsv'))
@@ -56,11 +59,12 @@ az <- function() {
     dplyr::select(-extracted_location)
 
   new_metadata <- apply(az_metadata, 1, function(study) {
+    rv <- vroom::vroom(study[['study_location']], show_col_types=F)
     new_basename <- basename(sub("\\..*$", "", study[['study_location']]))
     new_file_name <- paste0(new_az_dir, new_basename, '.tsv.gz')
+    study[['study_location']] <- new_file_name
     if (file.exists(new_file_name)) return(study)
 
-    rv <- vroom::vroom(file)
     if ("Effect size" %in% colnames(rv)) {
       rv <- tidyr::separate(rv, col=Variant, into=c("CHR", "BP", "OA", "EA"), sep='-', remove = F) |>
         dplyr::rename(P='p-value', EAF='AAF', BETA='Effect size', SE='Effect size standard error', GENE='Gene', ANNOTATION='Consequence type') |>
@@ -71,6 +75,7 @@ az <- function() {
         dplyr::mutate(Phenotype = sub(".*#", "", Phenotype))
     }
     vroom::vroom_write(rv, new_file_name)
+    return(study)
   })
   new_metadata <- dplyr::bind_rows(as.data.frame(t(new_metadata)))
   vroom::vroom_write(new_metadata, glue::glue('{new_az_dir}/metadata.tsv'))

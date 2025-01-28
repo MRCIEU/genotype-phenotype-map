@@ -14,7 +14,7 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, delim = '\t', show_col_types = F) |>
-      dplyr::filter(min_p <= p_value_threshold)
+      dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {

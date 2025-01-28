@@ -95,7 +95,7 @@ rule extract_regions_from_studies:
             command = f'Rscript extract_regions_from_besd.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
-        elif study.data_format == 'tsv' and study.variant_type == 'rare':
+        elif study.data_format == 'tsv' and study.variant_type != 'common':
             command = f'Rscript extract_regions_from_rare_tsv.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
@@ -123,10 +123,16 @@ def standardise_rule(standardisation_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript standardise_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript standardise_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 
@@ -140,10 +146,16 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript impute_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript impute_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 def finemap_rule(imputation_pattern, finemaping_pattern, name):
@@ -156,11 +168,17 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript finemap_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output} \
-                --complex_block {name == 'complex'}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript finemap_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output} \
+                    --complex_block {name == 'complex'}"
             subprocess.run(command, shell=True)
 
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
@@ -174,10 +192,16 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript colocalise_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript colocalise_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
 
             subprocess.run(command, shell=True)
 

@@ -12,12 +12,17 @@ number_finemapped_results_threshold <- 3
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
+  imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
+  if (!file.exists(imputed_studies_file)) {
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
+  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
+    dplyr::filter(variant_type == variant_types$common)
+
   ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-  imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
-  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
-    dplyr::filter(variant_type == variant_type$common)
 
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
@@ -110,6 +115,8 @@ load_existing_finemapped_results <- function(finemapped_results_file) {
 empty_finemapped_info <- function() {
   return(data.frame(study=character(),
                     unique_study_id=character(),
+                    ld_block=character(),
+                    variant_type=character(),
                     file=character(),
                     ancestry=character(),
                     chr=character(),
@@ -189,6 +196,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
                                     ld_block = args$ld_block,
+                                    variant_type=study[['variant_type']],
                                     file=failed_finemap_file,
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
@@ -244,6 +252,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       succeeded_finemap_info <- data.frame(study=study[['study']],
                                            unique_study_id=unique_ids,
                                            ld_block=args$ld_block,
+                                           variant_type=study[['variant_type']],
                                            file=new_files,
                                            ancestry=study[['ancestry']],
                                           #  snp=new_snps,

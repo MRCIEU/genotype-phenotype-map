@@ -1,5 +1,5 @@
 id_pattern,data_type,source,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold,variant_type,metadata_type
-*,phenotype,Open GWAS,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/opengwas,EUR,GRCh37,1.5e-4,common,json
-ukb-ppp*,protein,UK Biobank Proteomics,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json
-BrainMeta*,gene_expression,Brain Meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json
-*.tsv.gz,phenotype,UK Biobank Backman,tsv,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/rare,EUR,GRCh38,1.5e-4,rare,tsv
+*,phenotype,ebi_catalog,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/opengwas,EUR,GRCh37,1.5e-20,common,json
+subset-ukb-ppp*,protein,ukb_ppp,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-10,common,json
+BrainMeta*,gene_expression,brain_meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json
+*,phenotype,genebass,tsv,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/rare,EUR,GRCh38,1.5e-4,rare_exome,tsv

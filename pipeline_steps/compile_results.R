@@ -34,9 +34,15 @@ main <- function() {
   vroom::vroom_write(all_study_blocks, args$all_study_blocks_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
 
+  if (is.na(TEST_RUN)) {
+    rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+  } else {
+    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
+  }
+
+  #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
   file.copy(args$studies_processed, dirname(args$coloc_results))
-  rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {

@@ -25,14 +25,14 @@ ordered_data_types <- list(splice_variant='splice_variant',
                            metabolome='metabolome',
                            phenotype='phenotype'
 )
-study_categories <- list(binary='Binary', continuous='Continuous', categorical='Categorical')
+study_categories <- list(binary='binary', continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
 variant_types <- list(common='common', rare_exome='rare_exome', rare_wgs='rare_wgs')
 ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African', SAS='South Asian')
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 
-reference_builds <- list(GRCh36="GRCh36", GRCh37="GRCh37", GRCh38="GRCh38")
+reference_builds <- list(GRCh37="GRCh37", GRCh38="GRCh38")
 available_liftover_conversions <- list(
   'GRCh36GRCh37' = glue::glue('{liftover_dir}hg18ToHg19.over.chain.gz'),
   'GRCh38GRCh37' = glue::glue('{liftover_dir}hg38ToHg19.over.chain.gz'),

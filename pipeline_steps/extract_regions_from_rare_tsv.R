@@ -24,6 +24,8 @@ main <- function() {
     dplyr::filter(extracted_location == args$extracted_study_location)
 	if (nrow(study) != 1) stop('Error: cant find study to process')
 
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_rare_p_value_threshold, study$p_value_threshold)
+
   dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
@@ -48,7 +50,7 @@ main <- function() {
     vroom::vroom_write(empty_extracted_snps, args$extracted_output_file)
   } else {
     # Identify regions top variants fall in and write to file
-    vars_regions <- split_into_regions(gwas, study)
+    vars_regions <- split_into_regions(gwas, study, p_value_threshold)
     vroom::vroom_write(vars_regions, args$extracted_output_file)
   }
 }
@@ -88,7 +90,7 @@ filter_snps <- function(study) {
   return(study_filt)
 }
 
-split_into_regions <- function(gwas, study) {
+split_into_regions <- function(gwas, study, p_value_threshold) {
   gwas <- dplyr::select(gwas, dplyr::any_of(c(required_columns, beneficial_columns)))
   
   ld_block_strings <- apply(gwas, 1, function(extracted) {
@@ -102,10 +104,16 @@ split_into_regions <- function(gwas, study) {
     snps_in_block <- dplyr::filter(gwas, ld_block_string == ld_block_identifier) |>
       dplyr::select(-ld_block_string)
 
-    top_hit <- dplyr::arrange(snps_in_block, desc(P)) |>
+    top_hit <- dplyr::arrange(snps_in_block, P) |>
       dplyr::slice(1)
+
+    variant_p <- as.numeric(top_hit["P"])
     variant_bp <- as.numeric(top_hit["BP"])
     variant_chr <- as.numeric(top_hit["CHR"])
+
+    if (variant_p > p_value_threshold) {
+      return()
+    }
 
     extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{variant_chr}_{variant_bp}.tsv.gz')
     vroom::vroom_write(snps_in_block, extracted_file)

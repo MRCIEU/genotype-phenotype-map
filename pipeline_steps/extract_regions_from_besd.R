@@ -160,7 +160,7 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
     trans_p <- as.numeric(clumped_snp['P'])
     ld_block <- dplyr::filter(ld_blocks, chr == trans_chr & start <= trans_bp & stop > trans_bp & ancestry == study$ancestry)
 
-    tmp_trans_region <- glue::glue('/tmp/{study$study_name}_cis_region')
+    tmp_trans_region <- glue::glue('/tmp/{study$study_name}_trans_region')
     extract_region <- glue::glue('smr --beqtl-summary {study$study_location} ',
                             '--query 1 ',
                             '--snp {clumped_snp["SNP"]} ',
@@ -169,6 +169,8 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
                             '--out {tmp_trans_region}'
     )
     system(extract_region, wait=T, ignore.stdout = T)
+    if (!file.exists(glue::glue('{tmp_trans_region}.txt'))) return()
+
     trans_region <- vroom::vroom(glue::glue('{tmp_trans_region}.txt'), show_col_types = F)
     trans_region <- format_gwas(trans_region) |>
       dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 

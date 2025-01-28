@@ -223,7 +223,6 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
         finemap_num <- which(i == susie_result$sets$cs_index)
         conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
         finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
-        unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_{finemap_num}')
 
         vroom::vroom_write(conditioned_gwas, finemap_file)
 
@@ -234,6 +233,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
         new_bps <- c(new_bps, new_bp)
         new_files <- c(new_files, finemap_file)
         min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
+
+        unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(new_bp)}_{finemap_num}')
         unique_ids <- c(unique_ids, unique_id)
 
         # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans

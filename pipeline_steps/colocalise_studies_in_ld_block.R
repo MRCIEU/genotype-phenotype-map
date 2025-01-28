@@ -23,13 +23,12 @@ main <- function() {
     return()
   }
 
-  finemapped_studies$unique_study_id <- glue::glue('{finemapped_studies$study}_{file_prefix(finemapped_studies$file)}')
-
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
   if (length(grouped_studies) == 0) {
+    message(glue::glue('No grouped studies for LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }

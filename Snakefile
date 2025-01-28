@@ -196,6 +196,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if skip_block:
+                print('skipping coloc')
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
                 ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')

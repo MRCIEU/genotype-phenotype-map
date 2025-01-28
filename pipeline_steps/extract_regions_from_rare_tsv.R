@@ -61,7 +61,7 @@ check_gwas <- function(study) {
   if(all(required_columns %in% study_cols)) {
     return(study)
   }
-  if(all(c('OR', 'CI_UPPER', 'CI_LOWER') %in% study_cols & all(required_columns[-6] %in% study_cols))){
+  if(all(c('OR', 'CI_UPPER', 'CI_LOWER') %in% study_cols) && all(required_columns[c(-6, -7)] %in% study_cols)){
     study$OR <- ifelse(study$OR == 0, 0.01, study$OR)
     study$BETA <- log(study$OR)
 

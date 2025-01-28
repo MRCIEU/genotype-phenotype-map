@@ -10,6 +10,7 @@ parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current
 parser <- argparser::add_argument(parser, '--all_study_blocks_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--variant_annotations_file', help = 'Variant Annotations of Candidate SNPs', type = 'character')
 parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
@@ -29,6 +30,7 @@ main <- function() {
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
+  vroom::vroom_write(pipeline_data$rare_results, args$rare_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(all_study_blocks, args$all_study_blocks_file)
@@ -65,6 +67,9 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
     dplyr::filter(!is.na(traits) & traits != 'None')
 
+  compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
+  compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
+
   #update studies_processed.tsv with studies_to_process.tsv
   gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 
@@ -86,6 +91,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
     raw_coloc_results = raw_coloc_results,
+    rare_results = compare_rare_results,
     studies_processed = studies_processed
   ))
 }

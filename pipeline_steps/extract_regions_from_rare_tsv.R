@@ -82,7 +82,6 @@ filter_snps <- function(study) {
 
   study_filt <- study |>
     dplyr::filter(CHR %in% seq(1,22),
-      P <= lowest_p_value_threshold,
       ((EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
       (1-EAF <= eaf_max_threshold & 1-EAF >= eaf_min_threshold))) |>
     dplyr::arrange(CHR, BP)
@@ -102,6 +101,7 @@ split_into_regions <- function(gwas, study) {
   extracted_regions <- lapply(unique(ld_block_strings), function(ld_block_identifier) {
     snps_in_block <- dplyr::filter(gwas, ld_block_string == ld_block_identifier) |>
       dplyr::select(-ld_block_string)
+
     top_hit <- dplyr::arrange(snps_in_block, desc(P)) |>
       dplyr::slice(1)
     variant_bp <- as.numeric(top_hit["BP"])

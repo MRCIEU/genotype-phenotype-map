@@ -1,19 +1,20 @@
-source('constants.R')
+source('../pipeline_steps/constants.R')
 
 # In the absence of a complex LD structure surrounding rare variant associations, compare WES and WGS studies by variant identifer alone
-# for all studies with a significant hit within each LD block
+# for all studies with a significant hit within a given LD block
 
-parser <- argparser::arg_parser('Compare rare variant sequencing studies per LD block')
-parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block', type = 'character')
-parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Result file to save', type = 'character')
-args <- argparser::parse_args(parser)
+#parser <- argparser::arg_parser('Compare rare variant sequencing studies per LD block')
+#parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block', type = 'character')
+#parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Result file to save', type = 'character')
+#args <- argparser::parse_args(parser)
 
-lp_thresh =  -log10(0.00015)
+p_value_threshold = 0.00015
+lp_thresh =  -log10(p_value_threshold)
 test_dir = "/local-scratch/projects/genotype-phenotype-map/test/results/rare_variant_compare"
 
 main <- function() {
     ## ----- FOR TESTING ONLY
-    args <- list(ld_block="EUR/1/95684841-97259500")
+    args <- list(ld_block="EUR/7/151346135-153300525")
     ## -----
 
     ld_info <- ld_block_dirs(args$ld_block)
@@ -21,7 +22,7 @@ main <- function() {
     #    dplyr::filter(data_dir == ld_info$ld_block_data)
 
     ## ----- FOR TESTING ONLY
-    standardised_file <- "data/example_studiesinblock.txt"
+    standardised_file <- "data/example_studiesinblock_7_151346135-153300525.txt"
     standardised_studies <- vroom::vroom(standardised_file, delim = '\t', show_col_types = F)
     colnames(standardised_studies) <- "file"
     standardised_studies$study <- lapply(stringr::str_split(standardised_studies$file, pattern = "/"), function(x){x[7]}) |> unlist()
@@ -52,6 +53,7 @@ main <- function() {
         study$unique_study_id <- name
         return(study)
     })
+    # Re-assign names
     names(studies_to_compare) <- standardised_studies$unique_study_id
 
     # Test output directory
@@ -89,6 +91,7 @@ main <- function() {
     #vroom::vroom_write(data.frame(), args$completed_output_file)
 
     # Some metadata on number of comparisons at different -log(P) thresholds
+    # THIS STEP IS TIME CONSUMING AND DOESN'T REALLY NEED TO BE RUN IN FINAL
     lp_results <- compare_across_lp(lp_list = list(5,4,3.82,3,2), studies = studies_to_compare, variants = variants)
     vroom::vroom_write(lp_results, glue::glue('{compare_results_dir}/shared_by_lp.tsv'))
 }
@@ -146,7 +149,7 @@ compare_by_variant <- function(studies, variants, LP_thresh){
 compare_across_lp <- function(lp_list, studies, variants){
     
     # Pairwise variant comparison at differing -log10(P) thresholds 
-    lp_results <- lapply(lp_list, compare_by_variant, studies = studies_to_compare, variants = variants)
+    lp_results <- lapply(lp_list, compare_by_variant, studies = studies, variants = variants)
     lp_results <- lapply(lp_results, function(x){
         if(length(x) > 0){
             return(x[[1]])

@@ -201,14 +201,12 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
             skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
             if skip_block:
-                print('skipping coloc')
                 command = f"mkdir -p $(dirname {output}) && touch {output}"
             else:
                 ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
                 command = f"Rscript colocalise_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
-
             subprocess.run(command, shell=True)
 
 def compare_rare_rule(standardisation_pattern, compare_rare_pattern, name):
@@ -232,7 +230,6 @@ def compare_rare_rule(standardisation_pattern, compare_rare_pattern, name):
                 command = f"Rscript compare_rare_studies_in_ld_block.R \
                     --ld_block {ld_block} \
                     --completed_output_file {output}"
-
             subprocess.run(command, shell=True)
 
 standardise_rule(complex_standardisation_pattern, 'complex')

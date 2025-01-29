@@ -21,7 +21,7 @@ main <- function() {
   }
 
   if (!file.exists(standardised_file) || nrow(block) == 0 || nrow(standardised_studies) == 0) {
-    message(glue::glue('Nothing to process for LD region {ld_info$ld_block_data}, skipping.'))
+    message(glue::glue('No rare studies to compare in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }

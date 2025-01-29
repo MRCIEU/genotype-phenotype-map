@@ -18,7 +18,7 @@ main <- function() {
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    message(glue::glue('Nothing to process for LD region {ld_info$ld_block_data}, skipping.'))
+    message(glue::glue('Nothing to coloc in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }

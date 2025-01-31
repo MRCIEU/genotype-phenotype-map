@@ -26,7 +26,7 @@ main <- function() {
   # pipeline_data <- cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
-  # rare_results <- compile_rare_results(pipeline_data)
+  rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
   pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
@@ -34,7 +34,7 @@ main <- function() {
   validate_results(pipeline_data, variant_annotations, coloc_results)
 
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
-  # vroom::vroom_write(rare_results, args$rare_results_file)
+  vroom::vroom_write(rare_results, args$rare_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(pipeline_data$all_study_blocks, args$all_study_blocks_file)

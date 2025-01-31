@@ -284,7 +284,7 @@ rule compile_results:
             --variant_annotations_file {output.variant_annotations} \
             --pipeline_summary_file {output.pipeline_summary}
 
-        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
+        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
         """
 
 # rule perform_mr_analysis:

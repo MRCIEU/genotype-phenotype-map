@@ -83,7 +83,7 @@ compare_by_variant <- function(studies, variants, P_thresh){
     }
     
     # Wide format output
-    compare_wide <- rbind(compare_wide, data.frame(traits = paste(found_study_ids, collapse = ","), candidate_snp = var))  
+    compare_wide <- rbind(compare_wide, data.frame(traits = paste(found_study_ids, collapse = ", "), candidate_snp = var))
   }
   
   if(nrow(compare_wide) == 0){

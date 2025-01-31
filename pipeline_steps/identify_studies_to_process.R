@@ -211,6 +211,8 @@ calculate_tsv_studies_to_process <- function(entries) {
 
     tsv_metadata <- vroom::vroom(metadata_file, show_col_types=F) |>
       dplyr::filter(grepl(entry[['id_pattern']], study_location))
+      dplyr::mutate(study_name = gsub('_', '-', study_name))
+
     data_study_dir <- glue::glue('{data_dir}study/{tsv_metadata$study_name}/')
 
     return(data.frame(

@@ -23,7 +23,7 @@ main <- function() {
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)

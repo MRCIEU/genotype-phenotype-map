@@ -16,10 +16,8 @@ main <- function() {
   ld_matrix_eig <- readRDS(glue::glue('{ld_info$ld_reference_panel_prefix}.ldeig.rds'))
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
-  print(standardised_studies_file)
   standardised_studies  <- vroom::vroom(standardised_studies_file , show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
-  print(nrow(standardised_studies))
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (file.exists(imputed_studies_file)) {

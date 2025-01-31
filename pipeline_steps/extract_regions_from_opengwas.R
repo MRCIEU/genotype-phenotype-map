@@ -16,11 +16,10 @@ main <- function() {
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop('Error: cant find study to process')
 
-  p_value_threshold <- ifelse(is.na(study$p_value_threshold), genome_wide_p_value_threshold, study$p_value_threshold)
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
 
-  orig_study_file_prefix <- sub('.*igd/', '', study$study_location)
-  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{orig_study_file_prefix}.json'))
-  vcf_file <- glue::glue('{study$study_location}/{orig_study_file_prefix}.vcf.gz')
+  metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}/{study$study_name}.json'))
+  vcf_file <- glue::glue('{study$study_location}/{study$study_name}.vcf.gz')
   clumped_hits_file <- glue::glue('{args$extracted_study_location}/clumped_snps.tsv')
 
   if (study$reference_build == reference_builds$GRCh37) {

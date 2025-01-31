@@ -35,7 +35,7 @@ main <- function() {
 
       result <- perform_standardisation(study, ld_matrix_info)
 
-      if (nrow(result$gwas) < minimum_gwas_size) {
+      if (nrow(result$gwas) < minimum_gwas_size && study[['variant_type']] == variant_types$common) {
         return()
       }
       vroom::vroom_write(result$gwas, result$study$file)
@@ -46,7 +46,9 @@ main <- function() {
       dplyr::bind_rows() |>
       type.convert(as.is=T)
 
-    standardised_studies$chr <- as.character(standardised_studies$chr)
+    if (nrow(standardised_studies) > 0) {
+      standardised_studies$chr <- as.character(standardised_studies$chr)
+    }
   }
 
   if (nrow(standardised_studies) > 0) {
@@ -62,12 +64,13 @@ main <- function() {
 perform_standardisation <- function(study, ld_matrix_info) {
   standardised_file <- sub('extracted', 'standardised', study[['file']])
   gwas <- vroom::vroom(study[['file']], show_col_types = F)
+  is_rare_study <- study[['variant_type']] != variant_types$common
 
   response <- standardise_alleles(gwas) |>
-    standardise_extracted_gwas(ld_matrix_info)
+    standardise_extracted_gwas(ld_matrix_info, is_rare_study)
 
   response$gwas <- gwas_health_check(response$gwas) |>
-    filter_gwas()
+    filter_gwas(is_rare_study)
 
   study['ld_block'] <- args$ld_block
   study['file'] <- standardised_file
@@ -90,11 +93,12 @@ empty_standardised_studies <- function() {
                     cis_trans=character(),
                     eaf_from_reference_panel=logical(),
                     snps_removed_by_reference_panel=numeric(),
-                    time_taken=character()
+                    time_taken=character(),
+                    variant_type=character()
   ))
 }
 
-standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
+standardise_extracted_gwas <- function(gwas, ld_matrix_info, is_rare_study = F) {
   eaf_from_reference_panel <- FALSE
   original_gwas_size <- nrow(gwas)
   gwas <- dplyr::distinct(gwas, CHR, BP, EA, OA, .keep_all = TRUE)
@@ -109,6 +113,11 @@ standardise_extracted_gwas <- function(gwas, ld_matrix_info) {
       dplyr::select(-LP)
   }
 
+  if (is_rare_study) {
+    return(list(gwas=gwas,
+               eaf_from_reference_panel=FALSE,
+               snps_removed_by_reference_panel=0))
+  }
   gwas <- dplyr::filter(gwas, SNP %in% ld_matrix_info$SNP)
   ld_matrix_info <- dplyr::filter(ld_matrix_info, SNP %in% gwas$SNP)
 
@@ -168,7 +177,10 @@ gwas_health_check <- function(gwas) {
   return(gwas)
 }
 
-filter_gwas <- function(gwas, common_gwas = T) {
+filter_gwas <- function(gwas, is_rare_study = F) {
+  if (is_rare_study) {
+    return(gwas)
+  }
   gwas <- dplyr::filter(gwas,
     (EAF < 0.995 & EAF > 0.005) &
     !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) &

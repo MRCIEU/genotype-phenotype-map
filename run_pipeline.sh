@@ -11,7 +11,7 @@ export TIMESTAMP=$(date +%Y_%m_%d-%H_%M)
 snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake.log
 mkdir -p $(dirname $snakemake_log)
 
-export IMAGE=docker://andrewrrelmore/genotype_phenotype:latest
+export IMAGE=docker://mrcieu/genotype-phenotype-map:1.0.0
 export APPTAINER_VARS="--nv -B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
 
 echo "Start time $(date)"

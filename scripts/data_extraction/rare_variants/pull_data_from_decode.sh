@@ -53,7 +53,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
             echo "One or more columns not found in the header"
             exit 1
         fi
-            
+
         # Filter 1 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.00005
         echo "Extracting chr and pos of rare variants passing filter 1"
 
@@ -76,7 +76,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
   # Grep surrounding 200,000 lines each side of filter 1 variants and split files again
   echo "Splitting windows surrounding filter 1 hits"
-  
+
   i=1
   while IFS= read -r line; do
     keepchr=$(echo ${line} | awk '{print $1}')
@@ -84,20 +84,20 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
 
     rg ${pasteline} ${TMP_DIR}/${keepchr}_tmp.txt -C 200000 | awk -v chr=${chr_index} -v keep=${keepchr} \
     '$chr == keep' > "${TMP_DIR}/searchwindow_${i}_tmp.txt"
-    
+
     i=$((i+1))
   done < ${TMP_DIR}/top_tmp_uniq.txt
 
         # Loop through variants passing filter 1, extract 1MB surrounding region and apply filter 2
   # across split files
         # Filter 2 : MAF<=0.01, MAF>=0.000012, INFO>=0.5, P<=0.1
-  
+
   echo "Extracting filter 2 variants"
 
   i=$(wc -l < ${TMP_DIR}/top_tmp_uniq.txt)
-  
+
   for ((j=1; j<=i; j++)); do
-    
+
     # Position of the original filtered variant
     refpos=$(awk -v pos=${pos_index} -v J=${j} 'NR==J {print $pos}' ${TMP_DIR}/top_tmp_uniq.txt)
 
@@ -117,7 +117,7 @@ if [[ ! -e "${OUT_DIR}/${OUTNAME}.gz" ]] ; then
   echo "Writing output to: ${OUT_DIR}/${OUTNAME}"
   sort -V -k1,1 -k2,2 ${TMP_DIR}/finalvars_tmp.txt | uniq > ${OUT_DIR}/${OUTNAME}
   echo "Final variant count: $(wc -l < ${OUT_DIR}/${OUTNAME})"
-  
+
   echo "Compressing output file"
   gzip -f ${OUT_DIR}/${OUTNAME}
 

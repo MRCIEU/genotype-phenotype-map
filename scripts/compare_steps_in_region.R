@@ -1,7 +1,7 @@
 source('../pipeline_steps/constants.R')
 
 
-parser <- argparser::arg_parser('Colocalise studies per region')
+parser <- argparser::arg_parser('Compare output of steps in the region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--study', help = 'Name of study', type = 'character')
 args <- argparser::parse_args(parser)
@@ -18,9 +18,6 @@ main <- function() {
 
   pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_study$file)
   pre_filter_gwas <- vroom::vroom(pre_filter_file, show_col_types=F)
-
-  # dentist_file <- sub('.tsv.gz', '_post_dentist.tsv.gz', imputed_study$file)
-  # dentist_gwas <- vroom::vroom(dentist_file, show_col_types=F)
 
   finemapped_studies <- vroom::vroom(glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'), show_col_types=F) |>
     dplyr::filter(study == args$study)

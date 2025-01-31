@@ -1,6 +1,6 @@
 source('constants.R')
 
-POSTERIOR_PROB_THRESHOLD <- 0.5
+posterior_prob_threshold <- 0.5
 
 parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT
@@ -10,6 +10,7 @@ parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current
 parser <- argparser::add_argument(parser, '--all_study_blocks_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--variant_annotations_file', help = 'Variant Annotations of Candidate SNPs', type = 'character')
 parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
@@ -22,21 +23,31 @@ main <- function() {
     dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
+  # pipeline_data <- cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
+  rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
-  all_study_blocks <- compile_study_blocks(pipeline_data)
+  pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
+  validate_results(pipeline_data, variant_annotations, coloc_results)
+
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
+  vroom::vroom_write(rare_results, args$rare_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
-  vroom::vroom_write(all_study_blocks, args$all_study_blocks_file)
+  vroom::vroom_write(pipeline_data$all_study_blocks, args$all_study_blocks_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
-
+  #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
   file.copy(args$studies_processed, dirname(args$coloc_results))
-  rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+
+  if (is.na(TEST_RUN)) {
+    rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+  } else {
+    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
+  }
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {
@@ -59,6 +70,13 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
     dplyr::filter(!is.na(traits) & traits != 'None')
 
+  compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
+  if (length(compare_rare_input_files) == 0) {
+    compare_rare_results <- data.frame()
+  } else {
+    compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
+  }
+
   #update studies_processed.tsv with studies_to_process.tsv
   gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 
@@ -80,6 +98,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
     raw_coloc_results = raw_coloc_results,
+    rare_results = compare_rare_results,
     studies_processed = studies_processed
   ))
 }
@@ -87,10 +106,16 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 compile_study_blocks <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
     dplyr::filter(min_p <= p_value_threshold) |>
-    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans)
-  studies_processed <- pipeline_data$studies_processed
+    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
 
-  finemapped_studies$known_gene <- studies_processed$gene[match(finemapped_studies$study, studies_processed$study_name)]
+  finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
+
+  # rare_studies <- pipeline_data$standardised_studies |>
+  #   dplyr::filter(variant_type != variant_types$common) |>
+  #   dplyr::select(study, file, chr, bp, min_p, cis_trans, ld_block) |>
+  #   dplyr::mutate(unique_study_id = NA, known_gene = if ('GENE' %in% colnames(rare_results)) rare_results$GENE else NA)
+
+  # all_studies <- rbind(finemapped_studies, rare_studies)
   return(finemapped_studies)
 }
 
@@ -149,10 +174,38 @@ ingested_data_integrity_check <- function() {
   })
 }
 
-compile_coloc_results <- function(pipeline_data) {
-  significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= POSTERIOR_PROB_THRESHOLD)
+compile_rare_results <- function(pipeline_data) {
+  pairwise_results <- apply(pipeline_data$rare_results, 1, function(result) {
+    traits <- strsplit(result[['traits']], ', ')[[1]]
+    ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
+    if (length(ordered_traits$unique_study_id) < 2) {
+      return()
+    }
+    paired_results <- data.frame(t(utils::combn(ordered_traits$unique_study_id, 2))) |>
+      dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
+      dplyr::mutate(candidate_snp = as.character(result['candidate_snp']))
 
-  # TODO: could parallelize this using mclapply 1:nrow(significant_results) and significant_results[i,]
+    #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
+    #causal pathway, as defined by ordered_data_types (ie. gene_expression -> protein -> phenotype)
+    #this might have to get more complicated, as relationships between types is not always easy to define
+    first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
+    second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
+    paired_results$directed <- first_study_data_types != second_study_data_types & second_study_data_types == ordered_data_types$phenotype
+
+    return(paired_results)
+  }) |>
+    dplyr::bind_rows() |>
+    dplyr::mutate(study_a = sub('.*_', '', unique_study_a), study_b = sub('.*_', '', unique_study_b))
+
+  return(pairwise_results)
+}
+
+compile_coloc_results <- function(pipeline_data) {
+  significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= posterior_prob_threshold)
+
+  # num_parallel_jobs <- 10
+  # pairwise_significant_results <- parallel::mclapply(X=1:nrow(significant_results), mc.cores=num_parallel_jobs, FUN=function(i) {
+  #   result <- significant_results[i, ]
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
@@ -206,6 +259,53 @@ order_trait_by_type <- function(traits, studies_processed) {
 
 split_string_into_vector <- function(input_string) {
   return(unlist(strsplit(input_string, '[ ]')))
+}
+
+validate_results <- function(pipeline_data, variant_annotations, coloc_results, rare_results) {
+  #check that all unique ids in coloc results are in finemapped studies
+  all_unique_ids <- unique(c(coloc_results$unique_study_a, coloc_results$unique_study_b))
+  missing_unique_ids <- setdiff(all_unique_ids, pipeline_data$finemapped_studies$unique_study_id)
+  if (length(missing_unique_ids) > 0) {
+    message('Error: there are ', length(missing_unique_ids), ' unique study ids in coloc results are not in finemapped studies')
+    message(paste(missing_unique_ids, collapse = ', '))
+  }
+
+  #check that all SNPs in coloc results are in the variant annotations 
+  all_candidate_snps <- unique(coloc_results$candidate_snp)
+  missing_candidate_snps <- setdiff(all_candidate_snps, variant_annotations$SNP)
+  if (length(missing_candidate_snps) > 0) {
+    message('Error: there are ', length(missing_candidate_snps), ' candidate SNPs in coloc results are not in variant annotations')
+    message(paste(missing_candidate_snps, collapse = ', '))
+  } 
+
+  #check that all studies in rare results are in studies processed
+  # all_unique_studies <- unique(c(rare_results$study_a, rare_results$study_b))
+  # missing_studies <- setdiff(all_unique_studies, pipeline_data$studies_processed$study_name)
+  # if (length(missing_studies) > 0) {
+  #   message('Error: there are', length(missing_studies), 'studies in rare results are not in studies processed')
+  #   stop(missing_studies)
+  # }
+
+  #check that all study ids in finemapped studies are in studies processed
+  all_study_ids <- unique(pipeline_data$finemapped_studies$study)
+  missing_study_ids <- setdiff(all_study_ids, pipeline_data$studies_processed$study_name)
+  if (length(missing_study_ids) > 0) {
+    message('Error: there are', length(missing_study_ids), 'study ids in finemapped studies are not in studies processed')
+    message(paste(missing_study_ids, collapse = ', '))
+  }
+}
+
+cleanup_studies_with_no_extractions <- function(pipeline_data) {
+  study_dirs  <- Sys.glob(glue::glue('{extracted_study_dir}/*'))
+  empty_study_dirs <- Filter(function(e) file.size(glue::glue('{e}/extracted_snps.tsv')) == 0, study_dirs)
+  for (empty_study in empty_study_dirs) {
+    system(glue::glue('rm -r {empty_study}'))
+  }
+
+  empty_studies <- sub('.*\\/', '', empty_study_dirs)
+  pipeline_data$studies_processed <- dplyr::filter(pipeline_data$studies_processed, !study_name %in% empty_studies)
+
+  return(pipeline_data)
 }
 
 main()

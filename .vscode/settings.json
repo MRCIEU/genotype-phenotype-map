@@ -1,0 +1,6 @@
+{
+  "files.exclude": {
+    ".snakemake/*": true,
+    "scratch/*": true
+  }
+}

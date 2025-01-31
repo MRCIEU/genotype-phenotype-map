@@ -14,22 +14,21 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, delim = '\t', show_col_types = F) |>
-      dplyr::filter(min_p <= p_value_threshold)
+      dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-    message(glue::glue('Nothing to process for LD region {ld_info$ld_block_data}, skipping.'))
+    message(glue::glue('Nothing to coloc in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
 
-  finemapped_studies$unique_study_id <- glue::glue('{finemapped_studies$study}_{file_prefix(finemapped_studies$file)}')
-
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
   if (length(grouped_studies) == 0) {
+    message(glue::glue('No grouped studies for LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }

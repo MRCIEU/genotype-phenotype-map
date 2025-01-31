@@ -45,15 +45,17 @@ imputation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/imputation_complete'
 complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
 complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
-
-### OUTPUT DATA FILES
 coloc_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/coloc_complete'
 complex_coloc_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_coloc_complete'
+compare_rare_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/compare_rare_complete'
+complex_compare_rare_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_compare_rare_complete'
 
+### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
 coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
+rare_results = f'{RESULTS_DIR}{TIMESTAMP}/rare_results.tsv'
 all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
 mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
 results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
@@ -70,8 +72,11 @@ rule all:
         expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
         expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
+        expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
         raw_coloc_results,
         coloc_results,
+        rare_results,
         all_study_blocks,
         results_metadata,
         backup_done_file,
@@ -93,6 +98,10 @@ rule extract_regions_from_studies:
                 --extracted_output_file {output}'
         elif study.data_format == 'besd':
             command = f'Rscript extract_regions_from_besd.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
+        elif study.data_format == 'tsv' and study.variant_type != 'common':
+            command = f'Rscript extract_regions_from_rare_tsv.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
         else:
@@ -119,10 +128,16 @@ def standardise_rule(standardisation_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript standardise_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript standardise_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 
@@ -136,10 +151,16 @@ def impute_rule(standardisation_pattern, imputation_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript impute_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript impute_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
 def finemap_rule(imputation_pattern, finemaping_pattern, name):
@@ -152,31 +173,64 @@ def finemap_rule(imputation_pattern, finemaping_pattern, name):
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript finemap_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output} \
-                --complex_block {name == 'complex'}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript finemap_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output} \
+                    --complex_block {name == 'complex'}"
             subprocess.run(command, shell=True)
 
 def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
         retries: 2
-        threads: 2
+        threads: 5
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
         params:
             ld_dir=lambda wildcards, output: os.path.dirname(output[0])
         run:
-            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript colocalise_studies_in_ld_block.R \
-                --ld_block {ld_block} \
-                --completed_output_file {output}"
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript colocalise_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
             subprocess.run(command, shell=True)
 
+def compare_rare_rule(standardisation_pattern, compare_rare_pattern, name):
+    rule:
+        name: f'{name}_compare_rare_per_ld_block'
+        retries: 2
+        threads: 1
+        input:
+            standardisation = standardisation_pattern 
+        output: temporary(compare_rare_pattern)
+        params:
+            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+        run:
+            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+            if skip_block:
+                command = f"mkdir -p $(dirname {output}) && touch {output}"
+            else:
+                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+                command = f"Rscript compare_rare_studies_in_ld_block.R \
+                    --ld_block {ld_block} \
+                    --completed_output_file {output}"
+            subprocess.run(command, shell=True)
 
 standardise_rule(complex_standardisation_pattern, 'complex')
 standardise_rule(standardisation_pattern, 'simple')
@@ -190,6 +244,9 @@ finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
 coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
 coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
+compare_rare_rule(complex_standardisation_pattern, complex_compare_rare_pattern, 'complex')
+compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
+
 rule backup_data_dir:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
@@ -202,11 +259,13 @@ rule backup_data_dir:
         """
 
 rule compile_results:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+           expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
     threads: 1
     output:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
+        rare_results = rare_results,
         all_study_blocks = all_study_blocks,
         results_metadata = results_metadata,
         variant_annotations = variant_annotations,
@@ -219,12 +278,13 @@ rule compile_results:
             --studies_processed {studies_processed_file} \
             --all_study_blocks_file {output.all_study_blocks} \
             --raw_coloc_results_file {output.raw_coloc_results} \
+            --rare_results_file {output.rare_results} \
             --coloc_results_file {output.coloc_results} \
             --compiled_results_metadata_file {output.results_metadata} \
             --variant_annotations_file {output.variant_annotations} \
             --pipeline_summary_file {output.pipeline_summary}
 
-        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ 
+        rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
         """
 
 # rule perform_mr_analysis:
@@ -245,6 +305,7 @@ onsuccess:
     print(pipeline_summary_output)
     print(raw_coloc_results)
     print(coloc_results)
+    print(rare_results)
     print(all_study_blocks)
     print(results_metadata)
     print(mr_results)

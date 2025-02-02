@@ -17,13 +17,21 @@ main <- function() {
       dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
   }
 
+  cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/cached_coloc_groups.rds')
+  cached_studies_file <- glue::glue('{ld_info$ld_block_data}/cached_studies_file.tsv')
+  cached_data <- load_cached_data(finemapped_studies, cached_coloc_group_file, cached_studies_file)
+  if (skip_coloc_block) {
+      message('No new studies to compare, skipping.')
+      return()
+  }
+
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
     message(glue::glue('Nothing to coloc in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, show_col_types = F))
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
@@ -33,12 +41,37 @@ main <- function() {
     return()
   }
 
-  hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies)
+  hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies, cached_data$cached_coloc_groups)
+  saveRDS(hyprcoloc_results, cached_coloc_group_file)
+
   hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
   coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
+}
+
+load_cached_data <- function(finemapped_studies, cached_coloc_group_file, cached_studies_file) {
+  skip_coloc_block <- FALSE
+  if (file.exists(cached_coloc_group_file)) {
+    cached_coloc_groups <- readRDS(cached_coloc_group_file)
+  } else {
+    cached_coloc_groups <- list()
+  }
+
+  if (file.exists(cached_studies_file)) {
+    cached_studies <- vroom::vroom(cached_studies_file, show_col_types = F)
+    already_run <- setdiff(finemapped_studies$study, cached_studies$study)
+    if (length(already_run) == 0) {
+      message('No new studies to compare, skipping.')
+      skip_coloc_block <- TRUE
+    }
+  }
+
+  return(list(cached_coloc_groups = cached_coloc_groups,
+              skip_coloc_block = skip_coloc_block
+             )
+  )
 }
 
 post_coloc_filtering <- function(hyprcoloc_results) {
@@ -103,38 +136,54 @@ find_subsets_of_grouped_studies <- function(grouped_studies) {
   return(subsets)
 }
 
-colocalise_based_on_group <- function(studies, groupings, metadata) {
-  results <- lapply(groupings, function(group) {
+colocalise_based_on_group <- function(studies, groupings, metadata, cached_coloc_groups) {
+  all_results <- lapply(groupings, function(group) {
     specific_group <- studies[group]
-    specific_group <- do.call(harmonise_gwases, specific_group)
 
-    if (length(specific_group) == 0 || nrow(specific_group[[1]])==0) return()
+    unique_group_id <- paste(unlist(group), collapse = '')
+    cached_result <- find_cached_coloc_groups(cached_coloc_groups, unique_group_id)
 
-    snps <- specific_group[[1]]$SNP
-    trait_names <- names(specific_group)
-    categories <- dplyr::filter(metadata, study %in% trait_names)$category
-    binary_outcomes <- lapply(categories, function(category) {
-      return (category == study_categories$binary)
-    })
+    if (!is.null(cached_result)) {
+      return(cached_result)
+    } else {
+      specific_group <- do.call(harmonise_gwases, specific_group)
+      if (length(specific_group) == 0 || nrow(specific_group[[1]]) == 0) return()
 
+      snps <- specific_group[[1]]$SNP
+      trait_names <- names(specific_group)
+      categories <- dplyr::filter(metadata, study %in% trait_names)$category
+      binary_outcomes <- lapply(categories, function(category) {
+        return (category == study_categories$binary)
+      })
 
-    beta_matrix <- lapply(specific_group, function(study) study$BETA) |>
-      dplyr::bind_cols() |>
-      as.matrix()
-    se_matrix <- lapply(specific_group, function(study) study$SE) |>
-      dplyr::bind_cols() |>
-      as.matrix()
+      beta_matrix <- lapply(specific_group, function(study) study$BETA) |>
+        dplyr::bind_cols() |>
+        as.matrix()
+      se_matrix <- lapply(specific_group, function(study) study$SE) |>
+        dplyr::bind_cols() |>
+        as.matrix()
 
-    results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
-                                    effect.se = se_matrix,
-                                    trait.names = trait_names,
-                                    binary.outcomes = binary_outcomes,
-                                    snp.id = snps,
-                                    snpscores = T
+      results <- hyprcoloc::hyprcoloc(effect.est = beta_matrix,
+                                      effect.se = se_matrix,
+                                      trait.names = trait_names,
+                                      binary.outcomes = binary_outcomes,
+                                      snp.id = snps,
+                                      snpscores = T
       )
+      results$unique_group_id <- unique_group_id
       return(results)
+    }
   })
-  return(results)
+  return(all_results)
+}
+
+
+find_cached_coloc_groups <- function(cached_coloc_groups, unique_group_id) {
+  cached_result <- Filter(function(cached_result) cached_result$unique_group_id == unique_group_id, cached_coloc_groups)
+
+  if (length(cached_result) == 1) return cached_result[[1]]
+  else if (length(cached_result) == 0) return NULL
+  else stop(glue::glue('Error: cached coloc result has multiple results for {unique_group_id}'))
 }
 
 

@@ -23,7 +23,7 @@ main <- function() {
     dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
-  # pipeline_data <- cleanup_studies_with_no_extractions(pipeline_data)
+  cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
   rare_results <- compile_rare_results(pipeline_data)
@@ -301,11 +301,6 @@ cleanup_studies_with_no_extractions <- function(pipeline_data) {
   for (empty_study in empty_study_dirs) {
     system(glue::glue('rm -r {empty_study}'))
   }
-
-  empty_studies <- sub('.*\\/', '', empty_study_dirs)
-  pipeline_data$studies_processed <- dplyr::filter(pipeline_data$studies_processed, !study_name %in% empty_studies)
-
-  return(pipeline_data)
 }
 
 main()

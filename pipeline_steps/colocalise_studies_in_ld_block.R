@@ -8,8 +8,8 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
-    dplyr::filter(data_dir == ld_info$ld_block_data)
+  # block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
+    # dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
@@ -17,15 +17,16 @@ main <- function() {
       dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
   }
 
-  cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/cached_coloc_groups.rds')
-  cached_studies_file <- glue::glue('{ld_info$ld_block_data}/cached_studies_file.tsv')
+  cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_groups.rds')
+  cached_studies_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_studies.tsv')
   cached_data <- load_cached_data(finemapped_studies, cached_coloc_group_file, cached_studies_file)
-  if (skip_coloc_block) {
+  if (cached_data$skip_coloc_block) {
       message('No new studies to compare, skipping.')
       return()
   }
 
-  if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
+  # if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
+  if (!file.exists(finemapped_file) || nrow(finemapped_studies) == 0) {
     message(glue::glue('Nothing to coloc in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
@@ -47,7 +48,9 @@ main <- function() {
   hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
   coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
+  studies_to_cache <- data.frame(study=finemapped_studies$study)
   vroom::vroom_write(hyprcoloc_results, coloc_results_file)
+  vroom::vroom_write(studies_to_cache, cached_studies_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
@@ -181,8 +184,11 @@ colocalise_based_on_group <- function(studies, groupings, metadata, cached_coloc
 find_cached_coloc_groups <- function(cached_coloc_groups, unique_group_id) {
   cached_result <- Filter(function(cached_result) cached_result$unique_group_id == unique_group_id, cached_coloc_groups)
 
-  if (length(cached_result) == 1) return cached_result[[1]]
-  else if (length(cached_result) == 0) return NULL
+  if (length(cached_result) == 1) {
+    message('found cached hit')
+    return(cached_result[[1]])
+  }
+  else if (length(cached_result) == 0) return(NULL)
   else stop(glue::glue('Error: cached coloc result has multiple results for {unique_group_id}'))
 }
 

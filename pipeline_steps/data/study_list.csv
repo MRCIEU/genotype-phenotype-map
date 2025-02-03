@@ -5,3 +5,7 @@ ukb-d-*,phenotype,ukb,opengwas,none,/local-scratch/data/opengwas/igd,EUR,GRCh37,
 *,gene_expression,brain_meta,besd,none,/local-scratch/data/hg38/BrainMeta-cis-eQTL,EUR,GRCh38,1.5e-4,common,json
 *,gene_expression,brain_emeta,besd,none,/local-scratch/data/hg38/Brain-eMeta,EUR,GRCh38,1.5e-4,common,json
 european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,1.5e-4,common,json
+*,phenotype,genebass,tsv,none,/local-scratch/data/hg38/rare/genebass,EUR,GRCh38,1.5e-4,rare_exome,tsv
+*,phenotype,backman,tsv,none,/local-scratch/data/hg38/rare/backman,EUR,GRCh38,1.5e-4,rare_exome,tsv
+*,protein,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/protein,EUR,GRCh38,1.5e-4,rare_exome,tsv
+*,phenotype,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/phenotype,EUR,GRCh38,1.5e-4,rare_exome,tsv

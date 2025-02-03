@@ -13,7 +13,7 @@ main <- function() {
   block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
-  compare_rare_cache_file <- glue::glue('{ld_info$ld_block_data}/compare_rare_cache.tsv')
+  compare_rare_cache_file <- glue::glue('{ld_info$ld_block_data}/compare_rare_cached_studies.tsv')
   standardised_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
   if (file.exists(standardised_file)) {
   standardised_studies <- vroom::vroom(standardised_file, delim = '\t', show_col_types = F) |>
@@ -31,7 +31,10 @@ main <- function() {
 
   standardised_studies$unique_study_id <- glue::glue('{standardised_studies$study}_{file_prefix(standardised_studies$file)}')
   
-  studies_to_compare <- lapply(standardised_studies$file, function(file) vroom::vroom(standardised_studies$file, show_col_types = F))
+  studies_to_compare <- lapply(standardised_studies$file, 
+    function(file) vroom::vroom(file, show_col_types = F) |>
+      dplyr::select(dplyr::all_of(standardised_gwas_columns))
+  )
   names(studies_to_compare) <- standardised_studies$unique_study_id
 
   # Add unique study id as column
@@ -61,13 +64,13 @@ main <- function() {
 
   compare_results_file <- glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv')
   vroom::vroom_write(compare_results, compare_results_file)
-  vroom::vroom_write(studies_to_cahce, compare_rare_cache_file)
+  vroom::vroom_write(studies_to_cache, compare_rare_cache_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
 already_run_comparison <- function(compare_rare_cache_file, standardised_studies) {
   if (file.exists(compare_rare_cache_file)) {
-    compare_rare_cache <- vroom::vroom(compare_rare_cache_file, show_col_types = F)
+    compare_rare_cache <- vroom::vroom(compare_rare_cache_file, delim = '\t', show_col_types = F)
     already_run <- setdiff(standardised_studies$study, compare_rare_cache$study)
     if (length(already_run) == 0) {
       message('No new studies to compare, skipping.')
@@ -77,7 +80,7 @@ already_run_comparison <- function(compare_rare_cache_file, standardised_studies
   return(FALSE)
 }
 
-compare_by_variant <- function(studies, variants, P_thresh){
+compare_by_variant <- function(studies, variants, P_thresh) {
   # Retain variants under the p-value threshold to compare
   variants_keep <- variants |> dplyr::filter(min_P <= P_thresh)|> dplyr::pull(SNP)
 
@@ -94,6 +97,7 @@ compare_by_variant <- function(studies, variants, P_thresh){
     if (length(found_study_ids) == 0){
       next
     }
+    found_study_ids <- unlist(found_study_ids)
 
     found_study_ids <- found_study_ids[order(found_study_ids)]
 
@@ -113,4 +117,4 @@ compare_by_variant <- function(studies, variants, P_thresh){
   return(compare_wide)
 }
 
-main()
+invisible(main())

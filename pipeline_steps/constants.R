@@ -40,6 +40,8 @@ available_liftover_conversions <- list(
   'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
 
+standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z')
+
 standardised_column_types <- vroom::cols(
   chr = vroom::col_character(),
   bp = vroom::col_number(),

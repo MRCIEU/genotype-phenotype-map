@@ -21,7 +21,8 @@ only_interesting_blocks <- dplyr::filter(all_study_blocks, unique_study_id %in% 
 only_interesting_blocks <- only_interesting_blocks |>
   dplyr::select(trait, study, unique_study_id, chr, bp, min_p, cis_trans, gene, tissue, data_type, sample_size)
 
-coloc_results_for_study <- dplyr::filter(coloc_results_for_study, unique_study_a %in% only_interesting_blocks$unique_study_id & unique_study_b %in% only_interesting_blocks$unique_study_id)
+coloc_results_for_study <- coloc_results_for_study |>
+  dplyr::filter(unique_study_a %in% only_interesting_blocks$unique_study_id & unique_study_b %in% only_interesting_blocks$unique_study_id)
 print(length(coloc_results_for_study))
 
 freq_of_snp <- table(coloc_results_for_study$candidate_snp)

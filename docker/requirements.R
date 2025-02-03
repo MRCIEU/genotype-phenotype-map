@@ -1,4 +1,4 @@
-cran_install <- c('susieR', 'Rfast', 'BiocManager')
+cran_install <- c('susieR', 'Rfast', 'BiocManager', 'duckdb', 'validate')
 install.packages(cran_install, repos = 'http://cran.us.r-project.org')
 
 devtools::install_github('ZikunY/CARMA')

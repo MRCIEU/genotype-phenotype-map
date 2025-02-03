@@ -8,8 +8,8 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
-  # block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
-    # dplyr::filter(data_dir == ld_info$ld_block_data)
+  block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
+    dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
@@ -25,8 +25,7 @@ main <- function() {
       return()
   }
 
-  # if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
-  if (!file.exists(finemapped_file) || nrow(finemapped_studies) == 0) {
+  if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
     message(glue::glue('Nothing to coloc in LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()

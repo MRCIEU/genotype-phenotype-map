@@ -55,15 +55,17 @@ main <- function() {
   # Compare rare variant hits across studies at given p-value threshold
   compare_results <- compare_by_variant(studies = studies_to_compare, variants = variants, P_thresh = lowest_rare_p_value_threshold)
 
-  if(nrow(compare_results) == 0){
+  if(length(compare_results) == 0){
      vroom::vroom_write(data.frame(), args$completed_output_file)
      return() 
   }
 
   studies_to_cache <- data.frame(study=standardised_studies$study)
 
-  compare_results_file <- glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv')
-  vroom::vroom_write(compare_results, compare_results_file)
+  compare_results_file_wide <- glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv')
+  compare_results_file_long <- glue::glue('{ld_info$ld_block_data}/compare_rare_results_raw.tsv')
+  vroom::vroom_write(compare_results[[1]], compare_results_file_wide)
+  vroom::vroom_write(compare_results[[2]], compare_results_file_long, delim=",")
   vroom::vroom_write(studies_to_cache, compare_rare_cache_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
@@ -86,35 +88,37 @@ compare_by_variant <- function(studies, variants, P_thresh) {
 
   # Output data frame
   compare_wide <- data.frame()
+  compare_long <- data.frame()
 
   # Pull studies with shared varaiants
   for (var in variants_keep) {
-    found_study_ids <- sapply(studies, function(study) {
+    found_studies <- lapply(studies, function(study) {
       dplyr::filter(study, SNP == var & P <= P_thresh) |>
-        dplyr::pull(unique_study_id)
+        dplyr::select(SNP,unique_study_id,BETA,SE,P,OA,EA,EAF)
     })
 
-    if (length(found_study_ids) == 0){
+    found_studies <- do.call("rbind", found_studies)
+
+    if (nrow(found_studies) == 1){
       next
     }
-    found_study_ids <- unlist(found_study_ids)
+    found_study_ids <- found_studies$unique_study_id
 
     found_study_ids <- found_study_ids[order(found_study_ids)]
-
-    if (length(found_study_ids) == 1){
-      next
-    }
     
     # Wide format output
     compare_wide <- rbind(compare_wide, data.frame(traits = paste(found_study_ids, collapse = ", "), candidate_snp = var))
+    # Long format output
+    compare_long <- rbind(compare_long, found_studies)
   }
   
   if(nrow(compare_wide) == 0){
-    return(data.frame())
+    return(list())
   }
 
   colnames(compare_wide) <- c("traits","candidate_snp")
-  return(compare_wide)
+  colnames(compare_long) <- c("candidate_snp","unique_study_id","beta","se","p","oa","ea","eaf")
+  return(list(compare_wide, compare_long))
 }
 
 invisible(main())

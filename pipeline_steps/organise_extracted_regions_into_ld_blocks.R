@@ -11,7 +11,11 @@ main <- function() {
   all_extracted_snp_files <- glue::glue('{studies_to_process$extracted_location}extracted_snps.tsv')
   #filtering out results without any significant SNPs, so we don't hit ulimits on the box
   all_extracted_snp_files  <- Filter(function(file) file.info(file)$size > 70, all_extracted_snp_files)
-  all_extracted_snps <- vroom::vroom(all_extracted_snp_files, show_col_types = F)
+  message('Number of extracted snp files: ', length(all_extracted_snp_files))
+  # This fails if we try to use vroom
+  all_extracted_snps <- lapply(all_extracted_snp_files, function(file) {
+    data.table::fread(file)
+  }) |> dplyr::bind_rows()
 
   all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:]+')
   extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_block)

@@ -248,7 +248,8 @@ compare_rare_rule(complex_standardisation_pattern, complex_compare_rare_pattern,
 compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
 
 rule backup_data_dir:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks)
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+           expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
     threads: 1
     output: temporary(backup_done_file)
     shell:

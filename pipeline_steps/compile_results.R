@@ -298,6 +298,7 @@ validate_results <- function(pipeline_data, variant_annotations, coloc_results, 
 cleanup_studies_with_no_extractions <- function(pipeline_data) {
   study_dirs  <- Sys.glob(glue::glue('{extracted_study_dir}/*'))
   empty_study_dirs <- Filter(function(e) file.size(glue::glue('{e}/extracted_snps.tsv')) == 0, study_dirs)
+  message('Studies with no extractions that will be cleaned up: ', nrow(empty_study_dirs))
   for (empty_study in empty_study_dirs) {
     system(glue::glue('rm -r {empty_study}'))
   }

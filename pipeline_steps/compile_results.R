@@ -23,7 +23,7 @@ main <- function() {
     dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
-  cleanup_studies_with_no_extractions(pipeline_data)
+  # cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
   rare_results <- compile_rare_results(pipeline_data)
@@ -298,7 +298,7 @@ validate_results <- function(pipeline_data, variant_annotations, coloc_results, 
 cleanup_studies_with_no_extractions <- function(pipeline_data) {
   study_dirs  <- Sys.glob(glue::glue('{extracted_study_dir}/*'))
   empty_study_dirs <- Filter(function(e) file.size(glue::glue('{e}/extracted_snps.tsv')) == 0, study_dirs)
-  message('Studies with no extractions that will be cleaned up: ', nrow(empty_study_dirs))
+  message('Studies with no extractions that will be cleaned up: ', length(empty_study_dirs))
   for (empty_study in empty_study_dirs) {
     system(glue::glue('rm -r {empty_study}'))
   }

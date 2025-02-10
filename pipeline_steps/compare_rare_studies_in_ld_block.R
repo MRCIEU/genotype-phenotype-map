@@ -27,7 +27,10 @@ main <- function() {
   }
 
   already_run <- already_run_comparison(compare_rare_cache_file, standardised_studies)
-  if (already_run) return()
+  if (already_run) {
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
 
   standardised_studies$unique_study_id <- glue::glue('{standardised_studies$study}_{file_prefix(standardised_studies$file)}')
   
@@ -73,7 +76,7 @@ already_run_comparison <- function(compare_rare_cache_file, standardised_studies
     compare_rare_cache <- vroom::vroom(compare_rare_cache_file, delim = '\t', show_col_types = F)
     already_run <- setdiff(standardised_studies$study, compare_rare_cache$study)
     if (length(already_run) == 0) {
-      message('No new studies to compare, skipping.')
+      message('No new rare studies to compare, skipping.')
       return(TRUE)
     }
   }

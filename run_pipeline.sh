@@ -27,6 +27,14 @@ elif [[ $NUM_STUDIES -gt 200000 ]]; then
   exit 0
 fi
 
+if [[ $EXTRA_SNAKEMAKE_ARG =~ "clean" ]]; then
+  echo "Cleaning up leftover intermediate files from previous run"
+  set +e
+  rm $DATA_DIR/ld_blocks/*/*/*/*_complete
+  EXTRA_SNAKEMAKE_ARG=
+  set -e
+fi
+
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
 
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv

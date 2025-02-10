@@ -17,6 +17,8 @@ additional_coloc_columns <- function(studies, coloc_results) {
   coloc_results$min_p_b <- studies$min_p[study_b_match]
   coloc_results$gene_a <- studies$known_gene[match(coloc_results$unique_study_a, studies$unique_study_id)]
   coloc_results$gene_b <- studies$known_gene[match(coloc_results$unique_study_b, studies$unique_study_id)]
+  coloc_results$tissue_a <- studies$tissue[match(coloc_results$unique_study_a, studies$unique_study_id)]
+  coloc_results$tissue_b <- studies$tissue[match(coloc_results$unique_study_b, studies$unique_study_id)]
 
   return(coloc_results)
 }
@@ -32,6 +34,9 @@ coloc_results <- vroom::vroom(glue::glue('{last_result_dir}/coloc_results.tsv'),
   dplyr::mutate(chr = as.numeric(chr), bp = as.numeric(bp))
 all_study_blocks <- vroom::vroom(glue::glue('{last_result_dir}/all_study_blocks.tsv'), show_col_types=F)
 all_study_blocks <- merge(all_study_blocks, studies_processed, by.x='study', by.y='study_name')
+
+
+
 
 study_of_interest <- 'ebi-a-GCST90029025'
 coloc_results_for_study <- dplyr::filter(coloc_results, grepl(study_of_interest, unique_study_a) | grepl(study_of_interest, unique_study_b))
@@ -90,12 +95,61 @@ associated_studies <- unique(c(coloc_for_snp$unique_study_a, coloc_for_snp$uniqu
 blocks_for_snp <- dplyr::filter(all_study_blocks, unique_study_id %in% associated_studies) |>
   dplyr::select(trait, study, unique_study_id, chr, bp, min_p, cis_trans, gene, tissue, data_type, sample_size)
 
-variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F) |>
+variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F)
+
+snp_annotation <- variant_annotations |>
   dplyr::filter(SNP == specific_snp)
 
   snp_data_json <- list(
-    annotation = variant_annotations[1,],
+    annotation = snp_annotation[1,],
     studies = blocks_for_snp
   )
 snp_result_json <- jsonlite::toJSON(snp_data_json, pretty = T, auto_unbox = T)
 write(snp_result_json, '~/snp_result.json')
+
+
+# Getting data for Gene
+
+variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F)
+specific_gene <- "PDXDC1"
+snp <- "16:15033678_A_C"
+
+variants_for_gene <- dplyr::filter(variant_annotations, symbol == specific_gene)
+studies_with_known_gene <- dplyr::filter(all_study_blocks, known_gene == specific_gene)
+
+coloc_results_for_gene <- dplyr::filter(coloc_results, candidate_snp %in% variants_for_gene$SNP)
+coloc_results_for_gene <- additional_coloc_columns(all_study_blocks, coloc_results_for_gene) |>
+  dplyr::filter(!is.na(tissue_a) | !is.na(tissue_b)) |>
+  dplyr::mutate(min_p = pmin(min_p_a, min_p_b),
+               includes_trans = (!is.na(cis_trans_a) & cis_trans_a == 'trans') | (!is.na(cis_trans_b) & cis_trans_b == 'trans'),
+               includes_qtl = data_type_a != 'phenotype' | data_type_b != 'phenotype') |>
+  dplyr::filter(cis_trans_a != 'trans') |>
+  dplyr::select(-min_p_a, -min_p_b, -cis_trans_a, -cis_trans_b, -data_type_a, -data_type_b, -posterior_explained_by_snp)
+
+nrow(coloc_results_for_gene)
+coloc_results_for_gene[coloc_results_for_gene$includes_trans==F,]
+print(coloc_results_for_gene, width=Inf)
+
+unique_snps <- unique(coloc_results_for_gene$candidate_snp)
+variant_annotations_for_snps <- dplyr::filter(variant_annotations, SNP %in% unique_snps)
+variant_annotations_for_snps <- setNames(split(variant_annotations_for_snps, variant_annotations_for_snps$SNP), variant_annotations_for_snps$SNP)
+variant_annotations_for_snps <- lapply(variant_annotations_for_snps, function(group) group[[1]])
+
+variant_annotations_for_gene <- dplyr::filter(variant_annotations, symbol == specific_gene)
+studies_with_known_gene_not_in_coloc <- all_study_blocks |>
+  dplyr::filter(
+    (known_gene == specific_gene | bp %in% variant_annotations_for_gene$BP) | # &
+    unique_study_id %in% coloc_results_for_gene$unique_study_a | unique_study_id %in% coloc_results_for_gene$unique_study_b
+    # (!unique_study_id %in% coloc_results_for_gene$unique_study_a & !unique_study_id %in% coloc_results_for_gene$unique_study_b)
+  ) |>
+  dplyr::select(trait, variant_type, chr, bp, min_p, cis_trans, gene, tissue, data_type, sample_size)
+
+gene_results_json <- list(
+  gene = specific_gene,
+  colocs = dplyr::select(coloc_results_for_gene, -unique_study_a, -unique_study_b),
+  snps = variant_annotations_for_snps,
+  studies = studies_with_known_gene_not_in_coloc
+)
+
+gene_results_json <- jsonlite::toJSON(gene_results_json, pretty = T, auto_unbox = T)
+write(gene_results_json, '~/gene_result.json')

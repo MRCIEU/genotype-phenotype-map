@@ -9,5 +9,4 @@ european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,
 *,phenotype,backman,tsv,none,/local-scratch/data/hg38/rare/backman,EUR,GRCh38,1.5e-4,rare_exome,tsv
 *,protein,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/protein,EUR,GRCh38,1.5e-4,rare_exome,tsv
 *,phenotype,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/phenotype,EUR,GRCh38,1.5e-4,rare_exome,tsv
-A*,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json
-Brain_[AC]*,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json
+[A-C]*,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json

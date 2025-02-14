@@ -126,7 +126,7 @@ main <- function() {
 
   sources <- unique(studies_processed$source)
 
-  assocs <- lapply(sources, \(x) assocs_source(x, 30))
+  assocs <- lapply(sources, \(x) assocs_source(studies_processed, varids_list, x, 30))
   unlink(args$associations_db_file)
   assocs_con <- dbConnect(duckdb::duckdb(), args$associations_db_file)
   dbWriteTable(assocs_con, "assocs", assocs[[1]])
@@ -159,7 +159,7 @@ extract_variants <- function(varids_list, path, study="study") {
   return(ext)
 }
 
-assocs_source <- function(source, mc.cores=30) {
+assocs_source <- function(studies_processed, varids_list, source, mc.cores=10) {
   assocs <- mclapply(studies_processed$study_name[studies_processed$source == source], \(x) {
     message(x)
     path <- file.path(data_dir, "/study/", x, "imputed")
@@ -175,10 +175,7 @@ assocs_source <- function(source, mc.cores=30) {
 }
 
 ensure_dbs_are_valid <- function() {
-  assocs_con <- dbConnect(duckdb::duckdb(), assocs_db, read_only=TRUE)
-  dbGetQuery(assocs_con, "SELECT * FROM assocs where SNP = '1:833068_A_G'")
-  dbGetQuery(assocs_con, "SELECT * FROM assocs where study = 'ebi-a-GCST90013905' AND P < 5e-8")
-  dbDisconnect(assocs_con, shutdown=TRUE)
+  #TODO: Check that the databases are valid
 }
 
 main()

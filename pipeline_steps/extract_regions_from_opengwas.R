@@ -79,8 +79,8 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
     dplyr::mutate(pval=10^{-LP}, rsid=ID) |>
     dplyr::select(rsid, pval)
 
-  significant_hits_file <- tempfile()
-  clumped_hits_file <- tempfile()
+  significant_hits_file <- withr::local_tempfile()
+  clumped_hits_file <- withr::local_tempfile()
   vroom::vroom_write(significant_hits, significant_hits_file, delim=' ')
 
   bfile <- glue::glue('{ld_reference_panel_dir}{study$ancestry}/full_rsid') 
@@ -155,7 +155,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     return(data.frame())
   }
 
-  regions_file <- tempfile()
+  regions_file <- withr::local_tempfile()
   vroom::vroom_write(dplyr::select(clumped_snps, CHR, region_start, region_stop), regions_file, delim = '\t', col_names = F)
   
   bcf_query <- glue::glue('/home/bcftools/bcftools query ',

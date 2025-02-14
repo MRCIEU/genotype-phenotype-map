@@ -50,7 +50,7 @@ main <- function() {
 }
 
 extract_cis_region <- function(study, p_value_threshold) {
-  tmp_cis_region <- glue::glue('/tmp/{study$study_name}_top_snp')
+  tmp_cis_region <- withr::local_tempfile()
   extract_cis_region <- glue::glue('smr --beqtl-summary {study$study_location} ',
                            '--query 1 ',
                            '--probe {study$probe} ',
@@ -65,8 +65,10 @@ extract_cis_region <- function(study, p_value_threshold) {
   if (nrow(cis_region) < 1) return()
 
   top_hit <- cis_region[which.min(cis_region$P), ]
-  if (top_hit$P > p_value_threshold) return()
-
+  if (top_hit$P > p_value_threshold) {
+    unlink(glue::glue('{tmp_cis_region}.txt'))
+    return()
+  }
   ld_block <- dplyr::filter(ld_blocks, chr == top_hit$CHR & start <= top_hit$BP & stop > top_hit$BP & ancestry == study$ancestry)
   ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
@@ -107,7 +109,7 @@ extract_cis_region <- function(study, p_value_threshold) {
 #' 2: clump results, filter out cis region (if any)
 #' 3: loop through clumped results to get all regions, then extract and store
 extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
-  tmp_trans_snps <- glue::glue('/tmp/{study$study_name}_top_trans_snps')
+  tmp_trans_snps <- withr::local_tempfile()
 
   extract_top_snps <- glue::glue('smr --beqtl-summary {study$study_location} ',
                            '--query {p_value_threshold} ',
@@ -160,7 +162,7 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
     trans_p <- as.numeric(clumped_snp['P'])
     ld_block <- dplyr::filter(ld_blocks, chr == trans_chr & start <= trans_bp & stop > trans_bp & ancestry == study$ancestry)
 
-    tmp_trans_region <- glue::glue('/tmp/{study$study_name}_trans_region')
+    tmp_trans_region <- withr::local_tempfile()
     extract_region <- glue::glue('smr --beqtl-summary {study$study_location} ',
                             '--query 1 ',
                             '--snp {clumped_snp["SNP"]} ',

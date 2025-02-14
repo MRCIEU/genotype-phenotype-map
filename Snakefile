@@ -197,6 +197,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         name: f'{name}_coloc_per_ld_block'
         retries: 2
         threads: 5
+        # threads: 20
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
@@ -298,12 +299,12 @@ rule create_results_db:
     input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
     threads: 1
     output:
-        associations_db = studies_db_file,
-        studies_db = associations_db_file
+        associations_db = associations_db_file,
+        studies_db = studies_db_file 
     shell:
         """
         Rscript create_db_from_results.R \
-            --results_dir = {current_results_dir} \
+            --results_dir {current_results_dir} \
             --studies_db_file {output.studies_db} \
             --associations_db_file {output.associations_db}
         """

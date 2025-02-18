@@ -16,7 +16,7 @@ DATA_DIR = "/local-scratch/data/hg38/genebass/"
 OUT_DIR = "/local-scratch/data/ukb-seq/downloads/genebass/"
 
 max_maf = 0.01
-min_mac = 10
+min_mac = 5
 
 # Read in hail matix table
 mt = hl.read_matrix_table(os.path.join(DATA_DIR, "variant_results.mt"))

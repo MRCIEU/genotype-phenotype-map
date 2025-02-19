@@ -12,6 +12,8 @@ library(parallel)
 
 parser <- argparser::arg_parser('Create test DuckDB from pipeline results')
 parser <- argparser::add_argument(parser, '--n_colocs', help = 'Number of studies to sample', type = 'numeric', default = 10)
+parser <- argparser::add_argument(parser, '--genes', help = 'Genes to sample', type = 'character', default = NULL)
+parser <- argparser::add_argument(parser, '--studies', help = 'Studies to sample', type = 'character', default = NULL)
 
 args <- argparser::parse_args(parser)
 
@@ -29,18 +31,47 @@ main <- function() {
     studies_con <- dbConnect(duckdb::duckdb(), file.path(last_result_dir, 'studies.db'), read_only=TRUE)
     assocs_con <- dbConnect(duckdb::duckdb(), file.path(last_result_dir, 'associations.db'), read_only=TRUE)
     
-    # Sample random studies
-    colocs_processed <- dbGetQuery(studies_con, sprintf("SELECT * FROM coloc WHERE id IN (1,2,3,4,5,6,7,8,9,10)"))
-    sampled_studies <- unique(unlist(colocs_processed %>% pull(traits)))
+    colocs_processed <- dbGetQuery(studies_con, sprintf("
+        SELECT * FROM coloc
+        WHERE id IN (1,2,3,4,5,6,7,8,9,10)"
+    ))
+    sampled_studies <- unique(unlist(colocs_processed %>% pull(study)))
+    print(sampled_studies)
+    
+    if (!is.null(args$genes)) {
+        additional_studies_processed <- dbGetQuery(studies_con, sprintf("
+            SELECT * FROM studies_processed 
+            WHERE gene IN ('%s')",
+            paste(args$genes, collapse="','")
+        ))
+        sampled_studies <- unique(c(sampled_studies, unlist(additional_studies_processed %>% pull(study_name))))
+    }
+    if (!is.null(args$studies)) {
+        additional_studies_processed <- dbGetQuery(studies_con, sprintf("
+            SELECT * FROM studies_processed 
+            WHERE study_name IN ('%s')",
+            paste(args$studies, collapse="','")
+        ))
+        sampled_studies <- unique(c(sampled_studies, unlist(additional_studies_processed %>% pull(study_name))))
+    }
 
-
-    # Get coloc results
+    # get all coloc ids that are in these studies, THEN grab all the studies that have those coloc ids
     coloc <- dbGetQuery(studies_con, sprintf("
         SELECT * FROM coloc 
-        WHERE traits IN ('%s')",
+        WHERE study IN ('%s')",
         paste(sampled_studies, collapse="','")
     ))
-    
+    coloc_ids <- unique(coloc$id)
+
+    coloc <- dbGetQuery(studies_con, sprintf("
+        SELECT * FROM coloc 
+        WHERE id IN (%s)",
+        paste(coloc_ids, collapse=",")
+    ))
+
+    sampled_studies <- unique(coloc$traits)
+    print(length(sampled_studies))
+
     # Get related data for sampled studies
     all_study_blocks <- dbGetQuery(studies_con, sprintf("
         SELECT * FROM all_study_blocks 
@@ -56,6 +87,7 @@ main <- function() {
     
     # Get unique ld_blocks for these studies
     ld_blocks <- unique(all_study_blocks$ld_block)
+    genes <- unique(all_study_blocks$known_gene)
     
     # Get related metadata
     results_metadata <- dbGetQuery(studies_con, sprintf("
@@ -67,10 +99,9 @@ main <- function() {
     # Get variant annotations for these regions
     variant_annotations <- dbGetQuery(studies_con, sprintf("
         SELECT * FROM variant_annotations 
-        WHERE ld_block IN ('%s')",
-        paste(ld_blocks, collapse="','")
+        WHERE symbol IN ('%s')",
+        paste(genes, collapse="','")
     ))
-    
     
     # Get LD information
     ld <- dbGetQuery(studies_con, sprintf("
@@ -82,8 +113,9 @@ main <- function() {
     # Get associations
     associations <- dbGetQuery(assocs_con, sprintf("
         SELECT * FROM assocs 
-        WHERE study IN ('%s')",
-        paste(all_study_blocks$study, collapse="','")
+        WHERE study IN ('%s') AND SNP IN ('%s')",
+        paste(all_study_blocks$study, collapse="','"),
+        paste(coloc$candidate_snp, collapse="','")
     ))
     
     # Create test databases

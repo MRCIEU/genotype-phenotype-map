@@ -114,6 +114,62 @@ phenotype_data <- function() {
   write(coloc_result_json, '~/coloc_result.json')
 }
 
+region_data <- function() {
+  region <- "EUR/1/110131515-111945212"
+
+  only_interesting_blocks <- dplyr::filter(all_study_blocks, ld_block == region) |>
+    dplyr::select(trait, study, unique_study_id, chr, bp, min_p, cis_trans, gene, tissue, data_type, sample_size)
+
+  only_interesting_rare_results <- dplyr::filter(rare_results, study_a %in% only_interesting_blocks$study | study_b %in% only_interesting_blocks$study)
+  only_interesting_rare_results <- additional_rare_variants_columns(studies_processed, only_interesting_rare_results)
+
+  coloc_results_for_study <- dplyr::filter(coloc_results, unique_study_a %in% only_interesting_blocks$unique_study_id | unique_study_b %in% only_interesting_blocks$unique_study_id)
+  associated_studies <- unique(c(coloc_results_for_study$unique_study_a, coloc_results_for_study$unique_study_b))
+
+  snp_a <- coloc_results_for_study$candidate_snp[match(only_interesting_blocks$unique_study_id, coloc_results_for_study$unique_study_a)]
+  snp_b <- coloc_results_for_study$candidate_snp[match(only_interesting_blocks$unique_study_id, coloc_results_for_study$unique_study_b)]
+
+  only_interesting_blocks$candidate_snp <- pmax(snp_a, snp_b, na.rm = T)
+
+  only_interesting_blocks_by_snp <- split(only_interesting_blocks, only_interesting_blocks$candidate_snp)
+  only_interesting_blocks_by_snp <- lapply(only_interesting_blocks_by_snp, function(group) {
+    return(list(
+      snp = as.character(group$candidate_snp[[1]]),
+      posterior_prob = as.numeric(coloc_results_for_study$posterior_prob[coloc_results_for_study$candidate_snp == group$candidate_snp[1]][[1]]),
+      posterior_explained_by_snp  = as.numeric(coloc_results_for_study$posterior_explained_by_snp[coloc_results_for_study$candidate_snp == group$candidate_snp[1]][[1]]),
+      studies = group |>
+        dplyr::select(-chr, -bp)
+    ))
+  })
+
+  coloc_results_for_study <- coloc_results_for_study |>
+    dplyr::filter(unique_study_a %in% only_interesting_blocks$unique_study_id & unique_study_b %in% only_interesting_blocks$unique_study_id)
+
+  coloc_results_for_study <- additional_coloc_columns(only_interesting_blocks, coloc_results_for_study)
+  coloc_results_for_study <- coloc_results_for_study |>
+    dplyr::mutate(min_p = pmin(min_p_a, min_p_b),
+                includes_trans = (!is.na(cis_trans_a) & cis_trans_a == 'trans') | (!is.na(cis_trans_b) & cis_trans_b == 'trans'),
+                includes_qtl = data_type_a != 'phenotype' | data_type_b != 'phenotype') |>
+    dplyr::select(-min_p_a, -min_p_b, -cis_trans_a, -cis_trans_b, -data_type_a, -data_type_b, -posterior_explained_by_snp, -unique_study_a, -unique_study_b)
+
+  variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F)
+  region_metadata <- dplyr::filter(variant_annotations, CHR == 1 & BP >= 110131515 & BP <= 111945212) |>
+    dplyr::group_by(symbol) |>
+    dplyr::summarise(min_bp = min(BP), max_bp = max(BP), chr = unique(CHR))
+
+  name <- gsub('/', ' ', region)
+  name <- gsub(' - ', '-', name)
+  combined_data <- list(
+    name = name,
+    studies = only_interesting_blocks_by_snp,
+    colocs = coloc_results_for_study,
+    metadata = region_metadata
+    # rare_variants = only_interesting_rare_results
+  )
+
+  coloc_result_json <- jsonlite::toJSON(combined_data, pretty = T, auto_unbox = T)
+  write(coloc_result_json, '~/region_result.json')
+}
 
 # Getting data for SNP
 snp_data <- function() {
@@ -185,13 +241,4 @@ gene_data <- function() {
 
 }
 
-phenotype_data()
-
-
-bim <- vroom::vroom(file.path(ld_reference_panel_dir, 'EUR/full.bim'), show_col_types = F, col_names=F)
-max_bp_by_chr <- bim |>
-  dplyr::group_by(X1) |>
-  dplyr::summarise(max_bp = max(X4)) |>
-  dplyr::ungroup()
-
-print(max_bp_by_chr)
+region_data()

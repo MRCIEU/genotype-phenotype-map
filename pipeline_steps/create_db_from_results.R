@@ -55,6 +55,7 @@ main <- function() {
 
 
   coloc <- raw_coloc_results %>%
+    filter(posterior_prob > 0.5) %>%
     mutate(id=1:n()) %>%
     separate_longer_delim(cols=traits, delim=", ")
 

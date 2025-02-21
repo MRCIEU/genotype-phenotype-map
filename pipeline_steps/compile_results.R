@@ -23,10 +23,10 @@ main <- function() {
     dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
-  cleanup_studies_with_no_extractions(pipeline_data)
+  # cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
-  rare_results <- compile_rare_results(pipeline_data)
+  # rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
   pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
@@ -34,14 +34,14 @@ main <- function() {
   validate_results(pipeline_data, variant_annotations, coloc_results)
 
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
-  vroom::vroom_write(rare_results, args$rare_results_file)
+  vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(pipeline_data$all_study_blocks, args$all_study_blocks_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
   #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
-  file.copy(args$studies_processed, dirname(args$coloc_results))
+  file.copy(args$studies_processed, dirname(args$coloc_results_file))
 
   if (is.na(TEST_RUN)) {
     rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
@@ -98,7 +98,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
     raw_coloc_results = raw_coloc_results,
-    rare_results = compare_rare_results,
+    raw_rare_results = compare_rare_results,
     studies_processed = studies_processed
   ))
 }
@@ -175,7 +175,7 @@ ingested_data_integrity_check <- function() {
 }
 
 compile_rare_results <- function(pipeline_data) {
-  pairwise_results <- apply(pipeline_data$rare_results, 1, function(result) {
+  pairwise_results <- apply(pipeline_data$raw_rare_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
     if (length(ordered_traits$unique_study_id) < 2) {
@@ -195,7 +195,7 @@ compile_rare_results <- function(pipeline_data) {
     return(paired_results)
   }) |>
     dplyr::bind_rows() |>
-    dplyr::mutate(study_a = sub('.*_', '', unique_study_a), study_b = sub('.*_', '', unique_study_b))
+    dplyr::mutate(study_a = sub('_.*', '', unique_study_a), study_b = sub('_.*', '', unique_study_b))
 
   return(pairwise_results)
 }
@@ -261,7 +261,7 @@ split_string_into_vector <- function(input_string) {
   return(unlist(strsplit(input_string, '[ ]')))
 }
 
-validate_results <- function(pipeline_data, variant_annotations, coloc_results, rare_results) {
+validate_results <- function(pipeline_data, variant_annotations, coloc_results) {
   #check that all unique ids in coloc results are in finemapped studies
   all_unique_ids <- unique(c(coloc_results$unique_study_a, coloc_results$unique_study_b))
   missing_unique_ids <- setdiff(all_unique_ids, pipeline_data$finemapped_studies$unique_study_id)
@@ -298,7 +298,7 @@ validate_results <- function(pipeline_data, variant_annotations, coloc_results, 
 cleanup_studies_with_no_extractions <- function(pipeline_data) {
   study_dirs  <- Sys.glob(glue::glue('{extracted_study_dir}/*'))
   empty_study_dirs <- Filter(function(e) file.size(glue::glue('{e}/extracted_snps.tsv')) == 0, study_dirs)
-  message('Studies with no extractions that will be cleaned up: ', nrow(empty_study_dirs))
+  message('Studies with no extractions that will be cleaned up: ', length(empty_study_dirs))
   for (empty_study in empty_study_dirs) {
     system(glue::glue('rm -r {empty_study}'))
   }

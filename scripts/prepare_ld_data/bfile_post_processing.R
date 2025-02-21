@@ -1,7 +1,7 @@
 source('../../pipeline_steps/constants.R')
 
 merge_all_bfiles <- function(ld_info) {
-  mergefile <- tempfile()
+  mergefile <- withr::local_tempfile()
   write.table(ld_info$ld_reference_panel_prefix, file=mergefile, row=F, col=F, qu=F)
   output <- glue::glue("{ld_reference_panel_dir}EUR/new_full")
   glue::glue("plink1.9 --merge-list {mergefile} --make-bed --out {output} --keep-allele-order") |> system()

@@ -21,8 +21,9 @@ main <- function() {
   cached_studies_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_studies.tsv')
   cached_data <- load_cached_data(finemapped_studies, cached_coloc_group_file, cached_studies_file)
   if (cached_data$skip_coloc_block) {
-      message('No new studies to compare, skipping.')
-      return()
+    message('No new common studies to compare, skipping.')
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
@@ -62,10 +63,9 @@ load_cached_data <- function(finemapped_studies, cached_coloc_group_file, cached
   }
 
   if (file.exists(cached_studies_file)) {
-    cached_studies <- vroom::vroom(cached_studies_file, show_col_types = F)
+    cached_studies <- vroom::vroom(cached_studies_file, delim = '\t', show_col_types = F)
     already_run <- setdiff(finemapped_studies$study, cached_studies$study)
     if (length(already_run) == 0) {
-      message('No new studies to compare, skipping.')
       skip_coloc_block <- TRUE
     }
   }
@@ -183,12 +183,10 @@ colocalise_based_on_group <- function(studies, groupings, metadata, cached_coloc
 find_cached_coloc_groups <- function(cached_coloc_groups, unique_group_id) {
   cached_result <- Filter(function(cached_result) cached_result$unique_group_id == unique_group_id, cached_coloc_groups)
 
-  if (length(cached_result) == 1) {
-    message('found cached hit')
+  if (length(cached_result) == 0) return(NULL)
+  else {
     return(cached_result[[1]])
   }
-  else if (length(cached_result) == 0) return(NULL)
-  else stop(glue::glue('Error: cached coloc result has multiple results for {unique_group_id}'))
 }
 
 

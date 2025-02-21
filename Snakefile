@@ -53,14 +53,17 @@ complex_compare_rare_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_c
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-raw_coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/raw_coloc_results.tsv'
-coloc_results = f'{RESULTS_DIR}{TIMESTAMP}/coloc_results.tsv'
-rare_results = f'{RESULTS_DIR}{TIMESTAMP}/rare_results.tsv'
-all_study_blocks = f'{RESULTS_DIR}{TIMESTAMP}/all_study_blocks.tsv'
-mr_results = f'{RESULTS_DIR}{TIMESTAMP}/mr_results.tsv'
-results_metadata = f'{RESULTS_DIR}{TIMESTAMP}/results_metadata.tsv'
-variant_annotations = f'{RESULTS_DIR}{TIMESTAMP}/variant_annotations.tsv'
-pipeline_summary_output = f'{RESULTS_DIR}{TIMESTAMP}/pipeline_summary.html'
+current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
+
+raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
+coloc_results = f'{current_results_dir}/coloc_results.tsv'
+rare_results = f'{current_results_dir}/rare_results.tsv'
+all_study_blocks = f'{current_results_dir}/all_study_blocks.tsv'
+results_metadata = f'{current_results_dir}/results_metadata.tsv'
+variant_annotations = f'{current_results_dir}/variant_annotations.tsv'
+pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
+studies_db_file = f'{current_results_dir}/studies.db'
+associations_db_file = f'{current_results_dir}/associations.db'
 backup_done_file = '/tmp/backup_done'
 
 rule all:
@@ -79,6 +82,8 @@ rule all:
         rare_results,
         all_study_blocks,
         results_metadata,
+        studies_db_file,
+        associations_db_file,
         backup_done_file,
         pipeline_summary_output
 
@@ -191,6 +196,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         name: f'{name}_coloc_per_ld_block'
         retries: 2
         threads: 5
+        # threads: 20
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
@@ -247,21 +253,10 @@ coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 compare_rare_rule(complex_standardisation_pattern, complex_compare_rare_pattern, 'complex')
 compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
 
-rule backup_data_dir:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-           expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
-    threads: 1
-    output: temporary(backup_done_file)
-    shell:
-        """
-        rsync -Lavzh $DATA_DIR/ld_blocks $BACKUP_DIR/data/
-        rsync -Lavzh $DATA_DIR/study $BACKUP_DIR/data/
-        touch {output}
-        """
 
 rule compile_results:
     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-           expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
+        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
     threads: 1
     output:
         coloc_results = coloc_results,
@@ -288,18 +283,30 @@ rule compile_results:
         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
         """
 
-# rule perform_mr_analysis:
-#     input:
-#         coloc_results = coloc_results,
-#         raw_coloc_results = raw_coloc_results,
-#         all_study_blocks = all_study_blocks,
-#         results_metadata = results_metadata,
-#         variant_annotations = variant_annotations
-#     output: mr_results
-#     shell:
-#         """
-#         Rscript perform_mr_analysis.R --all_study_blocks {input.all_study_blocks} --coloc_results {input.coloc_results} --mr_result_file {output}
-#         """
+rule backup_data_dir:
+    input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+    threads: 1
+    output: temporary(backup_done_file)
+    shell:
+        """
+        rsync -Lavzh --exclude='*cached*' $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+        rsync -Lavzh --ignore-missing-args $DATA_DIR/study $BACKUP_DIR/data/
+        touch {output}
+        """
+
+rule create_results_db:
+    input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+    threads: 1
+    output:
+        associations_db = associations_db_file,
+        studies_db = studies_db_file 
+    shell:
+        """
+        Rscript create_db_from_results.R \
+            --results_dir {current_results_dir} \
+            --studies_db_file {output.studies_db} \
+            --associations_db_file {output.associations_db}
+        """
 
 onsuccess:
     print('Yay!  Please look here:')
@@ -309,7 +316,6 @@ onsuccess:
     print(rare_results)
     print(all_study_blocks)
     print(results_metadata)
-    print(mr_results)
 
 onerror:
     print(':(')

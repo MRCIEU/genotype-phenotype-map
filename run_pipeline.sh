@@ -22,9 +22,17 @@ NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
 if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
-elif [[ $NUM_STUDIES -gt 200000 ]]; then
+elif [[ $NUM_STUDIES -gt 205000 ]]; then
   echo 'ERROR: too many studies to ingest at one time.  This will drastically slow down snakemake, consider splitting studies into smaller chunks'
   exit 0
+fi
+
+if [[ $EXTRA_SNAKEMAKE_ARG =~ "clean" ]]; then
+  echo "Cleaning up leftover intermediate files from previous run"
+  set +e
+  rm $DATA_DIR/ld_blocks/*/*/*/*_complete
+  EXTRA_SNAKEMAKE_ARG=
+  set -e
 fi
 
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log

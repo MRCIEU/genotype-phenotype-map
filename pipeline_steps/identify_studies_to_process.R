@@ -41,11 +41,8 @@ main <- function() {
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
     dplyr::filter(!study_name %in% studies_to_ignore$study)
 
-  lapply(studies_to_process$extracted_location, function(extracted_location) {
-    dir.create(extracted_location, showWarnings = F, recursive = T)
-  })
-
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
+
   vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 }
 

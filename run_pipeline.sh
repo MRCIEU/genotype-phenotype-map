@@ -22,7 +22,7 @@ NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
 if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
-elif [[ $NUM_STUDIES -gt 205000 ]]; then
+elif [[ $NUM_STUDIES -gt 210000 ]]; then
   echo 'ERROR: too many studies to ingest at one time.  This will drastically slow down snakemake, consider splitting studies into smaller chunks'
   exit 0
 fi
@@ -36,6 +36,9 @@ if [[ $EXTRA_SNAKEMAKE_ARG =~ "clean" ]]; then
 fi
 
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
+
+#TODO: temporary script to compile results to speed up sqtl ingestion
+apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/temp_tiny_compile_results.R --studies_to_process $DATA_DIR/pipeline_metadata/studies_to_process.tsv --studies_processed $DATA_DIR/pipeline_metadata/studies_processed.tsv &>> $snakemake_log
 
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

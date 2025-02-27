@@ -17,12 +17,14 @@ main <- function() {
     data.table::fread(file)
   }) |> dplyr::bind_rows()
 
-  all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:]+')
+  all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/).*?(?=/)') 
+
   extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_block)
 
   results <- lapply(extracted_snps_by_region, function(extracted_snps) {
     ld_block <- unique(extracted_snps$ld_block)
     ld_info <- ld_block_dirs(ld_block)
+
     merged_data <- merge(extracted_snps, studies_to_process, by='study_name')
     if (nrow(extracted_snps) == 0) return()
 

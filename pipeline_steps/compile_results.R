@@ -25,7 +25,7 @@ main <- function() {
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
   # cleanup_studies_with_no_extractions(pipeline_data)
 
-  coloc_results <- compile_coloc_results(pipeline_data)
+  # coloc_results <- compile_coloc_results(pipeline_data)
   # rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
   pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
@@ -35,7 +35,7 @@ main <- function() {
 
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
-  vroom::vroom_write(coloc_results, args$coloc_results_file)
+  vroom::vroom_write(data.frame(), args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(pipeline_data$all_study_blocks, args$all_study_blocks_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
@@ -44,7 +44,8 @@ main <- function() {
   file.copy(args$studies_processed, dirname(args$coloc_results_file))
 
   if (is.na(TEST_RUN)) {
-    rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+    # rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
   } else {
     vroom::vroom_write(data.frame(), args$pipeline_summary_file)
   }
@@ -263,20 +264,20 @@ split_string_into_vector <- function(input_string) {
 
 validate_results <- function(pipeline_data, variant_annotations, coloc_results) {
   #check that all unique ids in coloc results are in finemapped studies
-  all_unique_ids <- unique(c(coloc_results$unique_study_a, coloc_results$unique_study_b))
-  missing_unique_ids <- setdiff(all_unique_ids, pipeline_data$finemapped_studies$unique_study_id)
-  if (length(missing_unique_ids) > 0) {
-    message('Error: there are ', length(missing_unique_ids), ' unique study ids in coloc results are not in finemapped studies')
-    message(paste(missing_unique_ids, collapse = ', '))
-  }
+  # all_unique_ids <- unique(c(coloc_results$unique_study_a, coloc_results$unique_study_b))
+  # missing_unique_ids <- setdiff(all_unique_ids, pipeline_data$finemapped_studies$unique_study_id)
+  # if (length(missing_unique_ids) > 0) {
+  #   message('Error: there are ', length(missing_unique_ids), ' unique study ids in coloc results are not in finemapped studies')
+  #   message(paste(missing_unique_ids, collapse = ', '))
+  # }
 
-  #check that all SNPs in coloc results are in the variant annotations 
-  all_candidate_snps <- unique(coloc_results$candidate_snp)
-  missing_candidate_snps <- setdiff(all_candidate_snps, variant_annotations$SNP)
-  if (length(missing_candidate_snps) > 0) {
-    message('Error: there are ', length(missing_candidate_snps), ' candidate SNPs in coloc results are not in variant annotations')
-    message(paste(missing_candidate_snps, collapse = ', '))
-  } 
+  # #check that all SNPs in coloc results are in the variant annotations 
+  # all_candidate_snps <- unique(coloc_results$candidate_snp)
+  # missing_candidate_snps <- setdiff(all_candidate_snps, variant_annotations$SNP)
+  # if (length(missing_candidate_snps) > 0) {
+  #   message('Error: there are ', length(missing_candidate_snps), ' candidate SNPs in coloc results are not in variant annotations')
+  #   message(paste(missing_candidate_snps, collapse = ', '))
+  # } 
 
   #check that all studies in rare results are in studies processed
   # all_unique_studies <- unique(c(rare_results$study_a, rare_results$study_b))

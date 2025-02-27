@@ -192,4 +192,4 @@ data.table::fwrite(out, "/local-scratch/projects/genotype-phenotype-map/data/tra
 ### Studies to ignore
 ignore <- meta_all$study_name[!(meta_all$study_name %in% out$study_name)]
 
-write.table(c(az_out_studies, bm_out_studies, gb_out_studies), "pipeline_steps/data/ignore_studies_rare.tsv", row.names = F, col.names = F, quote = F)
+write.table(ignore, "pipeline_steps/data/ignore_studies_rare.tsv", row.names = F, col.names = F, quote = F)

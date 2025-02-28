@@ -1,9 +1,8 @@
 ## Date: 21-02-2025
 ## A.L.Hanson
+### De-duplicating traits within and between az, bm and gb UKB WES-derived rare variant summary stats
 
 library(dplyr)
-
-### De-duplicating binary traits within and between az, bm and gb UKB WES-derived rare variant summary stats
 
 # Read metadata
 az_meta <- "/local-scratch/data/ukb-seq/downloads/azexwas/ukb-wes-az-metadata.tsv"
@@ -151,7 +150,7 @@ meta_filt_r3 <- meta_filt_r2 |> dplyr::filter(!(study_name %in% c(gb_out_studies
 #meta_filt_r3 |> dplyr::filter(grepl("type 1 diabetes", trait, ignore.case = T))
 #meta_filt_r3 |> dplyr::filter(grepl("haemoglobin", trait, ignore.case = T))
 
-#### ----------- STEP 3: De-duplicate across study sets ------------ #####
+#### ----------- STEP 3: Collapse like traits ------------ #####
 
 # Use efo trait mappings from Gib (turns out these are actually to coarse, ignoring for now)
 

@@ -4,14 +4,42 @@
 
 library(dplyr)
 
-rare_studies <- data.table::fread("/local-scratch/projects/genotype-phenotype-map/data/trait_formatting/deduplicated_rarestudies.tsv")
-# 14419 studies
+rare_studies <- data.table::fread("/local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/deduplicated_rarestudies.tsv")
+# 14361 studies
 
 common_studies <- data.table::fread("/local-scratch/projects/genotype-phenotype-map/results/studies_processed.tsv") |> 
    filter(variant_type == "common" & grepl("ukb|ebi", study_name, ignore.case = T))
 # 9056 studies (ukb and ebi)
 
-### REMOVE NONSENSE TRAITS FROM COMMON FIRST
+#### ----------- STEP 1: Identify nonsense/non-heritable/'non-health' traits from common variant studies (not included in rare) ------------ #####
+# See /local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/showcase_outcategories.txt
+# See /local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/showcase_outfields.txt
+
+outfields <- data.table::fread("/local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/showcase_outfields.txt")
+
+# Remove fields
+out_studies <- common_studies |> 
+    filter(sub(":.*","",common_studies$trait) %in% outfields$Field_name) |>
+    dplyr::select(study_name, trait)
+
+# Write out:
+data.table::fwrite(out_studies, "/local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/commonstudies_nonsensetraits.txt", sep = "\t")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ----------- Match UKB-PPP datasets ---------- #
 common_proteins <- common_studies |> filter(data_type == "protein") |> 

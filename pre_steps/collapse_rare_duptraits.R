@@ -12,19 +12,27 @@ gb_meta <- "/local-scratch/data/ukb-seq/downloads/genebass/rare/ukb-wes-gb-metad
 meta <- lapply(list(az_meta, bm_meta, gb_meta), data.table::fread)
 names(meta) <- c("az", "bm", "gb")
 
+## Add UKB field IDs if available
+meta$bm$fieldID <- ifelse(grepl("\\([0-9]+\\)$",meta$bm$trait_original), sub(".*\\(([0-9]+)\\)$","\\1",meta$bm$trait_original), NA)
+
+gb_fields <- data.table::fread("/local-scratch/data/ukb-seq/downloads/genebass/genebass_wes_studymetadata.tsv")
+meta$gb$fieldID <- gb_fields[match(gsub(".*/","",meta$gb$study_location), gb_fields$file_name),"phenocode"]
+
+meta$az$fieldID <- ifelse(grepl("^[0-9]+#[A-Z].*", meta$az$trait_original), sub("#.*","", meta$az$trait_original), NA)
+
 #### ----------- STEP 1: Identify unique traits across study sets ------------ #####
 
 # For backman studies:
 # Keep binary traits (including ICD10 codes #41202 and type of cancer #40006)
 # Remove #20002 and #20001 self reported traits
 # Remove treatment/medication codes (larger set in gb)
-# Remove continuous traits (larger set in gb)
+# Keep continuous traits (then exclude duplicates from larger set in gb)
 
 bm_selfreported <- grep("^Non cancer illness code self reported|Self Report", meta$bm$trait_original , value = T) #365 OUT
-bm_continuous <- meta$bm |> dplyr::filter(category == "continuous") |> pull(trait_original) # 289 OUT
+bm_continuous <- meta$bm |> dplyr::filter(category == "continuous") |> pull(trait_original) # 289 KEEP
 bm_medication <- grep("Treatment or Medication|medication for", meta$bm$trait_original, ignore.case = T, value = T) #257 OUT
 
-bm_out_studies <- meta$bm |> dplyr::filter(trait_original %in% c(bm_selfreported, bm_continuous, bm_medication)) |> dplyr::pull(study_name) #911 to remove
+bm_out_studies <- meta$bm |> dplyr::filter(trait_original %in% c(bm_selfreported, bm_medication)) |> dplyr::pull(study_name) #622 to remove
 
 # For genebass studies:
 # Remove binary traits (mostly "Date first reported" and cancer codes, larger set in bm)
@@ -35,9 +43,14 @@ bm_out_studies <- meta$bm |> dplyr::filter(trait_original %in% c(bm_selfreported
 gb_binary <- meta$gb |> dplyr::filter(category == "binary") |> pull(trait_original) #725 OUT
 gb_opps <- grep("operat|^Treatment|^Medication", meta$gb$trait_original , value = T, ignore.case = T) #2139 KEEP
 gb_categorical <- meta$gb |> dplyr::filter(category == "categorical" & !(trait_original %in% gb_opps)) |> pull(trait_original) #432 OUT
-gb_continuous <- meta$gb |> dplyr::filter(category == "continuous") |> pull(trait_original) # 1233 KEEP
 
-gb_out_studies <- meta$gb |> dplyr::filter(trait_original %in% c(gb_binary, gb_categorical)) |> dplyr::pull(study_name) #1157 to remove
+gb_continuous <- meta$gb |> dplyr::filter(category == "continuous") |> pull(trait_original) # 1233 
+
+# Remove continuous variables alread in bm (based on field ID)
+bm_continuous_match <- meta$bm |> dplyr::filter(trait_original %in% c(bm_continuous)) |> dplyr::pull(fieldID) |> na.exclude()
+gb_continuous_match <- meta$gb |> dplyr::filter(category == "continuous" & fieldID %in% bm_continuous_match) |> pull(trait_original) #134 OUT
+
+gb_out_studies <- meta$gb |> dplyr::filter(trait_original %in% c(gb_binary, gb_categorical, gb_continuous_match)) |> dplyr::pull(study_name) #1300 to remove
 
 # For azexwas studies:
 # Remove binary disease traits (keeping only bm ICD10 codes as master studies, there is too much duplication here otherwise)
@@ -64,13 +77,13 @@ az_out_studies <- meta$az |> dplyr::filter(!(trait_original %in% c(az_union, az_
 
 #### ----------- STEP 2: Remove duplicate sets of studies ------------ #####
 
-out_studies <- c(az_out_studies, bm_out_studies, gb_out_studies) #9099 to remove
+out_studies <- c(az_out_studies, bm_out_studies, gb_out_studies) #8953 to remove
 
 meta_all <- do.call("rbind", meta)
-meta_filt <- meta_all |> dplyr::filter(!(study_name %in% out_studies)) # 14361 rare variant studies remaining
+meta_filt <- meta_all |> dplyr::filter(!(study_name %in% out_studies)) # 14507 rare variant studies remaining
 
 ### Studies to ignore
-ignore <- meta_all$study_name[!(meta_all$study_name %in% meta_filt$study_name)] #9099
+ignore <- meta_all$study_name[!(meta_all$study_name %in% meta_filt$study_name)] #8953
 
 #### ----------- STEP 3: Merge with EFO terms from trait mappings ------------ #####
 

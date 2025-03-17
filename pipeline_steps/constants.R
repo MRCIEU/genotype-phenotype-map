@@ -1,6 +1,7 @@
 options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
-data_dir <- Sys.getenv('DATA_DIR')
+# data_dir <- Sys.getenv('DATA_DIR')
+data_dir <- '/Users/wt23152/Documents/Projects/scratch/021/data/'
 results_dir <- Sys.getenv('RESULTS_DIR')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
@@ -39,8 +40,10 @@ available_liftover_conversions <- list(
   'GRCh38GRCh37' = glue::glue('{liftover_dir}hg38ToHg19.over.chain.gz'),
   'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
+extraction_file_types <- list(vcf='vcf', csv='csv')
 
 standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z')
+required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
 
 standardised_column_types <- vroom::cols(
   chr = vroom::col_character(),
@@ -94,4 +97,11 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+}
+
+
+update_directories_for_worker <- function(worker_guid) {
+  ld_block_data_dir <<- glue::glue('{data_dir}ld_blocks/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{data_dir}study/{worker_guid}/')
+  pipeline_metadata_dir <<- glue::glue('{data_dir}pipeline_metadata/{worker_guid}/')
 }

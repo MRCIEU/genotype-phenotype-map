@@ -55,39 +55,39 @@ main <- function() {
   }
 }
 
-check_gwas <- function(study) {
-  study_cols <- colnames(study)
+check_gwas <- function(gwas) {
+  study_cols <- colnames(gwas)
  
   if(all(required_columns %in% study_cols)) {
-    return(study)
+    return(gwas)
   }
   if(all(c('OR', 'CI_UPPER', 'CI_LOWER') %in% study_cols) && all(required_columns[c(-6, -7)] %in% study_cols)){
-    study$OR <- ifelse(study$OR == 0, 0.01, study$OR)
-    study$BETA <- log(study$OR)
+    gwas$OR <- ifelse(gwas$OR == 0, 0.01, gwas$OR)
+    gwas$BETA <- log(gwas$OR)
 
-    UCI <- log(study$CI_UPPER)
-    study$SE <- (UCI - study$BETA) / 1.96
-    study$SE <- ifelse(study$OR == 0.01, 0, study$SE)
+    UCI <- log(gwas$CI_UPPER)
+    gwas$SE <- (UCI - gwas$BETA) / 1.96
+    gwas$SE <- ifelse(gwas$OR == 0.01, 0, gwas$SE)
 
-    return(study)
+    return(gwas)
   } else {
     stop("Cannot find required columns: \n study must have BETA and SE or OR and CI_UPPER/CI_LOWER plus CHR, BP, EA, OA, EAF, P")
   }
 }
 
-filter_snps <- function(study) {
-  study_cols <- colnames(study)
+filter_snps <- function(gwas) {
+  study_cols <- colnames(gwas)
 
   if(!all(c("CHR", "P", "EAF") %in% study_cols)) {
       stop("Missing CHR, P or EAF column")
   }
 
-  study_filt <- study |>
+  gwas_filt <- gwas |>
     dplyr::filter(CHR %in% seq(1,22),
       ((EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
       (1-EAF <= eaf_max_threshold & 1-EAF >= eaf_min_threshold))) |>
     dplyr::arrange(CHR, BP)
-  return(study_filt)
+  return(gwas_filt)
 }
 
 split_into_regions <- function(gwas, study, p_value_threshold) {

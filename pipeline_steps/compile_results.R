@@ -23,10 +23,9 @@ main <- function() {
     dplyr::filter(dir.exists(ld_block_data))
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
-  # cleanup_studies_with_no_extractions(pipeline_data)
 
   coloc_results <- compile_coloc_results(pipeline_data)
-  # rare_results <- compile_rare_results(pipeline_data)
+  rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
   pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
@@ -110,12 +109,12 @@ compile_study_blocks <- function(pipeline_data) {
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  # rare_studies <- pipeline_data$standardised_studies |>
-  #   dplyr::filter(variant_type != variant_types$common) |>
-  #   dplyr::select(study, file, chr, bp, min_p, cis_trans, ld_block) |>
-  #   dplyr::mutate(unique_study_id = NA, known_gene = if ('GENE' %in% colnames(rare_results)) rare_results$GENE else NA)
+  rare_studies <- merge(pipeline_data$raw_rare_results, pipeline_data$standardised_studies, by.x = 'study', by.y = 'study_name') |>
+    dplyr::filter(variant_type != variant_types$common) |>
+    dplyr::select(study, file, chr, bp, min_p, cis_trans, ld_block) |>
+    dplyr::mutate(known_gene = if ('GENE' %in% colnames(rare_results)) rare_results$GENE else NA)
 
-  # all_studies <- rbind(finemapped_studies, rare_studies)
+  all_studies <- rbind(finemapped_studies, rare_studies)
   return(finemapped_studies)
 }
 
@@ -156,23 +155,16 @@ aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
   return(metadata_per_ld_block)
 }
 
-#TODO: what should be checked here?
-ingested_data_integrity_check <- function() {
-  ld_blocks <- vroom::vroom('data/ld_blocks.tsv')
-  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 
-  lapply(ld_info$ld_block_data, function(ld_block) {
-    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
-    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
-    if (!file.exists(extracted_studies_file)) return()
-
-    extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
-    imputed_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
-    finemapped_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
-
-  })
+compile_rare_results <- function(pipeline_data) {
+  rare_results <- pipeline_data$raw_rare_results |>
+      dplyr::mutate(id=1:n()) %>%
+      tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+      dplyr::rename(study = traits) |>
+      dplyr::mutate(study = sub('_.*', '', study))
+  return(rare_results)
 }
+
 
 compile_rare_results <- function(pipeline_data) {
   pairwise_results <- apply(pipeline_data$raw_rare_results, 1, function(result) {
@@ -203,9 +195,6 @@ compile_rare_results <- function(pipeline_data) {
 compile_coloc_results <- function(pipeline_data) {
   significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= posterior_prob_threshold)
 
-  # num_parallel_jobs <- 10
-  # pairwise_significant_results <- parallel::mclapply(X=1:nrow(significant_results), mc.cores=num_parallel_jobs, FUN=function(i) {
-  #   result <- significant_results[i, ]
   pairwise_significant_results <- apply(significant_results, 1, function(result) {
     traits <- strsplit(result[['traits']], ', ')[[1]]
     ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)

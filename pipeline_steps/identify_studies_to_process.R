@@ -28,7 +28,6 @@ main <- function() {
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
   tsv_studies_to_process <- calculate_tsv_studies_to_process(tsv_entries)
 
-
   # Filter out studies that have already been processed or are to be ignored
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process, tsv_studies_to_process)
 
@@ -40,10 +39,6 @@ main <- function() {
   studies_to_process <- studies_to_process |>
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
     dplyr::filter(!study_name %in% studies_to_ignore$study)
-
-  lapply(studies_to_process$extracted_location, function(extracted_location) {
-    dir.create(extracted_location, showWarnings = F, recursive = T)
-  })
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
   vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))

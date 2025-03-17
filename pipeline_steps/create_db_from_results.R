@@ -20,148 +20,271 @@ parser <- argparser::add_argument(parser, '--associations_db_file', help = 'Duck
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  all_study_blocks <- fread(file.path(args$results_dir, "all_study_blocks.tsv"))
-  str(all_study_blocks)
-  raw_coloc_results <- fread(file.path(args$results_dir, "raw_coloc_results.tsv"))
-  str(raw_coloc_results)
-  # rare_results <- fread(file.path(results_dir, "rare_results.tsv"))
-  # str(rare_results)
-  results_metadata <- fread(file.path(args$results_dir, "results_metadata.tsv"))
-  str(results_metadata)
-  studies_processed <- fread(file.path(args$results_dir, "studies_processed.tsv"))
-  str(studies_processed)
-  variant_annotations <- fread(file.path(args$results_dir, "variant_annotations.tsv"))
-  str(variant_annotations)
-  variant_annotations_full <- fread(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"))
-  names(variant_annotations)
-  names(variant_annotations_full)
+  study_extractions <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
+  raw_coloc_results <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F)
+  rare_results <- vroom::vroom(file.path(results_dir, "rare_results.tsv"), show_col_types = F)
+  results_metadata <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F)
+  studies <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F)
+  variant_annotations_full <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+   dplyr::mutate(id=1:n())
 
-  results_metadata <- results_metadata %>%
-    tidyr::separate(ld_block, into=c("pop", "chr", "start", "end"), sep="[/-]", remove=FALSE) %>%
-    mutate(chr=as.integer(chr), start=as.integer(start), end=as.integer(end))
-
-
-  vl <- mclapply(1:nrow(results_metadata), \(i) {
-    message(i)
+  results_metadata <- results_metadata |>
+    tidyr::separate(ld_block, into=c("pop", "chr", "start", "end"), sep="[/-]", remove=FALSE) |>
+    dplyr::mutate(id=1:n(), chr=as.integer(chr), start=as.integer(start), end=as.integer(end))
+  
+  vl <- parallel::mclapply(1:nrow(results_metadata), mc.cores=50, \(i) {
     chr <- results_metadata$chr[i]
     start <- results_metadata$start[i]
     end <- results_metadata$end[i]
     ind <- variant_annotations_full$CHR == chr & variant_annotations_full$BP >= start & variant_annotations_full$BP < end
-    tibble(SNP=variant_annotations$SNP[ind], ld_block=results_metadata$ld_block[i])
-  }, mc.cores=50) %>% bind_rows()
+    tibble::tibble(SNP=variant_annotations_full$SNP[ind], ld_block=results_metadata$ld_block[i])
+  }) |> dplyr::bind_rows()
 
-  variant_annotations_full <- left_join(variant_annotations_full, vl, by="SNP")
-  str(variant_annotations_full)
+  variant_annotations_full <- dplyr::left_join(variant_annotations_full, vl, by="SNP")
 
+  coloc <- raw_coloc_results |>
+    dplyr::filter(posterior_prob > 0.5) |>
+    dplyr::mutate(coloc_group_id=1:n()) |>
+    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+    dplyr::rename(unique_study_id=traits)
+  
+  #this is needed to deduplicate study / snp pairs.
+  coloc <- coloc |>
+    dplyr::group_by(unique_study_id, candidate_snp) |>
+    dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup()
 
-  coloc <- raw_coloc_results %>%
-    filter(posterior_prob > 0.5) %>%
-    mutate(id=1:n()) %>%
-    separate_longer_delim(cols=traits, delim=", ")
+  rare_results <- rare_results |>
+    dplyr::mutate(id=1:n()) |>
+    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+    dplyr::rename(unique_study_id=traits)
 
-  s <- all_study_blocks %>%
-    select(study, unique_study_id, chr, bp, min_p, cis_trans, ld_block, known_gene)
+  s <- study_extractions |>
+    dplyr::select(study, unique_study_id, chr, bp, min_p, cis_trans, ld_block, known_gene)
 
-  coloc <- coloc %>%
-    left_join(s, by=c("traits"="unique_study_id"))
+  coloc <- coloc |> dplyr::left_join(s, by="unique_study_id")
 
-  str(coloc)
-
-
-  # all_study_blocks includes variants that don't colocalise with anything. Need to get those, but they don't have variant IDs
-  head(all_study_blocks)
-  dim(all_study_blocks)
-  temp <- select(variant_annotations_full, SNP, CHR, BP)
-  all_study_blocks <- left_join(all_study_blocks, temp, by=c("chr"="CHR", "bp"="BP")) %>% filter(!duplicated(unique_study_id))
-  dim(all_study_blocks)
+  # study_extractions includes variants that don't colocalise with anything. Need to get those, but they don't have variant IDs
+  head(study_extractions)
+  dim(study_extractions)
+  temp <- dplyr::select(variant_annotations_full, SNP, CHR, BP)
+  study_extractions <- study_extractions |> 
+    dplyr::left_join(study_extractions, temp, by=c("chr"="CHR", "bp"="BP")) |>
+    dplyr::filter(!duplicated(unique_study_id))
+  dim(study_extractions)
 
   # Find finemapped results that colocalise with nothing
-  no_coloc <- subset(all_study_blocks, !unique_study_id %in% coloc$traits) %>% rename(candidate_snp=SNP, traits=unique_study_id) %>% mutate(id=(1:nrow(.))+nrow(coloc))
-  coloc <- bind_rows(coloc, no_coloc)
+  no_coloc <- study_extractions |> 
+    dplyr::filter(study_extractions, !unique_study_id %in% coloc$unique_study_id) |>
+    dplyr::rename(candidate_snp=SNP, traits=unique_study_id) |>
+    dplyr::mutate(id=(1:nrow(.))+nrow(coloc))
+
+  coloc <- dplyr::bind_rows(coloc, no_coloc)
 
   # Add ld_block to variant_annotations
-  temp <- coloc %>% filter(!duplicated(candidate_snp)) %>% select(candidate_snp, ld_block)
-  variant_annotations <- left_join(variant_annotations, temp, by=c("SNP"="candidate_snp"))
+  temp <- coloc |> dplyr::filter(!duplicated(candidate_snp)) |> dplyr::select(candidate_snp, ld_block)
+  variant_annotations <- dplyr::left_join(variant_annotations_full, temp, by=c("SNP"="candidate_snp"))
   dim(variant_annotations)
   head(variant_annotations)
 
+  ld_blocks <- unique(study_extractions$ld_block)
+  generate_ld_obj(ld_blocks[1], variant_annotations)
+  ldl <- parallel::mclapply(ld_blocks, \(x) generate_ld_obj(x, variant_annotations), mc.cores=30) |> bind_rows()
 
-  # Generate LD
-  ld_dir <- file.path(data_dir, "/ld_reference_panel_hg38")
+  studies_db <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
+  
+  tables_config <- list(
+    "study_extractions" = list(
+      data = study_extractions,
+      keys = c("id"),
+      foreign_keys = list(
+        list(columns = c("study"), references = list(table = "studies", columns = c("id")))
+      )
+    ),
+    "results_metadata" = list(
+      data = results_metadata
+    ),
+    "studies" = list(
+      data = studies,
+      keys = c("id")
+    ),
+    "variant_annotations" = list(
+      data = variant_annotations_full,
+      keys = c("id"),
+      unique = c("SNP")
+    ),
+    "colocalisations" = list(
+      data = coloc,
+      keys = c("study_extraction_id", "candidate_snp"),
+      foreign_keys = list(
+        list(columns = c("study_extraction_id"), references = list(table = "study_extractions", columns = c("id"))),
+        list(columns = c("candidate_snp"), references = list(table = "variant_annotations", columns = c("SNP")))
+      )
+    ),
+    "ld" = list(
+      data = ldl,
+      keys = c("lead", "variant", "ld_block")
+    )
+  )
 
-  generate_ld_obj <- function(ld_dir, ld_block, all_study_blocks) {
-    message(ld_block)
-    ld <- suppressMessages(fread(file.path(ld_dir, paste0(ld_block, ".unphased.vcor1"))))
-    # ld <- readr::read_tsv(file.path(ld_dir, paste0(ld_block, ".unphased.vcor1")), col_names=FALSE)
-    ldvars <- suppressMessages(scan(file.path(ld_dir, paste0(ld_block, ".unphased.vcor1.vars")), character()))
-    names(ld) <- ldvars
-    ld$lead <- ldvars
-    ind <- which(ldvars %in% all_study_blocks$SNP)
-    ld <- ld[ind,]
-    ldl <- tidyr::pivot_longer(ld, cols=-lead, names_to="variant", values_to="r") %>% filter(r^2 > 0.8 | variant %in% ld$lead) %>% filter(lead != variant) %>% mutate(ld_block=ld_block)
-    return(ldl)
+  # Process each table
+  for (table_name in names(tables_config)) {
+    append_unique_rows(
+      studies_db, 
+      table_name, 
+      tables_config[[table_name]]$data,
+      tables_config[[table_name]]$keys,
+      tables_config[[table_name]]$unique
+    )
+
+    # Add foreign key constraints if defined
+    if (!is.null(tables_config[[table_name]]$foreign_keys)) {
+      for (fk in tables_config[[table_name]]$foreign_keys) {
+        fk_cols <- paste(fk$columns, collapse = ", ")
+        ref_cols <- paste(fk$references$columns, collapse = ", ")
+        sql <- sprintf(
+          "ALTER TABLE %s ADD CONSTRAINT fk_%s_%s FOREIGN KEY (%s) REFERENCES %s(%s)",
+          table_name,
+          table_name,
+          fk$references$table,
+          fk_cols,
+          fk$references$table,
+          ref_cols
+        )
+        tryCatch({
+          dbExecute(studies_db, sql)
+        }, error = function(e) {
+          message(sprintf("Could not add foreign key constraint to %s: %s", table_name, e$message))
+        })
+      }
+    }
   }
 
-  ld_blocks <- unique(all_study_blocks$ld_block)
-  generate_ld_obj(ld_dir, ld_blocks[1], variant_annotations)
-  ldl <- mclapply(ld_blocks, \(x) generate_ld_obj(ld_dir, x, variant_annotations), mc.cores=30) %>% bind_rows()
-
-
-  processed_con <- dbConnect(duckdb::duckdb(), args$studies_db_file)
-  dbWriteTable(processed_con, "all_study_blocks", all_study_blocks)
-  dbWriteTable(processed_con, "results_metadata", results_metadata)
-  dbWriteTable(processed_con, "studies_processed", studies_processed)
-  dbWriteTable(processed_con, "variant_annotations", variant_annotations_full)
-  dbWriteTable(processed_con, "coloc", coloc)
-  dbWriteTable(processed_con, "ld", ldl)
-
-  dbDisconnect(processed_con, shutdown=TRUE)
+  dbDisconnect(studies_db, shutdown=TRUE)
 
   # Extract summary statistics
-  varids <- unique(all_study_blocks$SNP)
+  varids <- unique(study_extractions$SNP)
   length(varids)
-  varids_info <- tibble(varids) %>% separate(varids, into=c("chr", "other"), sep=":", remove=FALSE)
+  varids_info <- tibble(varids) |> separate(varids, into=c("chr", "other"), sep=":", remove=FALSE)
   varids_list <- lapply(1:22, \(x) {
     subset(varids_info, chr==x)$varids
   })
 
-  sources <- unique(studies_processed$source)
+  sources <- unique(studies$source)
 
-  assocs <- lapply(sources, \(x) assocs_source(studies_processed, varids_list, x, 30))
-  unlink(args$associations_db_file)
-  assocs_con <- dbConnect(duckdb::duckdb(), args$associations_db_file)
-  dbWriteTable(assocs_con, "assocs", assocs[[1]])
-  for(i in 2:length(assocs)) {
-    if(nrow(assocs[[i]]) > 0) {
-      dbAppendTable(assocs_con, "assocs", assocs[[i]])
+  assocs <- lapply(sources, \(x) assocs_source(studies, varids_list, x, 30))
+  associations_db <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
+  
+  if (dbExistsTable(associations_db, "assocs")) {
+    # Get existing combinations of SNP and study
+    existing_keys <- dbGetQuery(associations_db, "SELECT DISTINCT SNP, study FROM assocs")
+    
+    # Process each source's associations
+    for (i in seq_along(assocs)) {
+      if (nrow(assocs[[i]]) > 0) {
+        # Filter out existing combinations
+        new_rows <- dplyr::anti_join(assocs[[i]], existing_keys, by = c("SNP", "study"))
+        if (nrow(new_rows) > 0) {
+          dbAppendTable(associations_db, "assocs", new_rows)
+        }
+      }
+    }
+  } else {
+    dbWriteTable(associations_db, "assocs", assocs[[1]])
+    for(i in 2:length(assocs)) {
+      if(nrow(assocs[[i]]) > 0) {
+        dbAppendTable(associations_db, "assocs", assocs[[i]])
+      }
     }
   }
-  dbDisconnect(assocs_con, shutdown=TRUE)
+  
+  dbDisconnect(associations_db, shutdown=TRUE)
 
   ensure_dbs_are_valid()
 }
 
+generate_ld_obj <- function(ld_block, study_extractions) {
+  message(ld_block)
+  ld <- suppressMessages(vroom::vroom(file.path(ld_reference_panel_dir, paste0(ld_block, ".unphased.vcor1")), show_col_types = F))
+  ldvars <- suppressMessages(scan(file.path(ld_reference_panel_dir, paste0(ld_block, ".unphased.vcor1.vars")), character()))
+  names(ld) <- ldvars
+  ld$lead <- ldvars
+  ind <- which(ldvars %in% study_extractions$SNP)
+  ld <- ld[ind,]
+  ldl <- tidyr::pivot_longer(ld, cols=-lead, names_to="variant", values_to="r") |>
+    dplyr::filter(r^2 > 0.8 | variant %in% ld$lead) |> 
+    dplyr::filter(lead != variant) |>
+    dplyr::mutate(ld_block=ld_block)
+  return(ldl)
+}
+
+# Helper function to append new rows while avoiding duplicates
+append_unique_rows <- function(conn, table_name, new_data, key_columns, unique_columns = NULL) {
+  if (duckdb::dbExistsTable(conn, table_name)) {
+    # Get existing keys
+    key_cols_str <- paste(key_columns, collapse = ", ")
+    existing_keys <- duckdb::dbGetQuery(conn, sprintf("SELECT DISTINCT %s FROM %s", key_cols_str, table_name))
+    
+    # Filter out existing rows
+    existing_keys <- as.data.frame(existing_keys)
+    new_rows <- dplyr::anti_join(new_data, existing_keys, by = key_columns)
+    
+    if (nrow(new_rows) > 0) {
+      duckdb::dbAppendTable(conn, table_name, new_rows)
+    }
+    message(sprintf("Added %d new rows to %s", nrow(new_rows), table_name))
+  } else {
+    # Create table with primary key and unique constraints
+    cols <- paste(names(new_data), sapply(new_data, function(x) typeof(x)), collapse=", ")
+    key_cols_str <- paste(key_columns, collapse = ", ")
+    
+    # Add PRIMARY KEY and UNIQUE constraints
+    constraints <- sprintf("PRIMARY KEY (%s)", key_cols_str)
+    if (!is.null(unique_columns)) {
+      unique_constraints <- sapply(unique_columns, function(col) {
+        sprintf("UNIQUE (%s)", col)
+      })
+      constraints <- paste(c(constraints, unique_constraints), collapse=", ")
+    }
+    
+    sql <- sprintf("CREATE TABLE %s (%s, %s)", table_name, cols, constraints)
+    duckdb::dbExecute(conn, sql)
+    
+    # Insert the data
+    duckdb::dbAppendTable(conn, table_name, new_data)
+    message(sprintf("Created new table %s with %d rows", table_name, nrow(new_data)))
+  }
+}
 
 extract_variants <- function(varids_list, path, study="study") {
-  file_list <- list.files(path) %>% file.path(path, .) %>% grep("pre_filter", ., value=TRUE, invert=TRUE) %>% grep("dentist", ., value=TRUE, invert=TRUE)
+  file_list <- list.files(path) |>
+    file.path(path, .) |>
+    grep("pre_filter", ., value=TRUE, invert=TRUE) |>
+    grep("dentist", ., value=TRUE, invert=TRUE)
+
   if(length(file_list) == 0) {
     return(NULL)
   }
+
   ext <- lapply(file_list, \(y) {
-    chr <- strsplit(basename(y), "_")[[1]][2] %>% as.numeric()
+    chr <- strsplit(basename(y), "_")[[1]][2] |> as.numeric()
     tryCatch({
-      fread(y) %>% filter(SNP %in% varids_list[[chr]]) %>% select(SNP, BETA, SE, IMPUTED, P, EAF) %>% mutate(study=study)
+      vroom::vroom(y, show_col_types = F) |>
+        dplyr::filter(SNP %in% varids_list[[chr]]) |>
+        dplyr::select(SNP, BETA, SE, IMPUTED, P, EAF) |>
+        dplyr::mutate(study=study)
     }, error=function(e) {
       message(e)
       return(NULL)
     })
   }) 
-  ext <- ext[!sapply(ext, is.null)] %>% bind_rows()
+
+  ext <- ext[!sapply(ext, is.null)] |> dplyr::bind_rows()
   return(ext)
 }
 
-assocs_source <- function(studies_processed, varids_list, source, mc.cores=10) {
-  assocs <- mclapply(studies_processed$study_name[studies_processed$source == source], \(x) {
+assocs_source <- function(studies, varids_list, source, mc.cores=10) {
+  assocs <- parallel::mclapply(studies$study_name[studies$source == source], \(x) {
     message(x)
     path <- file.path(data_dir, "/study/", x, "imputed")
     tryCatch({
@@ -172,7 +295,7 @@ assocs_source <- function(studies_processed, varids_list, source, mc.cores=10) {
     })
   }, mc.cores=mc.cores)
   assocs <- assocs[!sapply(assocs, \(x) inherits(x, "try-error"))]
-  return(assocs %>% bind_rows())
+  return(assocs |> dplyr::bind_rows())
 }
 
 ensure_dbs_are_valid <- function() {

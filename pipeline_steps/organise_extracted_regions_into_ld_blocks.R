@@ -22,7 +22,11 @@ main <- function() {
     data.table::fread(file)
   }) |> dplyr::bind_rows()
 
-  all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/).*?(?=/)')
+  if (!is.null(args$worker_guid)) {
+    all_extracted_snps$study_name <- args$worker_guid
+  } else {
+    all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/).*?(?=/)')
+  }
   extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_block)
 
   results <- lapply(extracted_snps_by_region, function(extracted_snps) {

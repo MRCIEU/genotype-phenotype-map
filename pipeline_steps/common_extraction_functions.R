@@ -117,8 +117,7 @@ run_liftover <- function(bed_file_input, bed_file_output, input_build, output_bu
   lifover_binary <- paste0(liftover_dir, "liftOver")
   liftover_conversion <- available_liftover_conversions[[paste0(input_build, output_build)]]
 
-  chain_file <- paste0(liftover_dir, liftover_conversion)
-  liftover_command <- paste(lifover_binary, bed_file_input, chain_file, bed_file_output, unmapped)
+  liftover_command <- paste(lifover_binary, bed_file_input, liftover_conversion, bed_file_output, unmapped)
   system(liftover_command, wait=T)
 }
 

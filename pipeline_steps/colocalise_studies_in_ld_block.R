@@ -1,20 +1,36 @@
 source('constants.R')
-bp_range <- 10000
+bp_range <- 50000
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function() {
+  if (!is.null(args$worker_guid)) {
+    update_directories_for_worker(args$worker_guid)
+  }
   ld_info <- ld_block_dirs(args$ld_block)
   block <- vroom::vroom(glue::glue('{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv'), show_col_types=F) |>
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
-    finemapped_studies <- vroom::vroom(finemapped_file, delim = '\t', show_col_types = F) |>
+    finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
       dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
+  }
+
+  if (!is.null(args$worker_guid)) {
+    #TODO: uncomment after testing
+    # existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
+    existing_finemapped_studies_file <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
+    existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
+    min_bp <- min(finemapped_studies$bp)
+    max_bp <- max(finemapped_studies$bp)
+    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
+      dplyr::filter(bp > min_bp - bp_range & bp < max_bp + bp_range)
+    message(glue::glue('Found {nrow(finemapped_studies)} finemapped studies in {existing_finemapped_studies_file}'))
   }
 
   cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_groups.rds')
@@ -35,7 +51,7 @@ main <- function() {
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
-  grouped_studies <- group_studies_in_same_bp_range(finemapped_studies)
+  grouped_studies <- group_studies_in_same_bp_range(finemapped_studies, args$worker_guid)
   if (length(grouped_studies) == 0) {
     message(glue::glue('No grouped studies for LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -43,14 +59,17 @@ main <- function() {
   }
 
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies, cached_data$cached_coloc_groups)
-  saveRDS(hyprcoloc_results, cached_coloc_group_file)
-
-  hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
+  filtered_hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
 
   coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
-  studies_to_cache <- data.frame(study=finemapped_studies$study)
-  vroom::vroom_write(hyprcoloc_results, coloc_results_file)
-  vroom::vroom_write(studies_to_cache, cached_studies_file)
+  vroom::vroom_write(filtered_hyprcoloc_results, coloc_results_file)
+
+  if (is.null(args$worker_guid)) {
+    studies_to_cache <- data.frame(study=finemapped_studies$study)
+    vroom::vroom_write(studies_to_cache, cached_studies_file)
+    saveRDS(hyprcoloc_results, cached_coloc_group_file)
+  }
+
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
@@ -95,12 +114,15 @@ post_coloc_filtering <- function(hyprcoloc_results) {
 #' group_studies_in_same_bp_range, in 2 steps
 #'   1. created 'grouped_studies' list with all studies whose top snp is within bp_range, and only one study per group
 #'   2. Filter out all grouped studies that are of length 1, or that are subsets of other groups
-group_studies_in_same_bp_range <- function(studies) {
+group_studies_in_same_bp_range <- function(studies, worker_guid) {
   grouped_studies <- list()
   for(i in seq_len(nrow(studies))) {
-    study_bp <- studies[i,]$bp
     study <- studies[i,]$unique_study_id
+    study_name <- studies[i,]$study
+    if (!is.null(worker_guid) && study_name != worker_guid) next
 
+    study_bp <- studies[i,]$bp
+    print(glue::glue('finding studies within {study}, {study_bp}'))
     filtered_studies <- dplyr::filter(studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))
     filtered_studies <- filtered_studies[!duplicated(filtered_studies$study), ]
 

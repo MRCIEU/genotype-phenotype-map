@@ -1,13 +1,18 @@
 options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
-# data_dir <- Sys.getenv('DATA_DIR')
-data_dir <- '/Users/wt23152/Documents/Projects/scratch/021/data/'
+data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 lowest_rare_p_value_threshold <- 1.5e-4
+
+gpm_website_data <- list(
+  url = 'https://gpm.opengwas.io',
+  contact = 'https://gpm.opengwas.io/contact',
+  name = 'The Genotype-Phenotype Map Team'
+)
 
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
@@ -99,9 +104,8 @@ ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
 }
 
-
 update_directories_for_worker <- function(worker_guid) {
-  ld_block_data_dir <<- glue::glue('{data_dir}ld_blocks/{worker_guid}/')
-  extracted_study_dir <<- glue::glue('{data_dir}study/{worker_guid}/')
-  pipeline_metadata_dir <<- glue::glue('{data_dir}pipeline_metadata/{worker_guid}/')
+  ld_block_data_dir <<- glue::glue('{data_dir}ld_blocks/gwas_upload/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{data_dir}study/gwas_upload/{worker_guid}/')
+  pipeline_metadata_dir <<- glue::glue('{data_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }

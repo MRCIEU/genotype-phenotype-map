@@ -26,7 +26,7 @@ main <- function() {
     #   log_info("Received new message from queue")
 
     #   success <- process_message(message[[2]])
-    json_message <- '/Users/wt23152/Documents/Projects/scratch/021/data/study/guid/study_metadata.json'
+    json_message <- '/local-scratch/projects/genotype-phenotype-map/test/data/study/gwas_upload/guid/study_metadata.json'
     success <- process_message(json_message)
       
       if (success) {
@@ -52,20 +52,24 @@ process_message <- function(message) {
     dir.create(glue::glue('{extracted_study_dir}'), recursive = T, showWarnings = F)
     dir.create(glue::glue('{ld_block_data_dir}'), recursive = T, showWarnings = F)
 
+    send_email(message)
+    return(TRUE)
+
     create_study_to_process_file(message)
     extract_regions <- glue::glue("Rscript extract_regions_from_summary_stats.R",
       " --worker_guid {message$guid}")
 
-    hmm <- system(extract_regions, wait = T, intern = T)
-    print(hmm)
+    system(extract_regions, wait = T, intern = T)
+    check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'))
     extracted_regions <- vroom::vroom(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), show_col_types = F)
 
+    ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
     organise_ld_blocks <- glue::glue("Rscript organise_extracted_regions_into_ld_blocks.R",
-      " --output_file {pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv",
+      " --output_file {ld_blocks_to_colocalise_file}",
       " --worker_guid {message$guid}")
-    hmm <- system(organise_ld_blocks, wait = T, intern = T)
-    print(hmm)
-    ld_blocks_to_colocalise <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv'), show_col_types = F)
+    system(organise_ld_blocks, wait = T, intern = T)
+    check_step_complete(ld_blocks_to_colocalise_file)
+    ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
     parallel_block_processing <- 4
     blocks <- head(ld_blocks_to_colocalise$ld_block, 1)
@@ -84,29 +88,29 @@ process_message <- function(message) {
         " --ld_block {block} ", 
         " --completed_output_file {output_files$standardised}",
         " --worker_guid {message$guid}")
-      hmm <- system(standardise_regions, wait = T, intern = T)
-      print(hmm)
+      system(standardise_regions, wait = T, intern = T)
+      check_step_complete(output_files$standardised)
 
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$imputed}",
         " --worker_guid {message$guid}")
-      hmm <- system(impute_regions, wait = T, intern = T)
-      print(hmm)
+      system(impute_regions, wait = T, intern = T)
+      check_step_complete(output_files$imputed)
 
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$finemapped}",
         " --worker_guid {message$guid}")
-      hmm <- system(finemap_regions, wait = T, intern = T)
-      print(hmm)
+      system(finemap_regions, wait = T, intern = T)
+      check_step_complete(output_files$finemapped)
 
       coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {message$guid}")
-      hmm <- system(coloc_regions, wait = T, intern = T)
-      print(hmm)
+      system(coloc_regions, wait = T, intern = T)
+      check_step_complete(output_files$coloc)
     })
 
     send_email(message)
@@ -158,32 +162,30 @@ create_study_to_process_file <- function(message) {
 
 send_email <- function(message) {
   tryCatch({
-    process_gwas <- jsonlite::fromJSON(message)
-    
-    email_body <- glue::glue("
-      Pipeline processing completed for GWAS: {process_gwas$gwas_file}
-      
-      Output files:
-      Extracted: {process_gwas$output$extracted}
-      Standardised: {process_gwas$output$standardised} 
-      Imputed: {process_gwas$output$imputed}
-      Finemapped: {process_gwas$output$finemapped}
-      Coloc: {process_gwas$output$coloc}
-    ")
+    email_body <- list(
+      sendmailR::mime_part_html(
+        glue::glue(
+          "<html>",
+          "<body>",
+          "<p>Thanks for using the Genotype-Phenotype Map!</p>",
+          "<p>Your results are ready to view. <a href='{gpm_website_data$url}/results/{message$guid}'>Click here</a> to view your results.</p>",
+          "<p>If you have any questions, please <a href='{gpm_website_data$contact}'>contact us here</a>.</p>",
+          "<p>Best regards,<br>The Genotype-Phenotype Map Team</p>",
+          "</body>",
+          "</html>"
+        ),
+        type = "text/html; charset=UTF-8"
+      )
+    )
 
     sendmailR::sendmail(
       from = Sys.getenv("SMTP_FROM", "noreply@bristol.ac.uk"),
-      to = process_gwas$email,
-      subject = "Genotype-Phenotype ",
+      to = message$email,
+      subject = glue::glue("Genotype-Phenotype Map Results for {message$name}"),
       msg = email_body,
-      control = list(
-        smtpServer = Sys.getenv("SMTP_HOST"),
-        port = as.numeric(Sys.getenv("SMTP_PORT", 587)),
-        user = Sys.getenv("SMTP_USER"),
-        passwd = Sys.getenv("SMTP_PASSWORD")
-      )
+      control = list(smtpServer = "localhost")
     )
-    
+  
     return(TRUE)
   }, error = function(e) {
     message(sprintf("Error sending email: %s", e$message))
@@ -216,6 +218,13 @@ retry_dlq_messages <- function(max_retries = 10) {
     message("Error processing DLQ message: ", e$message)
     redis_conn$LPUSH(process_gwas_dlq, dlq_message[[2]])
   })
+}
+
+check_step_complete <- function(output_file) {
+  if (file.exists(output_file)) {
+  } else {
+    stop(glue::glue('Step {step} failed'))
+  }
 }
   
 main()

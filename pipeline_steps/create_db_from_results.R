@@ -14,23 +14,24 @@ parser <- argparser::arg_parser('Create DuckDB from pipeline results')
 #INPUT
 parser <- argparser::add_argument(parser, '--results_dir', help = 'Results directory of pipeline', type = 'character')
 #OUTPUT
-parser <- argparser::add_argument(parser, '--studies_db_file', help = 'DuckDB studies file', type = 'character')
-parser <- argparser::add_argument(parser, '--associations_db_file', help = 'DuckDB associations file', type = 'character')
+parser <- argparser::add_argument(parser, '--studies_db_file', help = 'Existing DuckDB studies file', type = 'character')
+parser <- argparser::add_argument(parser, '--associations_db_file', help = 'Existing DuckDB associations file', type = 'character')
 
 args <- argparser::parse_args(parser)
+
 
 main <- function() {
   study_extractions <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
   raw_coloc_results <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F)
-  rare_results <- vroom::vroom(file.path(results_dir, "rare_results.tsv"), show_col_types = F)
+  rare_results <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F)
   results_metadata <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F)
   studies <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F)
   variant_annotations_full <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-   dplyr::mutate(id=1:n())
+   dplyr::mutate(id=1:dplyr::n())
 
   results_metadata <- results_metadata |>
     tidyr::separate(ld_block, into=c("pop", "chr", "start", "end"), sep="[/-]", remove=FALSE) |>
-    dplyr::mutate(id=1:n(), chr=as.integer(chr), start=as.integer(start), end=as.integer(end))
+    dplyr::mutate(id=1:dplyr::n(), chr=as.integer(chr), start=as.integer(start), end=as.integer(end))
   
   vl <- parallel::mclapply(1:nrow(results_metadata), mc.cores=50, \(i) {
     chr <- results_metadata$chr[i]
@@ -44,7 +45,7 @@ main <- function() {
 
   coloc <- raw_coloc_results |>
     dplyr::filter(posterior_prob > 0.5) |>
-    dplyr::mutate(coloc_group_id=1:n()) |>
+    dplyr::mutate(coloc_group_id=1:dplyr::n()) |>
     tidyr::separate_longer_delim(cols=traits, delim=", ") |>
     dplyr::rename(unique_study_id=traits)
   
@@ -55,44 +56,39 @@ main <- function() {
     dplyr::ungroup()
 
   rare_results <- rare_results |>
-    dplyr::mutate(id=1:n()) |>
+    dplyr::mutate(id=1:dplyr::n()) |>
     tidyr::separate_longer_delim(cols=traits, delim=", ") |>
     dplyr::rename(unique_study_id=traits)
 
-  s <- study_extractions |>
-    dplyr::select(study, unique_study_id, chr, bp, min_p, cis_trans, ld_block, known_gene)
-
-  coloc <- coloc |> dplyr::left_join(s, by="unique_study_id")
+  coloc <- coloc |> dplyr::left_join(dplyr::select(study_extractions, study, unique_study_id, chr, bp, min_p, cis_trans, ld_block, known_gene), by="unique_study_id")
 
   # study_extractions includes variants that don't colocalise with anything. Need to get those, but they don't have variant IDs
-  head(study_extractions)
-  dim(study_extractions)
-  temp <- dplyr::select(variant_annotations_full, SNP, CHR, BP)
   study_extractions <- study_extractions |> 
-    dplyr::left_join(study_extractions, temp, by=c("chr"="CHR", "bp"="BP")) |>
+    dplyr::left_join(dplyr::select(variant_annotations_full, SNP, CHR, BP), by=c("chr"="CHR", "bp"="BP")) |>
     dplyr::filter(!duplicated(unique_study_id))
   dim(study_extractions)
 
   # Find finemapped results that colocalise with nothing
-  no_coloc <- study_extractions |> 
-    dplyr::filter(study_extractions, !unique_study_id %in% coloc$unique_study_id) |>
+  no_coloc <- dplyr::filter(study_extractions, !unique_study_id %in% coloc$unique_study_id) |>
     dplyr::rename(candidate_snp=SNP, traits=unique_study_id) |>
-    dplyr::mutate(id=(1:nrow(.))+nrow(coloc))
+    dplyr::mutate(id=(1:dplyr::n())+nrow(coloc))
 
   coloc <- dplyr::bind_rows(coloc, no_coloc)
 
   # Add ld_block to variant_annotations
-  temp <- coloc |> dplyr::filter(!duplicated(candidate_snp)) |> dplyr::select(candidate_snp, ld_block)
-  variant_annotations <- dplyr::left_join(variant_annotations_full, temp, by=c("SNP"="candidate_snp"))
-  dim(variant_annotations)
-  head(variant_annotations)
+  snp_and_ld_blocks <- coloc |>
+    dplyr::filter(!duplicated(candidate_snp)) |>
+    dplyr::select(candidate_snp, ld_block)
 
-  ld_blocks <- unique(study_extractions$ld_block)
-  generate_ld_obj(ld_blocks[1], variant_annotations)
-  ldl <- parallel::mclapply(ld_blocks, \(x) generate_ld_obj(x, variant_annotations), mc.cores=30) |> bind_rows()
+  variant_annotations_of_candidate_snps <- dplyr::left_join(variant_annotations_full, snp_and_ld_blocks, by=c("SNP"="candidate_snp"))
+
+  populate_associations_db(ld_blocks, variant_annotations_of_candidate_snps$SNP)
+
 
   studies_db <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
   
+
+
   tables_config <- list(
     "study_extractions" = list(
       data = study_extractions,
@@ -124,8 +120,17 @@ main <- function() {
     "ld" = list(
       data = ldl,
       keys = c("lead", "variant", "ld_block")
-    )
+    ),
+    "rare_results" = list(
+      data = rare_results,
+      keys = c("id")
+    ),
+    # "assocs" = list(
+    #   data = assocs,
+    #   keys = c("SNP", "study")
+    # )
   )
+
 
   # Process each table
   for (table_name in names(tables_config)) {
@@ -152,7 +157,7 @@ main <- function() {
           ref_cols
         )
         tryCatch({
-          dbExecute(studies_db, sql)
+          duckdb::dbExecute(studies_db, sql)
         }, error = function(e) {
           message(sprintf("Could not add foreign key constraint to %s: %s", table_name, e$message))
         })
@@ -160,7 +165,7 @@ main <- function() {
     }
   }
 
-  dbDisconnect(studies_db, shutdown=TRUE)
+  duckdb::dbDisconnect(studies_db, shutdown=TRUE)
 
   # Extract summary statistics
   varids <- unique(study_extractions$SNP)
@@ -177,7 +182,7 @@ main <- function() {
   
   if (dbExistsTable(associations_db, "assocs")) {
     # Get existing combinations of SNP and study
-    existing_keys <- dbGetQuery(associations_db, "SELECT DISTINCT SNP, study FROM assocs")
+    existing_keys <- duckdb::dbGetQuery(associations_db, "SELECT DISTINCT SNP, study FROM assocs")
     
     # Process each source's associations
     for (i in seq_along(assocs)) {
@@ -185,31 +190,46 @@ main <- function() {
         # Filter out existing combinations
         new_rows <- dplyr::anti_join(assocs[[i]], existing_keys, by = c("SNP", "study"))
         if (nrow(new_rows) > 0) {
-          dbAppendTable(associations_db, "assocs", new_rows)
+          duckdb::dbAppendTable(associations_db, "assocs", new_rows)
         }
       }
     }
   } else {
-    dbWriteTable(associations_db, "assocs", assocs[[1]])
+    duckdb::dbWriteTable(associations_db, "assocs", assocs[[1]])
     for(i in 2:length(assocs)) {
       if(nrow(assocs[[i]]) > 0) {
-        dbAppendTable(associations_db, "assocs", assocs[[i]])
+        duckdb::dbAppendTable(associations_db, "assocs", assocs[[i]])
       }
     }
   }
   
-  dbDisconnect(associations_db, shutdown=TRUE)
+  duckdb::dbDisconnect(associations_db, shutdown=TRUE)
 
   ensure_dbs_are_valid()
 }
 
-generate_ld_obj <- function(ld_block, study_extractions) {
+populate_associations_db <- function(ld_blocks, snps) {
+  associations_db <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
+  existing_keys <- duckdb::dbGetQuery(associations_db, "SELECT DISTINCT SNP FROM assocs")
+
+  existing_keys <- as.data.frame(existing_keys)
+  new_rows <- dplyr::anti_join(ld_blocks, existing_keys, by = "ld_block")
+  
+  if (nrow(new_rows) > 0) {
+    return()
+  }
+  ldl <- parallel::mclapply(ld_blocks, \(x) generate_ld_obj(x, snps), mc.cores=30) |> bind_rows()
+
+  duckdb::dbAppendTable(associations_db, "assocs", ldl)
+}
+
+generate_ld_obj <- function(ld_block, snps) {
   message(ld_block)
   ld <- suppressMessages(vroom::vroom(file.path(ld_reference_panel_dir, paste0(ld_block, ".unphased.vcor1")), show_col_types = F))
   ldvars <- suppressMessages(scan(file.path(ld_reference_panel_dir, paste0(ld_block, ".unphased.vcor1.vars")), character()))
   names(ld) <- ldvars
   ld$lead <- ldvars
-  ind <- which(ldvars %in% study_extractions$SNP)
+  ind <- which(ldvars %in% snps)
   ld <- ld[ind,]
   ldl <- tidyr::pivot_longer(ld, cols=-lead, names_to="variant", values_to="r") |>
     dplyr::filter(r^2 > 0.8 | variant %in% ld$lead) |> 

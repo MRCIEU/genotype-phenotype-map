@@ -1,70 +1,248 @@
 source('constants.R')
 
-library(dplyr)
-library(duckdb)
-library(data.table)
-library(validate)
-library(tidyr)
-library(R.utils)
-library(purrr)
-library(furrr)
-library(parallel)
-
 parser <- argparser::arg_parser('Create DuckDB from pipeline results')
-#INPUT
 parser <- argparser::add_argument(parser, '--results_dir', help = 'Results directory of pipeline', type = 'character')
-#OUTPUT
-parser <- argparser::add_argument(parser, '--studies_db_file', help = 'Existing DuckDB studies file', type = 'character')
-parser <- argparser::add_argument(parser, '--associations_db_file', help = 'Existing DuckDB associations file', type = 'character')
+parser <- argparser::add_argument(parser, '--gpm_db_file', help = 'Existing DuckDB GPM file', type = 'character')
 
 args <- argparser::parse_args(parser)
 
+#args <- list(results_dir='/local-scratch/projects/genotype-phenotype-map/results/2025_02_19-09_08', gpm_db_file='/local-scratch/projects/genotype-phenotype-map/results/gpm_db.db')
+simple_db_tables <- list(
+  study_sources = list(
+    name = "study_sources",
+    query = "CREATE TABLE study_sources (
+      id INTEGER PRIMARY KEY,
+      source TEXT NOT NULL,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      doi TEXT NOT NULL
+    )"
+  ),
+  ld_blocks = list(
+    name = "ld_blocks",
+    query = "CREATE TABLE ld_blocks (
+      id INTEGER PRIMARY KEY,
+      chr INTEGER NOT NULL,
+      start INTEGER NOT NULL,
+      stop INTEGER NOT NULL,
+      ancestry TEXT NOT NULL,
+      ld_block TEXT NOT NULL
+    )"
+  ),
+  studies = list(
+    name = "studies",
+    query = "CREATE TABLE studies (
+      id INTEGER PRIMARY KEY,
+      data_type TEXT NOT NULL,
+      data_format TEXT NOT NULL,
+      study_name TEXT NOT NULL,
+      trait TEXT NOT NULL,
+      ancestry TEXT NOT NULL,
+      sample_size INTEGER NOT NULL,
+      category TEXT,
+      study_location TEXT,
+      extracted_location TEXT,
+      probe TEXT,
+      tissue TEXT,
+      source_id INTEGER ,
+      variant_type TEXT,
+      p_value_threshold REAL,
+      gene TEXT,
+      FOREIGN KEY (source_id) REFERENCES study_sources(id)
+    )"
+  ),
+  study_extractions = list(
+    name = "study_extractions",
+    query = "CREATE TABLE study_extractions (
+      id INTEGER PRIMARY KEY,
+      study_id INTEGER,
+      ld_block_id INTEGER,
+      unique_study_id TEXT,
+      study TEXT,
+      file TEXT,
+      chr INTEGER,
+      bp INTEGER,
+      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      ld_block TEXT,
+      known_gene TEXT,
+      FOREIGN KEY (study_id) REFERENCES studies(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  ),
+  results_metadata = list(
+    name = "results_metadata",
+    query = "CREATE TABLE results_metadata (
+      ld_block_id INTEGER,
+      ld_block TEXT,
+      number_extracted INTEGER,
+      number_standardised INTEGER,
+      mean_snps_removed_by_reference_panel REAL,
+      number_imputed INTEGER,
+      significant_snps_imputed INTEGER,
+      significant_imputed_snps_filtered INTEGER,
+      number_finemapped INTEGER,
+      finemapped_per_imputed REAL,
+      num_finemap_failed INTEGER,
+      standardised_time_taken REAL,
+      imputed_time_taken REAL,
+      finemapped_time_taken REAL,
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  ),
+  snp_annotations = list(
+    name = "snp_annotations",
+    query = "CREATE TABLE snp_annotations (
+      id INTEGER PRIMARY KEY,
+      SNP TEXT,
+      CHR INTEGER,
+      BP INTEGER,
+      EA TEXT,
+      OA TEXT,
+      EAF REAL,
+      Feature_type TEXT,
+      Consequence TEXT,
+      cDNA_position TEXT,
+      CDS_position TEXT,
+      Protein_position TEXT,
+      Amino_acids TEXT,
+      Codons TEXT,
+      RSID TEXT,
+      impact TEXT,
+      symbol TEXT,
+      biotype TEXT,
+      strand TEXT,
+      canonical TEXT
+    )"
+  ),
+  colocalisations = list(
+    name = "colocalisations",
+    query = "CREATE TABLE colocalisations (
+      study_extraction_id INTEGER,
+      snp_id INTEGER,
+      ld_block_id INTEGER,
+      coloc_group_id INTEGER,
+      iteration INTEGER,
+      unique_study_id TEXT,
+      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
+      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
+      posterior_prob_explained_by_snp REAL CHECK (posterior_prob_explained_by_snp BETWEEN 0 AND 1),
+      candidate_snp TEXT,
+      study_id INTEGER,
+      chr INTEGER,
+      bp INTEGER,
+      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      known_gene TEXT,
+      PRIMARY KEY (study_extraction_id, snp_id),
+      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
+      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  ),
+  rare_results = list(
+    name = "rare_results",
+    query = "CREATE TABLE rare_results (
+      study_extraction_id INTEGER,
+      snp_id INTEGER,
+      unique_study_id TEXT,
+      candidate_snp TEXT,
+      rare_result_group_id INTEGER,
+      study_id INTEGER,
+      chr INTEGER,
+      bp INTEGER,
+      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      ld_block_id INTEGER,
+      known_gene TEXT,
+      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
+      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  )
+)
+
+complex_db_tables <- list(
+  ld = list(
+    name = "ld",
+    query = "CREATE TABLE ld (
+      lead_snp_id INTEGER,
+      variant_snp_id INTEGER,
+      ld_block_id INTEGER,
+      r2 REAL CHECK (r2 BETWEEN 0 AND 1),
+      PRIMARY KEY (lead_snp_id, variant_snp_id),
+      FOREIGN KEY (lead_snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (variant_snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  ),
+  assocs = list(
+    name = "assocs",
+    query = "CREATE TABLE assocs (
+      snp_id INTEGER,
+      study_id INTEGER,
+      BETA REAL CHECK (BETA BETWEEN -1 AND 1),
+      SE REAL CHECK (SE > 0),
+      IMPUTED BOOLEAN,
+      P REAL CHECK (P BETWEEN 0 AND 1),
+      EAF REAL CHECK (EAF BETWEEN 0 AND 1),
+      PRIMARY KEY (snp_id, study_id),
+      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (study_id) REFERENCES studies(id)
+    )"
+  )
+)
 
 main <- function() {
-  study_extractions <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
-  raw_coloc_results <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F)
-  rare_results <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F)
-  results_metadata <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F)
-  studies <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F)
-  variant_annotations_full <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-   dplyr::mutate(id=1:dplyr::n())
+  if (file.exists(args$gpm_db_file)) {
+    file.copy(args$gpm_db_file, args$results_dir)
+  }
+  new_gpm_db <- file.path(args$results_dir, "gpm_db.db")
 
-  results_metadata <- results_metadata |>
-    tidyr::separate(ld_block, into=c("pop", "chr", "start", "end"), sep="[/-]", remove=FALSE) |>
-    dplyr::mutate(id=1:dplyr::n(), chr=as.integer(chr), start=as.integer(start), end=as.integer(end))
-  
-  vl <- parallel::mclapply(1:nrow(results_metadata), mc.cores=50, \(i) {
-    chr <- results_metadata$chr[i]
-    start <- results_metadata$start[i]
-    end <- results_metadata$end[i]
-    ind <- variant_annotations_full$CHR == chr & variant_annotations_full$BP >= start & variant_annotations_full$BP < end
-    tibble::tibble(SNP=variant_annotations_full$SNP[ind], ld_block=results_metadata$ld_block[i])
-  }) |> dplyr::bind_rows()
+  simple_db_tables$study_sources$data <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F) |>
+    dplyr::mutate(id=1:dplyr::n())
+  simple_db_tables$ld_blocks$data <- vroom::vroom(file.path("data/ld_blocks.tsv"), show_col_types = F) |>
+    dplyr::mutate(id=1:dplyr::n(), ld_block=paste0(ancestry, "/", chr, "/", start, "-", stop))
 
-  variant_annotations_full <- dplyr::left_join(variant_annotations_full, vl, by="SNP")
+  simple_db_tables$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F) |>
+    dplyr::left_join(dplyr::select(simple_db_tables$study_sources$data, name, id) |> dplyr::rename(source_id=id), by=c("source"="name"))
+  simple_db_tables$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
 
-  coloc <- raw_coloc_results |>
-    dplyr::filter(posterior_prob > 0.5) |>
-    dplyr::mutate(coloc_group_id=1:dplyr::n()) |>
-    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-    dplyr::rename(unique_study_id=traits)
-  
-  #this is needed to deduplicate study / snp pairs.
-  coloc <- coloc |>
-    dplyr::group_by(unique_study_id, candidate_snp) |>
-    dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
-    dplyr::ungroup()
-
-  rare_results <- rare_results |>
+  # Remove the studies that don't have any study extractions
+  simple_db_tables$studies$data <- simple_db_tables$studies$data |>
+    dplyr::filter(study_name %in% simple_db_tables$study_extractions$data$study) |>
     dplyr::mutate(id=1:dplyr::n()) |>
-    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-    dplyr::rename(unique_study_id=traits)
+    dplyr::select(-reference_build, -source)
 
-  coloc <- coloc |> dplyr::left_join(dplyr::select(study_extractions, study, unique_study_id, chr, bp, min_p, cis_trans, ld_block, known_gene), by="unique_study_id")
+  simple_db_tables$study_extractions$data <- simple_db_tables$study_extractions$data |>
+    dplyr::mutate(id=1:dplyr::n()) |>
+    dplyr::left_join(dplyr::select(simple_db_tables$studies$data, study_name, id) |> dplyr::rename(study_id=id), by=c("study"="study_name")) |>
+    dplyr::left_join(dplyr::select(simple_db_tables$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
+
+  gpm_db <- duckdb::dbConnect(duckdb::duckdb(), new_gpm_db)
+  if (!file.exists(args$gpm_db_file)) {
+    lapply(simple_db_tables, \(table) DBI::dbExecute(gpm_db, table$query))
+  } 
+
+  lapply(simple_db_tables, \(table) append_unique_rows(gpm_db, table))
+  q()
+
+  simple_db_tables$snp_annotations$data <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    dplyr::mutate(id=1:dplyr::n())
+
+  colocalisations <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F) |> 
+    format_colocalisations(simple_db_tables$study_extractions$data, simple_db_tables$snp_annotations$data)
+
+  rare_results <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F) |>
+    format_rare_results(simple_db_tables$study_extractions$data, simple_db_tables$snp_annotations$data)
+
+  results_metadata <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F) |>
+    dplyr::left_join(dplyr::select(simple_db_tables$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
+
 
   # study_extractions includes variants that don't colocalise with anything. Need to get those, but they don't have variant IDs
   study_extractions <- study_extractions |> 
-    dplyr::left_join(dplyr::select(variant_annotations_full, SNP, CHR, BP), by=c("chr"="CHR", "bp"="BP")) |>
+    dplyr::left_join(dplyr::select(snp_annotations, SNP, CHR, BP), by=c("chr"="CHR", "bp"="BP")) |>
     dplyr::filter(!duplicated(unique_study_id))
   dim(study_extractions)
 
@@ -80,93 +258,13 @@ main <- function() {
     dplyr::filter(!duplicated(candidate_snp)) |>
     dplyr::select(candidate_snp, ld_block)
 
-  variant_annotations_of_candidate_snps <- dplyr::left_join(variant_annotations_full, snp_and_ld_blocks, by=c("SNP"="candidate_snp"))
+  variant_annotations_of_candidate_snps <- dplyr::left_join(snp_annotations, snp_and_ld_blocks, by=c("SNP"="candidate_snp"))
 
   populate_associations_db(ld_blocks, variant_annotations_of_candidate_snps$SNP)
 
 
   studies_db <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
   
-
-
-  tables_config <- list(
-    "study_extractions" = list(
-      data = study_extractions,
-      keys = c("id"),
-      foreign_keys = list(
-        list(columns = c("study"), references = list(table = "studies", columns = c("id")))
-      )
-    ),
-    "results_metadata" = list(
-      data = results_metadata
-    ),
-    "studies" = list(
-      data = studies,
-      keys = c("id")
-    ),
-    "variant_annotations" = list(
-      data = variant_annotations_full,
-      keys = c("id"),
-      unique = c("SNP")
-    ),
-    "colocalisations" = list(
-      data = coloc,
-      keys = c("study_extraction_id", "candidate_snp"),
-      foreign_keys = list(
-        list(columns = c("study_extraction_id"), references = list(table = "study_extractions", columns = c("id"))),
-        list(columns = c("candidate_snp"), references = list(table = "variant_annotations", columns = c("SNP")))
-      )
-    ),
-    "ld" = list(
-      data = ldl,
-      keys = c("lead", "variant", "ld_block")
-    ),
-    "rare_results" = list(
-      data = rare_results,
-      keys = c("id")
-    ),
-    # "assocs" = list(
-    #   data = assocs,
-    #   keys = c("SNP", "study")
-    # )
-  )
-
-
-  # Process each table
-  for (table_name in names(tables_config)) {
-    append_unique_rows(
-      studies_db, 
-      table_name, 
-      tables_config[[table_name]]$data,
-      tables_config[[table_name]]$keys,
-      tables_config[[table_name]]$unique
-    )
-
-    # Add foreign key constraints if defined
-    if (!is.null(tables_config[[table_name]]$foreign_keys)) {
-      for (fk in tables_config[[table_name]]$foreign_keys) {
-        fk_cols <- paste(fk$columns, collapse = ", ")
-        ref_cols <- paste(fk$references$columns, collapse = ", ")
-        sql <- sprintf(
-          "ALTER TABLE %s ADD CONSTRAINT fk_%s_%s FOREIGN KEY (%s) REFERENCES %s(%s)",
-          table_name,
-          table_name,
-          fk$references$table,
-          fk_cols,
-          fk$references$table,
-          ref_cols
-        )
-        tryCatch({
-          duckdb::dbExecute(studies_db, sql)
-        }, error = function(e) {
-          message(sprintf("Could not add foreign key constraint to %s: %s", table_name, e$message))
-        })
-      }
-    }
-  }
-
-  duckdb::dbDisconnect(studies_db, shutdown=TRUE)
-
   # Extract summary statistics
   varids <- unique(study_extractions$SNP)
   length(varids)
@@ -180,9 +278,9 @@ main <- function() {
   assocs <- lapply(sources, \(x) assocs_source(studies, varids_list, x, 30))
   associations_db <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
   
-  if (dbExistsTable(associations_db, "assocs")) {
+  if (DBI::dbExistsTable(associations_db, "assocs")) {
     # Get existing combinations of SNP and study
-    existing_keys <- duckdb::dbGetQuery(associations_db, "SELECT DISTINCT SNP, study FROM assocs")
+    existing_keys <- DBI::dbGetQuery(associations_db, "SELECT DISTINCT SNP, study FROM assocs")
     
     # Process each source's associations
     for (i in seq_along(assocs)) {
@@ -190,27 +288,70 @@ main <- function() {
         # Filter out existing combinations
         new_rows <- dplyr::anti_join(assocs[[i]], existing_keys, by = c("SNP", "study"))
         if (nrow(new_rows) > 0) {
-          duckdb::dbAppendTable(associations_db, "assocs", new_rows)
+          DBI::dbAppendTable(associations_db, "assocs", new_rows)
         }
       }
     }
   } else {
-    duckdb::dbWriteTable(associations_db, "assocs", assocs[[1]])
+    DBI::dbWriteTable(associations_db, "assocs", assocs[[1]])
     for(i in 2:length(assocs)) {
       if(nrow(assocs[[i]]) > 0) {
-        duckdb::dbAppendTable(associations_db, "assocs", assocs[[i]])
+        DBI::dbAppendTable(associations_db, "assocs", assocs[[i]])
       }
     }
   }
   
-  duckdb::dbDisconnect(associations_db, shutdown=TRUE)
+  DBI::dbDisconnect(associations_db, shutdown=TRUE)
 
   ensure_dbs_are_valid()
 }
 
+format_colocalisations <- function(colocalisations, study_extractions, snp_annotations) {
+  study_extractions_subset <- study_extractions |>
+    dplyr::select(id, study_id, unique_study_id, chr, bp, min_p, cis_trans, ld_block_id, known_gene) |>
+    dplyr::rename(study_extraction_id=id)
+
+  snp_annotations_subset <- snp_annotations |>
+    dplyr::select(SNP, id) |>
+    dplyr::rename(snp_id=id)
+
+  colocalisations <- colocalisations |>
+    dplyr::filter(posterior_prob > 0.5) |>
+    dplyr::mutate(coloc_group_id=1:dplyr::n()) |>
+    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+    dplyr::rename(unique_study_id=traits) |>
+    dplyr::left_join(study_extractions_subset, by="unique_study_id") |>
+    dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="SNP"), relationship="many-to-many") |>
+    dplyr::group_by(study_extraction_id, snp_id) |>
+    dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup()
+
+  return(colocalisations)
+}
+
+format_rare_results <- function(rare_results, study_extractions, snp_annotations) {
+  study_extractions_subset <- study_extractions |>
+    dplyr::select(id, study_id, unique_study_id, chr, bp, min_p, cis_trans, ld_block_id, known_gene) |>
+    dplyr::rename(study_extraction_id=id)
+
+  snp_annotations_subset <- snp_annotations |>
+    dplyr::select(SNP, id) |>
+    dplyr::rename(snp_id=id)
+
+  rare_results <- rare_results |>
+    dplyr::mutate(rare_result_group_id=1:dplyr::n()) |>
+    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+    dplyr::rename(unique_study_id=traits) |>
+    dplyr::left_join(study_extractions_subset, by="unique_study_id") |>
+    dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="SNP"), relationship="many-to-many")
+
+  return(rare_results)
+}
+
+
 populate_associations_db <- function(ld_blocks, snps) {
   associations_db <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
-  existing_keys <- duckdb::dbGetQuery(associations_db, "SELECT DISTINCT SNP FROM assocs")
+  existing_keys <- DBI::dbGetQuery(associations_db, "SELECT DISTINCT SNP FROM assocs")
 
   existing_keys <- as.data.frame(existing_keys)
   new_rows <- dplyr::anti_join(ld_blocks, existing_keys, by = "ld_block")
@@ -218,9 +359,8 @@ populate_associations_db <- function(ld_blocks, snps) {
   if (nrow(new_rows) > 0) {
     return()
   }
-  ldl <- parallel::mclapply(ld_blocks, \(x) generate_ld_obj(x, snps), mc.cores=30) |> bind_rows()
 
-  duckdb::dbAppendTable(associations_db, "assocs", ldl)
+  DBI::dbAppendTable(associations_db, "assocs", ldl)
 }
 
 generate_ld_obj <- function(ld_block, snps) {
@@ -238,42 +378,26 @@ generate_ld_obj <- function(ld_block, snps) {
   return(ldl)
 }
 
-# Helper function to append new rows while avoiding duplicates
-append_unique_rows <- function(conn, table_name, new_data, key_columns, unique_columns = NULL) {
-  if (duckdb::dbExistsTable(conn, table_name)) {
-    # Get existing keys
-    key_cols_str <- paste(key_columns, collapse = ", ")
-    existing_keys <- duckdb::dbGetQuery(conn, sprintf("SELECT DISTINCT %s FROM %s", key_cols_str, table_name))
-    
-    # Filter out existing rows
-    existing_keys <- as.data.frame(existing_keys)
-    new_rows <- dplyr::anti_join(new_data, existing_keys, by = key_columns)
-    
-    if (nrow(new_rows) > 0) {
-      duckdb::dbAppendTable(conn, table_name, new_rows)
-    }
-    message(sprintf("Added %d new rows to %s", nrow(new_rows), table_name))
+create_table <- function(db, query) {
+  DBI::dbExecute(db, query)
+}
+
+append_unique_rows <- function(conn, table) {
+  if (is.null(table$data) || nrow(table$data) == 0) return()
+  # If the id column doesn't exist, we can replace the table, otherwise we need to filter out existing rows
+  id_column_exists <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = 'id';", table$name))
+
+  if (id_column_exists$count_star== 0) {
+    DBI::dbExecute(conn, glue::glue("TRUNCATE TABLE {table$name}"))
   } else {
-    # Create table with primary key and unique constraints
-    cols <- paste(names(new_data), sapply(new_data, function(x) typeof(x)), collapse=", ")
-    key_cols_str <- paste(key_columns, collapse = ", ")
-    
-    # Add PRIMARY KEY and UNIQUE constraints
-    constraints <- sprintf("PRIMARY KEY (%s)", key_cols_str)
-    if (!is.null(unique_columns)) {
-      unique_constraints <- sapply(unique_columns, function(col) {
-        sprintf("UNIQUE (%s)", col)
-      })
-      constraints <- paste(c(constraints, unique_constraints), collapse=", ")
-    }
-    
-    sql <- sprintf("CREATE TABLE %s (%s, %s)", table_name, cols, constraints)
-    duckdb::dbExecute(conn, sql)
-    
-    # Insert the data
-    duckdb::dbAppendTable(conn, table_name, new_data)
-    message(sprintf("Created new table %s with %d rows", table_name, nrow(new_data)))
+    existing_ids <- DBI::dbGetQuery(conn, glue::glue("SELECT DISTINCT id FROM {table$name}"))
+    table$data <- dplyr::anti_join(table$data, existing_ids, by = "id")
   }
+
+  if (nrow(table$data) > 0) {
+    DBI::dbAppendTable(conn, table$name, table$data)
+  }
+  message(sprintf("Added %d new rows to %s", nrow(table$data), table$name))
 }
 
 extract_variants <- function(varids_list, path, study="study") {

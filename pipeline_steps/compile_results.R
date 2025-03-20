@@ -7,7 +7,7 @@ parser <- argparser::arg_parser('Compile results from pipeline')
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
 #OUTPUT
-parser <- argparser::add_argument(parser, '--all_study_blocks_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
@@ -27,7 +27,7 @@ main <- function() {
   coloc_results <- compile_coloc_results(pipeline_data)
   rare_results <- compile_rare_results(pipeline_data)
   variant_annotations <- annotate_variants(pipeline_data)
-  pipeline_data$all_study_blocks <- compile_study_blocks(pipeline_data)
+  pipeline_data$study_extractions <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   validate_results(pipeline_data, variant_annotations, coloc_results)
@@ -36,7 +36,7 @@ main <- function() {
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
   vroom::vroom_write(coloc_results, args$coloc_results_file)
   vroom::vroom_write(variant_annotations, args$variant_annotations_file)
-  vroom::vroom_write(pipeline_data$all_study_blocks, args$all_study_blocks_file)
+  vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
   #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)

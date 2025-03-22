@@ -3,7 +3,7 @@ source('pipeline_steps/constants.R')
 parser <- argparser::arg_parser('Post pipeline cleanup')
 #INPUT
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
-
+parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
 args <- argparser::parse_args(parser)
 
 main <- function() {
@@ -15,6 +15,12 @@ main <- function() {
 
   #only copy the studies_processed.tsv file to the results directory once everything else was successful
   file.copy(args$studies_processed, results_dir)
+
+  if (is.na(TEST_RUN)) {
+    rmarkdown::render("pipeline_steps/pipeline_summary.Rmd", output_file = args$pipeline_summary_file)
+  } else {
+    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
+  }
 }
 
 cleanup_studies_with_no_extractions <- function() {

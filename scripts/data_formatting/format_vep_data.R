@@ -1,5 +1,5 @@
 source('../../pipeline_steps/constants.R')
-vep <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_variantannotations_hg38_altered.txt'))
+vep <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_rare_variantannotations_hg38_altered.txt'))
 
 vep <- vep |>
   tidyr::separate(col = "Uploaded_variation", into = c("CHR", "BP", "EA", "OA"), sep = "[:_]", remove = F) |>
@@ -18,4 +18,4 @@ vep <- vep |>
   dplyr::rename(SNP = Uploaded_variation, RSID = Existing_variation) |>
   dplyr::select(-Location, -Allele, -Feature, -Extra)
 
-vroom::vroom_write(vep, glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'))
+vroom::vroom_write(vep, glue::glue('{variant_annotation_dir}/vep_rare_annotations_hg38.tsv.gz'))

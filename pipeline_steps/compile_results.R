@@ -8,12 +8,9 @@ parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studie
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
 #OUTPUT
 parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
-parser <- argparser::add_argument(parser, '--raw_coloc_results_file', help = 'Raw coloc result files to amalgamate', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
-parser <- argparser::add_argument(parser, '--variant_annotations_file', help = 'Variant Annotations of Candidate SNPs', type = 'character')
-parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
 
 args <- argparser::parse_args(parser)
 
@@ -24,29 +21,14 @@ main <- function() {
 
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
 
-  coloc_results <- compile_coloc_results(pipeline_data)
-  rare_results <- compile_rare_results(pipeline_data)
-  variant_annotations <- annotate_variants(pipeline_data)
   pipeline_data$study_extractions <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
-  validate_results(pipeline_data, variant_annotations, coloc_results)
-
-  vroom::vroom_write(pipeline_data$raw_coloc_results, args$raw_coloc_results_file)
+  vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
-  vroom::vroom_write(coloc_results, args$coloc_results_file)
-  vroom::vroom_write(variant_annotations, args$variant_annotations_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
-  #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
-  vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)
-  file.copy(args$studies_processed, dirname(args$coloc_results_file))
 
-  if (is.na(TEST_RUN)) {
-    rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
-  } else {
-    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
-  }
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {
@@ -118,15 +100,6 @@ compile_study_blocks <- function(pipeline_data) {
   return(finemapped_studies)
 }
 
-# TODO: add all finemapped lead snps to this list in the future
-annotate_variants <- function(pipeline_data) {
-  coloc_candidate_snps <- unique(pipeline_data$raw_coloc_results$candidate_snp)
-  variant_annotations <- vroom::vroom(glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz'), show_col_types = F) |>
-    dplyr::filter(SNP %in% coloc_candidate_snps)
-  
-  return(variant_annotations)
-}
-
 aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
   metadata_per_ld_block <- lapply(ld_info$block, function(block) {
     extracted_per_block <- dplyr::filter(pipeline_data$extracted_studies, ld_block == block)
@@ -155,142 +128,5 @@ aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
   return(metadata_per_ld_block)
 }
 
-
-compile_rare_results <- function(pipeline_data) {
-  rare_results <- pipeline_data$raw_rare_results |>
-      dplyr::mutate(id=1:n()) %>%
-      tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-      dplyr::rename(study = traits) |>
-      dplyr::mutate(study = sub('_.*', '', study))
-  return(rare_results)
-}
-
-
-compile_rare_results <- function(pipeline_data) {
-  pairwise_results <- apply(pipeline_data$raw_rare_results, 1, function(result) {
-    traits <- strsplit(result[['traits']], ', ')[[1]]
-    ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
-    if (length(ordered_traits$unique_study_id) < 2) {
-      return()
-    }
-    paired_results <- data.frame(t(utils::combn(ordered_traits$unique_study_id, 2))) |>
-      dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
-      dplyr::mutate(candidate_snp = as.character(result['candidate_snp']))
-
-    #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
-    #causal pathway, as defined by ordered_data_types (ie. gene_expression -> protein -> phenotype)
-    #this might have to get more complicated, as relationships between types is not always easy to define
-    first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
-    second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
-    paired_results$directed <- first_study_data_types != second_study_data_types & second_study_data_types == ordered_data_types$phenotype
-
-    return(paired_results)
-  }) |>
-    dplyr::bind_rows() |>
-    dplyr::mutate(study_a = sub('_.*', '', unique_study_a), study_b = sub('_.*', '', unique_study_b))
-
-  return(pairwise_results)
-}
-
-compile_coloc_results <- function(pipeline_data) {
-  significant_results <- dplyr::filter(pipeline_data$raw_coloc_results, !is.na(traits) & !is.na(posterior_prob) & posterior_prob >= posterior_prob_threshold)
-
-  pairwise_significant_results <- apply(significant_results, 1, function(result) {
-    traits <- strsplit(result[['traits']], ', ')[[1]]
-    ordered_traits <- order_trait_by_type(traits, pipeline_data$studies_processed)
-    if (length(ordered_traits$unique_study_id) < 2) {
-      return()
-    }
-
-    paired_results <- data.frame(t(utils::combn(ordered_traits$unique_study_id, 2))) |>
-      dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
-      dplyr::mutate(posterior_prob = as.numeric(result['posterior_prob']),
-                    candidate_snp = as.character(result['candidate_snp']),
-                    posterior_explained_by_snp = as.numeric(result['posterior_explained_by_snp'])
-      )
-
-    #this figures out if each paired result is 'directed', meaning if the relationship is from earlier in the biological
-    #causal pathway, as defined by ordered_data_types (ie. gene_expression -> protein -> phenotype)
-    #this might have to get more complicated, as relationships between types is not always easy to define
-    first_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_a, ordered_traits$unique_study_id)]
-    second_study_data_types <- ordered_traits$data_type[match(paired_results$unique_study_b, ordered_traits$unique_study_id)]
-    paired_results$directed <- first_study_data_types != second_study_data_types & second_study_data_types == ordered_data_types$phenotype
-
-    return(paired_results)
-  }) |> dplyr::bind_rows()
-
-  #remove duplicate rows (of either study_a, study_b or study_b, study_a)
-  cols <- c('unique_study_a','unique_study_b')
-  pairwise_significant_results <- pairwise_significant_results[!duplicated(t(apply(pairwise_significant_results[cols], 1, sort))), ]
-
-  #remove duplicates where the same 2 studies are colocalising on the same candidate SNP
-  duplicate_candidate_snps <- data.frame(
-    study_a=sub('_.*', '', pairwise_significant_results$unique_study_a),
-    study_b=sub('_.*', '', pairwise_significant_results$unique_study_b),
-    candidate_snp=pairwise_significant_results$candidate_snp
-  )
-  same_candidate_snp_duplicates <- duplicated(duplicate_candidate_snps)
-  pairwise_significant_results <- pairwise_significant_results[!same_candidate_snp_duplicates,]
-
-  return(pairwise_significant_results)
-}
-
-order_trait_by_type <- function(traits, studies_processed) {
-  trait_studies <- sub('_.*', '', traits)
-  studies <- dplyr::filter(studies_processed, study_name %in% trait_studies) |>
-    dplyr::select(study_name, data_type)
-
-  studies <- studies[order(studies$study_name), ]
-  studies$unique_study_id <- traits[order(traits)]
-  studies <- studies[order(match(studies$data_type, ordered_data_types)), ]
-  return(studies)
-}
-
-split_string_into_vector <- function(input_string) {
-  return(unlist(strsplit(input_string, '[ ]')))
-}
-
-validate_results <- function(pipeline_data, variant_annotations, coloc_results) {
-  #check that all unique ids in coloc results are in finemapped studies
-  all_unique_ids <- unique(c(coloc_results$unique_study_a, coloc_results$unique_study_b))
-  missing_unique_ids <- setdiff(all_unique_ids, pipeline_data$finemapped_studies$unique_study_id)
-  if (length(missing_unique_ids) > 0) {
-    message('Error: there are ', length(missing_unique_ids), ' unique study ids in coloc results are not in finemapped studies')
-    message(paste(missing_unique_ids, collapse = ', '))
-  }
-
-  #check that all SNPs in coloc results are in the variant annotations 
-  all_candidate_snps <- unique(coloc_results$candidate_snp)
-  missing_candidate_snps <- setdiff(all_candidate_snps, variant_annotations$SNP)
-  if (length(missing_candidate_snps) > 0) {
-    message('Error: there are ', length(missing_candidate_snps), ' candidate SNPs in coloc results are not in variant annotations')
-    message(paste(missing_candidate_snps, collapse = ', '))
-  } 
-
-  #check that all studies in rare results are in studies processed
-  # all_unique_studies <- unique(c(rare_results$study_a, rare_results$study_b))
-  # missing_studies <- setdiff(all_unique_studies, pipeline_data$studies_processed$study_name)
-  # if (length(missing_studies) > 0) {
-  #   message('Error: there are', length(missing_studies), 'studies in rare results are not in studies processed')
-  #   stop(missing_studies)
-  # }
-
-  #check that all study ids in finemapped studies are in studies processed
-  all_study_ids <- unique(pipeline_data$finemapped_studies$study)
-  missing_study_ids <- setdiff(all_study_ids, pipeline_data$studies_processed$study_name)
-  if (length(missing_study_ids) > 0) {
-    message('Error: there are', length(missing_study_ids), 'study ids in finemapped studies are not in studies processed')
-    message(paste(missing_study_ids, collapse = ', '))
-  }
-}
-
-cleanup_studies_with_no_extractions <- function(pipeline_data) {
-  study_dirs  <- Sys.glob(glue::glue('{extracted_study_dir}/*'))
-  empty_study_dirs <- Filter(function(e) file.size(glue::glue('{e}/extracted_snps.tsv')) == 0, study_dirs)
-  message('Studies with no extractions that will be cleaned up: ', length(empty_study_dirs))
-  for (empty_study in empty_study_dirs) {
-    system(glue::glue('rm -r {empty_study}'))
-  }
-}
 
 main()

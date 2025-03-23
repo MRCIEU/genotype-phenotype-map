@@ -5,9 +5,13 @@ minimum_gwas_size <- 150
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID (if invoked by worker)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
 main <- function() {
+  if (!is.null(args$worker_guid)) {
+    update_directories_for_worker(args$worker_guid)
+  }
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
@@ -33,11 +37,14 @@ main <- function() {
         return()
       }
 
+      print(head(study))
       result <- perform_standardisation(study, ld_matrix_info)
+      print(head(result$gwas))
 
       if (nrow(result$gwas) < minimum_gwas_size && study[['variant_type']] == variant_types$common) {
         return()
       }
+      print(head(result$gwas))
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 
@@ -192,81 +199,6 @@ filter_gwas <- function(gwas, is_rare_study = F) {
 
 compress_alleles <- function(alleles) {
   sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else allele)
-}
-
-# TODO: if we need this in the future, maybe move it to the extract step
-#' convert_reference_build_via_liftover: Change reference build of BP marker from allow list of liftOver conversions
-#'
-#' @param gwas: GWAS (file or dataframe) of standardised GWAS
-#' @param input_reference_build: string reference build, found in reference_builds list
-#' @param output_reference_build: string reference build that GWAS is to change to, found in reference_builds list
-#' @return gwas input is altered and returned
-convert_reference_build_via_liftover <- function(gwas,
-                                                 input_reference_build=reference_builds$GRCh37,
-                                                 output_reference_build=reference_builds$GRCh38) {
-  if (input_reference_build == output_reference_build) {
-    return(gwas)
-  }
-
-  chain_file <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
-  if (is.null(chain_file)) {
-    stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
-                 "Reference builds must be one of:", reference_builds), collapse = " "))
-  }
-
-  original_gwas_size <- nrow(gwas)
-
-  bed_file_input <- tempfile(fileext = ".bed")
-  bed_file_output <- tempfile(fileext = ".bed")
-  unmapped <- tempfile(fileext = ".unmapped")
-
-  create_bed_file_from_gwas(gwas, bed_file_input)
-  run_liftover(bed_file_input, bed_file_output, chain_file, unmapped)
-  gwas <- use_bed_file_to_update_gwas(gwas, bed_file_output)
-
-  updated_gwas_size <- nrow(gwas)
-  if (updated_gwas_size < original_gwas_size) {
-    message(paste("Warning: During liftover conversion, the GWAS lost", original_gwas_size - updated_gwas_size,
-                  "rows out of ", original_gwas_size))
-  }
-
-  return(gwas)
-}
-
-create_bed_file_from_gwas <- function(gwas, output_file) {
-  bed_format <- tibble::tibble(
-    CHR = glue::glue('chr{gwas$CHR}'),
-    BP1 = gwas$BP,
-    BP2 = gwas$BP+1,
-    CHRBP = glue::glue('{CHR}:{BP1}-{BP2}')
-  )
-
-  vroom::vroom_write(bed_format, output_file, col_names=F, delim=" ")
-  return(bed_format)
-}
-
-run_liftover <- function(bed_file_input, bed_file_output, chain_file, unmapped) {
-  lifover_binary <- glue::glue('{liftover_dir}liftOver')
-
-  liftover_command <- paste(lifover_binary, bed_file_input, chain_file, bed_file_output, unmapped)
-  system(liftover_command, wait=T)
-}
-
-use_bed_file_to_update_gwas <- function(gwas, bed_file) {
-  liftover_bed <- vroom::vroom(bed_file, col_names=F, show_col_types=F)
-  liftover_bed$X1 <- gsub("chr", "", liftover_bed$X1)
-  liftover_bed$X4 <- sub(".*:(\\d+)-.*", "\\1", liftover_bed$X4, perl=T)
-
-  bed_map <- tibble::tibble(
-    NEW_BP = liftover_bed$X2,
-    ORIGINAL_CHRBP = paste(liftover_bed$X1, liftover_bed$X4, sep=":")
-  )
-
-  matching <- match(gwas$CHRBP, bed_map$ORIGINAL_CHRBP)
-  gwas$BP <- bed_map$NEW_BP[matching]
-  gwas <- gwas[!is.na(gwas$BP), !names(gwas) %in% "CHRBP", drop = FALSE]
-
-  return(gwas)
 }
 
 main()

@@ -12,5 +12,5 @@ european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,
 *,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json
 A*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
 B*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-Cells_Cultured_fibroblasts*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-Colon*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+C*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+Esophagus_G*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json

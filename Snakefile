@@ -56,14 +56,12 @@ ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
 raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
-coloc_results = f'{current_results_dir}/coloc_results.tsv'
 rare_results = f'{current_results_dir}/rare_results.tsv'
-all_study_blocks = f'{current_results_dir}/all_study_blocks.tsv'
+study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
 variant_annotations = f'{current_results_dir}/variant_annotations.tsv'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
-studies_db_file = f'{current_results_dir}/studies.db'
-associations_db_file = f'{current_results_dir}/associations.db'
+gpm_db_file = f'{RESULTS_DIR}/gpm_db.db'
 backup_done_file = '/tmp/backup_done'
 
 rule all:
@@ -77,13 +75,11 @@ rule all:
         expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
         expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
-        # raw_coloc_results,
-        # coloc_results,
-        # rare_results,
-        # all_study_blocks,
-        # results_metadata,
-        # studies_db_file,
-        # associations_db_file,
+        raw_coloc_results,
+        rare_results,
+        study_extractions,
+        results_metadata,
+        gpm_db_file
         # backup_done_file,
         # pipeline_summary_output
 
@@ -255,37 +251,33 @@ compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
 
 #TODO: tempoararily removing all post processing steps, for speed
 
-# rule compile_results:
-#     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-#         expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
-#     threads: 1
-#     output:
-#         coloc_results = coloc_results,
-#         raw_coloc_results = raw_coloc_results,
-#         rare_results = rare_results,
-#         all_study_blocks = all_study_blocks,
-#         results_metadata = results_metadata,
-#         variant_annotations = variant_annotations,
-#         pipeline_summary = pipeline_summary_output
-#     shell:
-#         """
-#         mkdir -p $(dirname {output})
-#         Rscript compile_results.R \
-#             --studies_to_process {studies_to_process_file} \
-#             --studies_processed {studies_processed_file} \
-#             --all_study_blocks_file {output.all_study_blocks} \
-#             --raw_coloc_results_file {output.raw_coloc_results} \
-#             --rare_results_file {output.rare_results} \
-#             --coloc_results_file {output.coloc_results} \
-#             --compiled_results_metadata_file {output.results_metadata} \
-#             --variant_annotations_file {output.variant_annotations} \
-#             --pipeline_summary_file {output.pipeline_summary}
+rule compile_results:
+    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
+    threads: 1
+    output:
+        raw_coloc_results = raw_coloc_results,
+        rare_results = rare_results,
+        study_extractions = study_extractions,
+        results_metadata = results_metadata,
+        variant_annotations = variant_annotations,
+        # pipeline_summary = pipeline_summary_output
+    shell:
+        """
+        mkdir -p $(dirname {output})
+        Rscript compile_results.R \
+            --studies_to_process {studies_to_process_file} \
+            --studies_processed {studies_processed_file} \
+            --study_extractions_file {output.study_extractions} \
+            --rare_results_file {output.rare_results} \
+            --coloc_results_file {output.raw_coloc_results} \
+            --compiled_results_metadata_file {output.results_metadata}
 
 #         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
 #         """
 
 # rule backup_data_dir:
-#     input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+#     input: raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
 #     threads: 1
 #     output: temporary(backup_done_file)
 #     shell:
@@ -295,27 +287,24 @@ compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
 #         touch {output}
 #         """
 
-# rule create_results_db:
-#     input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
-#     threads: 1
-#     output:
-#         associations_db = associations_db_file,
-#         studies_db = studies_db_file 
-#     shell:
-#         """
-#         Rscript create_db_from_results.R \
-#             --results_dir {current_results_dir} \
-#             --studies_db_file {output.studies_db} \
-#             --associations_db_file {output.associations_db}
-#         """
+rule create_results_db:
+    input: raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+    threads: 1
+    output:
+        gpm_db = gpm_db_file,
+    shell:
+        """
+        Rscript create_db_from_results.R \
+            --results_dir {current_results_dir} \
+            --gpm_db_file {output.gpm_db}
+        """
 
 onsuccess:
     print('Yay!  Please look here:')
-    print(pipeline_summary_output)
+    # print(pipeline_summary_output)
     print(raw_coloc_results)
-    print(coloc_results)
     print(rare_results)
-    print(all_study_blocks)
+    print(study_extractions)
     print(results_metadata)
 
 onerror:

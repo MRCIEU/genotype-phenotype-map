@@ -28,7 +28,6 @@ main <- function() {
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
   tsv_studies_to_process <- calculate_tsv_studies_to_process(tsv_entries)
 
-
   # Filter out studies that have already been processed or are to be ignored
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process, tsv_studies_to_process)
 

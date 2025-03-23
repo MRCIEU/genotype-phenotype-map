@@ -4,6 +4,7 @@ parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the ld block complex', default = F, type = 'logical')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
 args <- argparser::parse_args(parser)
 
 discard_gwas_size <- 150
@@ -11,6 +12,9 @@ minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
 main <- function() {
+  if (!is.null(args$worker_guid)) {
+    update_directories_for_worker(args$worker_guid)
+  }
   ld_info <- ld_block_dirs(args$ld_block)
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {

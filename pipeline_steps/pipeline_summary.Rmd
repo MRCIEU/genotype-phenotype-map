@@ -20,7 +20,7 @@ ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start
 load_results_data <- function(pipeline_timestamp) {
   latest_results_dir <- glue::glue('{results_dir}/{pipeline_timestamp}')
   studies_processed <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv'), show_col_types=F)
-  all_study_results <- vroom::vroom(glue::glue('{latest_results_dir}/all_study_blocks.tsv'), show_col_types=F)
+  all_study_results <- vroom::vroom(glue::glue('{latest_results_dir}/study_extractions.tsv'), show_col_types=F)
   raw_coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/raw_coloc_results.tsv'), show_col_types=F)
   coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/coloc_results.tsv'), show_col_types=F)
   results_metadata <- vroom::vroom(glue::glue('{latest_results_dir}/results_metadata.tsv'), show_col_types=F)

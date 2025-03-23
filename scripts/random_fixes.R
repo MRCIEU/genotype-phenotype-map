@@ -1,6 +1,27 @@
 source('../pipeline_steps/constants.R')
 options(dplyr.width = Inf)
 
+
+fix_bp_mismatch <- function() {
+  problematic_studies <- vroom::vroom('~/problematic_extractions.tsv')
+
+  apply(problematic_studies, 1, function(study) {
+    print(study['unique_study_id'])
+    old_bp <- study[['bp']]
+    new_bp <- vroom::vroom(study[['file']], show_col_types = F)
+    new_bp <- new_bp[which.min(new_bp$P), ]$BP
+
+    finemapped_studies_file <- glue::glue('{ld_block_data_dir}/{study[["ld_block"]]}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+    finemapped_studies$bp[finemapped_studies$unique_study_id == study['unique_study_id']] <- new_bp
+    # print(finemapped_studies[finemapped_studies$unique_study_id == study['unique_study_id'], ])
+
+    print(paste(study[['unique_study_id']], study[['chr']], old_bp, new_bp))
+
+    vroom::vroom_write(finemapped_studies, finemapped_studies_file)
+  })
+}
+
 flippy_flippy <- function(ld_block_matrix, gwas) {
   rsid_match <- match(gwas$RSID, ld_block_matrix$RSID)
 
@@ -494,4 +515,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-print_alleles_to_flip()
+fix_bp_mismatch()

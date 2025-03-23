@@ -73,8 +73,8 @@ main <- function() {
     print(length(sampled_studies))
 
     # Get related data for sampled studies
-    all_study_blocks <- dbGetQuery(studies_con, sprintf("
-        SELECT * FROM all_study_blocks 
+    study_extractions <- dbGetQuery(studies_con, sprintf("
+        SELECT * FROM study_extractions 
         WHERE unique_study_id IN ('%s')", 
         paste(sampled_studies, collapse="','")
     ))
@@ -82,12 +82,12 @@ main <- function() {
     studies_processed <- dbGetQuery(studies_con, sprintf("
         SELECT * FROM studies_processed 
         WHERE study_name IN ('%s')",
-        paste(all_study_blocks$study, collapse="','")
+        paste(study_extractions$study, collapse="','")
     ))
     
     # Get unique ld_blocks for these studies
-    ld_blocks <- unique(all_study_blocks$ld_block)
-    genes <- unique(all_study_blocks$known_gene)
+    ld_blocks <- unique(study_extractions$ld_block)
+    genes <- unique(study_extractions$known_gene)
     
     # Get related metadata
     results_metadata <- dbGetQuery(studies_con, sprintf("
@@ -114,14 +114,14 @@ main <- function() {
     associations <- dbGetQuery(assocs_con, sprintf("
         SELECT * FROM assocs 
         WHERE study IN ('%s') AND SNP IN ('%s')",
-        paste(all_study_blocks$study, collapse="','"),
+        paste(study_extractions$study, collapse="','"),
         paste(coloc$candidate_snp, collapse="','")
     ))
     
     # Create test databases
     test_studies_con <- dbConnect(duckdb::duckdb(), test_studies_db)
 
-    dbWriteTable(test_studies_con, "all_study_blocks", all_study_blocks)
+    dbWriteTable(test_studies_con, "study_extractions", study_extractions)
     dbWriteTable(test_studies_con, "results_metadata", results_metadata)
     dbWriteTable(test_studies_con, "studies_processed", studies_processed)
     dbWriteTable(test_studies_con, "variant_annotations", variant_annotations)
@@ -149,7 +149,7 @@ ensure_test_dbs_are_valid <- function(test_studies_db, test_associations_db) {
     # Get sample counts
     study_counts <- dbGetQuery(test_studies_con, "
         SELECT 
-            (SELECT COUNT(*) FROM all_study_blocks) as study_blocks,
+            (SELECT COUNT(*) FROM study_extractions) as study_extractions,
             (SELECT COUNT(*) FROM results_metadata) as metadata,
             (SELECT COUNT(*) FROM studies_processed) as studies,
             (SELECT COUNT(*) FROM variant_annotations) as variants,
@@ -162,7 +162,7 @@ ensure_test_dbs_are_valid <- function(test_studies_db, test_associations_db) {
     # Print summary
     message("Test database summary:")
     message("Studies processed: ", study_counts$studies)
-    message("Study blocks: ", study_counts$study_blocks)
+    message("Study extractions: ", study_counts$study_extractions)
     message("Results metadata: ", study_counts$metadata)
     message("Variant annotations: ", study_counts$variants)
     message("Coloc results: ", study_counts$coloc)

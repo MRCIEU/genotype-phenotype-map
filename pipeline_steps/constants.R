@@ -8,6 +8,12 @@ genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 lowest_rare_p_value_threshold <- 1.5e-4
 
+gpm_website_data <- list(
+  url = 'https://gpm.opengwas.io',
+  contact = 'https://gpm.opengwas.io/contact',
+  name = 'The Genotype-Phenotype Map Team'
+)
+
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
@@ -39,8 +45,10 @@ available_liftover_conversions <- list(
   'GRCh38GRCh37' = glue::glue('{liftover_dir}hg38ToHg19.over.chain.gz'),
   'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
+extraction_file_types <- list(vcf='vcf', csv='csv')
 
 standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z')
+required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
 
 standardised_column_types <- vroom::cols(
   chr = vroom::col_character(),
@@ -94,4 +102,10 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+}
+
+update_directories_for_worker <- function(worker_guid) {
+  ld_block_data_dir <<- glue::glue('{data_dir}ld_blocks/gwas_upload/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{data_dir}study/gwas_upload/{worker_guid}/')
+  pipeline_metadata_dir <<- glue::glue('{data_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }

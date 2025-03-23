@@ -2,11 +2,16 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Organise Extracted Regions into LD regions')
 parser <- argparser::add_argument(parser, '--output_file', help = 'Output file', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NULL)
+
 args <- argparser::parse_args(parser)
 
 main <- function() {
+  if (!is.null(args$worker_guid)) {
+    update_directories_for_worker(args$worker_guid)
+  }
   ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
-  studies_to_process <- vroom::vroom(glue::glue('{data_dir}/pipeline_metadata/studies_to_process.tsv'), show_col_types = F)
+  studies_to_process <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F)
 
   all_extracted_snp_files <- glue::glue('{studies_to_process$extracted_location}extracted_snps.tsv')
   #filtering out results without any significant SNPs, so we don't hit ulimits on the box
@@ -17,7 +22,11 @@ main <- function() {
     data.table::fread(file)
   }) |> dplyr::bind_rows()
 
-  all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/)[\\w-_:]+')
+  if (!is.null(args$worker_guid)) {
+    all_extracted_snps$study_name <- args$worker_guid
+  } else {
+    all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/).*?(?=/)')
+  }
   extracted_snps_by_region <- split(all_extracted_snps, all_extracted_snps$ld_block)
 
   results <- lapply(extracted_snps_by_region, function(extracted_snps) {

@@ -58,7 +58,7 @@ current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
 coloc_results = f'{current_results_dir}/coloc_results.tsv'
 rare_results = f'{current_results_dir}/rare_results.tsv'
-all_study_blocks = f'{current_results_dir}/all_study_blocks.tsv'
+study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
 variant_annotations = f'{current_results_dir}/variant_annotations.tsv'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
@@ -80,7 +80,7 @@ rule all:
         raw_coloc_results,
         coloc_results,
         rare_results,
-        all_study_blocks,
+        study_extractions,
         results_metadata,
         studies_db_file,
         associations_db_file,
@@ -262,7 +262,7 @@ rule compile_results:
         coloc_results = coloc_results,
         raw_coloc_results = raw_coloc_results,
         rare_results = rare_results,
-        all_study_blocks = all_study_blocks,
+        study_extractions = study_extractions,
         results_metadata = results_metadata,
         variant_annotations = variant_annotations,
         pipeline_summary = pipeline_summary_output
@@ -272,7 +272,7 @@ rule compile_results:
         Rscript compile_results.R \
             --studies_to_process {studies_to_process_file} \
             --studies_processed {studies_processed_file} \
-            --all_study_blocks_file {output.all_study_blocks} \
+            --study_extractions_file {output.study_extractions} \
             --raw_coloc_results_file {output.raw_coloc_results} \
             --rare_results_file {output.rare_results} \
             --coloc_results_file {output.coloc_results} \
@@ -284,7 +284,7 @@ rule compile_results:
         """
 
 rule backup_data_dir:
-    input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+    input: coloc_results, raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
     threads: 1
     output: temporary(backup_done_file)
     shell:
@@ -295,7 +295,7 @@ rule backup_data_dir:
         """
 
 rule create_results_db:
-    input: coloc_results, raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+    input: coloc_results, raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
     threads: 1
     output:
         associations_db = associations_db_file,
@@ -314,7 +314,7 @@ onsuccess:
     print(raw_coloc_results)
     print(coloc_results)
     print(rare_results)
-    print(all_study_blocks)
+    print(study_extractions)
     print(results_metadata)
 
 onerror:

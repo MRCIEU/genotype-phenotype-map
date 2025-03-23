@@ -2,7 +2,7 @@ FROM mrcieu/genehackman:1.0.0
 
 RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
-    apt update && apt install -y --no-install-recommends less libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync
+    apt update && apt install -y --no-install-recommends libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync
     # export PERL_MM_USE_DEFAULT=1 && cpan DBI DBD::mysql Archize::Zip
     #uncomment this if you need to start using GPU / cuda again
     # wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \

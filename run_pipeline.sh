@@ -12,7 +12,7 @@ snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake.log
 mkdir -p $(dirname $snakemake_log)
 
 export IMAGE=docker://mrcieu/genotype-phenotype-map:1.0.0
-export APPTAINER_VARS="--nv -B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
+export APPTAINER_VARS="--nv -B /local-scratch -B /projects  -B /home/$(whoami)  -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline "
 
 echo "Start time $(date)"
 apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
@@ -22,7 +22,7 @@ NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)
 if [[ $NUM_STUDIES == 0 ]]; then
   echo 'Nothing to process, exiting.'
   exit 0
-elif [[ $NUM_STUDIES -gt 210000 ]]; then
+elif [[ $NUM_STUDIES -gt 240000 ]]; then
   echo 'ERROR: too many studies to ingest at one time.  This will drastically slow down snakemake, consider splitting studies into smaller chunks'
   exit 0
 fi
@@ -38,7 +38,7 @@ fi
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
 
 #TODO: temporary script to compile results to speed up sqtl ingestion
-apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/temp_tiny_compile_results.R --studies_to_process $DATA_DIR/pipeline_metadata/studies_to_process.tsv --studies_processed $DATA_DIR/pipeline_metadata/studies_processed.tsv &>> $snakemake_log
+apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/temp_tiny_compile_results.R --studies_to_process $DATA_DIR/pipeline_metadata/studies_to_process.tsv --studies_processed $RESULTS_DIR/studies_processed.tsv &>> $snakemake_log
 
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

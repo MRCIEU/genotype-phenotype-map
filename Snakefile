@@ -195,7 +195,7 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
     rule:
         name: f'{name}_coloc_per_ld_block'
         retries: 2
-        threads: 5
+        threads: 12
         # threads: 20
         input:
             finemap = finemapping_pattern

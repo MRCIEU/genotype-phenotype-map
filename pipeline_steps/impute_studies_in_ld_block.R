@@ -7,11 +7,11 @@ p_value_filter_correlation_threshold <- 0.6
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)

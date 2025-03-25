@@ -61,7 +61,7 @@ study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
 variant_annotations = f'{current_results_dir}/variant_annotations.tsv'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
-gpm_db_file = f'{RESULTS_DIR}/gpm_db.db'
+gpm_db_file = f'{RESULTS_DIR}gpm.db'
 backup_done_file = '/tmp/backup_done'
 
 rule all:
@@ -78,8 +78,8 @@ rule all:
         raw_coloc_results,
         rare_results,
         study_extractions,
-        results_metadata,
-        gpm_db_file
+        results_metadata
+        # gpm_db_file
         # backup_done_file,
         # pipeline_summary_output
 
@@ -277,7 +277,7 @@ rule compile_results:
 #         """
 
 # rule backup_data_dir:
-#     input: raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
+#     input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
 #     threads: 1
 #     output: temporary(backup_done_file)
 #     shell:
@@ -287,17 +287,17 @@ rule compile_results:
 #         touch {output}
 #         """
 
-rule create_results_db:
-    input: raw_coloc_results, rare_results, all_study_blocks, results_metadata, variant_annotations
-    threads: 1
-    output:
-        gpm_db = gpm_db_file,
-    shell:
-        """
-        Rscript create_db_from_results.R \
-            --results_dir {current_results_dir} \
-            --gpm_db_file {output.gpm_db}
-        """
+#rule create_results_db:
+#    input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
+#    threads: 1
+#    output:
+#        gpm_db = gpm_db_file,
+#    shell:
+#        """
+#        Rscript create_db_from_results.R \
+#            --results_dir {current_results_dir} \
+#            --gpm_db_file {output.gpm_db}
+#        """
 
 onsuccess:
     print('Yay!  Please look here:')

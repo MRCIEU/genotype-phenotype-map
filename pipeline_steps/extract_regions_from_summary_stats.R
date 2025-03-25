@@ -2,12 +2,12 @@ source('constants.R')
 source('common_extraction_functions.R')
 
 parser <- argparser::arg_parser('Extract regions from a delimited file (csv, tsv)')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NULL)
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (is.null(args$worker_guid)) stop('Error: worker_guid is required for summary stats extraction')
+  if (is.na(args$worker_guid)) stop('Error: worker_guid is required for summary stats extraction')
   update_directories_for_worker(args$worker_guid)
 
   dir.create(glue::glue('{extracted_study_dir}/extracted'), showWarnings = F, recursive = T)

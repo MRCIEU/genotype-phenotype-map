@@ -4,11 +4,11 @@ bp_range <- 50000
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
@@ -21,7 +21,7 @@ main <- function() {
       dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold)
   }
 
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     #TODO: uncomment after testing
     # existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
     existing_finemapped_studies_file <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
@@ -64,7 +64,7 @@ main <- function() {
   coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
   vroom::vroom_write(filtered_hyprcoloc_results, coloc_results_file)
 
-  if (is.null(args$worker_guid)) {
+  if (is.na(args$worker_guid)) {
     studies_to_cache <- data.frame(study=finemapped_studies$study)
     vroom::vroom_write(studies_to_cache, cached_studies_file)
     saveRDS(hyprcoloc_results, cached_coloc_group_file)
@@ -119,10 +119,9 @@ group_studies_in_same_bp_range <- function(studies, worker_guid) {
   for(i in seq_len(nrow(studies))) {
     study <- studies[i,]$unique_study_id
     study_name <- studies[i,]$study
-    if (!is.null(worker_guid) && study_name != worker_guid) next
+    if (!is.na(worker_guid) && study_name != worker_guid) next
 
     study_bp <- studies[i,]$bp
-    print(glue::glue('finding studies within {study}, {study_bp}'))
     filtered_studies <- dplyr::filter(studies, (bp-bp_range) < study_bp & study_bp < (bp+bp_range))
     filtered_studies <- filtered_studies[!duplicated(filtered_studies$study), ]
 

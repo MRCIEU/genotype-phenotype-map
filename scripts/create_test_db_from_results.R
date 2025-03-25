@@ -11,7 +11,8 @@ library(furrr)
 library(parallel)
 
 parser <- argparser::arg_parser('Create test DuckDB from pipeline results')
-parser <- argparser::add_argument(parser, '--n_colocs', help = 'Number of studies to sample', type = 'numeric', default = 10)
+parser <- argparser::add_argument(parser, '--small_db', help = 'Create a small test db', type = 'logical', default = FALSE)
+parser <- argparser::add_argument(parser, '--n_colocs', help = 'Number of colocs to sample', type = 'numeric', default = 10)
 parser <- argparser::add_argument(parser, '--genes', help = 'Genes to sample', type = 'character', default = NULL)
 parser <- argparser::add_argument(parser, '--studies', help = 'Studies to sample', type = 'character', default = NULL)
 
@@ -19,7 +20,12 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
     last_pipeline_run <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 1)[1]
-    last_result_dir <- glue::glue('{results_dir}/{last_pipeline_run}')
+    gpm_db_file <- file.path(results_dir, 'gpm.db')
+
+    if (args$small_db) {
+        create_small_test_db(gpm_db_file)
+    }
+    q()
     
     # Create test database paths
     test_studies_db <- file.path(last_result_dir, 'test_studies.db')
@@ -139,6 +145,107 @@ main <- function() {
     
     # Validate test databases
     ensure_test_dbs_are_valid(test_studies_db, test_associations_db)
+}
+
+create_small_test_db <- function(gpm_db_file) {
+    small_gpm_db_file <- file.path(results_dir, 'gpm_small.db')
+    file.copy(gpm_db_file, small_gpm_db_file)
+
+    gpm_con <- duckdb::dbConnect(duckdb::duckdb(), small_gpm_db_file)
+
+    small_coloc_groups <- DBI::dbGetQuery(gpm_con, "select count(*) from studies")
+    print(small_coloc_groups)
+
+    coloc_group_counts <- DBI::dbGetQuery(gpm_con, "SELECT coloc_group_id, COUNT(coloc_group_id) AS n FROM colocalisations GROUP BY coloc_group_id")
+
+    small_coloc_groups <- coloc_group_counts |>
+        dplyr::filter(n > 5 & n < 10) |>
+        head(50)
+
+    small_coloc_groups <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT c.coloc_group_id, se.id, se.study_id, se.known_gene FROM colocalisations c
+                INNER JOIN study_extractions se ON c.study_extraction_id = se.id 
+                WHERE c.coloc_group_id IN (%s) AND se.known_gene IS NOT NULL",
+        paste(small_coloc_groups$coloc_group_id, collapse=",")
+    ))
+
+    coloc_group_ids_to_keep <- small_coloc_groups |>
+        dplyr::pull(coloc_group_id) |>
+        unique()
+    
+    colocs_to_keep <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT coloc_group_id, study_extraction_id, snp_id FROM colocalisations WHERE coloc_group_id IN (%s)",
+        paste(coloc_group_ids_to_keep, collapse=",")
+    ))
+
+    study_extractions_to_keep <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT id, study_id, snp_id FROM study_extractions WHERE id IN (%s)",
+        paste(colocs_to_keep$study_extraction_id, collapse=",")
+    ))
+    
+    studies_to_keep <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT id FROM studies WHERE id IN (%s)",
+        paste(study_extractions_to_keep$study_id, collapse=",")
+    ))
+
+    snp_ids_to_keep <- unique(c(study_extractions_to_keep$snp_id, colocs_to_keep$snp_id))
+
+    snp_annotations_to_keep <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT * FROM snp_annotations WHERE id IN (%s)",
+        paste(snp_ids_to_keep, collapse=",")
+    ))
+    
+    associations_to_keep <- DBI::dbGetQuery(
+        gpm_con,
+        sprintf("SELECT * FROM assocs WHERE snp_id IN (%s) AND study_id IN (%s)",
+        paste(snp_ids_to_keep, collapse=","),
+        paste(study_extractions_to_keep$study_id, collapse=",")
+    ))
+
+    print(nrow(associations_to_keep))
+    print(nrow(study_extractions_to_keep))
+    print(nrow(colocs_to_keep))
+    print(nrow(snp_annotations_to_keep))
+    print(nrow(studies_to_keep))
+    print(head(studies_to_keep))
+
+    DBI::dbExecute(gpm_con, "CREATE TEMP TABLE studies_to_keep AS SELECT id FROM studies WHERE FALSE")
+    DBI::dbExecute(gpm_con, sprintf("INSERT INTO studies_to_keep VALUES %s",
+        paste(sprintf("(%s)", studies_to_keep$id), collapse=",")
+    ))
+    print('studies to keep inserted')
+    DBI::dbExecute(gpm_con, "DELETE FROM studies WHERE id NOT IN (SELECT id FROM studies_to_keep)")
+    DBI::dbExecute(gpm_con, "DROP TABLE studies_to_keep")
+    print('studies deleted')
+
+    DBI::dbExecute(gpm_con, sprintf("DELETE FROM colocalisations WHERE coloc_group_id NOT IN (%s)",
+        paste(colocs_to_keep$coloc_group_id, collapse=",")
+    ))
+    print('colocs deleted')
+
+    DBI::dbExecute(gpm_con, sprintf("DELETE FROM study_extractions WHERE id NOT IN (%s)",
+        paste(study_extractions_to_keep$id, collapse=",")
+    ))
+    print('study extractions deleted')
+    DBI::dbExecute(gpm_con, sprintf("DELETE FROM snp_annotations WHERE id NOT IN (%s)",
+        paste(snp_annotations_to_keep$id, collapse=",")
+    ))
+    print('snp annotations deleted')
+
+    DBI::dbExecute(gpm_con, sprintf("DELETE FROM assocs WHERE snp_id NOT IN (%s) AND study_id NOT IN (%s)",
+        paste(study_extractions_to_keep$snp_id, collapse=","),
+        paste(study_extractions_to_keep$study_id, collapse=",")
+    ))
+    print('associations deleted')
+
+    DBI::dbExecute(gpm_con, "TRUNCATE TABLE ld, rare_results")
+    print('ld and rare results truncated')
+    DBI::dbDisconnect(gpm_con, shutdown=TRUE)
 }
 
 ensure_test_dbs_are_valid <- function(test_studies_db, test_associations_db) {

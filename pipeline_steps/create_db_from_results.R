@@ -1,4 +1,5 @@
 source('constants.R')
+source('database_definitions.R')
 
 parser <- argparser::arg_parser('Create DuckDB from pipeline results')
 parser <- argparser::add_argument(parser, '--results_dir', help = 'Results directory of pipeline', type = 'character')
@@ -6,217 +7,7 @@ parser <- argparser::add_argument(parser, '--gpm_db_file', help = 'Existing Duck
 
 args <- argparser::parse_args(parser)
 
-max_cores <- 50
-
-simple_db_tables <- list(
-  study_sources = list(
-    name = "study_sources",
-    query = "CREATE TABLE study_sources (
-      id INTEGER PRIMARY KEY,
-      source TEXT NOT NULL,
-      name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      doi TEXT NOT NULL
-    )"
-  ),
-  ld_blocks = list(
-    name = "ld_blocks",
-    query = "CREATE TABLE ld_blocks (
-      id INTEGER PRIMARY KEY,
-      chr INTEGER NOT NULL,
-      start INTEGER NOT NULL,
-      stop INTEGER NOT NULL,
-      ancestry TEXT NOT NULL,
-      ld_block TEXT NOT NULL
-    )"
-  ),
-  studies = list(
-    name = "studies",
-    query = "CREATE TABLE studies (
-      id INTEGER PRIMARY KEY,
-      data_type TEXT NOT NULL,
-      data_format TEXT NOT NULL,
-      study_name TEXT NOT NULL,
-      trait TEXT NOT NULL,
-      ancestry TEXT NOT NULL,
-      sample_size INTEGER NOT NULL,
-      category TEXT,
-      study_location TEXT,
-      extracted_location TEXT,
-      probe TEXT,
-      tissue TEXT,
-      source_id INTEGER ,
-      variant_type TEXT,
-      p_value_threshold REAL,
-      gene TEXT,
-      FOREIGN KEY (source_id) REFERENCES study_sources(id)
-    )"
-  ),
-  snp_annotations = list(
-    name = "snp_annotations",
-    query = "CREATE TABLE snp_annotations (
-      id INTEGER PRIMARY KEY,
-      snp TEXT,
-      chr INTEGER,
-      bp INTEGER,
-      ea TEXT,
-      oa TEXT,
-      gene TEXT,
-      feature_type TEXT,
-      consequence TEXT,
-      cdna_position TEXT,
-      cds_position TEXT,
-      protein_position TEXT,
-      amino_acids TEXT,
-      codons TEXT,
-      rsid TEXT,
-      impact TEXT,
-      symbol TEXT,
-      biotype TEXT,
-      strand TEXT,
-      canonical TEXT,
-      all_af REAL CHECK (all_af BETWEEN 0 AND 1),
-      eur_af REAL CHECK (eur_af BETWEEN 0 AND 1),
-      amr_af REAL CHECK (amr_af BETWEEN 0 AND 1),
-      eas_af REAL CHECK (eas_af BETWEEN 0 AND 1),
-      sas_af REAL CHECK (sas_af BETWEEN 0 AND 1),
-      afr_af REAL CHECK (afr_af BETWEEN 0 AND 1)
-    )"
-  ),
-  study_extractions = list(
-    name = "study_extractions",
-    query = "CREATE TABLE study_extractions (
-      id INTEGER PRIMARY KEY,
-      study_id INTEGER,
-      snp_id INTEGER,
-      snp TEXT NOT NULL,
-      ld_block_id INTEGER,
-      unique_study_id TEXT NOT NULL,
-      study TEXT NOT NULL,
-      file TEXT NOT NULL,
-      chr INTEGER NOT NULL,
-      bp INTEGER NOT NULL,
-      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      ld_block TEXT,
-      known_gene TEXT,
-      FOREIGN KEY (study_id) REFERENCES studies(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
-  colocalisations = list(
-    name = "colocalisations",
-    query = "CREATE TABLE colocalisations (
-      study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
-      coloc_group_id INTEGER,
-      iteration INTEGER,
-      unique_study_id TEXT,
-      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
-      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
-      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
-      candidate_snp TEXT,
-      study_id INTEGER,
-      chr INTEGER NOT NULL,
-      bp INTEGER NOT NULL,
-      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      ld_block TEXT,
-      known_gene TEXT,
-      PRIMARY KEY (study_extraction_id, snp_id),
-      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
-  rare_results = list(
-    name = "rare_results",
-    query = "CREATE TABLE rare_results (
-      rare_result_group_id INTEGER,
-      study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
-      unique_study_id TEXT,
-      candidate_snp TEXT,
-      study_id INTEGER,
-      chr INTEGER,
-      bp INTEGER,
-      min_p REAL CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      known_gene TEXT,
-      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
-  ld = list(
-    name = "ld",
-    query = "CREATE TABLE ld (
-      lead_snp_id INTEGER,
-      variant_snp_id INTEGER,
-      ld_block_id INTEGER,
-      r REAL CHECK (r BETWEEN -1 AND 1),
-      PRIMARY KEY (lead_snp_id, variant_snp_id),
-      FOREIGN KEY (lead_snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (variant_snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
-  results_metadata = list(
-    name = "results_metadata",
-    query = "CREATE TABLE results_metadata (
-      ld_block_id INTEGER,
-      ld_block TEXT,
-      number_extracted INTEGER,
-      number_standardised INTEGER,
-      mean_snps_removed_by_reference_panel REAL,
-      number_imputed INTEGER,
-      significant_snps_imputed INTEGER,
-      significant_imputed_snps_filtered INTEGER,
-      number_finemapped INTEGER,
-      finemapped_per_imputed REAL,
-      num_finemap_failed INTEGER,
-      standardised_time_taken REAL,
-      imputed_time_taken REAL,
-      finemapped_time_taken REAL,
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  )
-)
-
-associations_table <- list(
-  name = "assocs",
-  query = "CREATE TABLE assocs (
-    snp_id INTEGER,
-    study_id INTEGER,
-    beta REAL CHECK (beta BETWEEN -1 AND 1),
-    se REAL CHECK (se > 0),
-    imputed BOOLEAN,
-    p REAL CHECK (p BETWEEN 0 AND 1),
-    eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    PRIMARY KEY (snp_id, study_id),
-    FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-    FOREIGN KEY (study_id) REFERENCES studies(id)
-  )"
-)
-
-gwas_upload_table <- list(
-  name = "gwas_upload",
-  query = "CREATE TABLE gwas_upload (
-    guid TEXT,
-    name TEXT,
-    sample_size INTEGER,
-    p_value_threshold REAL CHECK (p_value_threshold BETWEEN 0 AND 1),
-    ancestry TEXT,
-    category TEXT,
-    is_published BOOLEAN,
-    doi TEXT,
-    should_be_added BOOLEAN,
-    PRIMARY KEY (guid)
-  )"
-)
+max_cores <- 30
 
 main <- function() {
   if (file.exists(args$gpm_db_file)) {
@@ -234,7 +25,6 @@ main <- function() {
   if (!file.exists(args$gpm_db_file)) {
     lapply(simple_db_tables, \(table) DBI::dbExecute(gpm_db, table$query))
     DBI::dbExecute(gpm_db, associations_table$query)
-    DBI::dbExecute(gpm_db, gwas_upload_table$query)
   } 
 
   assocs <- load_data_for_associations(gpm_db, simple_db_tables, all_relevant_snps)
@@ -251,7 +41,7 @@ load_data_for_simple_tables <- function(simple_db_tables) {
     dplyr::mutate(id=1:dplyr::n(), ld_block=paste0(ancestry, "/", chr, "/", start, "-", stop))
 
   simple_db_tables$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F) |>
-    dplyr::left_join(dplyr::select(simple_db_tables$study_sources$data, name, id) |> dplyr::rename(source_id=id), by=c("source"="name"))
+    dplyr::left_join(dplyr::select(simple_db_tables$study_sources$data, source, id) |> dplyr::rename(source_id=id), by=c("source"="source"))
   simple_db_tables$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
 
   # Remove the studies that don't have any study extractions
@@ -279,7 +69,7 @@ load_data_for_simple_tables <- function(simple_db_tables) {
   #TODO: Remove this once we have fixed the SNP annotations
   problematic_extractions <- simple_db_tables$study_extractions$data |>
     dplyr::filter(is.na(snp_id))
-  vroom::vroom_write(problematic_extractions, "/home/wt23152/problematic_extractions.tsv", show_col_types = F)
+  vroom::vroom_write(problematic_extractions, "/home/wt23152/problematic_extractions.tsv")
   simple_db_tables$study_extractions$data <- simple_db_tables$study_extractions$data |>
     dplyr::filter(!is.na(snp_id))
 
@@ -289,7 +79,7 @@ load_data_for_simple_tables <- function(simple_db_tables) {
   #TODO: Remove this once we have fixed SNP annotations
   problematic_colocalisations <- simple_db_tables$colocalisations$data |>
     dplyr::filter(is.na(study_extraction_id))
-  vroom::vroom_write(problematic_colocalisations, "/home/wt23152/problematic_colocalisations.tsv", show_col_types = F)
+  vroom::vroom_write(problematic_colocalisations, "/home/wt23152/problematic_colocalisations.tsv")
   simple_db_tables$colocalisations$data <- simple_db_tables$colocalisations$data |>
     dplyr::filter(!is.na(study_extraction_id))
 
@@ -299,7 +89,7 @@ load_data_for_simple_tables <- function(simple_db_tables) {
   #TODO: Remove this once we have fixed SNP annotations
   problematic_rare_results <- simple_db_tables$rare_results$data |>
     dplyr::filter(is.na(study_extraction_id))
-  vroom::vroom_write(problematic_rare_results, "/home/wt23152/problematic_rare_results.tsv", show_col_types = F)
+  vroom::vroom_write(problematic_rare_results, "/home/wt23152/problematic_rare_results.tsv")
   simple_db_tables$rare_results$data <- simple_db_tables$rare_results$data |>
     dplyr::filter(!is.na(study_extraction_id))
 
@@ -373,28 +163,29 @@ retrieve_ld_data <- function(ld_blocks, variant_annotations, study_extractions, 
 
   all_relevant_snps <- dplyr::bind_rows(colocalising_snps, non_colocalising_snps) |> dplyr::distinct()
 
-  relevant_ld_blocks <- unique(study_extractions$ld_block)
-  ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=max_cores, \(ld_block) {
-    relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == ld_block)
-    generate_ld_obj(ld_block, relevant_snps$candidate_snp)
-  }) |> dplyr::bind_rows()
+  # relevant_ld_blocks <- unique(study_extractions$ld_block)
+  # ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=max_cores, \(ld_block) {
+  #   relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == ld_block)
+  #   generate_ld_obj(ld_block, relevant_snps$candidate_snp)
+  # }) |> dplyr::bind_rows()
 
-  # swap lead and variant snps and ld_block for their respective ids 
-  variant_annotations_subset <- dplyr::select(variant_annotations, snp, id)
-  ld_blocks_subset <- dplyr::select(ld_blocks, ld_block, id) |> dplyr::rename(ld_block_id=id)
-  ld_data <- ld_data |>
-    dplyr::left_join(variant_annotations_subset |> dplyr::rename(lead_snp_id=id), by=c("lead"="snp")) |>
-    dplyr::left_join(variant_annotations_subset |> dplyr::rename(variant_snp_id=id), by=c("variant"="snp")) |>
-    dplyr::left_join(ld_blocks_subset, by="ld_block") |>
-    dplyr::select(-lead, -variant, -ld_block)
+  # # swap lead and variant snps and ld_block for their respective ids 
+  # variant_annotations_subset <- dplyr::select(variant_annotations, snp, id)
+  # ld_blocks_subset <- dplyr::select(ld_blocks, ld_block, id) |> dplyr::rename(ld_block_id=id)
+  # ld_data <- ld_data |>
+  #   dplyr::left_join(variant_annotations_subset |> dplyr::rename(lead_snp_id=id), by=c("lead"="snp")) |>
+  #   dplyr::left_join(variant_annotations_subset |> dplyr::rename(variant_snp_id=id), by=c("variant"="snp")) |>
+  #   dplyr::left_join(ld_blocks_subset, by="ld_block") |>
+  #   dplyr::select(-lead, -variant, -ld_block)
 
-  return(list(ld_data = ld_data, all_relevant_snps = all_relevant_snps))
+  return(list(ld_data = data.frame(), all_relevant_snps = all_relevant_snps))
 }
 
 generate_ld_obj <- function(ld_block, snps) {
+  print("Generating LD object for ", ld_block)
   ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1"))
   ld <- vroom::vroom(ld_file, col_names = FALSE, show_col_types = F)
-  ldvars <- vroom::vroom(glue::glue("{ld_file}.vars")), col_names = FALSE, show_col_types = F)
+  ldvars <- vroom::vroom(glue::glue("{ld_file}.vars"), col_names = FALSE, show_col_types = F)
 
   names(ld) <- ldvars$X1
   ld$lead <- ldvars$X1
@@ -431,6 +222,10 @@ load_data_for_associations <- function(gpm_db, simple_db_tables, all_relevant_sn
   message(nrow(existing_assocs), ' existing associations found for ', length(unique(existing_assocs$study_id)), ' studies')
 
   all_study_extractions_by_study <- split(simple_db_tables$study_extractions$data, simple_db_tables$study_extractions$data$study_id)
+
+  # many_cores <- 200
+  # new_assocs <- parallel::mclapply(names(all_study_extractions_by_study), mc.cores=many_cores, \(study_id) {
+    # study_extractions <- all_study_extractions_by_study[[study_id]]
 
   new_assocs <- purrr::imap(all_study_extractions_by_study, \(study_extractions, study_id) {
     relevant_ld_blocks <- study_extractions |>
@@ -474,6 +269,7 @@ load_data_for_associations <- function(gpm_db, simple_db_tables, all_relevant_sn
 }
 
 get_associations_for_ld_block <- function(assocs) {
+  print("Getting associations for ", assocs$ld_block[1])
   imputed_studies <- vroom::vroom(file.path(ld_block_data_dir, assocs$ld_block[1], "imputed_studies.tsv"), show_col_types = F) |>
     dplyr::filter(study %in% assocs$study)
 

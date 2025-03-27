@@ -71,14 +71,14 @@ rule all:
         expand(complex_imputation_pattern, complex_ld_block=complex_ld_blocks),
         expand(finemapping_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
-        expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+        # expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
+        # expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
         expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
-        raw_coloc_results,
-        rare_results,
-        study_extractions,
-        results_metadata
+        # raw_coloc_results,
+        # rare_results,
+        # study_extractions,
+        # results_metadata
         # gpm_db_file
         # backup_done_file,
         # pipeline_summary_output
@@ -192,7 +192,6 @@ def coloc_rule(finemapping_pattern, coloc_pattern, name):
         name: f'{name}_coloc_per_ld_block'
         retries: 2
         threads: 12
-        # threads: 20
         input:
             finemap = finemapping_pattern
         output: temporary(coloc_pattern)
@@ -243,38 +242,38 @@ impute_rule(standardisation_pattern, imputation_pattern,'simple')
 finemap_rule(complex_imputation_pattern, complex_finemapping_pattern, 'complex')
 finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
 
-coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
-coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
+# coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
+# coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
 
 compare_rare_rule(complex_standardisation_pattern, complex_compare_rare_pattern, 'complex')
 compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
 
 #TODO: tempoararily removing all post processing steps, for speed
 
-rule compile_results:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
-    threads: 1
-    output:
-        raw_coloc_results = raw_coloc_results,
-        rare_results = rare_results,
-        study_extractions = study_extractions,
-        results_metadata = results_metadata,
-        variant_annotations = variant_annotations,
-        # pipeline_summary = pipeline_summary_output
-    shell:
-        """
-        mkdir -p $(dirname {output})
-        Rscript compile_results.R \
-            --studies_to_process {studies_to_process_file} \
-            --studies_processed {studies_processed_file} \
-            --study_extractions_file {output.study_extractions} \
-            --rare_results_file {output.rare_results} \
-            --coloc_results_file {output.raw_coloc_results} \
-            --compiled_results_metadata_file {output.results_metadata}
-
-#         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
+# rule compile_results:
+#     input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
+#         expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
+#     threads: 1
+#     output:
+#         raw_coloc_results = raw_coloc_results,
+#         rare_results = rare_results,
+#         study_extractions = study_extractions,
+#         results_metadata = results_metadata,
+#         variant_annotations = variant_annotations,
+#         # pipeline_summary = pipeline_summary_output
+#     shell:
 #         """
+#         mkdir -p $(dirname {output})
+#         Rscript compile_results.R \
+#             --studies_to_process {studies_to_process_file} \
+#             --studies_processed {studies_processed_file} \
+#             --study_extractions_file {output.study_extractions} \
+#             --rare_results_file {output.rare_results} \
+#             --coloc_results_file {output.raw_coloc_results} \
+#             --compiled_results_metadata_file {output.results_metadata}
+
+#          rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
+#          """
 
 # rule backup_data_dir:
 #     input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations

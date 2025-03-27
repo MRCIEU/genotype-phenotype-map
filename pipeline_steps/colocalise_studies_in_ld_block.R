@@ -51,15 +51,22 @@ main <- function() {
   studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
+  start_time <- Sys.time()
   grouped_studies <- group_studies_in_same_bp_range(finemapped_studies, args$worker_guid)
   if (length(grouped_studies) == 0) {
     message(glue::glue('No grouped studies for LD region {ld_info$ld_block_data}, skipping.'))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
+  message(glue::glue('Grouping studies took {as.character(hms::as_hms(difftime(Sys.time(), start_time)))}'))
 
+  start_time <- Sys.time()
   hyprcoloc_results <- colocalise_based_on_group(studies_to_colocalise, grouped_studies, finemapped_studies, cached_data$cached_coloc_groups)
+  message(glue::glue('Colocalisation took {as.character(hms::as_hms(difftime(Sys.time(), start_time)))}'))
+
+  start_time <- Sys.time()
   filtered_hyprcoloc_results <- post_coloc_filtering(hyprcoloc_results)
+  message(glue::glue('Post-colocalisation filtering took {as.character(hms::as_hms(difftime(Sys.time(), start_time)))}'))
 
   coloc_results_file <- glue::glue('{ld_info$ld_block_data}/coloc_results.tsv')
   vroom::vroom_write(filtered_hyprcoloc_results, coloc_results_file)

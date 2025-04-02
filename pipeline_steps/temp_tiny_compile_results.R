@@ -12,7 +12,7 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   pipeline_data <- aggregate_data_produced_by_pipeline(args$studies_to_process, args$studies_processed)
-  # cleanup_studies_with_no_extractions()
+  cleanup_studies_with_no_extractions()
 
   #this should always be the last thing done in the step, as we want to be able to rerun the pipeline other things fail
   vroom::vroom_write(pipeline_data$studies_processed, args$studies_processed)

@@ -5,10 +5,10 @@ parser <- argparser::arg_parser('Pipeline worker')
 parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess DLQ messages', type = 'logical', default = F)
 args <- argparser::parse_args(parser)
 
-# redis_conn <- redux::hiredis(
-#   host = Sys.getenv("REDIS_HOST", "localhost"),
-#   port = as.numeric(Sys.getenv("REDIS_PORT", 6379))
-# )
+redis_conn <- redux::hiredis(
+  host = Sys.getenv("REDIS_HOST", "redis"),
+  port = as.numeric(Sys.getenv("REDIS_PORT", 6379))
+)
 
 process_gwas <- 'process_gwas'
 process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
@@ -19,27 +19,30 @@ main <- function() {
     return()
   }
 
-  # while(TRUE) {
-    # message <- redis_conn$BRPOP(process_gwas, timeout = 0)
+  while(TRUE) {
+    message <- redis_conn$BRPOP(process_gwas, timeout = 0)
     
-    # if (!is.null(message)) {
-    #   log_info("Received new message from queue")
+    if (!is.null(message)) {
+      message <- jsonlite::fromJSON(message[[2]])
+      message("Received new message from queue with guid: ", message$guid)
 
-    #   success <- process_message(message[[2]])
-    json_message <- '/local-scratch/projects/genotype-phenotype-map/test/data/study/gwas_upload/guid/study_metadata.json'
-    success <- process_message(json_message)
-      
-      if (success) {
-        message("Successfully processed message")
+      processed<- process_message(message)
 
+      if (!is.null(processed)) {
+        message("Failed to process message with guid: ", message$guid)
+        message_and_error <- list(
+          original_message = message,
+          error = processed,
+          timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+        )
+        redis_conn$LPUSH(process_gwas_dlq, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
       } else {
-        message("Failed to process message")
-        redis_conn$LPUSH(process_gwas_dlq, message[[2]])
+        message("Successfully processed message with guid: ", message$guid)
       }
-    # }
+    }
+  }
 
-    # Sys.sleep(1)
-  # }
+  Sys.sleep(5)
 }
 
 # Function to process a single message
@@ -60,7 +63,7 @@ process_message <- function(message) {
       " --worker_guid {message$guid}")
 
     system(extract_regions, wait = T, intern = T)
-    check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'))
+    check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), 'extracted_snps.tsv')
     extracted_regions <- vroom::vroom(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), show_col_types = F)
 
     ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
@@ -68,11 +71,11 @@ process_message <- function(message) {
       " --output_file {ld_blocks_to_colocalise_file}",
       " --worker_guid {message$guid}")
     system(organise_ld_blocks, wait = T, intern = T)
-    check_step_complete(ld_blocks_to_colocalise_file)
+    check_step_complete(ld_blocks_to_colocalise_file, 'updated_ld_blocks_to_colocalise.tsv')
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
     parallel_block_processing <- 4
-    blocks <- head(ld_blocks_to_colocalise$ld_block, 1)
+    blocks <- head(ld_blocks_to_colocalise$ld_block, 2)
     # parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores=parallel_block_processing, function(block) {
     lapply(blocks, function(block) {
       ld_info <- ld_block_dirs(block)
@@ -89,28 +92,28 @@ process_message <- function(message) {
         " --completed_output_file {output_files$standardised}",
         " --worker_guid {message$guid}")
       system(standardise_regions, wait = T, intern = T)
-      check_step_complete(output_files$standardised)
+      check_step_complete(output_files$standardised, block)
 
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$imputed}",
         " --worker_guid {message$guid}")
       system(impute_regions, wait = T, intern = T)
-      check_step_complete(output_files$imputed)
+      check_step_complete(output_files$imputed, block)
 
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$finemapped}",
         " --worker_guid {message$guid}")
       system(finemap_regions, wait = T, intern = T)
-      check_step_complete(output_files$finemapped)
+      check_step_complete(output_files$finemapped, block)
 
       coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {message$guid}")
       system(coloc_regions, wait = T, intern = T)
-      check_step_complete(output_files$coloc)
+      check_step_complete(output_files$coloc, block)
     })
 
     send_email(message)
@@ -220,11 +223,17 @@ retry_dlq_messages <- function(max_retries = 10) {
   })
 }
 
-check_step_complete <- function(output_file) {
-  if (file.exists(output_file)) {
-  } else {
-    stop(glue::glue('Step {step} failed'))
+check_step_complete <- function(output_file, ld_block) {
+  if (!file.exists(output_file)) {
+    rlang::abort(
+      message = glue::glue('Step {output_file} failed'),
+      class = "pipeline_worker_error",
+      data = list(
+        output_file = output_file,
+        ld_block = ld_block
+      )
+    )
   }
 }
-  
+
 main()

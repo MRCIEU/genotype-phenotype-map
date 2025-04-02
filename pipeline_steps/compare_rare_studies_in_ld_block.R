@@ -93,8 +93,8 @@ compare_by_variant <- function(studies, variants, P_thresh) {
   # Pull studies with shared varaiants
   for (var in variants_keep) {
     found_study_ids <- sapply(studies, function(study) {
-      dplyr::filter(study, SNP == var & P <= P_thresh) |>
-      dplyr::pull(study, unique_study_id)
+      study <- dplyr::filter(study, SNP == var & P <= P_thresh) |>
+        dplyr::pull(unique_study_id)
     })
 
     if (length(found_study_ids) == 0){

@@ -1,4 +1,4 @@
-simple_db_tables <- list(
+studies_db <- list(
   study_sources = list(
     name = "study_sources",
     query = "CREATE TABLE study_sources (
@@ -141,19 +141,6 @@ simple_db_tables <- list(
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )"
   ),
-  ld = list(
-    name = "ld",
-    query = "CREATE TABLE ld (
-      lead_snp_id INTEGER,
-      variant_snp_id INTEGER,
-      ld_block_id INTEGER,
-      r REAL CHECK (r BETWEEN -1 AND 1),
-      PRIMARY KEY (lead_snp_id, variant_snp_id),
-      FOREIGN KEY (lead_snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (variant_snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
   results_metadata = list(
     name = "results_metadata",
     query = "CREATE TABLE results_metadata (
@@ -176,34 +163,50 @@ simple_db_tables <- list(
   )
 )
 
-associations_table <- list(
-  name = "assocs",
-  query = "CREATE TABLE assocs (
-    snp_id INTEGER,
-    study_id INTEGER,
-    beta REAL CHECK (beta BETWEEN -1 AND 1),
-    se REAL CHECK (se > 0),
-    imputed BOOLEAN,
-    p DOUBLE CHECK (p BETWEEN 0 AND 1),
-    eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    PRIMARY KEY (snp_id, study_id),
-    FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-    FOREIGN KEY (study_id) REFERENCES studies(id)
+ld_table <- list(
+  name = "ld",
+  query = "CREATE TABLE ld (
+    lead_snp_id INTEGER,
+    variant_snp_id INTEGER,
+    ld_block_id INTEGER,
+    r REAL CHECK (r BETWEEN -1 AND 1),
+    PRIMARY KEY (lead_snp_id, variant_snp_id),
+    FOREIGN KEY (lead_snp_id) REFERENCES snp_annotations(id),
+    FOREIGN KEY (variant_snp_id) REFERENCES snp_annotations(id),
+    FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
   )"
 )
 
-gwas_upload_table <- list(
-  name = "gwas_upload",
-  query = "CREATE TABLE gwas_upload (
-    guid TEXT,
-    name TEXT,
-    sample_size INTEGER,
-    p_value_threshold DOUBLE CHECK (p_value_threshold BETWEEN 0 AND 1),
-    ancestry TEXT,
-    category TEXT,
-    is_published BOOLEAN,
-    doi TEXT,
-    should_be_added BOOLEAN,
-    PRIMARY KEY (guid)
+associations_table <- list(
+  name = "associations",
+  query = "CREATE TABLE associations (
+    snp_id INTEGER,
+    study_id INTEGER,
+    beta REAL,
+    se REAL,
+    p DOUBLE CHECK (p BETWEEN 0 AND 1),
+    eaf REAL CHECK (eaf BETWEEN 0 AND 1),
+    imputed BOOLEAN,
+    PRIMARY KEY (snp_id, study_id),
   )"
+)
+
+gwas_upload_db <- list(
+  gwas_upload = list(
+    name = "gwas_upload",
+    query = "CREATE TABLE gwas_upload (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guid TEXT UNIQUE NOT NULL,
+      name TEXT,
+      sample_size INTEGER,
+      ancestry TEXT,
+      category TEXT,
+      is_published BOOLEAN,
+      doi TEXT,
+      should_be_added BOOLEAN,
+      status TEXT
+    )"
+  ),
+  study_extractions = studies_db$study_extractions,
+  colocalisations = studies_db$colocalisations,
 )

@@ -214,7 +214,7 @@ def compare_rare_rule(standardisation_pattern, compare_rare_pattern, name):
     rule:
         name: f'{name}_compare_rare_per_ld_block'
         retries: 2
-        threads: 2
+        threads: 5
         input:
             standardisation = standardisation_pattern 
         output: temporary(compare_rare_pattern)

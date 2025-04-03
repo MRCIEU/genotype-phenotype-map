@@ -169,14 +169,11 @@ ld_table <- list(
     lead_snp_id INTEGER,
     variant_snp_id INTEGER,
     ld_block_id INTEGER,
-    r REAL CHECK (r BETWEEN -1 AND 1),
-    PRIMARY KEY (lead_snp_id, variant_snp_id),
-    FOREIGN KEY (lead_snp_id) REFERENCES snp_annotations(id),
-    FOREIGN KEY (variant_snp_id) REFERENCES snp_annotations(id),
-    FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    r REAL CHECK (r BETWEEN -1 AND 1)
   )"
 )
 
+#TODO: add in se > 0 check later
 associations_table <- list(
   name = "associations",
   query = "CREATE TABLE associations (
@@ -186,8 +183,7 @@ associations_table <- list(
     se REAL,
     p DOUBLE CHECK (p BETWEEN 0 AND 1),
     eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    imputed BOOLEAN,
-    PRIMARY KEY (snp_id, study_id),
+    imputed BOOLEAN
   )"
 )
 

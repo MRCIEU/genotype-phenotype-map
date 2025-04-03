@@ -1,5 +1,4 @@
-setwd('../pipeline_steps')
-source('constants.R')
+source('pipeline_steps/constants.R')
 
 parser <- argparser::arg_parser('Pipeline worker')
 parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess DLQ messages', type = 'logical', default = F)
@@ -20,7 +19,12 @@ main <- function() {
   }
 
   while(TRUE) {
-    message <- redis_conn$BRPOP(process_gwas, timeout = 0)
+    if (is.na(TEST_RUN)) {
+      message <- redis_conn$BRPOP(process_gwas, timeout = 0)
+      print(message)
+    } else {
+      message <- '../tests/test_data/redis_message.json'
+    }
     
     if (!is.null(message)) {
       message <- jsonlite::fromJSON(message[[2]])
@@ -40,9 +44,12 @@ main <- function() {
         message("Successfully processed message with guid: ", message$guid)
       }
     }
+    Sys.sleep(5)
+    if (!is.na(TEST_RUN)) {
+      break
+    }
   }
 
-  Sys.sleep(5)
 }
 
 # Function to process a single message

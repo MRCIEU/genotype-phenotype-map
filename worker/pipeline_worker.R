@@ -1,4 +1,5 @@
-source('pipeline_steps/constants.R')
+setwd('pipeline_steps')
+source('constants.R')
 
 parser <- argparser::arg_parser('Pipeline worker')
 parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess DLQ messages', type = 'logical', default = F)
@@ -20,28 +21,28 @@ main <- function() {
 
   while(TRUE) {
     if (is.na(TEST_RUN)) {
-      message <- redis_conn$BRPOP(process_gwas, timeout = 0)
-      print(message)
+      redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
     } else {
-      message <- '../tests/test_data/redis_message.json'
+      redis_message <- '../tests/test_data/redis_message.json'
     }
     
-    if (!is.null(message)) {
-      message <- jsonlite::fromJSON(message[[2]])
-      message("Received new message from queue with guid: ", message$guid)
+    if (!is.null(redis_message)) {
+      gwas_info <- jsonlite::fromJSON(redis_message[[2]])
+      message("Received new message from queue with guid: ", gwas_info$metadata$guid)
 
-      processed<- process_message(message)
+      processed <- process_message(gwas_info)
 
       if (!is.null(processed)) {
-        message("Failed to process message with guid: ", message$guid)
+        message("Failed to process message with guid: ", gwas_info$metadata$guid)
+
         message_and_error <- list(
-          original_message = message,
+          original_message = gwas_info,
           error = processed,
           timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
         )
         redis_conn$LPUSH(process_gwas_dlq, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
       } else {
-        message("Successfully processed message with guid: ", message$guid)
+        message("Successfully processed message with guid: ", gwas_info$metadata$guid)
       }
     }
     Sys.sleep(5)
@@ -49,37 +50,43 @@ main <- function() {
       break
     }
   }
-
 }
 
 # Function to process a single message
-process_message <- function(message) {
+process_message <- function(gwas_info) {
   tryCatch({
-    message <- jsonlite::fromJSON(message)
-    update_directories_for_worker(message$guid)
+    update_directories_for_worker(gwas_info$metadata$guid)
 
-    dir.create(glue::glue('{pipeline_metadata_dir}'), recursive = T, showWarnings = F)
-    dir.create(glue::glue('{extracted_study_dir}'), recursive = T, showWarnings = F)
-    dir.create(glue::glue('{ld_block_data_dir}'), recursive = T, showWarnings = F)
+    dir.create(pipeline_metadata_dir, recursive = T, showWarnings = F)
+    dir.create(extracted_study_dir, recursive = T, showWarnings = F)
+    dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
-    send_email(message)
-    return(TRUE)
+    message('extracting regions')
+    
+    gwas_info$metadata$file_location <- gwas_info$file_location
+    if (grepl('\\.vcf', gwas_info$file_location)) {
+      gwas_info$metadata$file_type <- 'vcf'
+    } else {
+      gwas_info$metadata$file_type <- 'csv'
+    }
 
-    create_study_to_process_file(message)
+    create_study_metadata_files(gwas_info)
     extract_regions <- glue::glue("Rscript extract_regions_from_summary_stats.R",
-      " --worker_guid {message$guid}")
+      " --worker_guid {gwas_info$metadata$guid}")
+    system(extract_regions, wait = T)
 
-    system(extract_regions, wait = T, intern = T)
     check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), 'extracted_snps.tsv')
     extracted_regions <- vroom::vroom(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), show_col_types = F)
 
+    message('organising ld blocks')
     ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
     organise_ld_blocks <- glue::glue("Rscript organise_extracted_regions_into_ld_blocks.R",
       " --output_file {ld_blocks_to_colocalise_file}",
-      " --worker_guid {message$guid}")
+      " --worker_guid {gwas_info$metadata$guid}")
     system(organise_ld_blocks, wait = T, intern = T)
     check_step_complete(ld_blocks_to_colocalise_file, 'updated_ld_blocks_to_colocalise.tsv')
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
+
 
     parallel_block_processing <- 4
     blocks <- head(ld_blocks_to_colocalise$ld_block, 2)
@@ -94,46 +101,50 @@ process_message <- function(message) {
         coloc = glue::glue('{ld_info$ld_block_data}/colocalisation_complete')
       )
 
+      message('standardising regions')
       standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
         " --ld_block {block} ", 
         " --completed_output_file {output_files$standardised}",
-        " --worker_guid {message$guid}")
+        " --worker_guid {gwas_info$metadata$guid}")
       system(standardise_regions, wait = T, intern = T)
       check_step_complete(output_files$standardised, block)
 
+      message('imputing regions')
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$imputed}",
-        " --worker_guid {message$guid}")
+        " --worker_guid {gwas_info$metadata$guid}")
       system(impute_regions, wait = T, intern = T)
       check_step_complete(output_files$imputed, block)
 
+      message('finemapping regions')
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$finemapped}",
-        " --worker_guid {message$guid}")
+        " --worker_guid {gwas_info$metadata$guid}")
       system(finemap_regions, wait = T, intern = T)
       check_step_complete(output_files$finemapped, block)
 
+      message('colocalising regions')
       coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
-        " --worker_guid {message$guid}")
+        " --worker_guid {gwas_info$metadata$guid}")
       system(coloc_regions, wait = T, intern = T)
       check_step_complete(output_files$coloc, block)
     })
 
-    send_email(message)
-
+    message('sending email')
+    send_email(gwas_info)
     
-    return(TRUE)
+    return()
     
   }, error = function(e) {
     message("Error processing message: ", e$message)
     
     # Create error details
     error_details <- list(
-      original_message = message,
+      original_message = gwas_info,
       error = e$message,
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     )
@@ -142,25 +153,25 @@ process_message <- function(message) {
       process_gwas_dlq, 
       jsonlite::toJSON(error_details, auto_unbox = TRUE)
     )
-    
-    return(FALSE)
+
+    return(e$message)
   })
 }
 
-create_study_to_process_file <- function(message) {
+create_study_metadata_files <- function(gwas_info) {
   study_to_process <- data.frame(
     data_type = ordered_data_types$phenotype,
-    data_format = 'csv',
+    data_format = gwas_info$metadata$file_type,
     source = 'user',
-    study_name = message$guid,
-    trait = message$name,
-    ancestry = message$ancestry,
-    sample_size = message$sample_size,
-    category = message$category,
-    study_location = message$filename,
+    study_name = gwas_info$metadata$guid,
+    trait = gwas_info$metadata$name,
+    ancestry = gwas_info$metadata$ancestry,
+    sample_size = gwas_info$metadata$sample_size,
+    category = gwas_info$metadata$category,
+    study_location = gwas_info$file_location,
     extracted_location = extracted_study_dir,
-    reference_build = reference_builds$GRCh38,
-    p_value_threshold = message$p_value_threshold,
+    reference_build = gwas_info$metadata$reference_build,
+    p_value_threshold = lowest_p_value_threshold,
     variant_type = variant_types$common,
     gene = NA,
     probe = NA,
@@ -168,6 +179,12 @@ create_study_to_process_file <- function(message) {
   )
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')
   vroom::vroom_write(study_to_process, studies_to_process_file)
+
+  file.create(glue::glue('{extracted_study_dir}/study_metadata.json'))
+  jsonlite::write_json(gwas_info$metadata, 
+                      glue::glue('{extracted_study_dir}/study_metadata.json'),
+                      auto_unbox = TRUE,
+                      pretty = TRUE)
 }
 
 send_email <- function(message) {

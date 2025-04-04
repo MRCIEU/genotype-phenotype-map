@@ -190,19 +190,58 @@ associations_table <- list(
 gwas_upload_db <- list(
   gwas_upload = list(
     name = "gwas_upload",
-    query = "CREATE TABLE gwas_upload (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query = "CREATE SEQUENCE id_sequence START 1; CREATE TABLE gwas_upload (
+      id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
       guid TEXT UNIQUE NOT NULL,
-      name TEXT,
-      sample_size INTEGER,
-      ancestry TEXT,
-      category TEXT,
-      is_published BOOLEAN,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sample_size INTEGER NOT NULL,
+      ancestry TEXT NOT NULL,
+      category TEXT NOT NULL,
+      is_published BOOLEAN NOT NULL,
       doi TEXT,
       should_be_added BOOLEAN,
-      status TEXT
+      status TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )"
   ),
-  study_extractions = studies_db$study_extractions,
-  colocalisations = studies_db$colocalisations,
+  study_extractions = list(
+    name = "study_extractions",
+    query = "CREATE TABLE study_extractions (
+      id INTEGER PRIMARY KEY,
+      study_id INTEGER,
+      snp_id INTEGER,
+      snp TEXT NOT NULL,
+      ld_block_id INTEGER,
+      unique_study_id TEXT NOT NULL,
+      study TEXT NOT NULL,
+      file TEXT NOT NULL,
+      chr INTEGER NOT NULL,
+      bp INTEGER NOT NULL,
+      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      ld_block TEXT,
+      known_gene TEXT)"
+  ),
+  colocalisations = list(
+    name = "colocalisations",
+    query = "CREATE TABLE colocalisations (
+      study_extraction_id INTEGER,
+      snp_id INTEGER,
+      ld_block_id INTEGER,
+      coloc_group_id INTEGER,
+      iteration INTEGER,
+      unique_study_id TEXT,
+      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
+      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
+      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
+      candidate_snp TEXT,
+      study_id INTEGER,
+      chr INTEGER NOT NULL,
+      bp INTEGER NOT NULL,
+      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      ld_block TEXT,
+      known_gene TEXT)"
+  )
 )

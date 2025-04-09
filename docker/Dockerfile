@@ -1,14 +1,53 @@
 FROM mrcieu/genehackman:1.0.0
 
-RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
-    apt update && apt install -y --no-install-recommends libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync
-    # export PERL_MM_USE_DEFAULT=1 && cpan DBI DBD::mysql Archize::Zip
-    #uncomment this if you need to start using GPU / cuda again
-    # wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \
-    # dpkg -i cuda-keyring_1.1-1_all.deb && \
-    # apt-get update && \
-    # apt-get -y install cuda-toolkit-12-6
+# Common dependencies for all architectures
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Architecture-specific installations
+FROM base as amd64_build
+RUN --platform=linux/amd64 \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wget gnupg ca-certificates && \
+    wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor > /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends intel-oneapi-mkl && \
+    rm -rf /var/lib/apt/lists/*
+
+FROM base as arm64_build
+    RUN --platform=linux/arm64 \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+        libopenblas-dev liblapack-dev && \
+        rm -rf /var/lib/apt/lists/*
+
+        # Final stage
+FROM base as final
+ARG TARGETARCH
+
+# Copy architecture-specific installations
+COPY --from=amd64_build /usr/local/lib /usr/local/lib
+COPY --from=amd64_build /usr/local/include /usr/local/include
+COPY --from=amd64_build /opt/intel /opt/intel
+
+# Set up environment variables for MKL/OpenBLAS
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/intel/oneapi/mkl/latest/lib/intel64:$LD_LIBRARY_PATH
+ENV MKL_THREADING_LAYER=GNU
+
+# Conditional environment setup
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        echo "Using Intel MKL for AMD64"; \
+        echo "/opt/intel/oneapi/mkl/latest/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf; \
+        ldconfig; \
+    else \
+        echo "Using OpenBLAS for ARM64"; \
+        echo "/usr/local/lib" >> /etc/ld.so.conf.d/openblas.conf; \
+        ldconfig; \
+    fi
+
 
 #Installing ssimp, finemap, smr, gcta, DENTIST, picard, and gwcoco here...
 RUN cd /home && \

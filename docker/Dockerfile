@@ -1,4 +1,4 @@
-FROM mrcieu/genehackman:1.0.0
+FROM mrcieu/genehackman:1.0.0 AS base
 
 # Common dependencies for all architectures
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Architecture-specific installations
-FROM base as amd64_build
+FROM base AS amd64_build
 RUN --platform=linux/amd64 \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -17,15 +17,15 @@ RUN --platform=linux/amd64 \
     apt-get install -y --no-install-recommends intel-oneapi-mkl && \
     rm -rf /var/lib/apt/lists/*
 
-FROM base as arm64_build
-    RUN --platform=linux/arm64 \
-        apt-get update && \
-        apt-get install -y --no-install-recommends \
-        libopenblas-dev liblapack-dev && \
-        rm -rf /var/lib/apt/lists/*
+FROM base AS arm64_build
+RUN --platform=linux/arm64 \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libopenblas-dev liblapack-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-        # Final stage
-FROM base as final
+# Final stage
+FROM base AS final
 ARG TARGETARCH
 
 # Copy architecture-specific installations

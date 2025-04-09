@@ -1,53 +1,22 @@
-FROM mrcieu/genehackman:1.0.0 AS base
+FROM mrcieu/genehackman:1.0.0
 
-# Common dependencies for all architectures
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev default-jre rsync
 
-# Architecture-specific installations
-FROM base AS amd64_build
-RUN --platform=linux/amd64 \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    wget gnupg ca-certificates && \
-    wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor > /usr/share/keyrings/oneapi-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends intel-oneapi-mkl && \
-    rm -rf /var/lib/apt/lists/*
-
-FROM base AS arm64_build
-RUN --platform=linux/arm64 \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libopenblas-dev liblapack-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# Final stage
-FROM base AS final
 ARG TARGETARCH
-
-# Copy architecture-specific installations
-COPY --from=amd64_build /usr/local/lib /usr/local/lib
-COPY --from=amd64_build /usr/local/include /usr/local/include
-COPY --from=amd64_build /opt/intel /opt/intel
-
-# Set up environment variables for MKL/OpenBLAS
-ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/intel/oneapi/mkl/latest/lib/intel64:$LD_LIBRARY_PATH
-ENV MKL_THREADING_LAYER=GNU
-
-# Conditional environment setup
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         echo "Using Intel MKL for AMD64"; \
-        echo "/opt/intel/oneapi/mkl/latest/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf; \
-        ldconfig; \
+        apt-get update && \
+        apt-get install -y wget gnupg && \
+        wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor > /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list && \
+        apt-get update && \
+        apt-get install -y intel-oneapi-mkl; \
     else \
         echo "Using OpenBLAS for ARM64"; \
-        echo "/usr/local/lib" >> /etc/ld.so.conf.d/openblas.conf; \
-        ldconfig; \
-    fi
-
+        apt-get update && \
+        apt-get install -y libopenblas-dev liblapack-dev; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
 #Installing ssimp, finemap, smr, gcta, DENTIST, picard, and gwcoco here...
 RUN cd /home && \

@@ -1,20 +1,20 @@
 FROM mrcieu/genehackman:1.0.0
 
-RUN apt-get update && apt-get install -y libhiredis-dev less libgmp-dev libmpfr-dev jq csvtool libgsl-dev default-jre rsync
+RUN apt-get update && apt-get install -y less  jq csvtool default-jre rsync
 
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        echo "Using Intel MKL for AMD64"; \
+        echo "Using Intel MKL for AMD64, $TARGETARCH"; \
         apt-get update && \
         apt-get install -y wget gnupg && \
         wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor > /usr/share/keyrings/oneapi-archive-keyring.gpg && \
         echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list && \
         apt-get update && \
-        apt-get install -y intel-oneapi-mkl; \
+        apt-get install -y libhiredis-dev libgmp-dev libmpfr-dev libgsl-dev intel-oneapi-mkl; \
     else \
-        echo "Using OpenBLAS for ARM64"; \
+        echo "Using OpenBLAS for ARM64, $TARGETARCH"; \
         apt-get update && \
-        apt-get install -y libopenblas-dev liblapack-dev; \
+        apt-get install -y libopenblas-dev liblapack-dev libhiredis0.14 libgmp10 libmpfr6 libgsl25 openjdk-11-jre-headless; \
     fi && \
     rm -rf /var/lib/apt/lists/*
 

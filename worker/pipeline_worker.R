@@ -3,6 +3,7 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Pipeline worker')
 parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess DLQ messages', type = 'logical', default = F)
+parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
 redis_conn <- redux::hiredis(
@@ -12,6 +13,8 @@ redis_conn <- redux::hiredis(
 
 process_gwas <- 'process_gwas'
 process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
+
+existing_study_extractions <- vroom::vroom(glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv'), show_col_types = F, col_types = finemapped_column_types)
 
 main <- function() {
   if (args$reprocess_dlq) {
@@ -23,7 +26,7 @@ main <- function() {
     if (is.na(TEST_RUN)) {
       redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
     } else {
-      redis_message <- '../tests/test_data/redis_message.json'
+      redis_message <- jsonlite::fromJSON(args$custom_message_file)
     }
     
     if (!is.null(redis_message)) {
@@ -52,7 +55,6 @@ main <- function() {
   }
 }
 
-# Function to process a single message
 process_message <- function(gwas_info) {
   tryCatch({
     update_directories_for_worker(gwas_info$metadata$guid)
@@ -62,7 +64,6 @@ process_message <- function(gwas_info) {
     dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
     message('extracting regions')
-    
     gwas_info$metadata$file_location <- gwas_info$file_location
     if (grepl('\\.vcf', gwas_info$file_location)) {
       gwas_info$metadata$file_type <- 'vcf'
@@ -134,10 +135,14 @@ process_message <- function(gwas_info) {
       check_step_complete(output_files$coloc, block)
     })
 
-    message('sending email')
-    send_email(gwas_info)
-    
-    return()
+    message('compiling results')
+    results <- compile_results()
+
+    message('Calling API to update GWAS upload and sending email')
+    if (!is.na(TEST_RUN)) {
+      send_update_gwas_upload(gwas_info, results$coloc_results, results$study_extractions)
+      send_email(gwas_info)
+    } 
     
   }, error = function(e) {
     message("Error processing message: ", e$message)
@@ -157,6 +162,7 @@ process_message <- function(gwas_info) {
     return(e$message)
   })
 }
+
 
 create_study_metadata_files <- function(gwas_info) {
   study_to_process <- data.frame(
@@ -187,66 +193,6 @@ create_study_metadata_files <- function(gwas_info) {
                       pretty = TRUE)
 }
 
-send_email <- function(message) {
-  tryCatch({
-    email_body <- list(
-      sendmailR::mime_part_html(
-        glue::glue(
-          "<html>",
-          "<body>",
-          "<p>Thanks for using the Genotype-Phenotype Map!</p>",
-          "<p>Your results are ready to view. <a href='{gpm_website_data$url}/results/{message$guid}'>Click here</a> to view your results.</p>",
-          "<p>If you have any questions, please <a href='{gpm_website_data$contact}'>contact us here</a>.</p>",
-          "<p>Best regards,<br>The Genotype-Phenotype Map Team</p>",
-          "</body>",
-          "</html>"
-        ),
-        type = "text/html; charset=UTF-8"
-      )
-    )
-
-    sendmailR::sendmail(
-      from = Sys.getenv("SMTP_FROM", "noreply@bristol.ac.uk"),
-      to = message$email,
-      subject = glue::glue("Genotype-Phenotype Map Results for {message$name}"),
-      msg = email_body,
-      control = list(smtpServer = "localhost")
-    )
-  
-    return(TRUE)
-  }, error = function(e) {
-    message(sprintf("Error sending email: %s", e$message))
-    return(FALSE)
-  })
-}
-
-retry_dlq_messages <- function(max_retries = 10) {
-  log_info("Starting DLQ retry process")
-  retried_count <- 0
-  
-  dlq_message <- redis_conn$BRPOP(process_gwas_dlq, timeout = 1)
-  
-  if (is.null(dlq_message)) {
-    log_info("No more messages in DLQ")
-    break
-  }
-  
-  tryCatch({
-    error_details <- jsonlite::fromJSON(dlq_message[[2]])
-    redis_conn$LPUSH(process_gwas, error_details$original_message)
-    
-    log_info(sprintf("Retried message from DLQ (original error: %s, timestamp: %s)", 
-                    error_details$error, 
-                    error_details$timestamp))
-    
-    retried_count <- retried_count + 1
-    
-  }, error = function(e) {
-    message("Error processing DLQ message: ", e$message)
-    redis_conn$LPUSH(process_gwas_dlq, dlq_message[[2]])
-  })
-}
-
 check_step_complete <- function(output_file, ld_block) {
   if (!file.exists(output_file)) {
     rlang::abort(
@@ -258,6 +204,110 @@ check_step_complete <- function(output_file, ld_block) {
       )
     )
   }
+}
+
+compile_results <- function() {
+  ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = T, full.names = T) |>
+     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
+
+  compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv')
+  compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
+
+  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    dplyr::rename_with(tolower) |>
+    dplyr::mutate(snp=trimws(snp), chr=as.character(chr), bp=as.numeric(bp)) |>
+    dplyr::select(snp, chr, bp)
+
+  finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/finemapped_studies.tsv'))
+  study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types) |>
+    dplyr::filter(min_p <= p_value_threshold) |>
+    dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
+    dplyr::filter(!duplicated(unique_study_id)) |>
+    dplyr::select(study, snp, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+
+  coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/coloc_results.tsv'))
+  if (length(coloc_input_files) > 0) {
+    coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+      dplyr::filter(!is.na(traits) & traits != 'None') |>
+      dplyr::filter(stringr::str_detect(traits, paste(paste0("\\b", study_extractions$unique_study_id, "\\b"), collapse="|"))) |>
+      dplyr::filter(posterior_prob > 0.5) |>
+      dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
+      tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+      dplyr::rename(unique_study_id=traits) |>
+      dplyr::group_by(unique_study_id, candidate_snp) |>
+      dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+      dplyr::ungroup()
+
+
+    vroom::vroom_write(coloc_results, compiled_coloc_results_file)
+  }
+
+  vroom::vroom_write(study_extractions, compiled_study_extractions_file)
+
+  return(list(
+    coloc_results = coloc_results,
+    study_extractions = study_extractions
+  ))
+}
+
+send_update_gwas_upload <- function(gwas_info, coloc_results, study_extractions) {
+  api_url <- glue::glue("https://gpm.opengwas.io/api/gwas/{gwas_info$metadata$guid}")
+  
+  put_body <- list(
+    coloc_results = coloc_results,
+    study_extractions = study_extractions
+  )
+  print(jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE))
+
+  response <- httr::PUT(
+    url = api_url,
+    body = jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE),
+    httr::add_headers("Content-Type" = "application/json")
+  )
+  
+  if (httr::status_code(response) != 200) {
+    stop("Error updating GWAS: ", httr::content(response, "text"))
+  }
+    
+  message("Successfully updated GWAS results")
+}
+
+send_email <- function(gwas_info) {
+  tryCatch({
+    email_body <- list(
+      sendmailR::mime_part_html(
+        glue::glue(
+          "<html>",
+          "<body>",
+          "<p>Thanks for using the Genotype-Phenotype Map!</p>",
+          "<p>Your results are ready to view. <a href='{gpm_website_data$url}/results/{gwas_info$metadata$guid}'>Click here</a> to view your results.</p>",
+          "<p>If you have any questions, please <a href='{gpm_website_data$contact}'>contact us here</a>.</p>",
+          "<p>Best regards,<br>The Genotype-Phenotype Map Team</p>",
+          "</body>",
+          "</html>"
+        ),
+        type = "text/html; charset=UTF-8"
+      )
+    )
+
+    if (!is.na(TEST_RUN)) {
+      gwas_info$metadata$email <- glue::glue('{Sys.info()["user"]}@bristol.ac.uk')
+    }
+    print(gwas_info$metadata$email)
+
+    sendmailR::sendmail(
+      from = "noreply@bristol.ac.uk",
+      to = gwas_info$metadata$email,
+      subject = glue::glue("Genotype-Phenotype Map Results for {gwas_info$metadata$name}"),
+      msg = email_body,
+      control = list(smtpServer = "localhost")
+    )
+  
+    return(TRUE)
+  }, error = function(e) {
+    message(sprintf("Error sending email: %s", e$message))
+    return(FALSE)
+  })
 }
 
 main()

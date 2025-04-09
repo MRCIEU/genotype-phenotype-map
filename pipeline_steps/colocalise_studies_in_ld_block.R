@@ -1,5 +1,5 @@
 source('constants.R')
-bp_range <- 50000
+bp_range <- 10000
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -22,15 +22,9 @@ main <- function() {
   }
 
   if (!is.na(args$worker_guid)) {
-    #TODO: uncomment after testing
-    # existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
     existing_finemapped_studies_file <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
-    min_bp <- min(finemapped_studies$bp)
-    max_bp <- max(finemapped_studies$bp)
-    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-      dplyr::filter(bp > min_bp - bp_range & bp < max_bp + bp_range)
-    message(glue::glue('Found {nrow(finemapped_studies)} finemapped studies in {existing_finemapped_studies_file}'))
+    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies)
   }
 
   cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_groups.rds')

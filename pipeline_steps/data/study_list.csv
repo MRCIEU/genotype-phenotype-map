@@ -10,10 +10,5 @@ european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,
 *,protein,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/protein,EUR,GRCh38,1.5e-4,rare_exome,tsv
 *,phenotype,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/phenotype,EUR,GRCh38,1.5e-4,rare_exome,tsv
 *,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json
-A*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-B*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-C*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-E*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-H*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-L*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
-M*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+[A-P]*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+Skin*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json

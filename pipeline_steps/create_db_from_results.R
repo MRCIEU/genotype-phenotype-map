@@ -60,6 +60,7 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$studies$data <- studies_db$studies$data |>
     dplyr::filter(study_name %in% studies_db$study_extractions$data$study) |>
     dplyr::mutate(id=1:dplyr::n()) |>
+    dplyr::mutate(file=sub(data_dir, "", file)) |>
     dplyr::select(-reference_build, -source)
 
   studies_db$snp_annotations$data <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>

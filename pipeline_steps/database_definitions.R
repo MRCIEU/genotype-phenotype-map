@@ -190,8 +190,8 @@ associations_table <- list(
 gwas_upload_db <- list(
   gwas_upload = list(
     name = "gwas_upload",
-    query = "CREATE SEQUENCE id_sequence START 1; CREATE TABLE gwas_upload (
-      id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
+    query = "CREATE SEQUENCE gwas_upload_id_sequence START 1; CREATE TABLE gwas_upload (
+      id INTEGER PRIMARY KEY DEFAULT nextval('gwas_upload_id_sequence'),
       guid TEXT UNIQUE NOT NULL,
       email TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -207,9 +207,9 @@ gwas_upload_db <- list(
   ),
   study_extractions = list(
     name = "study_extractions",
-    query = "CREATE TABLE study_extractions (
-      id INTEGER PRIMARY KEY,
-      study_id INTEGER,
+    query = "CREATE SEQUENCE study_extractions_id_sequence START 1; CREATE TABLE study_extractions (
+      id INTEGER PRIMARY KEY DEFAULT nextval('study_extractions_id_sequence'),
+      gwas_upload_id INTEGER,
       snp_id INTEGER,
       snp TEXT NOT NULL,
       ld_block_id INTEGER,
@@ -226,7 +226,9 @@ gwas_upload_db <- list(
   colocalisations = list(
     name = "colocalisations",
     query = "CREATE TABLE colocalisations (
-      study_extraction_id INTEGER,
+      gwas_upload_id INTEGER,
+      upload_study_extraction_id INTEGER,
+      existing_study_extraction_id INTEGER,
       snp_id INTEGER,
       ld_block_id INTEGER,
       coloc_group_id INTEGER,

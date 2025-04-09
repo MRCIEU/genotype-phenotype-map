@@ -38,7 +38,5 @@ jobs:
       env:
         ORACLE_SERVER: ${{ secrets.ORACLE_SERVER }}
       run: |
-        cp .env.prod .env.pipeline
-
-        FILES=".env.pipeline"
+        FILES=".env.pipeline_worker"
         scp -i ~/.ssh/oracle_gpmap.key $FILES opc@${ORACLE_SERVER}:/home/opc/genotype-phenotype-api/

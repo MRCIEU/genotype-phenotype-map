@@ -273,6 +273,8 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   }) 
 
   associations <- associations[!sapply(associations, is.null)]
+  associations <- do.call(rbind, associations)
+
   snp_annotations_subset <- studies_db$snp_annotations$data |>
     dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
@@ -281,14 +283,12 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
     dplyr::select(study_name, id) |>
     dplyr::rename(study_id=id)
 
-  lapply(associations, \(assoc) {
-    assoc <- assoc |> 
-      dplyr::left_join(snp_annotations_subset, by="snp") |>
-      dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
-      dplyr::select(snp_id, study_id, beta, se, imputed, p, eaf)
+  associations <- associations |> 
+    dplyr::left_join(snp_annotations_subset, by="snp") |>
+    dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
+    dplyr::select(snp_id, study_id, beta, se, imputed, p, eaf)
 
-    DBI::dbAppendTable(conn, associations_table$name, assoc)
-  })
+  DBI::dbAppendTable(conn, associations_table$name, associations)
 }
 
 

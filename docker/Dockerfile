@@ -1,4 +1,4 @@
-FROM mrcieu/genehackman:1.0.0
+FROM --platform=$TARGETPLATFORM mrcieu/genehackman:1.0.0
 
 ARG TARGETARCH
 RUN set -eux; \

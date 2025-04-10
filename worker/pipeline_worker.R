@@ -14,8 +14,6 @@ redis_conn <- redux::hiredis(
 process_gwas <- 'process_gwas'
 process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
 
-existing_study_extractions <- vroom::vroom(glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv'), show_col_types = F, col_types = finemapped_column_types)
-
 main <- function() {
   if (args$reprocess_dlq) {
     retry_dlq_messages()

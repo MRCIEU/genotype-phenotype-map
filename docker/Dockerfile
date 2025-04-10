@@ -1,6 +1,6 @@
 FROM mrcieu/genehackman:1.0.0
 
-RUN apt-get update && apt-get install -y less default-jre rsync
+RUN apt-get update && apt-get install -y less default-jre
 
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \

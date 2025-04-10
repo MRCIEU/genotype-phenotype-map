@@ -1,20 +1,16 @@
 FROM mrcieu/genehackman:1.0.0
 
-# RUN apt-get update && apt-get install -y less 
-
 ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
+RUN set -eux; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
         echo "Using Intel MKL for AMD64, $TARGETARCH"; \
-        apt-get update && \
-        apt-get install -y wget gnupg && \
-        wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor > /usr/share/keyrings/oneapi-archive-keyring.gpg && \
-        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list && \
-        apt-get update && \
-        apt-get install -y default-jre libhiredis-dev libgmp-dev libmpfr-dev libgsl-dev intel-oneapi-mkl; \
+        wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
+        apt update && apt install -y --no-install-recommends less libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync || (cat /var/log/apt/term.log && exit 1); \
     else \
         echo "Using OpenBLAS for ARM64, $TARGETARCH"; \
         apt-get update && \
-        DEBIAN_FRONTEND=noninteractive apt-get install -y libopenblas-dev liblapack-dev libhiredis0.14 libgmp10 libmpfr6 libgsl25 default-jre-headless openjdk-11-jre-headless; \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y libopenblas-dev liblapack-dev libhiredis0.14 libgmp10 libmpfr6 libgsl25 default-jre-headless openjdk-11-jre-headless || (cat /var/log/apt/term.log && exit 1); \
     fi && \
     rm -rf /var/lib/apt/lists/*
 

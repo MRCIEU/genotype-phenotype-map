@@ -14,3 +14,4 @@ european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,
 Skin*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
 Sm*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
 Sp*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+Testis*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json

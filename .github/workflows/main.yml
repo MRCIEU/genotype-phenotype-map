@@ -32,6 +32,8 @@ jobs:
         tags: |
           mrcieu/genotype-phenotype-map:latest
           mrcieu/genotype-phenotype-map:${{ github.sha }}
+        cache-from: type=registry,ref=mrcieu/genotype-phenotype-map:latest
+        cache-to: type=inline
 
     - name: Populate .env files and copy deployment files to server
       env:

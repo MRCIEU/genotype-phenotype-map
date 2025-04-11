@@ -217,11 +217,15 @@ compile_results <- function() {
     dplyr::select(snp, chr, bp)
 
   finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/finemapped_studies.tsv'))
-  study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types) |>
-    dplyr::filter(min_p <= p_value_threshold) |>
-    dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
-    dplyr::filter(!duplicated(unique_study_id)) |>
-    dplyr::select(study, snp, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+  if (length(finemapped_studies_files) > 0) {
+    study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types) |>
+      dplyr::filter(min_p <= p_value_threshold) |>
+      dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
+      dplyr::filter(!duplicated(unique_study_id)) |>
+      dplyr::select(study, snp, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+  } else {
+    study_extractions <- data.frame()
+  }
 
   coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/coloc_results.tsv'))
   if (length(coloc_input_files) > 0) {
@@ -235,11 +239,11 @@ compile_results <- function() {
       dplyr::group_by(unique_study_id, candidate_snp) |>
       dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
       dplyr::ungroup()
-
-
-    vroom::vroom_write(coloc_results, compiled_coloc_results_file)
+  } else {
+    coloc_results <- data.frame()
   }
 
+  vroom::vroom_write(coloc_results, compiled_coloc_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
 
   return(list(
@@ -249,8 +253,8 @@ compile_results <- function() {
 }
 
 send_update_gwas_upload <- function(gwas_info, coloc_results, study_extractions) {
-  api_url <- glue::glue("https://gpm.opengwas.io/api/gwas/{gwas_info$metadata$guid}")
-  
+  api_url <- glue::glue("https://gpmap.opengwas.io/api/gwas/{gwas_info$metadata$guid}")
+
   put_body <- list(
     coloc_results = coloc_results,
     study_extractions = study_extractions

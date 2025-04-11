@@ -22,9 +22,10 @@ main <- function() {
   }
 
   if (!is.na(args$worker_guid)) {
-    existing_finemapped_studies_file <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
+    existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
-    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies)
+    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
+      dplyr::mutate(file = sub('/local-scratch/projects/genotype-phenotype-map/data/', data_dir, file))
   }
 
   cached_coloc_group_file <- glue::glue('{ld_info$ld_block_data}/coloc_cached_groups.rds')

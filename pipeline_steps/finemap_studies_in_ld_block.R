@@ -24,7 +24,13 @@ main <- function() {
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
 
-  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
+  #TODO: gzip all unphased.vcor1 files on ieup1, then remove this
+  if (!is.na(args$worker_guid)) {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
+  } else {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1')
+  }
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
 

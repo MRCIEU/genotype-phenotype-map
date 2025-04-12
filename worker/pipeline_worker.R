@@ -253,7 +253,7 @@ compile_results <- function() {
 }
 
 send_update_gwas_upload <- function(gwas_info, coloc_results, study_extractions) {
-  api_url <- glue::glue("https://gpmap.opengwas.io/api/gwas/{gwas_info$metadata$guid}")
+  api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
 
   put_body <- list(
     coloc_results = coloc_results,

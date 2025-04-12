@@ -137,7 +137,7 @@ process_message <- function(gwas_info) {
     results <- compile_results()
 
     message('Calling API to update GWAS upload and sending email')
-    if (!is.na(TEST_RUN)) {
+    if (is.na(TEST_RUN)) {
       send_update_gwas_upload(gwas_info, results$coloc_results, results$study_extractions)
       send_email(gwas_info)
     } 

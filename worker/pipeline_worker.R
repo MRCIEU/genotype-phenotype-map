@@ -136,10 +136,9 @@ process_message <- function(gwas_info) {
     message('compiling results')
     results <- compile_results()
 
-    message('Calling API to update GWAS upload and sending email')
+    message('Calling API to update GWAS upload')
     if (is.na(TEST_RUN)) {
-      send_update_gwas_upload(gwas_info, results$coloc_results, results$study_extractions)
-      send_email(gwas_info)
+      send_update_gwas_upload(gwas_info, TRUE, NULL, results$coloc_results, results$study_extractions)
     } 
     
   }, error = function(e) {
@@ -156,6 +155,8 @@ process_message <- function(gwas_info) {
       process_gwas_dlq, 
       jsonlite::toJSON(error_details, auto_unbox = TRUE)
     )
+
+    send_update_gwas_upload(gwas_info, FALSE, e$message, NULL, NULL)
 
     return(e$message)
   })
@@ -252,18 +253,20 @@ compile_results <- function() {
   ))
 }
 
-send_update_gwas_upload <- function(gwas_info, coloc_results, study_extractions) {
+send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_results, study_extractions) {
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
 
   put_body <- list(
-    coloc_results = coloc_results,
-    study_extractions = study_extractions
+    success = success,
+    failure_reason = failure_reason,
+    coloc_results = coloc_results || [],
+    study_extractions = study_extractions || []
   )
   print(jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE))
 
   response <- httr::PUT(
     url = api_url,
-    body = jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE),
+    body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
     httr::add_headers("Content-Type" = "application/json")
   )
   
@@ -272,44 +275,6 @@ send_update_gwas_upload <- function(gwas_info, coloc_results, study_extractions)
   }
     
   message("Successfully updated GWAS results")
-}
-
-send_email <- function(gwas_info) {
-  tryCatch({
-    email_body <- list(
-      sendmailR::mime_part_html(
-        glue::glue(
-          "<html>",
-          "<body>",
-          "<p>Thanks for using the Genotype-Phenotype Map!</p>",
-          "<p>Your results are ready to view. <a href='{gpm_website_data$url}/results/{gwas_info$metadata$guid}'>Click here</a> to view your results.</p>",
-          "<p>If you have any questions, please <a href='{gpm_website_data$contact}'>contact us here</a>.</p>",
-          "<p>Best regards,<br>The Genotype-Phenotype Map Team</p>",
-          "</body>",
-          "</html>"
-        ),
-        type = "text/html; charset=UTF-8"
-      )
-    )
-
-    if (!is.na(TEST_RUN)) {
-      gwas_info$metadata$email <- glue::glue('{Sys.info()["user"]}@bristol.ac.uk')
-    }
-    print(gwas_info$metadata$email)
-
-    sendmailR::sendmail(
-      from = "noreply@bristol.ac.uk",
-      to = gwas_info$metadata$email,
-      subject = glue::glue("Genotype-Phenotype Map Results for {gwas_info$metadata$name}"),
-      msg = email_body,
-      control = list(smtpServer = "localhost")
-    )
-  
-    return(TRUE)
-  }, error = function(e) {
-    message(sprintf("Error sending email: %s", e$message))
-    return(FALSE)
-  })
 }
 
 main()

@@ -202,6 +202,7 @@ gwas_upload_db <- list(
       doi TEXT,
       should_be_added BOOLEAN,
       status TEXT NOT NULL,
+      failure_reason TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )"
   ),

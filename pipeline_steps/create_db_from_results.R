@@ -3,29 +3,34 @@ source('database_definitions.R')
 
 parser <- argparser::arg_parser('Create DuckDB from pipeline results')
 parser <- argparser::add_argument(parser, '--results_dir', help = 'Results directory of pipeline', type = 'character')
+parser <- argparser::add_argument(parser, '--studies_db_file', help = 'Studies database file', type = 'character')
+parser <- argparser::add_argument(parser, '--associations_db_file', help = 'Associations database file', type = 'character')
+parser <- argparser::add_argument(parser, '--ld_db_file', help = 'LD database file', type = 'character')
+parser <- argparser::add_argument(parser, '--gwas_upload_db_file', help = 'GWAS upload database file', type = 'character')
 
 args <- argparser::parse_args(parser)
 
 max_cores <- 25
 
 main <- function() {
-  studies_db_file <- file.path(args$results_dir, "studies.db")
-  associations_db_file <- file.path(args$results_dir, "associations.db")
-  ld_db_file <- file.path(args$results_dir, "ld.db")
-  gwas_upload_db_file <- file.path(args$results_dir, "gwas_upload.db")
-
   # TODO: delete me later
-  if (file.exists(studies_db_file)) {
-    file.remove(studies_db_file)
+  if (file.exists(args$studies_db_file)) {
+    file.remove(args$studies_db_file)
   }
-  if (file.exists(associations_db_file)) {
-    file.remove(associations_db_file)
+  if (file.exists(args$associations_db_file)) {
+    file.remove(args$associations_db_file)
+  }
+  if (file.exists(args$ld_db_file)) {
+    file.remove(args$ld_db_file)
+  }
+  if (file.exists(args$gwas_upload_db_file)) {
+    file.remove(args$gwas_upload_db_file)
   }
 
-  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
-  associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file)
-  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file)
-  gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), gwas_upload_db_file)
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
+  associations_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
+  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), args$ld_db_file)
+  gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), args$gwas_upload_db_file)
 
   lapply(studies_db, \(table) DBI::dbExecute(studies_conn, table$query))
   lapply(gwas_upload_db, \(table) DBI::dbExecute(gwas_upload_conn, table$query))

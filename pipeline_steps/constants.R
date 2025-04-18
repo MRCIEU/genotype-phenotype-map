@@ -21,6 +21,10 @@ liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
 variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
 
+server_sync_dir <- file.path(data_dir, 'rsync_to_server')
+oracle_data_dir <- '/oradiskvdb1/data/'
+oracle_server <- 'opc@132.145.23.105'
+
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list

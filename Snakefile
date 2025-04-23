@@ -59,7 +59,7 @@ raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
 rare_results = f'{current_results_dir}/rare_results.tsv'
 study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
-variant_annotations = f'{current_results_dir}/variant_annotations.tsv'
+new_studies_processed = f'{current_results_dir}/studies_processed.tsv'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
@@ -265,13 +265,14 @@ rule compile_results:
         rare_results = rare_results,
         study_extractions = study_extractions,
         results_metadata = results_metadata,
-        variant_annotations = variant_annotations,
+        new_studies_processed = new_studies_processed
     shell:
         """
         mkdir -p $(dirname {output})
         Rscript compile_results.R \
             --studies_to_process {studies_to_process_file} \
             --studies_processed {studies_processed_file} \
+            --new_studies_processed_file {output.new_studies_processed} \
             --study_extractions_file {output.study_extractions} \
             --coloc_results_file {output.raw_coloc_results} \
             --rare_results_file {output.rare_results} \
@@ -281,7 +282,7 @@ rule compile_results:
          """
 
 # rule backup_data_dir:
-#     input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
+#     input: raw_coloc_results, rare_results, study_extractions, results_metadata
 #     threads: 1
 #     output: temporary(backup_done_file)
 #     shell:
@@ -292,14 +293,14 @@ rule compile_results:
 #         """
 
 # rule rsync_to_oracle_server:
-#     input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
-#     shell:
-#         """
-#         ./rsync_to_oracle_server.sh
-#         """
+    # input: raw_coloc_results, rare_results, study_extractions, results_metadata
+    # shell:
+    #     """
+    #     ./rsync_to_oracle_server.sh
+    #     """
 
 rule create_results_db:
-   input: raw_coloc_results, rare_results, study_extractions, results_metadata, variant_annotations
+   input: raw_coloc_results, rare_results, study_extractions, results_metadata
    threads: 1
    output:
        studies_db = studies_db_file,

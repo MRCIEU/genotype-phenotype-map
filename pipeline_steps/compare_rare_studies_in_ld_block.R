@@ -50,7 +50,7 @@ main <- function() {
   names(studies_to_compare) <- standardised_studies$unique_study_id
 
   # All rare variants available in ld_block
-  variants <- do.call("rbind", lapply(studies_to_compare, function(x){
+  variants <- do.call("rbind", lapply(studies_to_compare, function(x) {
     x |> dplyr::select(SNP, P)})) |> 
     dplyr::group_by(SNP) |> 
     dplyr::summarise(min_P = min(P))  
@@ -86,30 +86,29 @@ already_run_comparison <- function(compare_rare_cache_file, standardised_studies
 compare_by_variant <- function(studies, variants, P_thresh) {
   # Retain variants under the p-value threshold to compare
   variants_keep <- variants |> dplyr::filter(min_P <= P_thresh)|> dplyr::pull(SNP)
-
-  # Output data frame
   compare_wide <- data.frame()
+  rare_studies <- data.frame()
 
   # Pull studies with shared varaiants
   for (var in variants_keep) {
-    found_study_ids <- sapply(studies, function(study) {
+    found_studies <- sapply(studies, function(study) {
       study <- dplyr::filter(study, SNP == var & P <= P_thresh) |>
-        dplyr::pull(unique_study_id)
+        dplyr::pull(unique_study_id, P, GENE)
     })
 
-    if (length(found_study_ids) == 0){
+    if (length(found_studies$unique_study_id) == 0){
       next
     }
-    found_study_ids <- unlist(found_study_ids)
-
+    found_study_ids <- unlist(found_studies$unique_study_id)
     found_study_ids <- found_study_ids[order(found_study_ids)]
 
     if (length(found_study_ids) == 1){
       next
     }
     
-    # Wide format output
-    compare_wide <- rbind(compare_wide, data.frame(traits = paste(found_study_ids, collapse = ", "), candidate_snp = var))
+    rare_studies <- rbind(rare_studies, found_studies)
+    compare_wide <- rbind(compare_wide, data.frame(
+      traits = paste(found_study_ids, collapse = ", "), candidate_snp = var))
   }
   
   if(nrow(compare_wide) == 0){

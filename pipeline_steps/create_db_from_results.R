@@ -10,7 +10,7 @@ parser <- argparser::add_argument(parser, '--gwas_upload_db_file', help = 'GWAS 
 
 args <- argparser::parse_args(parser)
 
-max_cores <- 25
+max_cores <- 30
 
 main <- function() {
   # TODO: delete me later
@@ -41,14 +41,20 @@ main <- function() {
   lapply(studies_db, \(table) append_unique_rows(studies_conn, table))
 
   all_relevant_snps <- find_relevant_snps(studies_db)
+  message("Found ", nrow(all_relevant_snps), " relevant SNPs")
 
-  load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
+  # load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
 
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(associations_conn, shutdown=TRUE)
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
+
+  file.copy(args$studies_db_file, file.path(args$results_dir, "latest_dbs/studies.db"))
+  file.copy(args$associations_db_file, file.path(args$results_dir, "latest_dbs/associations.db"))
+  file.copy(args$ld_db_file, file.path(args$results_dir, "latest_dbs/ld.db"))
+  file.copy(args$gwas_upload_db_file, file.path(args$results_dir, "latest_dbs/gwas_upload.db"))
 }
 
 load_data_for_studies_db <- function(studies_db) {
@@ -59,13 +65,12 @@ load_data_for_studies_db <- function(studies_db) {
 
   studies_db$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F) |>
     dplyr::left_join(dplyr::select(studies_db$study_sources$data, source, id) |> dplyr::rename(source_id=id), by=c("source"="source"))
-  studies_db$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "all_study_blocks.tsv"), show_col_types = F)
+  studies_db$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "study_extractions.tsv"), show_col_types = F)
 
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- studies_db$studies$data |>
     dplyr::filter(study_name %in% studies_db$study_extractions$data$study) |>
     dplyr::mutate(id=1:dplyr::n()) |>
-    dplyr::mutate(file=sub(data_dir, "", file)) |>
     dplyr::select(-reference_build, -source)
 
   studies_db$snp_annotations$data <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
@@ -101,15 +106,15 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$colocalisations$data <- studies_db$colocalisations$data |>
     dplyr::filter(!is.na(study_extraction_id))
 
-  studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F) |>
-    dplyr::rename_with(tolower) |>
-    format_rare_results(studies_db$study_extractions$data, studies_db$snp_annotations$data)
-  #TODO: Remove this once we have fixed SNP annotations
-  problematic_rare_results <- studies_db$rare_results$data |>
-    dplyr::filter(is.na(study_extraction_id))
-  vroom::vroom_write(problematic_rare_results, "/home/wt23152/problematic_rare_results.tsv")
-  studies_db$rare_results$data <- studies_db$rare_results$data |>
-    dplyr::filter(!is.na(study_extraction_id))
+  # studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F) |>
+  #   dplyr::rename_with(tolower) |>
+  #   format_rare_results(studies_db$study_extractions$data, studies_db$snp_annotations$data)
+  # #TODO: Remove this once we have fixed SNP annotations
+  # problematic_rare_results <- studies_db$rare_results$data |>
+  #   dplyr::filter(is.na(study_extraction_id))
+  # vroom::vroom_write(problematic_rare_results, "/home/wt23152/problematic_rare_results.tsv")
+  # studies_db$rare_results$data <- studies_db$rare_results$data |>
+  #   dplyr::filter(!is.na(study_extraction_id))
 
   studies_db$results_metadata$data <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F) |>
     dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
@@ -178,9 +183,16 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
   relevant_ld_blocks <- unique(studies_db$study_extractions$data$ld_block)
 
   ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=max_cores, \(ld_block) {
-    relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == ld_block)
-    generate_ld_obj(ld_block, relevant_snps$candidate_snp)
+    tryCatch({
+      relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == ld_block)
+      generate_ld_obj(ld_block, relevant_snps$candidate_snp)
+    }, error = function(e) {
+      message("Error generating LD object for ", ld_block, " - ", e)
+      throw(e)
+    })
   }) |> dplyr::bind_rows()
+
+  vroom::vroom_write(ld_data, file.path(args$results_dir, "tmp_ld_data.tsv"))
 
   variant_annotations_subset_lead <- dplyr::select(studies_db$snp_annotations$data, snp, id) |> dplyr::rename(lead_snp_id=id)
   variant_annotations_subset_variant <- dplyr::select(studies_db$snp_annotations$data, snp, id) |> dplyr::rename(variant_snp_id=id)
@@ -196,10 +208,10 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 }
 
 generate_ld_obj <- function(ld_block, snps) {
-  print("Generating LD object for ", ld_block)
+  message("Generating LD object for ", ld_block)
   ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1"))
   ld <- vroom::vroom(ld_file, col_names = FALSE, show_col_types = F)
-  ldvars <- vroom::vroom(glue::glue("{ld_file}.vars"), col_names = FALSE, show_col_types = F)
+  ldvars <- vroom::vroom(glue::glue("{ld_file}.vars"), delim = " ", col_names = FALSE, show_col_types = F)
 
   names(ld) <- ldvars$X1
   ld$lead <- ldvars$X1
@@ -214,6 +226,8 @@ generate_ld_obj <- function(ld_block, snps) {
 }
 
 append_unique_rows <- function(conn, table) {
+  if (table$name == "rare_results") return()
+
   if (is.null(table$data) || nrow(table$data) == 0) return()
   # If the id column doesn't exist, we can replace the table, otherwise we need to filter out existing rows
   id_column_exists <- DBI::dbGetQuery(conn, glue::glue("SELECT COUNT(*) FROM pragma_table_info('{table$name}') WHERE name = 'id';"))
@@ -249,7 +263,7 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
 
       associations <- apply(imputed_studies, 1, \(study) {
         tryCatch({
-          extractions <- vroom::vroom(study[['file']], show_col_types = F)
+          extractions <- vroom::vroom(study[['file']], show_col_types = F, altrep = FALSE)
           if (!"IMPUTED" %in% names(extractions)) {
             extractions$IMPUTED <- FALSE
           }

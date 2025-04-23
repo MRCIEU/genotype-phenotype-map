@@ -292,11 +292,11 @@ rule compile_results:
 #         touch {output}
 #         """
 
-# rule rsync_to_oracle_server:
+# rule sync_to_oracle_server:
     # input: raw_coloc_results, rare_results, study_extractions, results_metadata
     # shell:
     #     """
-    #     ./rsync_to_oracle_server.sh
+    #     ./sync_to_oracle_server.sh
     #     """
 
 rule create_results_db:

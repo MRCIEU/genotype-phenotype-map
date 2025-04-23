@@ -2,6 +2,7 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
+oracle_server <- Sys.getenv('ORACLE_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
@@ -23,7 +24,6 @@ variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
 
 server_sync_dir <- file.path(data_dir, 'rsync_to_server')
 oracle_data_dir <- '/oradiskvdb1/data/'
-oracle_server <- 'opc@132.145.23.105'
 
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 

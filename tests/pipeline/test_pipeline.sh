@@ -19,7 +19,7 @@ if [[ $EXTRA_ARG =~ "delete" ]]; then
   rm -r $DATA_DIR/study
   rm -r $DATA_DIR/ld_blocks/*/*
   rm -r $DATA_DIR/pipeline_metadata/updated_ld_blocks_to_colocalise.tsv
-  rm -r $RESULTS_DIR/studies_processed.tsv
+  rm -r $RESULTS_DIR/latest/studies_processed.tsv.gz
   rm -r $RESULTS_DIR/$TIMESTAMP/*
   EXTRA_ARG=""
   set -e

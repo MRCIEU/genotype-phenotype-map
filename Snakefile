@@ -51,15 +51,17 @@ compare_rare_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/compare_rare_compl
 complex_compare_rare_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_compare_rare_complete'
 
 ### OUTPUT DATA FILES
-studies_processed_file = RESULTS_DIR + 'studies_processed.tsv'
+studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
+traits_processed_file = RESULTS_DIR + 'latest/traits_processed.tsv.gz'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
 raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
-rare_results = f'{current_results_dir}/rare_results.tsv'
+raw_rare_results = f'{current_results_dir}/raw_rare_results.tsv'
 study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
-new_studies_processed = f'{current_results_dir}/studies_processed.tsv'
+new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
+new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
@@ -81,9 +83,11 @@ rule all:
         expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
         expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
         raw_coloc_results,
-        rare_results,
+        raw_rare_results,
         study_extractions,
         results_metadata,
+        new_studies_processed,
+        new_traits_processed,
         studies_db_file,
         associations_db_file,
         ld_db_file,
@@ -262,20 +266,23 @@ rule compile_results:
     threads: 1
     output:
         raw_coloc_results = raw_coloc_results,
-        rare_results = rare_results,
+        raw_rare_results = raw_rare_results,
         study_extractions = study_extractions,
         results_metadata = results_metadata,
-        new_studies_processed = new_studies_processed
+        new_studies_processed = new_studies_processed,
+        new_traits_processed = new_traits_processed
     shell:
         """
         mkdir -p $(dirname {output})
         Rscript compile_results.R \
             --studies_to_process {studies_to_process_file} \
             --studies_processed {studies_processed_file} \
+            --traits_processed {traits_processed_file} \
             --new_studies_processed_file {output.new_studies_processed} \
+            --new_traits_processed_file {output.new_traits_processed} \
             --study_extractions_file {output.study_extractions} \
             --coloc_results_file {output.raw_coloc_results} \
-            --rare_results_file {output.rare_results} \
+            --rare_results_file {output.raw_rare_results} \
             --compiled_results_metadata_file {output.results_metadata}
 
          rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
@@ -300,7 +307,7 @@ rule compile_results:
     #     """
 
 rule create_results_db:
-   input: raw_coloc_results, rare_results, study_extractions, results_metadata
+   input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
    threads: 1
    output:
        studies_db = studies_db_file,
@@ -320,7 +327,7 @@ rule create_results_db:
 onsuccess:
     print('Yay!  Please look here:')
     print(raw_coloc_results)
-    print(rare_results)
+    print(raw_rare_results)
     print(study_extractions)
     print(results_metadata)
 

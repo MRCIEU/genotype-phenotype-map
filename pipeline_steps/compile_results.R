@@ -6,8 +6,10 @@ parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
+parser <- argparser::add_argument(parser, '--traits_processed', help = 'Current state of processed traits', type = 'character')
 #OUTPUT
 parser <- argparser::add_argument(parser, '--new_studies_processed_file', help = 'New studies processed file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--new_traits_processed_file', help = 'New traits processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
@@ -20,12 +22,13 @@ main <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
     dplyr::filter(dir.exists(ld_block_data))
 
-  pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed)
+  pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed, args$traits_processed)
 
-  pipeline_data$study_extractions <- compile_study_blocks(pipeline_data)
+  pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
+  vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
@@ -38,7 +41,7 @@ main <- function() {
   # }
 }
 
-aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {
+aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file, traits_processed_file) {
   #take all files in each ld_block, and concatenate the data into one dataframe each (for use in the rest of this script)
   extracted_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/extracted_studies.tsv'))
   extracted_studies <- vroom::vroom(extracted_studies_files, show_col_types = F)
@@ -65,7 +68,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
   }
 
-  #update studies_processed.tsv with studies_to_process.tsv
+  #update studies_processed.tsv.gz with studies_to_process.tsv
   gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
@@ -80,6 +83,13 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     studies_processed <- studies_to_process
   }
 
+  traits_unprocessed <- studies_processed |>
+    dplyr::filter(!study_name %in% traits_processed$study_name) |>
+    dplyr::select(data_type, study_name, trait_name)
+  traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
+
+  traits_processed <- rbind(traits_processed, traits_unprocessed) |> dplyr::distinct()
+
   return(list(
     extracted_studies = extracted_studies,
     standardised_studies = standardised_studies,
@@ -87,26 +97,32 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     finemapped_studies = finemapped_studies,
     raw_coloc_results = raw_coloc_results,
     raw_rare_results = compare_rare_results,
-    studies_processed = studies_processed
+    studies_processed = studies_processed,
+    traits_processed = traits_processed
   ))
 }
 
-compile_study_blocks <- function(pipeline_data) {
+create_study_extractions <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
     dplyr::filter(min_p <= p_value_threshold) |>
     dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  # rare_studies <- pipeline_data$standardised_studies |>
-  #   dplyr::filter(variant_type != variant_types$common) |>
-  #   dplyr::mutate(unique_study_id = paste0(study, '_', chr, '_', bp)) |>
-  #   dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+  standardised_studies <- pipeline_data$standardised_studies |>
+    dplyr::filter(variant_type != variant_types$common) |>
+    dplyr::mutate(unique_study_id = paste0(study, '_', chr, '_', bp))
+  
+  rare_studies <- pipeline_data$raw_rare_results |>
+    dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
+    tidyr::separate_rows(traits, min_ps, genes, sep=", ") |>
+    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes) |>
+    dplyr::mutate(min_p = as.numeric(min_p)) |>
+    dplyr::left_join(standardised_studies, by="unique_study_id") |>
+    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block, known_gene)
 
-  # rare_studies$known_gene <- NA
-
-  # all_studies <- rbind(finemapped_studies, rare_studies)
-  return(finemapped_studies)
+  all_studies <- rbind(finemapped_studies, rare_studies)
+  return(all_studies)
 }
 
 aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {

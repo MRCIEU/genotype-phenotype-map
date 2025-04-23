@@ -165,7 +165,7 @@ process_message <- function(gwas_info) {
 
 create_study_metadata_files <- function(gwas_info) {
   study_to_process <- data.frame(
-    data_type = ordered_data_types$phenotype,
+    data_type = data_types$phenotype,
     data_format = gwas_info$metadata$file_type,
     source = 'user',
     study_name = gwas_info$metadata$guid,

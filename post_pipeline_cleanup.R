@@ -13,7 +13,7 @@ main <- function() {
 
   cleanup_studies_with_no_extractions()
 
-  #only copy the studies_processed.tsv file to the results directory once everything else was successful
+  #only copy the studies_processed.tsv.gz file to the results directory once everything else was successful
   file.copy(args$studies_processed, results_dir)
 
   # if (is.na(TEST_RUN)) {

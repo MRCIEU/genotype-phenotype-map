@@ -20,6 +20,15 @@ studies_db <- list(
       ld_block TEXT NOT NULL
     )"
   ),
+  traits = list(
+    name = "traits",
+    query = "CREATE TABLE traits (
+      id INTEGER PRIMARY KEY,
+      data_type TEXT NOT NULL,
+      trait TEXT NOT NULL,
+      trait_name TEXT NOT NULL
+    )"
+  ),
   studies = list(
     name = "studies",
     query = "CREATE TABLE studies (
@@ -27,7 +36,7 @@ studies_db <- list(
       data_type TEXT NOT NULL,
       data_format TEXT NOT NULL,
       study_name TEXT NOT NULL,
-      trait TEXT NOT NULL,
+      trait_id INTEGER NOT NULL,
       ancestry TEXT NOT NULL,
       sample_size INTEGER NOT NULL,
       category TEXT,
@@ -39,6 +48,7 @@ studies_db <- list(
       variant_type TEXT,
       p_value_threshold DOUBLE,
       gene TEXT,
+      FOREIGN KEY (trait_id) REFERENCES traits(id),
       FOREIGN KEY (source_id) REFERENCES study_sources(id)
     )"
   ),

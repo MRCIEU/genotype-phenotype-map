@@ -10,7 +10,7 @@ parser <- argparser::add_argument(parser, '--gwas_upload_db_file', help = 'GWAS 
 
 args <- argparser::parse_args(parser)
 
-max_cores <- 30
+max_cores <- 40
 
 main <- function() {
   # TODO: delete me later
@@ -51,10 +51,10 @@ main <- function() {
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
 
-  file.copy(args$studies_db_file, file.path(args$results_dir, "latest_dbs/studies.db"))
-  file.copy(args$associations_db_file, file.path(args$results_dir, "latest_dbs/associations.db"))
-  file.copy(args$ld_db_file, file.path(args$results_dir, "latest_dbs/ld.db"))
-  file.copy(args$gwas_upload_db_file, file.path(args$results_dir, "latest_dbs/gwas_upload.db"))
+  file.copy(args$studies_db_file, file.path(latest_results_dir, "studies.db"))
+  file.copy(args$associations_db_file, file.path(latest_results_dir, "associations.db"))
+  file.copy(args$ld_db_file, file.path(latest_results_dir, "ld.db"))
+  file.copy(args$gwas_upload_db_file, file.path(latest_results_dir, "gwas_upload.db"))
 }
 
 load_data_for_studies_db <- function(studies_db) {
@@ -63,8 +63,17 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$ld_blocks$data <- vroom::vroom(file.path("data/ld_blocks.tsv"), show_col_types = F) |>
     dplyr::mutate(id=1:dplyr::n(), ld_block=paste0(ancestry, "/", chr, "/", start, "-", stop))
 
-  studies_db$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv"), show_col_types = F) |>
-    dplyr::left_join(dplyr::select(studies_db$study_sources$data, source, id) |> dplyr::rename(source_id=id), by=c("source"="source"))
+  studies_db$traits$data <- vroom::vroom(file.path(args$results_dir, "traits_processed.tsv.gz"), show_col_types = F) |>
+    dplyr::mutate(id=1:dplyr::n())
+  
+  traits_subset <- studies_db$traits$data |>
+    dplyr::select(trait, id) |>
+    dplyr::rename(trait_id=id)
+
+  studies_db$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv.gz"), show_col_types = F) |>
+    dplyr::left_join(dplyr::select(studies_db$study_sources$data, source, id) |> dplyr::rename(source_id=id), by=c("source"="source")) |>
+    dplyr::left_join(traits_subset, by="trait")
+
   studies_db$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "study_extractions.tsv"), show_col_types = F)
 
   # Remove the studies that don't have any study extractions
@@ -106,15 +115,9 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$colocalisations$data <- studies_db$colocalisations$data |>
     dplyr::filter(!is.na(study_extraction_id))
 
-  # studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv"), show_col_types = F) |>
-  #   dplyr::rename_with(tolower) |>
-  #   format_rare_results(studies_db$study_extractions$data, studies_db$snp_annotations$data)
-  # #TODO: Remove this once we have fixed SNP annotations
-  # problematic_rare_results <- studies_db$rare_results$data |>
-  #   dplyr::filter(is.na(study_extraction_id))
-  # vroom::vroom_write(problematic_rare_results, "/home/wt23152/problematic_rare_results.tsv")
-  # studies_db$rare_results$data <- studies_db$rare_results$data |>
-  #   dplyr::filter(!is.na(study_extraction_id))
+  studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "raw_rare_results.tsv"), show_col_types = F) |>
+    dplyr::rename_with(tolower) |>
+    format_rare_results(studies_db$study_extractions$data, studies_db$snp_annotations$data)
 
   studies_db$results_metadata$data <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F) |>
     dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
@@ -157,8 +160,9 @@ format_rare_results <- function(rare_results, study_extractions, snp_annotations
 
   rare_results <- rare_results |>
     dplyr::mutate(rare_result_group_id=1:dplyr::n()) |>
-    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-    dplyr::rename(unique_study_id=traits) |>
+    tidyr::separate_rows(traits, min_ps, genes, sep=", ") |>
+    dplyr::mutate(min_p = as.numeric(min_p)) |>
+    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes) |>
     dplyr::left_join(study_extractions_subset, by="unique_study_id") |>
     dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-many")
 

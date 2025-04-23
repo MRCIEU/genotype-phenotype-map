@@ -15,6 +15,7 @@ gpm_website_data <- list(
   name = 'The Genotype-Phenotype Map Team'
 )
 
+latest_results_dir <- glue::glue('{results_dir}latest/')
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
@@ -29,12 +30,19 @@ bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?
-ordered_data_types <- list(splice_variant='splice_variant',
+data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',
                            protein='protein',
                            metabolome='metabolome',
                            phenotype='phenotype'
+)
+data_type_names <- list(splice_variant='sQTL',
+                           transcript='tQTL',
+                           gene_expression='eQTL',
+                           protein='pQTL',
+                           metabolome='mQTL',
+                           phenotype='GWAS'
 )
 study_categories <- list(binary='binary', continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')

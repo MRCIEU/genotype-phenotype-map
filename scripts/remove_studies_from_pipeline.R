@@ -1,6 +1,6 @@
 source('../pipeline_steps/constants.R')
 
-# studies_to_remove <- vroom::vroom(glue::glue('{results_dir}/studies_processed.tsv')) |> 
+# studies_to_remove <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz')) |> 
 studies_to_remove <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')) |> 
   dplyr::filter(data_type != 'phenotype')
 studies_to_remove <- studies_to_remove$study_name
@@ -87,7 +87,7 @@ main <- function() {
   })
 
   #and then delete them from the results
-  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv')
+  studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
   studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
   entries <- nrow(studies_processed)
   studies_processed <- dplyr::filter(studies_processed, !study_name %in% studies_to_remove)

@@ -87,7 +87,6 @@ compare_by_variant <- function(studies, variants, P_thresh) {
   # Retain variants under the p-value threshold to compare
   variants_keep <- variants |> dplyr::filter(min_P <= P_thresh)|> dplyr::pull(SNP)
   compare_wide <- data.frame()
-  rare_studies <- data.frame()
 
   # Pull studies with shared varaiants
   for (var in variants_keep) {
@@ -96,26 +95,18 @@ compare_by_variant <- function(studies, variants, P_thresh) {
         dplyr::pull(unique_study_id, P, GENE)
     })
 
-    if (length(found_studies$unique_study_id) == 0){
+    if (nrow(found_studies) < 2){
       next
     }
-    found_study_ids <- unlist(found_studies$unique_study_id)
-    found_study_ids <- found_study_ids[order(found_study_ids)]
 
-    if (length(found_study_ids) == 1){
-      next
-    }
-    
-    rare_studies <- rbind(rare_studies, found_studies)
     compare_wide <- rbind(compare_wide, data.frame(
-      traits = paste(found_study_ids, collapse = ", "), candidate_snp = var))
-  }
-  
-  if(nrow(compare_wide) == 0){
-    return(data.frame())
+      traits = paste(found_studies$unique_study_id, collapse = ", "),
+      candidate_snp = var,
+      min_ps = paste(found_studies$P, collapse = ", "),
+      genes = paste(found_studies$GENE, collapse = ", "))
+    )
   }
 
-  colnames(compare_wide) <- c("traits","candidate_snp")
   return(compare_wide)
 }
 

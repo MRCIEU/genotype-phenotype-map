@@ -70,7 +70,7 @@ update_studies_processed <- function() {
     # vroom::vroom_write(studies_to_process, studies_to_process_file)
   }
 
-  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv') 
+  studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz') 
   processed_studies <- vroom::vroom(studies_processed_file, show_col_types = F)
   processed_studies$variant_type <- variant_types$common
   # ...

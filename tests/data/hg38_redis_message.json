@@ -1,0 +1,4 @@
+[
+  "process_gwas",
+  "{\"file_location\": \"../tests/data/hg38_gwas_upload.tsv.gz\", \"metadata\": {\"guid\": \"22d5cdd8-ac0b-bb58-d2c3-c342ac8ec78b\", \"reference_build\": \"GRCh38\", \"name\": \"height\", \"category\": \"continuous\", \"is_published\": false, \"doi\": null, \"should_be_added\": false, \"ancestry\": \"EUR\", \"sample_size\": 234234, \"column_names\": {\"SNP\": null, \"RSID\": null, \"CHR\": \"CHR\", \"BP\": \"BP\", \"EA\": \"EA\", \"OA\": \"OA\", \"P\": null, \"BETA\": \"BETA\", \"OR\": null, \"SE\": \"SE\", \"EAF\": \"EAF\"}, \"status\": \"processing\"}}"
+]

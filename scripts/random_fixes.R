@@ -4,8 +4,10 @@ options(dplyr.width = Inf)
 
 fix_bp_mismatch <- function() {
   problematic_studies <- vroom::vroom('~/problematic_extractions.tsv')
-
-  apply(problematic_studies, 1, function(study) {
+  
+  # Use mclapply for parallel processing
+  parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 100, function(i) {
+    study <- problematic_studies[i,]
     print(study['unique_study_id'])
     old_bp <- study[['bp']]
     new_bp <- vroom::vroom(study[['file']], show_col_types = F)
@@ -14,7 +16,6 @@ fix_bp_mismatch <- function() {
     finemapped_studies_file <- glue::glue('{ld_block_data_dir}/{study[["ld_block"]]}/finemapped_studies.tsv')
     finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
     finemapped_studies$bp[finemapped_studies$unique_study_id == study['unique_study_id']] <- new_bp
-    # print(finemapped_studies[finemapped_studies$unique_study_id == study['unique_study_id'], ])
 
     print(paste(study[['unique_study_id']], study[['chr']], old_bp, new_bp))
 

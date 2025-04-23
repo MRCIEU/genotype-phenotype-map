@@ -7,6 +7,7 @@ parser <- argparser::arg_parser('Compile results from pipeline')
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
 parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
 #OUTPUT
+parser <- argparser::add_argument(parser, '--new_studies_processed_file', help = 'New studies processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
@@ -24,11 +25,17 @@ main <- function() {
   pipeline_data$study_extractions <- compile_study_blocks(pipeline_data)
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
+  vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
 
+  # if (is.na(TEST_RUN)) {
+  #   rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
+  # } else {
+  #   vroom::vroom_write(data.frame(), args$pipeline_summary_file)
+  # }
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file) {
@@ -91,12 +98,14 @@ compile_study_blocks <- function(pipeline_data) {
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  rare_studies <- merge(pipeline_data$raw_rare_results, pipeline_data$standardised_studies, by.x = 'study', by.y = 'study_name') |>
-    dplyr::filter(variant_type != variant_types$common) |>
-    dplyr::select(study, file, chr, bp, min_p, cis_trans, ld_block) |>
-    dplyr::mutate(known_gene = if ('GENE' %in% colnames(rare_results)) rare_results$GENE else NA)
+  # rare_studies <- pipeline_data$standardised_studies |>
+  #   dplyr::filter(variant_type != variant_types$common) |>
+  #   dplyr::mutate(unique_study_id = paste0(study, '_', chr, '_', bp)) |>
+  #   dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
 
-  all_studies <- rbind(finemapped_studies, rare_studies)
+  # rare_studies$known_gene <- NA
+
+  # all_studies <- rbind(finemapped_studies, rare_studies)
   return(finemapped_studies)
 }
 
@@ -127,6 +136,5 @@ aggregate_pipeline_metadata <- function(pipeline_data, ld_info) {
 
   return(metadata_per_ld_block)
 }
-
 
 main()

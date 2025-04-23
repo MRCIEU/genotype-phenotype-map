@@ -2,6 +2,7 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
+oracle_server <- Sys.getenv('ORACLE_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
@@ -20,6 +21,9 @@ ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
 liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
 variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
+
+server_sync_dir <- file.path(data_dir, 'rsync_to_server')
+oracle_data_dir <- '/oradiskvdb1/data/'
 
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
@@ -47,7 +51,7 @@ available_liftover_conversions <- list(
 )
 extraction_file_types <- list(vcf='vcf', csv='csv')
 
-standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z')
+standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z', 'GENE')
 required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
 
 standardised_column_types <- vroom::cols(
@@ -78,7 +82,8 @@ finemapped_column_types <- vroom::cols(
   second_finemap_num_results = vroom::col_number(),
   qc_step_run = vroom::col_logical(),
   snps_removed_by_qc = vroom::col_number(),
-  time_taken = vroom::col_character()
+  time_taken = vroom::col_character(),
+  cis_trans = vroom::col_character()
 )
 
 file_prefix <- function(file_path) {

@@ -7,16 +7,22 @@ p_value_filter_correlation_threshold <- 0.6
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
-  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
+  #TODO: gzip all unphased.vcor1 files on ieup1, then remove this
+  if (!is.na(args$worker_guid)) {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
+  } else {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1')
+  }
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_eig <- readRDS(glue::glue('{ld_info$ld_reference_panel_prefix}.ldeig.rds'))
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')

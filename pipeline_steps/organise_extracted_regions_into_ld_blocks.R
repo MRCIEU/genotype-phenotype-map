@@ -2,12 +2,12 @@ source('constants.R')
 
 parser <- argparser::arg_parser('Organise Extracted Regions into LD regions')
 parser <- argparser::add_argument(parser, '--output_file', help = 'Output file', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NULL)
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
@@ -22,7 +22,7 @@ main <- function() {
     data.table::fread(file)
   }) |> dplyr::bind_rows()
 
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     all_extracted_snps$study_name <- args$worker_guid
   } else {
     all_extracted_snps$study_name <- stringr::str_extract(all_extracted_snps$file, '(?<=study/).*?(?=/)')
@@ -32,6 +32,7 @@ main <- function() {
   results <- lapply(extracted_snps_by_region, function(extracted_snps) {
     ld_block <- unique(extracted_snps$ld_block)
     ld_info <- ld_block_dirs(ld_block)
+
     merged_data <- merge(extracted_snps, studies_to_process, by='study_name')
     if (nrow(extracted_snps) == 0) return()
 

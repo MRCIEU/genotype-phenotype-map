@@ -4,7 +4,7 @@ parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the ld block complex', default = F, type = 'logical')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character')
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
 discard_gwas_size <- 150
@@ -12,7 +12,7 @@ minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
@@ -24,7 +24,13 @@ main <- function() {
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
 
-  ld_matrix <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1'), col_names=F, show_col_types = F)
+  #TODO: gzip all unphased.vcor1 files on ieup1, then remove this
+  if (!is.na(args$worker_guid)) {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
+  } else {
+    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1')
+  }
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
 
@@ -39,8 +45,10 @@ main <- function() {
       sample_size <- as.numeric(study['sample_size'])
       finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
       finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
+      finemap_file_prefix_regex <- sub('\\+', '\\\\\\+', finemap_file_prefix)
 
-      study_already_finemapped <- any(grepl(finemap_file_prefix, existing_finemapped_results$file))
+      study_already_finemapped <- any(grepl(finemap_file_prefix_regex, existing_finemapped_results$file))
+
       if (study_already_finemapped) {
         return()
       }
@@ -98,7 +106,9 @@ main <- function() {
     }) |> dplyr::bind_rows()
   }
 
-  finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> dplyr::distinct()
+  finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> 
+    dplyr::distinct(unique_study_id, .keep_all = TRUE)
+
   if (nrow(finemapped_results) == 0) finemapped_results <- empty_finemapped_info()
 
   vroom::vroom_write(finemapped_results, finemapped_results_file)
@@ -169,7 +179,10 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
       #this finds the lead SNP in new credible set
       important_row <- susie_result$sets$cs[1][[1]][[1]]
       new_bp <- as.numeric(gwas[important_row, ]$BP)
+    } else {
+      new_bp <- gwas[which.min(gwas$P), ]$BP
     }
+
     failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)
     if (susie_result$converged == F) {
       message(paste('Finemapping:', study['file'], 'susie didnt converge'))

@@ -5,11 +5,11 @@ minimum_gwas_size <- 150
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
-parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID (if invoked by worker)', type = 'character', default = NULL)
+parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID (if invoked by worker)', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (!is.null(args$worker_guid)) {
+  if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
@@ -37,14 +37,11 @@ main <- function() {
         return()
       }
 
-      print(head(study))
       result <- perform_standardisation(study, ld_matrix_info)
-      print(head(result$gwas))
 
       if (nrow(result$gwas) < minimum_gwas_size && study[['variant_type']] == variant_types$common) {
         return()
       }
-      print(head(result$gwas))
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time)) 

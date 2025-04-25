@@ -68,6 +68,7 @@ ld_db_file = f'{current_results_dir}/ld.db'
 gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
 
 backup_done_file = '/tmp/backup_done'
+sync_done_file = '/tmp/sync_done'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -89,6 +90,7 @@ rule all:
         ld_db_file,
         gwas_upload_db_file
         # backup_done_file,
+        # sync_done_file,
         # pipeline_summary_output
 
 rule extract_regions_from_studies:
@@ -292,12 +294,6 @@ rule compile_results:
 #         touch {output}
 #         """
 
-# rule sync_to_oracle_server:
-    # input: raw_coloc_results, rare_results, study_extractions, results_metadata
-    # shell:
-    #     """
-    #     ./sync_to_oracle_server.sh
-    #     """
 
 rule create_results_db:
    input: raw_coloc_results, rare_results, study_extractions, results_metadata
@@ -316,6 +312,15 @@ rule create_results_db:
            --ld_db_file {ld_db_file} \
            --gwas_upload_db_file {gwas_upload_db_file}
        """
+
+# rule sync_to_oracle_server:
+    # input: raw_coloc_results, rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
+    # threads: 1
+    # output: sync_done_file
+    # shell:
+    #     """
+    #     ./sync_to_oracle_server.sh
+    #     """
 
 onsuccess:
     print('Yay!  Please look here:')

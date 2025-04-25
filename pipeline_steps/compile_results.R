@@ -56,7 +56,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 
   coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_results.tsv'))
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
-    dplyr::filter(!is.na(traits) & traits != 'None')
+    dplyr::filter(!is.na(traits) & traits != 'None' & posterior_prob >= posterior_prob_threshold)
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {

@@ -173,7 +173,7 @@ ld_table <- list(
   )"
 )
 
-#TODO: add in se > 0 check later
+#TODO: add in se > 0 check later, once that is resolved
 associations_table <- list(
   name = "associations",
   query = "CREATE TABLE associations (
@@ -183,7 +183,8 @@ associations_table <- list(
     se REAL,
     p DOUBLE CHECK (p BETWEEN 0 AND 1),
     eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    imputed BOOLEAN
+    imputed BOOLEAN,
+    PRIMARY KEY (snp_id, study_id)
   )"
 )
 

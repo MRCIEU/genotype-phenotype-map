@@ -259,8 +259,8 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_re
   put_body <- list(
     success = success,
     failure_reason = failure_reason,
-    coloc_results = coloc_results || [],
-    study_extractions = study_extractions || []
+    coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) c() else coloc_results,
+    study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) c() else study_extractions
   )
   print(jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE))
 

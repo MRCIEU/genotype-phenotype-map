@@ -252,13 +252,17 @@ compile_results <- function() {
     coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
       dplyr::filter(!is.na(traits) & traits != 'None') |>
       dplyr::filter(stringr::str_detect(traits, paste(paste0("\\b", study_extractions$unique_study_id, "\\b"), collapse="|"))) |>
-      dplyr::filter(posterior_prob > 0.5) |>
-      dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
-      tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-      dplyr::rename(unique_study_id=traits) |>
-      dplyr::group_by(unique_study_id, candidate_snp) |>
-      dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
-      dplyr::ungroup()
+
+    if (nrow(coloc_results) > 0) {
+      coloc_results <- coloc_results |>
+      dplyr::filter(posterior_prob > 0.5)
+        dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
+        tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+        dplyr::rename(unique_study_id=traits) |>
+        dplyr::group_by(unique_study_id, candidate_snp) |>
+        dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+        dplyr::ungroup()
+    }
   } else {
     flog.warn("No coloc result files found")
     coloc_results <- data.frame()
@@ -281,8 +285,8 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_re
   put_body <- list(
     success = success,
     failure_reason = failure_reason,
-    coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) c() else coloc_results,
-    study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) c() else study_extractions
+    coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) list() else coloc_results,
+    study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) list() else study_extractions
   )
   
   flog.debug("Prepared API payload")

@@ -5,7 +5,7 @@ library(futile.logger)
 
 log_dir <- file.path(data_dir, "logs")
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
-log_file <- file.path(log_dir, paste0("pipeline_worker_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
+log_file <- file.path(log_dir, paste0("pipeline_worker_", format(Sys.time(), "%Y%m"), ".log"))
 
 flog.appender(appender.tee(log_file))
 flog.threshold(INFO)

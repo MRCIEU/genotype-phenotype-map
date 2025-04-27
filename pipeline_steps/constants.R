@@ -51,7 +51,7 @@ available_liftover_conversions <- list(
 )
 extraction_file_types <- list(vcf='vcf', csv='csv')
 
-standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z', 'GENE')
+standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z','GENE')
 required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
 
 standardised_column_types <- vroom::cols(

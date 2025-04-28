@@ -1,5 +1,6 @@
 setwd('pipeline_steps')
 source('constants.R')
+source('common_extraction_functions.R')
 
 library(futile.logger)
 
@@ -73,7 +74,6 @@ process_message <- function(gwas_info) {
     dir.create(extracted_study_dir, recursive = T, showWarnings = F)
     dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
-    flog.info('Extracting regions')
     gwas_info$metadata$file_location <- gwas_info$file_location
     if (grepl('\\.vcf', gwas_info$file_location)) {
       gwas_info$metadata$file_type <- 'vcf'
@@ -81,6 +81,15 @@ process_message <- function(gwas_info) {
       gwas_info$metadata$file_type <- 'csv'
     }
 
+    flog.info('Verifying GWAS data')
+    verification_result <- verify_gwas_data(gwas_info)
+    if (!verification_result$valid) {
+      flog.error(verification_result$error)
+      send_update_gwas_upload(gwas_info, FALSE, paste("bad_data:",verification_result$error))
+      return()
+    }
+
+    flog.info('Extracting regions')
     create_study_metadata_files(gwas_info)
     extract_regions <- glue::glue("Rscript extract_regions_from_summary_stats.R",
       " --worker_guid {gwas_info$metadata$guid}")
@@ -99,8 +108,7 @@ process_message <- function(gwas_info) {
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
     parallel_block_processing <- 4
-    blocks <- head(ld_blocks_to_colocalise$ld_block, 2)
-    # parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores=parallel_block_processing, function(block) {
+    blocks <- head(ld_blocks_to_colocalise$ld_block, 10)
     lapply(blocks, function(block) {
       ld_info <- ld_block_dirs(block)
 
@@ -173,6 +181,50 @@ process_message <- function(gwas_info) {
   })
 }
 
+verify_gwas_data <- function(gwas_info) {
+  gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+  gwas_info$metadata$column_names <- Filter(\(column) !is.null(column), gwas_info$metadata$column_names)
+  gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
+  mandatory_columns <- c('CHR', 'BP', 'P', 'EA', 'OA', 'EAF')
+  beta_columns <- c('BETA', 'SE')
+  or_columns <- c('OR', 'OR_LB', 'OR_UB')
+  
+  has_beta <- all(beta_columns %in% colnames(gwas))
+  has_or <- all(or_columns %in% colnames(gwas))
+  
+  if (!has_beta && !has_or) {
+    return(list(valid = FALSE, error = "Must have either BETA and SE columns or OR, OR_LB and OR_UB columns"))
+  }
+  
+  if (has_beta && has_or) {
+    return(list(valid = FALSE, error = "Cannot have both BETA/SE and OR/OR_LB/OR_UB columns"))
+  }
+
+  if (has_or) {
+    mandatory_columns <- c(mandatory_columns, or_columns)
+  } else {
+    mandatory_columns <- c(mandatory_columns, beta_columns) 
+  }
+  missing_columns <- mandatory_columns[!mandatory_columns %in% colnames(gwas)]
+
+  if (length(missing_columns) > 0) {
+    return(list(valid = FALSE, error = paste("Missing mandatory columns:", paste(missing_columns, collapse = ", "))))
+  }
+
+  if (any(gwas$P < 0, na.rm = T)) {
+    return(list(valid = FALSE, error = "Negative P-values found"))
+  }
+
+  if (any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
+    return(list(valid = FALSE, error = "EAF values out of range"))
+  }
+
+  if (has_beta && any(gwas$SE < 0, na.rm = T)) {
+    return(list(valid = FALSE, error = "Negative SE values found"))
+  }
+
+  return(list(valid = TRUE, error = NULL))
+}
 
 create_study_metadata_files <- function(gwas_info) {
   study_to_process <- data.frame(
@@ -221,44 +273,54 @@ check_step_complete <- function(output_file, ld_block) {
 }
 
 compile_results <- function() {
-  ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = T, full.names = T) |>
-     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
-
+  ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
+    {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
+  
   compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
-
+  
   flog.info("Loading SNP annotations")
-  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+  snp_annotations <- vroom::vroom( file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types = FALSE) |>
     dplyr::rename_with(tolower) |>
-    dplyr::mutate(snp=trimws(snp), chr=as.character(chr), bp=as.numeric(bp)) |>
+    dplyr::mutate( snp = trimws(snp), chr = as.character(chr), bp = as.numeric(bp)) |>
     dplyr::select(snp, chr, bp)
-
-  finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/finemapped_studies.tsv'))
+  
+  finemapped_studies_files <- Filter(
+    function(file) file.exists(file), 
+    glue::glue('{ld_block_dirs}/finemapped_studies.tsv')
+  )
+  
   if (length(finemapped_studies_files) > 0) {
     flog.info(paste("Processing", length(finemapped_studies_files), "finemapped study files"))
-    study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types) |>
+    study_extractions <- vroom::vroom( finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
       dplyr::filter(min_p <= p_value_threshold) |>
-      dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
+      dplyr::left_join(snp_annotations, by = c("chr" = "chr", "bp" = "bp")) |>
       dplyr::filter(!duplicated(unique_study_id)) |>
       dplyr::select(study, snp, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
   } else {
     flog.warn("No finemapped study files found")
     study_extractions <- data.frame()
   }
-
-  coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_block_dirs}/coloc_results.tsv'))
+  
+  coloc_input_files <- Filter(
+    function(file) file.exists(file), 
+    glue::glue('{ld_block_dirs}/coloc_results.tsv')
+  )
+  
   if (length(coloc_input_files) > 0) {
     flog.info(paste("Processing", length(coloc_input_files), "coloc result files"))
-    coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
+    coloc_results <- vroom::vroom( coloc_input_files, delim = '\t', show_col_types = FALSE) |>
       dplyr::filter(!is.na(traits) & traits != 'None') |>
-      dplyr::filter(stringr::str_detect(traits, paste(paste0("\\b", study_extractions$unique_study_id, "\\b"), collapse="|"))) |>
-
+      dplyr::filter(
+        stringr::str_detect( traits, paste(paste0("\\b", study_extractions$unique_study_id, "\\b"), collapse = "|"))
+      )
+    
     if (nrow(coloc_results) > 0) {
       coloc_results <- coloc_results |>
-      dplyr::filter(posterior_prob > 0.5)
-        dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
-        tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-        dplyr::rename(unique_study_id=traits) |>
+        dplyr::filter(posterior_prob > 0.5) |>
+        dplyr::mutate( coloc_group_id = 1:dplyr::n(), candidate_snp = trimws(candidate_snp)) |>
+        tidyr::separate_longer_delim(cols = traits, delim = ", ") |>
+        dplyr::rename(unique_study_id = traits) |>
         dplyr::group_by(unique_study_id, candidate_snp) |>
         dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
         dplyr::ungroup()
@@ -267,30 +329,35 @@ compile_results <- function() {
     flog.warn("No coloc result files found")
     coloc_results <- data.frame()
   }
-
+  
   flog.info("Writing compiled results to files")
   vroom::vroom_write(coloc_results, compiled_coloc_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
-
+  
   return(list(
     coloc_results = coloc_results,
     study_extractions = study_extractions
   ))
 }
 
+
 send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_results, study_extractions) {
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
   flog.info(paste("Sending update to API:", api_url))
 
-  put_body <- list(
-    success = success,
-    failure_reason = failure_reason,
-    coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) list() else coloc_results,
-    study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) list() else study_extractions
-  )
+  if (success) {
+    put_body <- list(
+      success = success,
+      coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) list() else coloc_results,
+      study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) list() else study_extractions
+    )
+  } else {  
+    put_body <- list(
+      success = success,
+      failure_reason = failure_reason
+    )
+  }
   
-  flog.debug("Prepared API payload")
-
   response <- httr::PUT(
     url = api_url,
     body = jsonlite::toJSON(put_body, auto_unbox = TRUE),

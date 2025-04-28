@@ -7,6 +7,7 @@ export TEST_RUN=test
 export TIMESTAMP=test
 
 export DATA_DIR=/local-scratch/projects/genotype-phenotype-map/$TEST_RUN/data/
+export GWAS_UPLOAD_DIR=/local-scratch/projects/genotype-phenotype-map/$TEST_RUN/data/
 export RESULTS_DIR=/local-scratch/projects/genotype-phenotype-map/$TEST_RUN/results/
 export BACKUP_DIR=/local-scratch/projects/genotype-phenotype-map/$TEST_RUN/backup/
 

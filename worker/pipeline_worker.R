@@ -119,7 +119,7 @@ process_message <- function(gwas_info) {
         coloc = glue::glue('{ld_info$ld_block_data}/colocalisation_complete')
       )
 
-      flog.info(paste('Standardising regions for block:', block))
+      flog.info(paste('Standardising regions for block:', gwas_info$metadata$guid, block))
       standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
         " --ld_block {block} ", 
         " --completed_output_file {output_files$standardised}",
@@ -127,7 +127,7 @@ process_message <- function(gwas_info) {
       system(standardise_regions, wait = T, intern = T)
       check_step_complete(output_files$standardised, block)
 
-      flog.info(paste('Imputing regions for block:', block))
+      flog.info(paste('Imputing regions for block:', gwas_info$metadata$guid, block))
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$imputed}",
@@ -135,7 +135,7 @@ process_message <- function(gwas_info) {
       system(impute_regions, wait = T, intern = T)
       check_step_complete(output_files$imputed, block)
 
-      flog.info(paste('Finemapping regions for block:', block))
+      flog.info(paste('Finemapping regions for block:', gwas_info$metadata$guid, block))
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$finemapped}",
@@ -143,7 +143,7 @@ process_message <- function(gwas_info) {
       system(finemap_regions, wait = T, intern = T)
       check_step_complete(output_files$finemapped, block)
 
-      flog.info(paste('Colocalising regions for block:', block))
+      flog.info(paste('Colocalising regions for block:', gwas_info$metadata$guid, block))
       coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
@@ -152,10 +152,9 @@ process_message <- function(gwas_info) {
       check_step_complete(output_files$coloc, block)
     })
 
-    flog.info('Compiling results')
+    flog.info(paste('Compiling results for:', gwas_info$metadata$guid))
     results <- compile_results()
 
-    flog.info('Calling API to update GWAS upload')
     if (is.na(TEST_RUN)) {
       send_update_gwas_upload(gwas_info, TRUE, NULL, results$coloc_results, results$study_extractions)
     } 
@@ -267,8 +266,6 @@ check_step_complete <- function(output_file, ld_block) {
         ld_block = ld_block
       )
     )
-  } else {
-    flog.info(glue::glue('Step {output_file} completed successfully'))
   }
 }
 
@@ -279,7 +276,6 @@ compile_results <- function() {
   compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
   
-  flog.info("Loading SNP annotations")
   snp_annotations <- vroom::vroom( file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types = FALSE) |>
     dplyr::rename_with(tolower) |>
     dplyr::mutate( snp = trimws(snp), chr = as.character(chr), bp = as.numeric(bp)) |>
@@ -291,7 +287,7 @@ compile_results <- function() {
   )
   
   if (length(finemapped_studies_files) > 0) {
-    flog.info(paste("Processing", length(finemapped_studies_files), "finemapped study files"))
+    flog.info(paste("Processing", length(finemapped_studies_files), "finemapped study files for", gwas_info$metadata$guid))
     study_extractions <- vroom::vroom( finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
       dplyr::filter(min_p <= p_value_threshold) |>
       dplyr::left_join(snp_annotations, by = c("chr" = "chr", "bp" = "bp")) |>
@@ -308,7 +304,7 @@ compile_results <- function() {
   )
   
   if (length(coloc_input_files) > 0) {
-    flog.info(paste("Processing", length(coloc_input_files), "coloc result files"))
+    flog.info(paste("Processing", length(coloc_input_files), "coloc result files for", gwas_info$metadata$guid))
     coloc_results <- vroom::vroom( coloc_input_files, delim = '\t', show_col_types = FALSE) |>
       dplyr::filter(!is.na(traits) & traits != 'None') |>
       dplyr::filter(
@@ -330,7 +326,7 @@ compile_results <- function() {
     coloc_results <- data.frame()
   }
   
-  flog.info("Writing compiled results to files")
+  flog.info(paste("Writing compiled results to files for", gwas_info$metadata$guid))
   vroom::vroom_write(coloc_results, compiled_coloc_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
   
@@ -370,7 +366,7 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_re
     stop(error_msg)
   }
     
-  flog.info("Successfully updated GWAS results")
+  flog.info(paste("Successfully updated GWAS results for", gwas_info$metadata$guid))
 }
 
 main()

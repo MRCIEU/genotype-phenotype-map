@@ -6,9 +6,9 @@ fix_bp_mismatch <- function() {
   problematic_studies <- vroom::vroom('~/problematic_extractions.tsv')
   
   # Use mclapply for parallel processing
-  parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 100, function(i) {
-    study <- problematic_studies[i,]
-    print(study['unique_study_id'])
+  apply(problematic_studies, 1, function(study) {
+  # parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 40, function(i) {
+    # study <- problematic_studies[i, ]
     old_bp <- study[['bp']]
     new_bp <- vroom::vroom(study[['file']], show_col_types = F)
     new_bp <- new_bp[which.min(new_bp$P), ]$BP

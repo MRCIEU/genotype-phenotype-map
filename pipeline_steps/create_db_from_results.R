@@ -51,10 +51,10 @@ main <- function() {
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
 
-  file.copy(args$studies_db_file, file.path(latest_results_dir, "studies.db"))
-  file.copy(args$associations_db_file, file.path(latest_results_dir, "associations.db"))
-  file.copy(args$ld_db_file, file.path(latest_results_dir, "ld.db"))
-  file.copy(args$gwas_upload_db_file, file.path(latest_results_dir, "gwas_upload.db"))
+  file.copy(args$studies_db_file, file.path(args$results_dir, "latest/studies.db"))
+  file.copy(args$associations_db_file, file.path(args$results_dir, "latest/associations.db"))
+  file.copy(args$ld_db_file, file.path(args$results_dir, "latest/ld.db"))
+  file.copy(args$gwas_upload_db_file, file.path(args$results_dir, "latest/gwas_upload.db"))
 }
 
 load_data_for_studies_db <- function(studies_db) {
@@ -178,9 +178,12 @@ find_relevant_snps <- function(studies_db) {
     dplyr::select(snp, snp_id, ld_block) |>
     dplyr::rename(candidate_snp=snp) |>
     dplyr::distinct()
+  
+  vroom::vroom_write(colocalising_snps, file.path(args$results_dir, "colocalising_snps.tsv.gz"))
+  vroom::vroom_write(non_colocalising_snps, file.path(args$results_dir, "non_colocalising_snps.tsv.gz"))
 
-  all_relevant_snps <- dplyr::bind_rows(colocalising_snps, non_colocalising_snps) |> dplyr::distinct()
-  return(all_relevant_snps)
+  # all_relevant_snps <- dplyr::bind_rows(colocalising_snps, non_colocalising_snps) |> dplyr::distinct()
+  return(colocalising_snps)
 }
 
 load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
@@ -252,6 +255,14 @@ append_unique_rows <- function(conn, table) {
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
   message('Retrieving ', nrow(all_relevant_snps), ' SNPs for ', nrow(studies_db$studies$data), ' studies')
 
+  snp_annotations_subset <- studies_db$snp_annotations$data |>
+    dplyr::select(snp, id) |>
+    dplyr::rename(snp_id=id)
+
+  studies_subset <- studies_db$studies$data |>
+    dplyr::select(study_name, id) |>
+    dplyr::rename(study_id=id)
+
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
   associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=max_cores, \(ld_block) {
     gc()
@@ -267,13 +278,16 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
 
       associations <- apply(imputed_studies, 1, \(study) {
         tryCatch({
-          extractions <- vroom::vroom(study[['file']], show_col_types = F, altrep = FALSE)
+          extractions <- vroom::vroom(study[['file']],
+            show_col_types = F,
+            altrep = FALSE,
+            col_select = dplyr::any_of(c("SNP", "BETA", "SE", "P", "EAF", "IMPUTED"))
+          )
           if (!"IMPUTED" %in% names(extractions)) {
             extractions$IMPUTED <- FALSE
           }
           extractions <- extractions |>
             dplyr::filter(SNP %in% relevant_snps$candidate_snp) |>
-            dplyr::select(SNP, BETA, SE, P, EAF, IMPUTED) |>
             dplyr::mutate(study = study[['study']]) |>
             dplyr::rename_with(tolower)
           return(extractions)
@@ -282,36 +296,37 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
           return(NULL)
         })
       })
-      # Remove NULL results and ensure we have valid data frames
       associations <- associations[!sapply(associations, is.null)]
       if (length(associations) == 0) return(NULL)
+      associations <- do.call(rbind, associations)
 
-      result <- do.call(rbind, associations)
-      message('Extracted ', nrow(result), ' associations for ', ld_block)
-      return(result)
+      associations <- associations |> 
+        dplyr::left_join(snp_annotations_subset, by="snp") |>
+        dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
+        dplyr::select(snp_id, study_id, beta, se, imputed, p, eaf)
+
+      message('Extracted ', nrow(associations), ' associations for ', ld_block)
+
+      output_file <- glue::glue("{args$results_dir}/{gsub('[/:]', '_', ld_block)}_associations.tsv.gz")
+      vroom::vroom_write(associations, output_file)
+      return(associations)
     }, error = function(e) {
       message('Error processing ld_block: ', ld_block, ' - ', e)
       return(NULL)
     })
   }) 
 
+  gc()
   associations <- associations[!sapply(associations, is.null)]
   associations <- do.call(rbind, associations)
 
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, id) |>
-    dplyr::rename(snp_id=id)
-
-  studies_subset <- studies_db$studies$data |>
-    dplyr::select(study_name, id) |>
-    dplyr::rename(study_id=id)
-
-  associations <- associations |> 
-    dplyr::left_join(snp_annotations_subset, by="snp") |>
-    dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
-    dplyr::select(snp_id, study_id, beta, se, imputed, p, eaf)
-
   DBI::dbAppendTable(conn, associations_table$name, associations)
+  num_rows <- DBI::dbGetQuery(conn, glue::glue("SELECT COUNT(*) FROM {associations_table$name}"))
+  message('Added ', num_rows$count_star, ' rows to ', associations_table$name)
+  if (num_rows$count_star > 1000000) {
+    association_files <- Sys.glob(glue::glue("{args$results_dir}/*_associations.tsv.gz"))
+    file.remove(association_files)
+  }
 }
 
 

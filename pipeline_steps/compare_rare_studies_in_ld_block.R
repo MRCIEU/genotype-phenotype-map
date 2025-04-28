@@ -34,10 +34,15 @@ main <- function() {
 
   standardised_studies$unique_study_id <- glue::glue('{standardised_studies$study}_{file_prefix(standardised_studies$file)}')
   
-  studies_to_compare <- lapply(standardised_studies$file, 
-    function(file) vroom::vroom(file, show_col_types = F) |>
-      dplyr::select(dplyr::all_of(standardised_gwas_columns))
-  )
+  studies_to_compare <- lapply(standardised_studies$file, function(file) {
+    study <- vroom::vroom(file, show_col_types = F) |>
+      dplyr::select(dplyr::any_of(standardised_gwas_columns))
+    if (!"GENE" %in% names(study)) {
+      study$GENE <- NA
+    }
+    study$GENE <- gsub("'", "", study$GENE)
+    return(study)
+  })
   names(studies_to_compare) <- standardised_studies$unique_study_id
 
   # Add unique study id as column
@@ -49,16 +54,21 @@ main <- function() {
   # Re-assign names
   names(studies_to_compare) <- standardised_studies$unique_study_id
 
+  message(glue::glue('Comparing {length(studies_to_compare)} rare variants in LD region {ld_info$ld_block_data}'))
+
   # All rare variants available in ld_block
   variants <- do.call("rbind", lapply(studies_to_compare, function(x) {
     x |> dplyr::select(SNP, P)})) |> 
     dplyr::group_by(SNP) |> 
     dplyr::summarise(min_P = min(P))  
+  
+  message(glue::glue('Found {nrow(variants)} rare variants in LD region {ld_info$ld_block_data}'))
 
   # Compare rare variant hits across studies at given p-value threshold
   compare_results <- compare_by_variant(studies = studies_to_compare, variants = variants, P_thresh = lowest_rare_p_value_threshold)
 
   if(nrow(compare_results) == 0){
+    message(glue::glue('No rare variants to compare in LD region {ld_info$ld_block_data}, skipping.'))
      vroom::vroom_write(data.frame(), args$completed_output_file)
      return() 
   }
@@ -84,18 +94,17 @@ already_run_comparison <- function(compare_rare_cache_file, standardised_studies
 }
 
 compare_by_variant <- function(studies, variants, P_thresh) {
-  # Retain variants under the p-value threshold to compare
   variants_keep <- variants |> dplyr::filter(min_P <= P_thresh)|> dplyr::pull(SNP)
   compare_wide <- data.frame()
 
-  # Pull studies with shared varaiants
   for (var in variants_keep) {
-    found_studies <- sapply(studies, function(study) {
+    found_studies <- lapply(studies, function(study) {
       study <- dplyr::filter(study, SNP == var & P <= P_thresh) |>
-        dplyr::pull(unique_study_id, P, GENE)
-    })
+        dplyr::select(unique_study_id, P, GENE) |>
+        dplyr::mutate(GENE = as.character(GENE))
+    }) |> dplyr::bind_rows()
 
-    if (nrow(found_studies) < 2){
+    if (nrow(found_studies) <= 1){
       next
     }
 
@@ -110,4 +119,4 @@ compare_by_variant <- function(studies, variants, P_thresh) {
   return(compare_wide)
 }
 
-invisible(main())
+main()

@@ -47,8 +47,10 @@ main <- function() {
 
   # Add unique study id as column
   studies_to_compare <- lapply(names(studies_to_compare), function(name){
+    study_name <- strsplit(name, '_')[[1]][1]
     study <- studies_to_compare[[name]]
     study$unique_study_id <- name
+    study$file <- standardised_studies$file[match(study_name, standardised_studies$study)]
     return(study)
   })
   # Re-assign names
@@ -100,11 +102,11 @@ compare_by_variant <- function(studies, variants, P_thresh) {
   for (var in variants_keep) {
     found_studies <- lapply(studies, function(study) {
       study <- dplyr::filter(study, SNP == var & P <= P_thresh) |>
-        dplyr::select(unique_study_id, P, GENE) |>
+        dplyr::select(unique_study_id, P, GENE, file) |>
         dplyr::mutate(GENE = as.character(GENE))
     }) |> dplyr::bind_rows()
 
-    if (nrow(found_studies) <= 1){
+    if (nrow(found_studies) <= 1) {
       next
     }
 
@@ -112,7 +114,9 @@ compare_by_variant <- function(studies, variants, P_thresh) {
       traits = paste(found_studies$unique_study_id, collapse = ", "),
       candidate_snp = var,
       min_ps = paste(found_studies$P, collapse = ", "),
-      genes = paste(found_studies$GENE, collapse = ", "))
+      genes = paste(found_studies$GENE, collapse = ", "),
+      ld_block = args$ld_block,
+      files = paste(found_studies$file, collapse = ", "))
     )
   }
 

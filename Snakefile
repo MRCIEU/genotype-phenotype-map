@@ -301,7 +301,6 @@ rule compile_results:
 #         touch {output}
 #         """
 
-
 rule create_results_db:
    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
    threads: 1

@@ -22,11 +22,17 @@ main <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
     dplyr::filter(dir.exists(ld_block_data))
 
+  print('Aggregating data produced by pipeline')
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed, args$traits_processed)
 
+  print('Creating study extractions')
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
+
+
+  print('Aggregating pipeline metadata')
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
+  print('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
@@ -83,10 +89,16 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     studies_processed <- studies_to_process
   }
 
+  if (file.exists(traits_processed_file)) {
+    traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
+  } else {
+    traits_processed <- data.frame(data_type=c(), study_name=c(), trait=c())
+  }
+
   traits_unprocessed <- studies_processed |>
-    dplyr::filter(!study_name %in% traits_processed$study_name) |>
-    dplyr::select(data_type, study_name, trait_name)
-  traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
+    dplyr::filter(!study_name %in% traits_processed$study_name & !trait %in% traits_processed$study_name) |>
+    dplyr::select(data_type, study_name, trait_name) |>
+    dplyr::rename(trait=trait_name)
 
   traits_processed <- rbind(traits_processed, traits_unprocessed) |> dplyr::distinct()
 
@@ -115,10 +127,10 @@ create_study_extractions <- function(pipeline_data) {
   
   rare_studies <- pipeline_data$raw_rare_results |>
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
-    tidyr::separate_rows(traits, min_ps, genes, sep=", ") |>
-    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes) |>
-    dplyr::mutate(min_p = as.numeric(min_p)) |>
-    dplyr::left_join(standardised_studies, by="unique_study_id") |>
+    tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
+    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files) |>
+    dplyr::mutate(min_p = as.numeric(min_p), cis_trans = NA) |>
+    tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
     dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block, known_gene)
 
   all_studies <- rbind(finemapped_studies, rare_studies)

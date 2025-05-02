@@ -11,111 +11,117 @@ library(purrr)
 library(furrr)
 library(parallel)
 
-parser <- argparser::arg_parser('Create test DuckDB from pipeline results')
-parser <- argparser::add_argument(parser, '--db_file', help = 'Path to the DuckDB file to create a small test db from', type = 'character')
+#NOTE: currently run with Rscript create_test_db_from_results.R --study_ids 5020
 
+parser <- argparser::arg_parser('Create test DuckDB from pipeline results')
+parser <- argparser::add_argument(parser,
+                       "--study_ids",
+                       help = "Space separated list of study ids",
+                       type = "character",
+                       nargs = Inf
+)
 args <- argparser::parse_args(parser)
 
 main <- function() {
-    gpm_db_file <- args$db_file
-    small_gpm_db_file <- file.path(results_dir, 'gpm_small.db')
-    upload_db_file <- file.path(results_dir, 'gwas_upload_small.db')
-    unlink(small_gpm_db_file)
-    unlink(upload_db_file)
+    study_ids <- split_string_into_vector(args$study_ids)
 
-    gpm_con <- duckdb::dbConnect(duckdb::duckdb(), gpm_db_file)
-    small_gpm_con <- duckdb::dbConnect(duckdb::duckdb(), small_gpm_db_file)
-    upload_con <- duckdb::dbConnect(duckdb::duckdb(), upload_db_file)
+    orig_studies_db_file <- file.path(results_dir, 'latest/studies.db')
+    orig_ld_db_file <- file.path(results_dir, 'latest/ld.db')
+    orig_associations_db_file <- file.path(results_dir, 'latest/associations.db')
 
-    lapply(simple_db_tables, \(table) DBI::dbExecute(small_gpm_con, table$query))
-    DBI::dbExecute(small_gpm_con, associations_table$query)
-    DBI::dbExecute(upload_con, gwas_upload_table$query)
+    studies_db_file <- file.path(results_dir, 'latest/studies_small.db')
+    ld_db_file <- file.path(results_dir, 'latest/ld_small.db')
+    associations_db_file <- file.path(results_dir, 'latest/associations_small.db')
+    unlink(studies_db_file)
+    unlink(ld_db_file)
+    unlink(associations_db_file)
 
-    study_sources <- DBI::dbGetQuery(gpm_con, "SELECT * FROM study_sources")
-    DBI::dbAppendTable(small_gpm_con, "study_sources", study_sources)
+    orig_studies_con <- duckdb::dbConnect(duckdb::duckdb(), orig_studies_db_file)
+    orig_ld_con <- duckdb::dbConnect(duckdb::duckdb(), orig_ld_db_file)
+    orig_associations_con <- duckdb::dbConnect(duckdb::duckdb(), orig_associations_db_file)
 
-    ld_blocks <- DBI::dbGetQuery(gpm_con, "SELECT * FROM ld_blocks")
-    DBI::dbAppendTable(small_gpm_con, "ld_blocks", ld_blocks)
+    studies_con <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
+    ld_con <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file)
+    associations_con <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file)
 
+    #remove text of foreign key constraints from all tables
 
-    coloc_group_counts <- DBI::dbGetQuery(gpm_con, "SELECT coloc_group_id, COUNT(coloc_group_id) AS n FROM colocalisations GROUP BY coloc_group_id")
+    lapply(studies_db, \(table) {
+        query <- sub(",\n.\\s+FOREIGN.*", ")", table$query)
+        DBI::dbExecute(studies_con, query)
+    })
+    DBI::dbExecute(associations_con, associations_table$query)
+    DBI::dbExecute(ld_con, ld_table$query)
 
-    small_coloc_groups <- coloc_group_counts |>
-        dplyr::filter(n > 5 & n < 10) |>
-        head(100)
+    study_sources <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM study_sources")
+    DBI::dbAppendTable(studies_con, "study_sources", study_sources)
 
-    small_coloc_groups <- DBI::dbGetQuery(
-        gpm_con,
-        sprintf("SELECT c.coloc_group_id, se.id, se.study_id, se.known_gene FROM colocalisations c
-                INNER JOIN study_extractions se ON c.study_extraction_id = se.id 
-                WHERE c.coloc_group_id IN (%s) AND se.known_gene IS NOT NULL",
-        paste(small_coloc_groups$coloc_group_id, collapse=",")
+    ld_blocks <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM ld_blocks")
+    DBI::dbAppendTable(studies_con, "ld_blocks", ld_blocks)
+
+    results_metadata <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM results_metadata")
+    DBI::dbAppendTable(studies_con, "results_metadata", results_metadata)
+
+    colocs <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT coloc_group_id FROM colocalisations WHERE study_id IN (%s)",
+        paste(study_ids, collapse=",")
     ))
-
-    coloc_group_ids_to_keep <- small_coloc_groups |>
-        dplyr::pull(coloc_group_id) |>
-        unique()
-    
-    colocs_to_keep <- DBI::dbGetQuery(
-        gpm_con,
+    colocs <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM colocalisations WHERE coloc_group_id IN (%s)",
-        paste(coloc_group_ids_to_keep, collapse=",")
+        paste(colocs$coloc_group_id, collapse=",")
     ))
+    study_ids <- unique(c(colocs$study_id, study_ids))
+    DBI::dbAppendTable(studies_con, "colocalisations", colocs)
 
-    study_extractions_to_keep <- DBI::dbGetQuery(
-        gpm_con,
+    studies <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM studies WHERE id IN (%s)", paste(study_ids, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "studies", studies)
+
+    traits <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM traits WHERE id IN (%s)", paste(studies$trait_id, collapse=",")))
+    DBI::dbAppendTable(studies_con, "traits", traits)
+
+    study_extractions <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM study_extractions WHERE id IN (%s)",
-        paste(colocs_to_keep$study_extraction_id, collapse=",")
+        paste(colocs$study_extraction_id, collapse=",")
     ))
-    
-    studies_to_keep <- DBI::dbGetQuery(
-        gpm_con,
-        sprintf("SELECT * FROM studies WHERE id IN (%s)",
-        paste(study_extractions_to_keep$study_id, collapse=",")
+    DBI::dbAppendTable(studies_con, "study_extractions", study_extractions)
+    rare_results <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM rare_results WHERE study_id IN (%s)",
+        paste(studies$id, collapse=",")
     ))
+    DBI::dbAppendTable(studies_con, "rare_results", rare_results)
 
-    snp_ids_to_keep <- unique(c(study_extractions_to_keep$snp_id, colocs_to_keep$snp_id))
+    snp_ids_to_keep <- unique(c(study_extractions$snp_id, colocs$snp_id, rare_results$snp_id))
 
-    snp_annotations_to_keep <- DBI::dbGetQuery(
-        gpm_con,
+    snp_annotations <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM snp_annotations WHERE id IN (%s)",
         paste(snp_ids_to_keep, collapse=",")
     ))
+    DBI::dbAppendTable(studies_con, "snp_annotations", snp_annotations)
 
-    associations_to_keep <- DBI::dbGetQuery(
-        gpm_con,
-        sprintf("SELECT * FROM assocs WHERE snp_id IN (%s) AND study_id IN (%s)",
+    associations_to_keep <- DBI::dbGetQuery(orig_associations_con,
+        sprintf("SELECT * FROM associations WHERE snp_id IN (%s) AND study_id IN (%s)",
         paste(snp_ids_to_keep, collapse=","),
-        paste(study_extractions_to_keep$study_id, collapse=",")
+        paste(studies$id, collapse=",")
     ))
-
+    DBI::dbAppendTable(associations_con, "associations", associations_to_keep)
     ld_to_keep <- DBI::dbGetQuery(
-        gpm_con,
-        sprintf("SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s)",
+        orig_ld_con,
+        sprintf("SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s) LIMIT 50000",
         paste(snp_ids_to_keep, collapse=","),
         paste(snp_ids_to_keep, collapse=",")
     ))
+    DBI::dbAppendTable(ld_con, "ld", ld_to_keep)
 
-    if (nrow(ld_to_keep) > 0) {
-        additional_snp_annotations_to_keep <- DBI::dbGetQuery(
-            gpm_con,
-            sprintf("SELECT * FROM snp_annotations WHERE id IN (%s)",
-            paste(ld_to_keep$variant_snp_id, collapse=",")
-        ))
+    DBI::dbDisconnect(studies_con, shutdown=TRUE)
+    DBI::dbDisconnect(ld_con, shutdown=TRUE)
+    DBI::dbDisconnect(associations_con, shutdown=TRUE)
+}
 
-        snp_annotations_to_keep <- rbind(snp_annotations_to_keep, additional_snp_annotations_to_keep)
-        snp_annotations_to_keep <- snp_annotations_to_keep[!duplicated(snp_annotations_to_keep$id), ]
-    }
-
-    DBI::dbAppendTable(small_gpm_con, "studies", studies_to_keep)
-    DBI::dbAppendTable(small_gpm_con, "snp_annotations", snp_annotations_to_keep)
-    DBI::dbAppendTable(small_gpm_con, "study_extractions", study_extractions_to_keep)
-    DBI::dbAppendTable(small_gpm_con, "colocalisations", colocs_to_keep)
-    DBI::dbAppendTable(small_gpm_con, "assocs", associations_to_keep)
-    DBI::dbAppendTable(small_gpm_con, "ld", ld_to_keep)
-
-    DBI::dbDisconnect(gpm_con, shutdown=TRUE)
-    DBI::dbDisconnect(small_gpm_con, shutdown=TRUE)
+split_string_into_vector <- function(input_string) {
+  return(unlist(strsplit(input_string, '[ ]')))
 }
 
 main() 

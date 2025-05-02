@@ -7,7 +7,6 @@ study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
 rare_studies_to_ignore <- vroom::vroom('data/ignore_studies_rare.tsv', delim='\t', show_col_types=F)
 studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
-traits_processed_file <- glue::glue('{latest_results_dir}/traits_processed.tsv.gz')
 
 if (!is.na(TEST_RUN)) {
   study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)

@@ -10,6 +10,7 @@ main <- function() {
   if (is.na(args$worker_guid)) stop('Error: worker_guid is required for summary stats extraction')
   update_directories_for_worker(args$worker_guid)
 
+  dir.create(glue::glue('{extracted_study_dir}/gwas'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{extracted_study_dir}/extracted'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{extracted_study_dir}/standardised'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{extracted_study_dir}/imputed'), showWarnings = F, recursive = T)
@@ -38,6 +39,8 @@ main <- function() {
     if (study_metadata$reference_build != reference_builds$GRCh38) {  
       gwas <- convert_dataframe_reference_build(gwas, study_metadata$reference_build)
     }
+
+    vroom::vroom_write(gwas, glue::glue('{extracted_study_dir}/gwas/updated_gwas.tsv.gz'))
 
     extracted_regions <- split_into_regions(gwas, ld_blocks, study_metadata, p_value_threshold)
     extracted_output_file <- glue::glue('{extracted_study_dir}/extracted_snps.tsv')

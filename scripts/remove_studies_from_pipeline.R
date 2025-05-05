@@ -1,9 +1,8 @@
 source('../pipeline_steps/constants.R')
 
-# studies_to_remove <- vroom::vroom(glue::glue('{results_dir}/studies_processed.tsv')) |> 
-studies_to_remove <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')) |> 
-  dplyr::filter(data_type != 'phenotype')
-studies_to_remove <- studies_to_remove$study_name
+# studies_to_remove <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz')) |> 
+studies_to_remove <- vroom::vroom('../pipeline_steps/data/ignore_studies_rare.tsv', delim = '\t') |> 
+  dplyr::pull(study)
 length(studies_to_remove)
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
@@ -87,13 +86,26 @@ main <- function() {
   })
 
   #and then delete them from the results
-  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv')
+  studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
   studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
   entries <- nrow(studies_processed)
   studies_processed <- dplyr::filter(studies_processed, !study_name %in% studies_to_remove)
   print(paste('removed', entries - nrow(studies_processed), 'rows from studies_processed file'))
   vroom::vroom_write(studies_processed, studies_processed_file)
 
+  studies_processed_file <- glue::glue('{results_dir}/latest/studies_processed.tsv.gz')
+  studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
+  entries <- nrow(studies_processed)
+  studies_processed <- dplyr::filter(studies_processed, !study_name %in% studies_to_remove)
+  print(paste('removed', entries - nrow(studies_processed), 'rows from studies_processed file'))
+  vroom::vroom_write(studies_processed, studies_processed_file)
+
+  traits_processed_file <- glue::glue('{results_dir}/latest/traits_processed.tsv.gz')
+  traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
+  entries <- nrow(traits_processed)
+  traits_processed <- dplyr::filter(traits_processed, !study_name %in% studies_to_remove)
+  print(paste('removed', entries - nrow(traits_processed), 'rows from traits_processed file'))
+  vroom::vroom_write(traits_processed, traits_processed_file)
 }
 
 

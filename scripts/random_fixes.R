@@ -1,14 +1,52 @@
 source('../pipeline_steps/constants.R')
 options(dplyr.width = Inf)
 
+update_method <- function(file, standardised_file, ld_block) {
+  if (!file.exists(file)) {
+    print(paste('FILE MISSING:', file))
+    return()
+  }
+  standardised_studies <- vroom::vroom(standardised_file, show_col_types = F)
+  rare_results <- vroom::vroom(file, show_col_types = F)
+  if (nrow(rare_results) == 0) return()
+
+  rare_results$ld_block <- sub(ld_block_data_dir, '', ld_block)
+
+  updated_results <- lapply(seq_len(nrow(rare_results)), function(i) {
+    rare_result <- rare_results[i, ]
+    unique_study_names <- strsplit(rare_result[['traits']], ', ')[[1]]
+    study_names <- sapply(strsplit(unique_study_names, '_'), `[`, 1)
+    study_files <- dplyr::filter(standardised_studies, study %in% study_names) |> dplyr::pull(file)
+    rare_result[['files']] <- paste(study_files, collapse = ', ')
+    return(as.data.frame(rare_result))
+  })
+  
+  rare_results <- dplyr::bind_rows(updated_results)
+  vroom::vroom_write(rare_results, file)
+}
+
+add_data_to_rare_studies <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  update_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
+    print(glue::glue('block: {ld_block}\n'))
+    rare_studies_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
+    file.copy(rare_studies_file, glue::glue('{rare_studies_file}.backup'))
+
+    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    update_method(rare_studies_file, standardised_studies_file, ld_block)
+  })
+}
 
 fix_bp_mismatch <- function() {
   problematic_studies <- vroom::vroom('~/problematic_extractions.tsv')
   
   # Use mclapply for parallel processing
-  parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 100, function(i) {
-    study <- problematic_studies[i,]
-    print(study['unique_study_id'])
+  apply(problematic_studies, 1, function(study) {
+  # parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 40, function(i) {
+    # study <- problematic_studies[i, ]
     old_bp <- study[['bp']]
     new_bp <- vroom::vroom(study[['file']], show_col_types = F)
     new_bp <- new_bp[which.min(new_bp$P), ]$BP
@@ -516,4 +554,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-fix_bp_mismatch()
+add_data_to_rare_studies()

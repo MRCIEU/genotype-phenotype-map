@@ -20,6 +20,15 @@ studies_db <- list(
       ld_block TEXT NOT NULL
     )"
   ),
+  traits = list(
+    name = "traits",
+    query = "CREATE TABLE traits (
+      id INTEGER PRIMARY KEY,
+      data_type TEXT NOT NULL,
+      trait TEXT NOT NULL,
+      trait_name TEXT NOT NULL
+    )"
+  ),
   studies = list(
     name = "studies",
     query = "CREATE TABLE studies (
@@ -27,7 +36,7 @@ studies_db <- list(
       data_type TEXT NOT NULL,
       data_format TEXT NOT NULL,
       study_name TEXT NOT NULL,
-      trait TEXT NOT NULL,
+      trait_id INTEGER NOT NULL,
       ancestry TEXT NOT NULL,
       sample_size INTEGER NOT NULL,
       category TEXT,
@@ -39,6 +48,7 @@ studies_db <- list(
       variant_type TEXT,
       p_value_threshold DOUBLE,
       gene TEXT,
+      FOREIGN KEY (trait_id) REFERENCES traits(id),
       FOREIGN KEY (source_id) REFERENCES study_sources(id)
     )"
   ),
@@ -131,10 +141,10 @@ studies_db <- list(
       unique_study_id TEXT,
       candidate_snp TEXT,
       study_id INTEGER,
+      file TEXT,
       chr INTEGER,
       bp INTEGER,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
       known_gene TEXT,
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
@@ -173,7 +183,7 @@ ld_table <- list(
   )"
 )
 
-#TODO: add in se > 0 check later
+#TODO: add in se > 0 check later, once that is resolved
 associations_table <- list(
   name = "associations",
   query = "CREATE TABLE associations (
@@ -183,7 +193,8 @@ associations_table <- list(
     se REAL,
     p DOUBLE CHECK (p BETWEEN 0 AND 1),
     eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    imputed BOOLEAN
+    imputed BOOLEAN,
+    PRIMARY KEY (snp_id, study_id)
   )"
 )
 

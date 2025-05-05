@@ -61,9 +61,15 @@ Both data `DATA_DIR` and `RESULTS_DIR` directories will be populated
 * `ld_blocks`: each ld block will have data related to the extracted study regions inside the block, primarily for colocalisation
 * `pipeline_metadata`:
   * `updated_ld_blocks_to_colocalise.tsv`: not all ld blocks need to be run, depending on the studies ingested.  This stores the list of ld regions that need to be run
-  * `studies_to_process.tsv`: all studies that are currently being processed, if the pipeline is successful, these are appended to `results/studies_processed.tsv`
+  * `studies_to_process.tsv`: all studies that are currently being processed, if the pipeline is successful, these are appended to `results/studies_processed.tsv.gz`
   * `logs/snakemake.log`: output from the last time `./run_pipeline.sh` was run (or `./test_pipeline.sh`)
 
 `RESULTS_DIR`
 * `<timestamp> directory`: final results for the specific run of the pipeline. Latest timestamp is the latest result
-* `studies_processed.tsv`: latest iteration of studies that were processed
+* `latest/`: latest results for the pipeline, which include the following:
+  * `studies_processed.tsv.gz`: latest iteration of studies that were processed
+  * `traits_processed.tsv.gz`: latest iteration of traits that were processed
+  * `associations.db`: associations database
+  * `ld.db`: ld database
+  * `gwas_upload.db`: gwas upload database
+  * `studies.db`: studies database

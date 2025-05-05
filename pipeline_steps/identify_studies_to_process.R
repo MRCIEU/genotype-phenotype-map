@@ -5,7 +5,8 @@ minimum_snps_in_opengwas_study <- 1000000
 
 study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
 studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
-studies_processed_file <- glue::glue('{results_dir}studies_processed.tsv')
+rare_studies_to_ignore <- vroom::vroom('data/ignore_studies_rare.tsv', delim='\t', show_col_types=F)
+studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
 
 if (!is.na(TEST_RUN)) {
   study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
@@ -38,7 +39,8 @@ main <- function() {
 
   studies_to_process <- studies_to_process |>
     dplyr::filter(!study_name %in% studies_processed$study_name) |>
-    dplyr::filter(!study_name %in% studies_to_ignore$study)
+    dplyr::filter(!study_name %in% studies_to_ignore$study) |>
+    dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
 
@@ -49,7 +51,7 @@ validate_study_list <- function(study_list) {
   study_sources <- vroom::vroom('data/study_sources.csv', show_col_types=F)
 
   if (!all(study_list$source %in% study_sources$source)) stop('Error: study_list and study_sources are not compatible')
-  if (!all(study_list$data_type %in% ordered_data_types)) stop('Error: some data_type values in study_list are not valid')
+  if (!all(study_list$data_type %in% data_types)) stop('Error: some data_type values in study_list are not valid')
   if (!all(study_list$data_format %in% data_formats)) stop('Error: some data_format values in study_list are not valid')
   if (!all(study_list$variant_type %in% variant_types)) stop('Error: some variant_type values in study_list are not valid')
   if (!all(study_list$reference_build %in% reference_builds)) stop('Error: some reference_build values in study_list are not valid')
@@ -106,15 +108,11 @@ calculate_besd_studies_to_process <- function(entries) {
     studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
     studies <- gsub('_', '-', studies)
     studies <- gsub('\\.', '-', studies)
+    traits <- studies
+    trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
 
     data_study_dir <- glue::glue('{data_dir}study/{studies}/')
 
-    if (besd_study['bespoke_parsing'] == bespoke_parsing_options$gtex_sqtl) {
-      probe_strings <- sub('chr\\d+:(\\d+):(\\d+):clu_(\\d+):.*', 'cluster:\\3 bp:\\1-\\2', probes)
-      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes, probe_strings)
-    } else {
-      traits <- paste(besd_study['data_source'], gsub('[-_]', ' ', specifier), genes)
-    }
     category <- ifelse(is.null(metadata$category), study_categories$continuous, tolower(metadata$category))
     tissue <- ifelse(is.null(metadata$tissue), NA, metadata$tissue)
 
@@ -124,6 +122,7 @@ calculate_besd_studies_to_process <- function(entries) {
       data_format = besd_study[['data_format']],
       study_name = studies,
       trait = traits,
+      trait_name = trait_names,
       ancestry = besd_study[['ancestry']],
       sample_size = metadata$sample_size,
       category = category,
@@ -180,7 +179,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       data_format = opengwas_study[['data_format']],
       source = opengwas_study[['source']],
       study_name = new_study_name,
-      trait = study_metadata$trait,
+      trait = new_study_name,
+      trait_name = study_metadata$trait,
       ancestry = reverse_ancestry_map[[ancestry]],
       sample_size = study_metadata$sample_size,
       category = category,
@@ -216,7 +216,8 @@ calculate_tsv_studies_to_process <- function(entries) {
       data_format = entry[['data_format']],
       source = entry[['source']],
       study_name = tsv_metadata$study_name,
-      trait = tsv_metadata$trait,
+      trait = tsv_metadata$study_name,
+      trait_name = tsv_metadata$trait,
       ancestry = entry[['ancestry']],
       sample_size = tsv_metadata$sample_size,
       category = tsv_metadata$category,
@@ -225,9 +226,9 @@ calculate_tsv_studies_to_process <- function(entries) {
       reference_build = entry[['reference_build']],
       p_value_threshold = format(entry[['p_value_threshold']], scientific=FALSE),
       variant_type = entry[['variant_type']],
-      gene = ifelse(entry[['data_type']] != ordered_data_types$phenotype, tsv_metadata$gene, NA),
+      gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
-      tissue = ifelse(entry[['data_type']] != ordered_data_types$phenotype, tsv_metadata$tissue, NA)
+      tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA)
     ))
   }) |> dplyr::bind_rows()
 

@@ -1,6 +1,7 @@
 options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
+gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 oracle_server <- Sys.getenv('ORACLE_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
@@ -15,6 +16,7 @@ gpm_website_data <- list(
   name = 'The Genotype-Phenotype Map Team'
 )
 
+latest_results_dir <- glue::glue('{results_dir}latest/')
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
@@ -29,12 +31,19 @@ bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
 #This is an intentionally ordered list
 #splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?
-ordered_data_types <- list(splice_variant='splice_variant',
+data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',
                            protein='protein',
                            metabolome='metabolome',
                            phenotype='phenotype'
+)
+data_type_names <- list(splice_variant='sQTL',
+                           transcript='tQTL',
+                           gene_expression='eQTL',
+                           protein='pQTL',
+                           metabolome='mQTL',
+                           phenotype='GWAS'
 )
 study_categories <- list(binary='binary', continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
@@ -51,7 +60,7 @@ available_liftover_conversions <- list(
 )
 extraction_file_types <- list(vcf='vcf', csv='csv')
 
-standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z', 'GENE')
+standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z','GENE')
 required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
 
 standardised_column_types <- vroom::cols(
@@ -110,7 +119,7 @@ ld_block_string <- function(ancestry, chr, start, stop) {
 }
 
 update_directories_for_worker <- function(worker_guid) {
-  ld_block_data_dir <<- glue::glue('{data_dir}ld_blocks/gwas_upload/{worker_guid}/')
-  extracted_study_dir <<- glue::glue('{data_dir}study/gwas_upload/{worker_guid}/')
-  pipeline_metadata_dir <<- glue::glue('{data_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
+  ld_block_data_dir <<- glue::glue('{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{gwas_upload_dir}study/gwas_upload/{worker_guid}/')
+  pipeline_metadata_dir <<- glue::glue('{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }

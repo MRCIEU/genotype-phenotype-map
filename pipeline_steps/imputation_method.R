@@ -129,7 +129,7 @@ adjust <- function(truth, predicted, eval_frac = 0.5) {
   reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 3, raw=T))
   adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2] + predicted^3 * reg$coef[3]
   if (is.na(reg$coef[3])) {
-    reg <- lm(truth[!outs] ~ poly(predicted[!outs], 2, raw=T))
+    reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 2, raw=T))
     adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2]
   }
 

@@ -16,6 +16,11 @@ main <- function() {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
+
+  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    dplyr::rename_with(tolower) |>
+    dplyr::select(chr, bp, snp)
+
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {
     vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -135,6 +140,7 @@ empty_finemapped_info <- function() {
                     ancestry=character(),
                     chr=character(),
                     bp=numeric(),
+                    candidate_snp=character()
                     p_value_threshold=numeric(),
                     min_p=numeric(),
                     category=character(),
@@ -206,6 +212,10 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   if (!is.na(new_bp)) {
     study['bp'] <- new_bp
   }
+  snp <- snp_annotations |>
+    dplyr::filter(chr == study[['chr']] & bp == study['bp']) |>
+    dplyr::slice_head(n = 1) |>
+    dplyr::pull(snp)
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
   unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_1')
@@ -218,6 +228,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
                                     bp=as.numeric(study['bp']),
+                                    snp=snp,
                                     p_value_threshold=as.numeric(study['p_value_threshold']),
                                     min_p=min_p,
                                     category=study['category'],
@@ -232,6 +243,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
 }
 
 split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study, sample_size, finemap_file_prefix, start_time) {
+      new_snps <- c()
       new_bps <- c()
       new_files <- c()
       min_ps <- c()
@@ -245,7 +257,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        # new_snps <- c(new_bps, as.numeric(gwas[important_row, ]$SNP))
+        new_snps <- c(new_snps, gwas[important_row, ]$SNP)
         new_bp <- as.numeric(gwas[important_row, ]$BP)
         new_bps <- c(new_bps, new_bp)
         new_files <- c(new_files, finemap_file)
@@ -273,7 +285,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            variant_type=study[['variant_type']],
                                            file=new_files,
                                            ancestry=study[['ancestry']],
-                                          #  snp=new_snps,
+                                           snp=new_snps,
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
                                            p_value_threshold=as.numeric(study[['p_value_threshold']]),

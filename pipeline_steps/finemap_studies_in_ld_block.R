@@ -11,15 +11,15 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
+snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+  dplyr::rename_with(tolower) |>
+  dplyr::select(chr, bp, snp)
+
 main <- function() {
   if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
-
-  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-    dplyr::rename_with(tolower) |>
-    dplyr::select(chr, bp, snp)
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {
@@ -140,7 +140,7 @@ empty_finemapped_info <- function() {
                     ancestry=character(),
                     chr=character(),
                     bp=numeric(),
-                    candidate_snp=character()
+                    snp=character(),
                     p_value_threshold=numeric(),
                     min_p=numeric(),
                     category=character(),
@@ -179,22 +179,25 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
     message(e)
   })
 
+
   if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
     new_bp <- NA
-    if (length(susie_result$sets$cs) == 1) {
+    new_snp <- NA
+    if (susie_result$converged == T && length(susie_result$sets$cs_index) == 1) {
       #this finds the lead SNP in new credible set
       important_row <- susie_result$sets$cs[1][[1]][[1]]
       new_bp <- as.numeric(gwas[important_row, ]$BP)
+      new_snp <- gwas[important_row, ]$SNP
     } else {
       new_bp <- gwas[which.min(gwas$P), ]$BP
     }
 
-    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)
+    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp, new_snp=new_snp)
     if (susie_result$converged == F) {
       message(paste('Finemapping:', study['file'], 'susie didnt converge'))
     }
     else if (susie_result$converged == T) {
-      message(paste('Finemapping:', study['file'], 'susie only found 1 credible set'))
+      message(paste('Finemapping:', study['file'], 'susie found 1 credible set'))
       failed_finemap_info$finemap_message <- 'less_than_2_cs'
     }
   }
@@ -204,7 +207,7 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   return(list(susie_result=susie_result, failed_finemap_info=failed_finemap_info))
 }
 
-process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA) {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA, new_snp=NA) {
   sample_size <- as.numeric(study['sample_size'])
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
@@ -212,10 +215,19 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   if (!is.na(new_bp)) {
     study['bp'] <- new_bp
   }
-  snp <- snp_annotations |>
-    dplyr::filter(chr == study[['chr']] & bp == study['bp']) |>
-    dplyr::slice_head(n = 1) |>
-    dplyr::pull(snp)
+  if (!is.na(new_snp)) {
+    study['snp'] <- new_snp
+  } else {
+    message('finding new snp for: ', study[['chr']], ':', study['bp'])
+    hi <- snp_annotations |>
+      dplyr::filter(chr == study[['chr']] & bp == study['bp'])
+    message(hi)
+
+    study['snp'] <- snp_annotations |>
+      dplyr::filter(chr == study[['chr']] & bp == study['bp']) |>
+      dplyr::slice_head(n = 1) |>
+      dplyr::pull(snp)
+  }
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
   unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_1')
@@ -228,7 +240,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
                                     bp=as.numeric(study['bp']),
-                                    snp=snp,
+                                    snp=study['snp'],
                                     p_value_threshold=as.numeric(study['p_value_threshold']),
                                     min_p=min_p,
                                     category=study['category'],

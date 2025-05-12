@@ -35,6 +35,7 @@ data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',
                            protein='protein',
+                           methylation='methylation',
                            metabolome='metabolome',
                            phenotype='phenotype'
 )
@@ -42,10 +43,11 @@ data_type_names <- list(splice_variant='sQTL',
                            transcript='tQTL',
                            gene_expression='eQTL',
                            protein='pQTL',
-                           metabolome='mQTL',
+                           methylation='methQTL',
+                           metabolome='metaQTL',
                            phenotype='GWAS'
 )
-study_categories <- list(binary='binary', continuous='continuous', categorical='categorical')
+study_categories <- list(continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
 variant_types <- list(common='common', rare_exome='rare_exome', rare_wgs='rare_wgs')

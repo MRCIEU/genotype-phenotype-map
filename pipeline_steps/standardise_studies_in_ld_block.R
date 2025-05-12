@@ -67,7 +67,10 @@ main <- function() {
 
 perform_standardisation <- function(study, ld_matrix_info) {
   standardised_file <- sub('extracted', 'standardised', study[['file']])
-  gwas <- vroom::vroom(study[['file']], show_col_types = F)
+  gwas <- vroom::vroom(study[['file']], show_col_types = F, col_types = vroom::cols(
+    EA = vroom::col_character(),
+    OA = vroom::col_character()
+  ))
   is_rare_study <- study[['variant_type']] != variant_types$common
 
   response <- standardise_alleles(gwas) |>
@@ -195,7 +198,7 @@ filter_gwas <- function(gwas, is_rare_study = F) {
 }
 
 compress_alleles <- function(alleles) {
-  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else allele)
+  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else as.character(allele))
 }
 
 main()

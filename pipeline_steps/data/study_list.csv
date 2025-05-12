@@ -11,3 +11,5 @@ european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/UKB-PPP,EUR,GRCh38,
 *,phenotype,az_exwas,tsv,none,/local-scratch/data/hg38/rare/azexwas/phenotype,EUR,GRCh38,1.5e-4,rare_exome,tsv
 *,gene_expression,gtex,besd,none,/local-scratch/data/hg38/GTEx-eQTL-v10,EUR,GRCh38,1.5e-4,common,json
 *,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json
+*,gene_expression,gtex,besd,none,/local-scratch/data/hg38/onek1k,EUR,GRCh38,1.5e-4,common,json
+*,gene_expression,eqtlgen,besd,none,/local-scratch/data/hg38/eqtlgen,EUR,GRCh38,1.5e-4,common,json

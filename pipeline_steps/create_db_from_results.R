@@ -86,6 +86,11 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::rename_with(tolower) |>
     dplyr::mutate(id=1:dplyr::n(), snp=trimws(snp))
 
+  studies_db$gene_annotations$data <- vroom::vroom(file.path(liftover_dir, "gene_name_map.tsv"), show_col_types = F) |>
+    dplyr::mutate(id=1:dplyr::n()) |>
+    dplyr::rename_with(tolower) |>
+    dplyr::rename(start=bp_start, end=bp_end, symbol=gene_name)
+
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
     dplyr::mutate(id=1:dplyr::n(), file=sub(ld_block_data_dir, "", file)) |>
     dplyr::left_join(dplyr::select(studies_db$studies$data, study_name, id) |> dplyr::rename(study_id=id), by=c("study"="study_name")) |>

@@ -83,6 +83,18 @@ studies_db <- list(
       afr_af REAL CHECK (afr_af BETWEEN 0 AND 1)
     )"
   ),
+  gene_annotations = list(
+    name = "gene_annotations",
+    query = "CREATE TABLE gene_annotations (
+      id INTEGER PRIMARY KEY,
+      ensembl_id TEXT,
+      symbol TEXT,
+      chr INTEGER,
+      start INTEGER,
+      stop INTEGER,
+      PRIMARY KEY (id)
+    )"
+  ),
   study_extractions = list(
     name = "study_extractions",
     query = "CREATE TABLE study_extractions (

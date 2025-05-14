@@ -91,8 +91,7 @@ studies_db <- list(
       symbol TEXT,
       chr INTEGER,
       start INTEGER,
-      stop INTEGER,
-      PRIMARY KEY (id)
+      stop INTEGER
     )"
   ),
   study_extractions = list(

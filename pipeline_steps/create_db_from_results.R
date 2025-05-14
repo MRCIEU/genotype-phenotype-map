@@ -89,7 +89,7 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$gene_annotations$data <- vroom::vroom(file.path(liftover_dir, "gene_name_map.tsv"), show_col_types = F) |>
     dplyr::mutate(id=1:dplyr::n()) |>
     dplyr::rename_with(tolower) |>
-    dplyr::rename(start=bp_start, end=bp_end, symbol=gene_name)
+    dplyr::rename(start=bp_start, stop=bp_end, symbol=gene_name)
 
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
     dplyr::mutate(id=1:dplyr::n(), file=sub(ld_block_data_dir, "", file)) |>
@@ -161,6 +161,7 @@ format_rare_results <- function(rare_results, study_extractions, snp_annotations
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
     tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
     dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files) |>
+    dplyr::mutate(known_gene = ifelse(known_gene == "NA", NA, known_gene)) |>
     dplyr::mutate(min_p = as.numeric(min_p)) |>
     tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
     dplyr::left_join(study_extractions_subset, by="unique_study_id") |>

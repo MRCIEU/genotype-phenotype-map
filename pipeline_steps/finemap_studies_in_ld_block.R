@@ -219,14 +219,16 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
     study['snp'] <- new_snp
   } else {
     message('finding new snp for: ', study[['chr']], ':', study['bp'])
-    hi <- snp_annotations |>
+    snp_entry <- snp_annotations |>
       dplyr::filter(chr == study[['chr']] & bp == study['bp'])
-    message(hi)
 
-    study['snp'] <- snp_annotations |>
-      dplyr::filter(chr == study[['chr']] & bp == study['bp']) |>
-      dplyr::slice_head(n = 1) |>
-      dplyr::pull(snp)
+    if (nrow(snp_entry) == 0) {
+      study['snp'] <- gwas[which.min(gwas$P), ]$SNP
+    } else {
+      study['snp'] <- snp_entry |>
+        dplyr::slice_head(n = 1) |>
+        dplyr::pull(snp)
+    }
   }
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')

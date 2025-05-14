@@ -78,6 +78,8 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
+  studies_to_process$gene <- sub("^(ENSG.*)\\.\\d$", "\\1", studies_to_process$gene)
+
   gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]
   gene_names[is.na(gene_names)] <- studies_to_process$gene[is.na(gene_names)]
   studies_to_process$gene <- gene_names

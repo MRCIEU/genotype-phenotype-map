@@ -101,15 +101,26 @@ calculate_besd_studies_to_process <- function(entries) {
       stop(paste('json file is missing tissue or sample_size', besd_study['study']))
     }
 
-    epi <- vroom::vroom(glue::glue('{besd_study["study"]}.epi'), col_names = F, show_col_types = F)
+    epi <- vroom::vroom(glue::glue('{besd_study["study"]}.epi'), col_names = F, show_col_types = F) |>
+      dplyr::mutate(X1 = suppressWarnings(as.numeric(X1))) |>
+      dplyr::filter(suppressWarnings(X1 %in% seq(1,22)))
+
     probes <- epi$X2
     genes <- epi$X5
+    ensgs <- ifelse(grepl('ENSG', epi$X2), sub('.*(ENSG\\d+).*', '\\1', epi$X2), NA)
+
     specifier <- basename(besd_study['study'])
     studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
     studies <- gsub('_', '-', studies)
     studies <- gsub('\\.', '-', studies)
     traits <- studies
-    trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
+    if (besd_study['bespoke_parsing'] == 'godmc') {
+      genes <- NA 
+      trait_names <- glue::glue('{metadata$tissue} {probes} {data_type_names[[besd_study["data_type"]]]}')
+    } else {
+      genes <- epi$X5
+      trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
+    }
 
     data_study_dir <- glue::glue('{data_dir}study/{studies}/')
 
@@ -133,6 +144,7 @@ calculate_besd_studies_to_process <- function(entries) {
       variant_type = besd_study[['variant_type']],
       probe = probes,
       gene = genes,
+      ensg = ensgs,
       tissue = metadata$tissue
     ))
   }) |> dplyr::bind_rows()

@@ -25,6 +25,12 @@ main <- function() {
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
   metadata <- jsonlite::fromJSON(glue::glue('{study$study_location}.json'))
 
+  dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
+  dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
+  dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
+  dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
+
+
   extracted_cis_snps <- extracted_trans_snps <- data.frame(chr=character(),
                                                            bp=numeric(),
                                                            log_p=numeric(),
@@ -79,11 +85,6 @@ extract_cis_region <- function(study, p_value_threshold) {
     return()
   }
 
-  dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
-  dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
-  dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)
-  dir.create(glue::glue('{study$extracted_location}/finemapped'), showWarnings = F, recursive = T)
-
   cis_region <- dplyr::filter(cis_region, BP >= ld_block$start & BP <= ld_block$stop) 
   extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{top_hit$CHR}_{top_hit$BP}.tsv.gz')
   vroom::vroom_write(cis_region, extracted_file)
@@ -131,6 +132,8 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
                           '--out {tmp_trans_snps}'
   )
   system(plink_command, wait=T, ignore.stdout = T)
+
+  if (!file.exists(glue::glue('{tmp_trans_snps}.clumps'))) return()
 
   clumped_trans_snps <- data.table::fread(glue::glue('{tmp_trans_snps}.clumps')) |>
     dplyr::rename(SNP='ID', CHR='#CHROM', BP='POS') |>

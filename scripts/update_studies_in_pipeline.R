@@ -11,16 +11,20 @@ main <- function() {
   update_studies_processed()
 }
 
+snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+  dplyr::rename_with(tolower) |>
+  dplyr::select(chr, bp, snp)
+
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
 update_method <- function(studies_file, type) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
-  studies <- vroom::vroom(studies_file, show_col_types = F)
-  if (nrow(studies) == 0) return()
+  studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
+    dplyr::filter(!duplicated(unique_study_id))
 
-  studies$variant_type <- variant_types$common
   vroom::vroom_write(studies, studies_file)
 }
 
@@ -47,14 +51,14 @@ update_ld_blocks <- function() {
   # update_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores=cores_to_use, FUN=function(ld_block) {
   update_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
-    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    update_method(extracted_studies_file, type='extracted')
+    # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    # update_method(extracted_studies_file, type='extracted')
 
-    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    update_method(standardised_studies_file, type='standardised')
+    # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    # update_method(standardised_studies_file, type='standardised')
 
-    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
-    update_method(imputed_studies_file, type='imputed')
+    # imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    # update_method(imputed_studies_file, type='imputed')
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
     update_method(finemapped_studies_file, type='finemapped')
@@ -70,7 +74,7 @@ update_studies_processed <- function() {
     # vroom::vroom_write(studies_to_process, studies_to_process_file)
   }
 
-  studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz') 
+  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv') 
   processed_studies <- vroom::vroom(studies_processed_file, show_col_types = F)
   processed_studies$variant_type <- variant_types$common
   # ...

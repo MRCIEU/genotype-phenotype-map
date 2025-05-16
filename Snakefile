@@ -319,14 +319,14 @@ rule create_results_db:
            --gwas_upload_db_file {gwas_upload_db_file}
        """
 
-# rule sync_to_oracle_server:
-    # input: raw_coloc_results, rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
-    # threads: 1
-    # output: sync_done_file
-    # shell:
-    #     """
-    #     ./sync_to_oracle_server.sh
-    #     """
+rule sync_to_oracle_server:
+    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
+    threads: 1
+    output: sync_done_file
+    shell:
+        """
+        ./sync_to_oracle_server.sh
+        """
 
 onsuccess:
     print('Yay!  Please look here:')

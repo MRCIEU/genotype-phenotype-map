@@ -47,9 +47,12 @@ studies_db <- list(
       source_id INTEGER ,
       variant_type TEXT,
       p_value_threshold DOUBLE,
+      gene_id INTEGER,
       gene TEXT,
+      ensg TEXT,
       FOREIGN KEY (trait_id) REFERENCES traits(id),
-      FOREIGN KEY (source_id) REFERENCES study_sources(id)
+      FOREIGN KEY (source_id) REFERENCES study_sources(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
   snp_annotations = list(
@@ -81,6 +84,21 @@ studies_db <- list(
       eas_af REAL CHECK (eas_af BETWEEN 0 AND 1),
       sas_af REAL CHECK (sas_af BETWEEN 0 AND 1),
       afr_af REAL CHECK (afr_af BETWEEN 0 AND 1)
+    )"
+  ),
+  gene_annotations = list(
+    name = "gene_annotations",
+    query = "CREATE TABLE gene_annotations (
+      id INTEGER PRIMARY KEY,
+      ensembl_id TEXT,
+      gene_name TEXT,
+      description TEXT,
+      gene_biotype TEXT,
+      chr INTEGER,
+      start INTEGER,
+      stop INTEGER,
+      strand INTEGER,
+      source TEXT
     )"
   ),
   study_extractions = list(

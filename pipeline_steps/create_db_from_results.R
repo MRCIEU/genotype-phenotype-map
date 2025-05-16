@@ -54,16 +54,23 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::mutate(id=1:dplyr::n())
   studies_db$ld_blocks$data <- vroom::vroom(file.path("data/ld_blocks.tsv"), show_col_types = F) |>
     dplyr::mutate(id=1:dplyr::n(), ld_block=paste0(ancestry, "/", chr, "/", start, "-", stop))
+  studies_db$gene_annotations$data <- vroom::vroom(file.path(variant_annotation_dir, "gene_info.tsv"), show_col_types = F) |>
+    dplyr::mutate(id=1:dplyr::n())
 
   studies_db$study_extractions$data <- vroom::vroom(file.path(args$results_dir, "study_extractions.tsv"), show_col_types = F)
 
   sources_subset <- studies_db$study_sources$data |>
     dplyr::select(source, id) |>
     dplyr::rename(source_id=id)
+  
+  gene_subset <- studies_db$gene_annotations$data |>
+    dplyr::select(ensembl_id, id) |>
+    dplyr::rename(gene_id=id)
 
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- vroom::vroom(file.path(args$results_dir, "studies_processed.tsv.gz"), show_col_types = F) |>
     dplyr::left_join(sources_subset, by=c("source"="source")) |>
+    dplyr::left_join(gene_subset, by=c("ensg"="ensembl_id")) |>
     dplyr::filter(study_name %in% studies_db$study_extractions$data$study & trait %in% studies_db$study_extractions$data$study) |>
     dplyr::mutate(id=1:dplyr::n()) |>
     dplyr::select(-reference_build, -source, -trait_name)
@@ -156,6 +163,7 @@ format_rare_results <- function(rare_results, study_extractions, snp_annotations
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
     tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
     dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files) |>
+    dplyr::mutate(known_gene = ifelse(known_gene == "NA", NA, known_gene)) |>
     dplyr::mutate(min_p = as.numeric(min_p)) |>
     tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
     dplyr::left_join(study_extractions_subset, by="unique_study_id") |>

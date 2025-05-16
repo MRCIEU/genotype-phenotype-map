@@ -14,7 +14,8 @@ main <- function() {
   cleanup_studies_with_no_extractions()
 
   #only copy the studies_processed.tsv.gz file to the results directory once everything else was successful
-  file.copy(args$studies_processed, results_dir)
+  file.copy(args$studies_processed, file.path(results_dir, 'latest/studies_processed.tsv.gz'), overwrite = T)
+  file.copy(args$studies_processed, file.path(results_dir, 'latest/traits_processed.tsv.gz'), overwrite = T)
 
   # if (is.na(TEST_RUN)) {
   #   rmarkdown::render("pipeline_steps/pipeline_summary.Rmd", output_file = args$pipeline_summary_file)

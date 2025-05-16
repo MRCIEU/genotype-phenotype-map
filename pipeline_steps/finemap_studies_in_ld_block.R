@@ -11,11 +11,16 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
+snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+  dplyr::rename_with(tolower) |>
+  dplyr::select(chr, bp, snp)
+
 main <- function() {
   if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
+
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {
     vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -135,6 +140,7 @@ empty_finemapped_info <- function() {
                     ancestry=character(),
                     chr=character(),
                     bp=numeric(),
+                    snp=character(),
                     p_value_threshold=numeric(),
                     min_p=numeric(),
                     category=character(),
@@ -173,22 +179,25 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
     message(e)
   })
 
+
   if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
     new_bp <- NA
-    if (length(susie_result$sets$cs) == 1) {
+    new_snp <- NA
+    if (susie_result$converged == T && length(susie_result$sets$cs_index) == 1) {
       #this finds the lead SNP in new credible set
       important_row <- susie_result$sets$cs[1][[1]][[1]]
       new_bp <- as.numeric(gwas[important_row, ]$BP)
+      new_snp <- gwas[important_row, ]$SNP
     } else {
       new_bp <- gwas[which.min(gwas$P), ]$BP
     }
 
-    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp)
+    failed_finemap_info <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, new_bp=new_bp, new_snp=new_snp)
     if (susie_result$converged == F) {
       message(paste('Finemapping:', study['file'], 'susie didnt converge'))
     }
     else if (susie_result$converged == T) {
-      message(paste('Finemapping:', study['file'], 'susie only found 1 credible set'))
+      message(paste('Finemapping:', study['file'], 'susie found 1 credible set'))
       failed_finemap_info$finemap_message <- 'less_than_2_cs'
     }
   }
@@ -198,13 +207,28 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   return(list(susie_result=susie_result, failed_finemap_info=failed_finemap_info))
 }
 
-process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA) {
+process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA, new_snp=NA) {
   sample_size <- as.numeric(study['sample_size'])
   gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
 
   if (!is.na(new_bp)) {
     study['bp'] <- new_bp
+  }
+  if (!is.na(new_snp)) {
+    study['snp'] <- new_snp
+  } else {
+    message('finding new snp for: ', study[['chr']], ':', study['bp'])
+    snp_entry <- snp_annotations |>
+      dplyr::filter(chr == study[['chr']] & bp == study['bp'])
+
+    if (nrow(snp_entry) == 0) {
+      study['snp'] <- gwas[which.min(gwas$P), ]$SNP
+    } else {
+      study['snp'] <- snp_entry |>
+        dplyr::slice_head(n = 1) |>
+        dplyr::pull(snp)
+    }
   }
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
@@ -218,6 +242,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
                                     ancestry=study[['ancestry']],
                                     chr=as.character(study[['chr']]),
                                     bp=as.numeric(study['bp']),
+                                    snp=study['snp'],
                                     p_value_threshold=as.numeric(study['p_value_threshold']),
                                     min_p=min_p,
                                     category=study['category'],
@@ -232,6 +257,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
 }
 
 split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study, sample_size, finemap_file_prefix, start_time) {
+      new_snps <- c()
       new_bps <- c()
       new_files <- c()
       min_ps <- c()
@@ -245,7 +271,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
         #this finds the lead SNP in new credible set
         important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        # new_snps <- c(new_bps, as.numeric(gwas[important_row, ]$SNP))
+        new_snps <- c(new_snps, gwas[important_row, ]$SNP)
         new_bp <- as.numeric(gwas[important_row, ]$BP)
         new_bps <- c(new_bps, new_bp)
         new_files <- c(new_files, finemap_file)
@@ -273,7 +299,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
                                            variant_type=study[['variant_type']],
                                            file=new_files,
                                            ancestry=study[['ancestry']],
-                                          #  snp=new_snps,
+                                           snp=new_snps,
                                            chr=as.character(study[['chr']]),
                                            bp=new_bps,
                                            p_value_threshold=as.numeric(study[['p_value_threshold']]),

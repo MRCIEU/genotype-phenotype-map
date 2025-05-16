@@ -102,9 +102,8 @@ calculate_besd_studies_to_process <- function(entries) {
     }
 
     epi <- vroom::vroom(glue::glue('{besd_study["study"]}.epi'), col_names = F, show_col_types = F) |>
-      dplyr::filter(grepl('^[0-9]+$', X1)) |>
-      dplyr::mutate(X1 = as.numeric(X1)) |>
-      dplyr::filter(X1 %in% seq(1,22))
+      dplyr::mutate(X1 = suppressWarnings(as.numeric(X1))) |>
+      dplyr::filter(suppressWarnings(X1 %in% seq(1,22)))
 
     probes <- epi$X2
 

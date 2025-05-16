@@ -1,7 +1,5 @@
 source('constants.R')
 
-minimum_gwas_size <- 150
-
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
@@ -39,7 +37,7 @@ main <- function() {
 
       result <- perform_standardisation(study, ld_matrix_info)
 
-      if (nrow(result$gwas) < minimum_gwas_size && study[['variant_type']] == variant_types$common) {
+      if (nrow(result$gwas) < minimum_extraction_size && study[['variant_type']] == variant_types$common) {
         return()
       }
       vroom::vroom_write(result$gwas, result$study$file)

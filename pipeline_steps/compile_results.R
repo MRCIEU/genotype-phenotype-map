@@ -22,17 +22,16 @@ main <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
     dplyr::filter(dir.exists(ld_block_data))
 
-  print('Aggregating data produced by pipeline')
+  message('Aggregating data produced by pipeline')
   pipeline_data <- aggregate_data_produced_by_pipeline(ld_info, args$studies_to_process, args$studies_processed, args$traits_processed)
 
-  print('Creating study extractions')
+  message('Creating study extractions')
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
 
-
-  print('Aggregating pipeline metadata')
+  message('Aggregating pipeline metadata')
   results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
-  print('Writing results')
+  message('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
   vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
@@ -73,16 +72,6 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   } else {
     compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
   }
-
-  #update studies_processed.tsv.gz with studies_to_process.tsv
-  gene_name_map <- vroom::vroom(glue::glue('{liftover_dir}/gene_name_map.tsv'), show_col_types=F)
-
-  studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types=F)
-  studies_to_process$gene <- sub("^(ENSG.*)\\.\\d$", "\\1", studies_to_process$gene)
-
-  gene_names <- gene_name_map$GENE_NAME[match(studies_to_process$gene, gene_name_map$ENSEMBL_ID)]
-  gene_names[is.na(gene_names)] <- studies_to_process$gene[is.na(gene_names)]
-  studies_to_process$gene <- gene_names
 
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)

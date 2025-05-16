@@ -106,6 +106,8 @@ calculate_besd_studies_to_process <- function(entries) {
       dplyr::filter(suppressWarnings(X1 %in% seq(1,22)))
 
     probes <- epi$X2
+    genes <- epi$X5
+    ensgs <- ifelse(grepl('ENSG', epi$X2), sub('.*(ENSG\\d+).*', '\\1', epi$X2), NA)
 
     specifier <- basename(besd_study['study'])
     studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
@@ -142,6 +144,7 @@ calculate_besd_studies_to_process <- function(entries) {
       variant_type = besd_study[['variant_type']],
       probe = probes,
       gene = genes,
+      ensg = ensgs,
       tissue = metadata$tissue
     ))
   }) |> dplyr::bind_rows()

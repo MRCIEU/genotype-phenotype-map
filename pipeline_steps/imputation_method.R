@@ -126,11 +126,11 @@ outlier_detection <- function(r, thresh=3) {
 adjust <- function(truth, predicted, eval_frac = 0.5) {
   outs <- outlier_detection(truth / predicted)
 
-  reg <- lm(truth[!outs] ~ poly(predicted[!outs], 3, raw=T))
-  adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + predicted^3 * reg$coef[4] + reg$coef[1]
-  if (is.na(reg$coef[4])) {
-    reg <- lm(truth[!outs] ~ poly(predicted[!outs], 2, raw=T))
-    adj <- predicted * reg$coef[2] + predicted^2 * reg$coef[3] + reg$coef[1]
+  reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 3, raw=T))
+  adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2] + predicted^3 * reg$coef[3]
+  if (is.na(reg$coef[3])) {
+    reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 2, raw=T))
+    adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2]
   }
 
   corr <- cor(adj[!outs], truth[!outs], use="pair")

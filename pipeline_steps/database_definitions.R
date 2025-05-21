@@ -20,6 +20,21 @@ studies_db <- list(
       ld_block TEXT NOT NULL
     )"
   ),
+  gene_annotations = list(
+    name = "gene_annotations",
+    query = "CREATE TABLE gene_annotations (
+      id INTEGER PRIMARY KEY,
+      ensembl_id TEXT NOT NULL,
+      gene TEXT NOT NULL,
+      description TEXT,
+      gene_biotype TEXT,
+      chr INTEGER NOT NULL,
+      start INTEGER NOT NULL,
+      stop INTEGER NOT NULL,
+      strand INTEGER,
+      source TEXT
+    )"
+  ),
   traits = list(
     name = "traits",
     query = "CREATE TABLE traits (
@@ -64,6 +79,7 @@ studies_db <- list(
       bp INTEGER,
       ea TEXT,
       oa TEXT,
+      gene_id INTEGER,
       gene TEXT,
       feature_type TEXT,
       consequence TEXT,
@@ -83,22 +99,8 @@ studies_db <- list(
       amr_af REAL CHECK (amr_af BETWEEN 0 AND 1),
       eas_af REAL CHECK (eas_af BETWEEN 0 AND 1),
       sas_af REAL CHECK (sas_af BETWEEN 0 AND 1),
-      afr_af REAL CHECK (afr_af BETWEEN 0 AND 1)
-    )"
-  ),
-  gene_annotations = list(
-    name = "gene_annotations",
-    query = "CREATE TABLE gene_annotations (
-      id INTEGER PRIMARY KEY,
-      ensembl_id TEXT,
-      gene_name TEXT,
-      description TEXT,
-      gene_biotype TEXT,
-      chr INTEGER,
-      start INTEGER,
-      stop INTEGER,
-      strand INTEGER,
-      source TEXT
+      afr_af REAL CHECK (afr_af BETWEEN 0 AND 1),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
   study_extractions = list(
@@ -117,10 +119,12 @@ studies_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
-      known_gene TEXT,
+      gene TEXT,
+      gene_id INTEGER,
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
   colocalisations = list(
@@ -142,11 +146,13 @@ studies_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
-      known_gene TEXT,
+      gene TEXT,
+      gene_id INTEGER,
       PRIMARY KEY (study_extraction_id, snp_id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
   rare_results = list(
@@ -163,10 +169,12 @@ studies_db <- list(
       chr INTEGER,
       bp INTEGER,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      known_gene TEXT,
+      gene TEXT,
+      gene_id INTEGER,
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
   results_metadata = list(
@@ -207,11 +215,11 @@ associations_table <- list(
   query = "CREATE TABLE associations (
     snp_id INTEGER,
     study_id INTEGER,
-    beta REAL,
-    se REAL,
-    p DOUBLE CHECK (p BETWEEN 0 AND 1),
-    eaf REAL CHECK (eaf BETWEEN 0 AND 1),
-    imputed BOOLEAN,
+    beta REAL NOT NULL,
+    se REAL NOT NULL,
+    p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
+    eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
+    imputed BOOLEAN NOT NULL,
     PRIMARY KEY (snp_id, study_id)
   )"
 )
@@ -251,7 +259,8 @@ gwas_upload_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
-      known_gene TEXT)"
+      gene TEXT
+    )"
   ),
   colocalisations = list(
     name = "colocalisations",
@@ -274,6 +283,8 @@ gwas_upload_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
-      known_gene TEXT)"
+      gene TEXT,
+      gene_id INTEGER
+    )"
   )
 )

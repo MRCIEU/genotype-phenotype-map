@@ -7,13 +7,9 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   # update_study_dirs()
-  # update_ld_blocks()
-  update_studies_processed()
+  update_ld_blocks()
+  # update_studies_processed()
 }
-
-snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-  dplyr::rename_with(tolower) |>
-  dplyr::select(chr, bp, snp)
 
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
 update_method <- function(studies_file, type) {
@@ -21,9 +17,14 @@ update_method <- function(studies_file, type) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
-  studies <- vroom::vroom(studies_file, show_col_types = F) |>
-    dplyr::left_join(snp_annotations, by=c("chr"="chr", "bp"="bp")) |>
-    dplyr::filter(!duplicated(unique_study_id))
+
+  if (type == 'finemapped') {
+    studies <- vroom::vroom(studies_file, show_col_types = F) |>
+      dplyr::filter(!grepl('godmc-methylation', unique_study_id))
+  } else if (type == 'imputed') {
+    studies <- vroom::vroom(studies_file, show_col_types = F) |>
+      dplyr::filter(!grepl('godmc-methylation', study))
+  } 
 
   vroom::vroom_write(studies, studies_file)
 }
@@ -47,9 +48,10 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
-  cores_to_use <- 128
+  # cores_to_use <- 128
   # update_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores=cores_to_use, FUN=function(ld_block) {
-  update_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
+  blocks <- ld_info$ld_block_data
+  update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
     # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
     # update_method(extracted_studies_file, type='extracted')
@@ -57,8 +59,8 @@ update_ld_blocks <- function() {
     # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
     # update_method(standardised_studies_file, type='standardised')
 
-    # imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
-    # update_method(imputed_studies_file, type='imputed')
+    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    update_method(imputed_studies_file, type='imputed')
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
     update_method(finemapped_studies_file, type='finemapped')

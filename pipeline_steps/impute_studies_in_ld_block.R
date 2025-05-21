@@ -57,13 +57,23 @@ main <- function() {
       rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
-      result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
-      filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
-
-      if(!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) {
-        vroom::vroom_write(filtered_results$gwas, imputed_file)
+      # GodMC methylation studies are sparsley populated, so imputation is not useful
+      if (grepl('godmc-methylation', study['study'])) {
+        filtered_results <- list(
+          significant_rows_imputed = NA,
+          significant_rows_filtered = NA
+        )
+        result <- pad_missing_values(gwas_to_impute)
+        vroom::vroom_write(result$gwas, imputed_file)
       } else {
-        vroom::vroom_write(gwas, imputed_file)
+        result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
+        filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
+
+        if( !is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) {
+          vroom::vroom_write(filtered_results$gwas, imputed_file)
+        } else {
+          vroom::vroom_write(gwas, imputed_file)
+        }
       }
 
       time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
@@ -125,6 +135,21 @@ empty_imputed_studies <- function() {
       variant_type = character()
     )
   )
+}
+
+pad_missing_values <- function(gwas) {
+  gwas$BETA[is.na(gwas$BETA)] <- 0
+  gwas$SE[is.na(gwas$SE)] <- 1
+  gwas$P[is.na(gwas$P)] <- 1
+  gwas$Z[is.na(gwas$Z)] <- 0
+  return(list(
+    gwas = gwas,
+    rows_imputed = 0,
+    b_cor = NA,
+    se_cor = NA,
+    z_adj = NA,
+    se_adj = NA
+  ))
 }
 
 main()

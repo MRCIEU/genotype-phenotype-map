@@ -54,7 +54,6 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   gwas$SE_IMPUTED <- se_adj$adj
 
-
   # Sometimes SE is very far away from SE_IMPUTED.
   # This could cause problems if the beta is instable but still used for imputation
   # Set those betas to NA to be imputed

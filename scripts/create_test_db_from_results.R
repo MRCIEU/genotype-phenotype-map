@@ -25,7 +25,7 @@ args <- argparser::parse_args(parser)
 main <- function() {
     study_ids <- split_string_into_vector(args$study_ids)
 
-    orig_studies_db_file <- file.path(results_dir, 'latest/studies.db')
+    orig_studies_db_file <- file.path(results_dir, 'latest/studies_w_genes.db')
     orig_ld_db_file <- file.path(results_dir, 'latest/ld.db')
     orig_associations_db_file <- file.path(results_dir, 'latest/associations.db')
 
@@ -100,6 +100,14 @@ main <- function() {
         paste(snp_ids_to_keep, collapse=",")
     ))
     DBI::dbAppendTable(studies_con, "snp_annotations", snp_annotations)
+
+    genes_to_keep <- unique(na.omit(c(colocs$gene_id, rare_results$gene_id, studies$gene_id)))
+
+    gene_annotations <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM gene_annotations WHERE id IN (%s)",
+        paste(genes_to_keep, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "gene_annotations", gene_annotations)
 
     associations_to_keep <- DBI::dbGetQuery(orig_associations_con,
         sprintf("SELECT * FROM associations WHERE snp_id IN (%s) AND study_id IN (%s)",

@@ -65,6 +65,18 @@ main <- function() {
         return()
       }
 
+      # GodMC methylation studies are sparsley populated, so finemapping is not useful
+      if (grepl('godmc-methylation', study['study'])) {
+        unfinemapped_results <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, message='sparse_population')
+        unfinemapped_results <- dplyr::bind_cols(unfinemapped_results, data.frame(
+          first_finemap_num_results = NA,
+          second_finemap_num_results = NA,
+          qc_step_run = F,
+          snps_removed_by_qc = NA
+        ))
+        return(unfinemapped_results)
+      }
+
       results <- run_susie_finemapping(gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
       if (!is.null(results$failed_finemap_info)) {
         results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(

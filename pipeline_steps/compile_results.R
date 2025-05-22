@@ -108,21 +108,17 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 create_study_extractions <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
     dplyr::filter(min_p <= p_value_threshold) |>
-    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block)
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  standardised_studies <- pipeline_data$standardised_studies |>
-    dplyr::filter(variant_type != variant_types$common) |>
-    dplyr::mutate(unique_study_id = paste0(study, '_', chr, '_', bp))
-  
   rare_studies <- pipeline_data$raw_rare_results |>
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
     tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
-    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files) |>
+    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files, snp=candidate_snp) |>
     dplyr::mutate(min_p = as.numeric(min_p), cis_trans = NA) |>
     tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
-    dplyr::select(study, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block, known_gene)
+    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, known_gene)
 
   all_studies <- rbind(finemapped_studies, rare_studies)
   return(all_studies)

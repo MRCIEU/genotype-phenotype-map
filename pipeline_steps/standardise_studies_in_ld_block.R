@@ -37,7 +37,10 @@ main <- function() {
 
       result <- perform_standardisation(study, ld_matrix_info)
 
-      if (nrow(result$gwas) < minimum_extraction_size && study[['variant_type']] == variant_types$common) {
+      if (nrow(result$gwas) < minimum_extraction_size &&
+          study[['variant_type']] == variant_types$common &&
+          !grepl('godmc-methylation', study[['study']])
+        ) {
         return()
       }
       vroom::vroom_write(result$gwas, result$study$file)

@@ -31,6 +31,7 @@ main <- function() {
   studies_db <- load_data_for_studies_db(studies_db)
 
   lapply(studies_db, \(table) append_unique_rows(studies_conn, table))
+  q()
 
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
@@ -62,7 +63,7 @@ load_data_for_studies_db <- function(studies_db) {
   sources_subset <- studies_db$study_sources$data |>
     dplyr::select(source, id) |>
     dplyr::rename(source_id=id)
-  
+
   gene_subset <- studies_db$gene_annotations$data |>
     dplyr::select(ensembl_id, id) |>
     dplyr::rename(gene_id=id)
@@ -95,29 +96,29 @@ load_data_for_studies_db <- function(studies_db) {
 
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
     dplyr::mutate(id=1:dplyr::n(), file=sub(ld_block_data_dir, "", file)) |>
+    dplyr::rename(gene=known_gene) |>
     dplyr::left_join(dplyr::select(studies_db$studies$data, study_name, id) |> dplyr::rename(study_id=id), by=c("study"="study_name")) |>
-    dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
+    dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block") |>
+    dplyr::left_join(dplyr::select(studies_db$gene_annotations$data, gene, id) |> dplyr::rename(gene_id=id), by="gene")
   
   snp_annotation_subset <- studies_db$snp_annotations$data |>
     dplyr::select(snp, id, chr, bp) |>
     dplyr::rename(snp_id=id)
 
-  # TODO: Fix this is.na(snp_id) filter once it's fixed
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
     dplyr::left_join(snp_annotation_subset, by=c("chr"="chr", "bp"="bp")) |>
     dplyr::filter(!duplicated(unique_study_id)) |>
     dplyr::filter(!is.na(snp_id))
+    # dplyr::left_join(snp_annotation_subset, by="snp")
 
-  # TODO: Fix this is.na(study_extraction_id) filter once it's fixed
   studies_db$colocalisations$data <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F) |> 
-    format_colocalisations(studies_db$study_extractions$data, studies_db$snp_annotations$data) |>
-    dplyr::filter(!is.na(study_extraction_id))
+    format_colocalisations(studies_db) |>
+    #TODO: Remove this once we have fixed the colocalisations
+    dplyr::filter(!is.na(chr))
 
-  # TODO: Fix this is.na(study_extraction_id) filter once it's fixed
   studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "raw_rare_results.tsv"), show_col_types = F) |>
     dplyr::rename_with(tolower) |>
-    format_rare_results(studies_db$study_extractions$data, studies_db$snp_annotations$data) |>
-    dplyr::filter(!is.na(study_extraction_id))
+    format_rare_results(studies_db)
 
   studies_db$results_metadata$data <- vroom::vroom(file.path(args$results_dir, "results_metadata.tsv"), show_col_types = F) |>
     dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block")
@@ -125,12 +126,12 @@ load_data_for_studies_db <- function(studies_db) {
   return(studies_db)
 }
 
-format_colocalisations <- function(colocalisations, study_extractions, snp_annotations) {
-  study_extractions_subset <- study_extractions |>
-    dplyr::select(id, study_id, unique_study_id, chr, bp, min_p, cis_trans, ld_block, ld_block_id, known_gene) |>
+format_colocalisations <- function(colocalisations, studies_db) {
+  study_extractions_subset <- studies_db$study_extractions$data |>
+    dplyr::select(id, study_id, unique_study_id, chr, bp, min_p, cis_trans, ld_block, ld_block_id, gene, gene_id) |>
     dplyr::rename(study_extraction_id=id)
 
-  snp_annotations_subset <- snp_annotations |>
+  snp_annotations_subset <- studies_db$snp_annotations$data |>
     dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
 
@@ -145,30 +146,35 @@ format_colocalisations <- function(colocalisations, study_extractions, snp_annot
     dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
     dplyr::ungroup() |>
     dplyr::select(-dropped_trait)
-
+  
   return(colocalisations)
 }
 
-format_rare_results <- function(rare_results, study_extractions, snp_annotations) {
-  study_extractions_subset <- study_extractions |>
+format_rare_results <- function(rare_results, studies_db) {
+  study_extractions_subset <- studies_db$study_extractions$data |>
     dplyr::select(id, unique_study_id, ld_block_id, study_id) |>
     dplyr::rename(study_extraction_id=id)
 
-  snp_annotations_subset <- snp_annotations |>
+  snp_annotations_subset <- studies_db$snp_annotations$data |>
     dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
+
+  gene_annotations_subset <- studies_db$gene_annotations$data |>
+    dplyr::select(gene, id) |>
+    dplyr::rename(gene_id=id)
   
   rare_results <- rare_results |>
     dplyr::mutate(rare_result_group_id=1:dplyr::n()) |>
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
     tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
-    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files) |>
-    dplyr::mutate(known_gene = ifelse(known_gene == "NA", NA, known_gene)) |>
+    dplyr::rename(unique_study_id=traits, min_p=min_ps, gene=genes, file=files) |>
+    dplyr::mutate(gene = ifelse(gene == "NA", NA, gene)) |>
     dplyr::mutate(min_p = as.numeric(min_p)) |>
     tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
     dplyr::left_join(study_extractions_subset, by="unique_study_id") |>
     dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-many") |>
-    dplyr::select(rare_result_group_id, study_extraction_id, snp_id, ld_block_id, unique_study_id, candidate_snp, study_id, file, chr, bp, min_p, known_gene)
+    dplyr::left_join(gene_annotations_subset, by="gene", relationship="many-to-one") |>
+    dplyr::select(rare_result_group_id, study_extraction_id, snp_id, ld_block_id, unique_study_id, candidate_snp, study_id, file, chr, bp, min_p, gene, gene_id)
 
   return(rare_results)
 }

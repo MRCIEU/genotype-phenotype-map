@@ -7,7 +7,7 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   # update_study_dirs()
-  update_ld_blocks()
+  # update_ld_blocks()
   # update_studies_processed()
 }
 
@@ -18,13 +18,7 @@ update_method <- function(studies_file, type) {
     return()
   }
 
-  if (type == 'finemapped') {
-    studies <- vroom::vroom(studies_file, show_col_types = F) |>
-      dplyr::filter(!grepl('godmc-methylation', unique_study_id))
-  } else if (type == 'imputed') {
-    studies <- vroom::vroom(studies_file, show_col_types = F) |>
-      dplyr::filter(!grepl('godmc-methylation', study))
-  } 
+  #FILL OUT
 
   vroom::vroom_write(studies, studies_file)
 }
@@ -53,11 +47,11 @@ update_ld_blocks <- function() {
   blocks <- ld_info$ld_block_data
   update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
-    # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    # update_method(extracted_studies_file, type='extracted')
+    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    update_method(extracted_studies_file, type='extracted')
 
-    # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    # update_method(standardised_studies_file, type='standardised')
+    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    update_method(standardised_studies_file, type='standardised')
 
     imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
     update_method(imputed_studies_file, type='imputed')

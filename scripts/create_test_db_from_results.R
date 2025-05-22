@@ -25,7 +25,7 @@ args <- argparser::parse_args(parser)
 main <- function() {
     study_ids <- split_string_into_vector(args$study_ids)
 
-    orig_studies_db_file <- file.path(results_dir, 'latest/studies_w_genes.db')
+    orig_studies_db_file <- file.path(results_dir, 'latest/studies.db')
     orig_ld_db_file <- file.path(results_dir, 'latest/ld.db')
     orig_associations_db_file <- file.path(results_dir, 'latest/associations.db')
 

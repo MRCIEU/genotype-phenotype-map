@@ -7,6 +7,7 @@ parser <- argparser::add_argument(parser, '--studies_db_file', help = 'Studies d
 parser <- argparser::add_argument(parser, '--associations_db_file', help = 'Associations database file', type = 'character')
 parser <- argparser::add_argument(parser, '--ld_db_file', help = 'LD database file', type = 'character')
 parser <- argparser::add_argument(parser, '--gwas_upload_db_file', help = 'GWAS upload database file', type = 'character')
+parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 
 args <- argparser::parse_args(parser)
 
@@ -48,6 +49,8 @@ main <- function() {
   file.copy(args$associations_db_file, file.path(results_dir, "latest/associations.db"))
   file.copy(args$ld_db_file, file.path(results_dir, "latest/ld.db"))
   file.copy(args$gwas_upload_db_file, file.path(results_dir, "latest/gwas_upload.db"))
+
+  vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
 load_data_for_studies_db <- function(studies_db) {

@@ -73,9 +73,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
   }
 
+  studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
-    studies_processed <- rbind(studies_processed, studies_to_process) |> dplyr::distinct()
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_process) |> dplyr::distinct()
   } else {
     studies_processed <- studies_to_process
   }
@@ -91,7 +93,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     dplyr::select(data_type, study_name, trait_name) |>
     dplyr::rename(trait=trait_name)
 
-  traits_processed <- rbind(traits_processed, traits_unprocessed) |> dplyr::distinct()
+  traits_processed <- dplyr::bind_rows(traits_processed, traits_unprocessed) |> dplyr::distinct()
 
   return(list(
     extracted_studies = extracted_studies,

@@ -31,16 +31,11 @@ ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_bloc
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
-standardisation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/standardisation_complete'
-complex_standardisation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_standardisation_complete'
-imputation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/imputation_complete'
-complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imputation_complete'
-finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
-complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
-coloc_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/coloc_complete'
-complex_coloc_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_coloc_complete'
-compare_rare_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/compare_rare_complete'
-complex_compare_rare_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_compare_rare_complete'
+standardisation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/standardisation_complete'
+imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
+finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
+coloc_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/coloc_complete'
+compare_rare_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/compare_rare_complete'
 
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
@@ -68,14 +63,10 @@ sync_done_file = '/tmp/sync_done'
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
-        expand(imputation_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_imputation_pattern, complex_ld_block=complex_ld_blocks),
-        expand(finemapping_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
-        expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
+        expand(imputation_pattern, ld_block=ld_blocks),
+        expand(finemapping_pattern, ld_block=ld_blocks),
+        expand(coloc_pattern, ld_block=ld_blocks),
+        expand(compare_rare_pattern, ld_block=ld_blocks),
         raw_coloc_results,
         raw_rare_results,
         study_extractions,
@@ -86,7 +77,7 @@ rule all:
         associations_db_file,
         ld_db_file,
         gwas_upload_db_file,
-        create_db_done_file,
+        create_dbs_done_file,
         sync_done_file,
         backup_done_file
         # pipeline_summary_output
@@ -150,7 +141,7 @@ rule standardise_rule:
 
 
 rule:
-    name: f'{name}_impute_per_ld_block'
+    name: 'impute_per_ld_block'
     input: standardisation_pattern
     output: temporary(imputation_pattern)
     retries: 1
@@ -173,7 +164,7 @@ rule:
 rule finemap_rule:
     name: f'finemap_per_ld_block'
     input: imputation_pattern 
-    output: temporary(finemaping_pattern)
+    output: temporary(finemapping_pattern)
     retries: 1
     threads: 3
     params:
@@ -188,14 +179,13 @@ rule finemap_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript finemap_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output} \
-                --complex_block {name == 'complex'}"
+                --completed_output_file {output}"
         subprocess.run(command, shell=True)
 
 rule coloc_rule:
     name: f'coloc_per_ld_block'
     retries: 2
-    threads: 5
+    threads: 2
     input:
         finemap = finemapping_pattern
     output: temporary(coloc_pattern)
@@ -237,8 +227,7 @@ rule compare_rare_rule:
         subprocess.run(command, shell=True)
 
 rule compile_results:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
+    input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
     output:
         raw_coloc_results = raw_coloc_results,
@@ -265,7 +254,7 @@ rule compile_results:
          """
 
 rule backup_data_dir:
-    input: raw_coloc_results, rare_results, study_extractions, results_metadata
+    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
     threads: 1
     output: temporary(backup_done_file)
     shell:

@@ -1,5 +1,5 @@
 source('constants.R')
-bp_range <- 50000
+bp_range <- 10000
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
@@ -49,7 +49,7 @@ main <- function() {
 
   # Get all possible pairs within bp_range, excluding already calculated pairs
   study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results, args$worker_guid)
-  message(glue::glue('Found {nrow(study_pairs)} study pairs to coloc'))
+  message(glue::glue('Found {nrow(study_pairs)} study pairs to coloc for {args$ld_block}'))
   
   if (nrow(study_pairs) == 0) {
     message(glue::glue('No study pairs to coloc in LD region {ld_info$ld_block_data}, skipping.'))
@@ -57,10 +57,17 @@ main <- function() {
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) vroom::vroom(file, delim = '\t', show_col_types = F))
+  studies_to_colocalise <- lapply(finemapped_studies$file,
+    function(file) vroom::vroom(file, delim = '\t',
+      show_col_types = F,
+      col_select = c('SNP', 'BP', 'BETA', 'SE', 'P', 'EAF'),
+      altrep = F
+    )
+  )
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   new_coloc_results <- lapply(1:nrow(study_pairs), function(i) {
+    start_time <- Sys.time()
     pair <- study_pairs[i,]
     first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
     second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
@@ -75,6 +82,8 @@ main <- function() {
     })
 
     result <- dplyr::bind_cols(pair, result)
+    time_taken <- Sys.time() - start_time
+    message(glue::glue('coloc {result$h4} in {time_taken}'))
     return(result)
   })
 
@@ -84,8 +93,8 @@ main <- function() {
     vroom::vroom_write(coloc_results, coloc_results_file)
   }
 
-  clustered_results <- cluster_coloc_results(coloc_results)
-  vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+  # clustered_results <- cluster_coloc_results(coloc_results)
+  # vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
@@ -131,6 +140,8 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second
   
   first_gwas <- harmonised_gwases[[1]]
   second_gwas <- harmonised_gwases[[2]]
+
+  if (nrow(first_gwas) < 50 || nrow(second_gwas) < 50) return(NULL)
 
   first_type <- if (first_study$category == study_categories$continuous) "quant" else "cc"
   second_type <- if (second_study$category == study_categories$continuous) "quant" else "cc"

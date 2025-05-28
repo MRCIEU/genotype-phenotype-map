@@ -2,7 +2,6 @@ source("constants.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
-parser <- argparser::add_argument(parser, '--complex_block', help = 'Is the ld block complex', default = F, type = 'logical')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Completed output file', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)

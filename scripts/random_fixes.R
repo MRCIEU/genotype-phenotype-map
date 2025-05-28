@@ -25,6 +25,39 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+get_study_pairs_to_coloc <- function(studies, bp_range) {
+  pairs <- data.frame(t(utils::combn(studies$unique_study_id, 2))) |>
+    dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
+    dplyr::mutate(study_a = sub('_.*', '', unique_study_a), study_b = sub('_.*', '', unique_study_b))
+  bp_distances <- utils::combn(studies$bp, 2, function(x) {abs(x[1] - x[2])})
+  pairs$bp_distance <- bp_distances
+  
+  pairs <- pairs |>
+    dplyr::filter(bp_distance <= bp_range) |>
+    dplyr::filter(study_a != study_b)
+  
+  return(pairs)
+}
+
+get_number_of_colocs_to_run <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+  print('ld_block 10000 pairs 50000 pairs')
+  results <- parallel::mclapply(ld_info$ld_block_data, mc.cores = 10, function(ld_block) {
+    # print(ld_block)
+    studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    studies <- vroom::vroom(studies_file, show_col_types = F)
+    pairs_50000 <- get_study_pairs_to_coloc(studies, 50000)
+    pairs_10000 <- dplyr::filter(pairs_50000, bp_distance <= 10000)
+    print(paste(ld_block, nrow(pairs_10000), nrow(pairs_50000)))
+  })
+
+  # print(sum(sapply(results, function(x) {x$pairs_10000})))
+  # print(sum(sapply(results, function(x) {x$pairs_50000})))
+  
+}
+
 add_data_to_rare_studies <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -554,4 +587,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-add_data_to_rare_studies()
+get_number_of_colocs_to_run()

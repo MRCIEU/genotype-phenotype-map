@@ -69,6 +69,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   # Readjust SE
   gwas$SE[se_outliers] <- gwas$SE_IMPUTED[se_outliers]
   se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED)
+  # se_rescaled <- rescale_se(gwas$SE, gwas$SE_IMPUTED)
   gwas$SE_IMPUTED <- se_adj2$adj
   gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
 
@@ -122,6 +123,19 @@ outlier_detection <- function(r, thresh=3) {
   return(outliers)
 }
 
+rescale_se <- function(truth_se, predicted_se) {
+  if (min(predicted_se, na.rm=T) > 0) return(predicted_se)
+
+  truth_min <- min(truth_se, na.rm=T)
+  truth_max <- max(truth_se, na.rm=T)
+  truth_range <- truth_max - truth_min
+  predicted_min <- min(predicted_se, na.rm=T)
+  predicted_max <- max(predicted_se, na.rm=T)
+  predicted_range <- predicted_max - predicted_min
+  se_rescaled <- predicted_se / predicted_range * truth_range + truth_min
+  return(se_rescaled)
+}
+
 adjust <- function(truth, predicted, eval_frac = 0.5) {
   outs <- outlier_detection(truth / predicted)
 
@@ -172,20 +186,25 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
 #' 
 #' First, filters the imputation results to inside the range of the original gwas
 #' Second, finds imputed variants with low pvalues, non-imputed rows that are correlated
-#' If imputed variant is more significant the non-imputed rows, drop that variant
+#' If imputed variant is more significant the non-imputed rows, drop that variant.
+#' Also, if the imputed variant has an illegal value, drop that variant.
 #' @return filtered gwas
 filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
   only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
   snps_to_remove <- c()
-  snps_to_investigate <- which(gwas$P < lowest_p_value_threshold & gwas$IMPUTED == T)
+  snps_to_investigate <- which(gwas$IMPUTED == T & (gwas$P < lowest_p_value_threshold | gwas$SE <= 0))
   for (snp_location in snps_to_investigate) {
     ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
     ld_correlations <- ld_correlations[ld_correlations != snp_location]
     gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
 
     snp <- gwas[snp_location, ]
+
+    # if (snp$P < 0 || snp$P > 1 || snp$SE <= 0) {
+      # snps_to_remove <- c(snps_to_remove, snp_location)
+    # }
 
     if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)

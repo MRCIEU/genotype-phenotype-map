@@ -127,6 +127,23 @@ studies_db <- list(
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
+  pairwise_colocalisations = list(
+    name = "pairwise_colocalisations",
+    query = "CREATE TABLE pairwise_colocalisations (
+      study_extraction_a_id INTEGER,
+      study_extraction_b_id INTEGER,
+      ld_block_id INTEGER,
+      bp_distance INTEGER,
+      h0 REAL CHECK (h0 BETWEEN 0 AND 1),
+      h1 REAL CHECK (h1 BETWEEN 0 AND 1),
+      h2 REAL CHECK (h2 BETWEEN 0 AND 1),
+      h3 REAL CHECK (h3 BETWEEN 0 AND 1),
+      h4 REAL CHECK (h4 BETWEEN 0 AND 1),
+      FOREIGN KEY (study_extraction_a_id) REFERENCES study_extractions(id),
+      FOREIGN KEY (study_extraction_b_id) REFERENCES study_extractions(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+    )"
+  ),
   colocalisations = list(
     name = "colocalisations",
     query = "CREATE TABLE colocalisations (

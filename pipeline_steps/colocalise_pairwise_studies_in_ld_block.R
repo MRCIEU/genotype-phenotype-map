@@ -112,8 +112,7 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
   }
 
   pairs <- pairs |>
-    dplyr::filter(bp_distance <= bp_range) |>
-    dplyr::filter(study_a != study_b)
+    dplyr::filter(bp_distance <= bp_range)
   
   if (nrow(existing_results) > 0) {
     pairs <- dplyr::anti_join(pairs, existing_results, by = c("unique_study_a", "unique_study_b")) 

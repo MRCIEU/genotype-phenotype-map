@@ -25,6 +25,42 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+delete_bad_imputations <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  lapply(ld_info$ld_block_data, function(ld_block) {
+    print(ld_block)
+    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
+
+    bad_studies <- apply(imputed_studies, 1, function(imputed_study) {
+      file <- imputed_study[['file']]
+      # print(file)
+      imputed_gwas <- vroom::vroom(file, show_col_types = F)
+      if (sum(is.na(imputed_gwas$SE)) > 0 || any(imputed_gwas$SE <= 0)) {
+        return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
+      }
+    }) |> dplyr::bind_rows()
+
+    message(paste('removing', nrow(bad_studies), 'imputed studies from', ld_block))
+    imputed_studies <- dplyr::filter(imputed_studies, !file %in% bad_studies$file)
+    # file.remove(bad_studies$file)
+    # vroom::vroom_write(imputed_studies, imputed_studies_file)
+
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% bad_studies$study)
+    bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% bad_studies$study)
+    message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
+    # file.remove(bad_finemapped_studies$file)
+    # vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
+  })
+  
+}
+
 get_study_pairs_to_coloc <- function(studies, bp_range) {
   pairs <- data.frame(t(utils::combn(studies$unique_study_id, 2))) |>
     dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
@@ -587,4 +623,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-get_number_of_colocs_to_run()
+delete_bad_imputations()

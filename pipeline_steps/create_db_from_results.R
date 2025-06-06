@@ -45,10 +45,10 @@ main <- function() {
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
 
-  file.copy(args$studies_db_file, file.path(results_dir, "latest/studies.db"))
-  file.copy(args$associations_db_file, file.path(results_dir, "latest/associations.db"))
-  file.copy(args$ld_db_file, file.path(results_dir, "latest/ld.db"))
-  file.copy(args$gwas_upload_db_file, file.path(results_dir, "latest/gwas_upload.db"))
+  file.copy(args$studies_db_file, file.path(latest_results_dir, "studies.db"))
+  file.copy(args$associations_db_file, file.path(latest_results_dir, "associations.db"))
+  file.copy(args$ld_db_file, file.path(latest_results_dir, "ld.db"))
+  file.copy(args$gwas_upload_db_file, file.path(latest_results_dir, "gwas_upload.db"))
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
@@ -118,6 +118,9 @@ load_data_for_studies_db <- function(studies_db) {
     format_colocalisations(studies_db) |>
     #TODO: Remove this once we have fixed the colocalisations
     dplyr::filter(!is.na(chr))
+  
+  studies_db$pairwise_colocalisations$data <- vroom::vroom(file.path(args$results_dir, "pairwise_coloc_results.tsv"), show_col_types = F) |>
+    format_pairwise_colocalisations(studies_db)
 
   studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "raw_rare_results.tsv"), show_col_types = F) |>
     dplyr::rename_with(tolower) |>
@@ -151,6 +154,21 @@ format_colocalisations <- function(colocalisations, studies_db) {
     dplyr::select(-dropped_trait)
   
   return(colocalisations)
+}
+
+format_pairwise_colocalisations <- function(pairwise_colocalisations, studies_db) {
+  study_extractions_subset <- studies_db$study_extractions$data |>
+    dplyr::select(id, unique_study_id, ld_block_id) |>
+    dplyr::rename(study_extraction_id=id)
+
+  pairwise_colocalisations <- pairwise_colocalisations |>
+    dplyr::mutate(id=1:dplyr::n()) |>
+    dplyr::left_join(study_extractions_subset, by=c("unique_study_a"="unique_study_id"), relationship="many-to-one") |>
+    dplyr::left_join(study_extractions_subset, by=c("unique_study_b"="unique_study_id"), relationship="many-to-one") |>
+    dplyr::rename(study_extraction_id_a=id.x, study_extraction_id_b=id.y, ld_block_id=ld_block_id.x) |>
+    dplyr::select(id, study_extraction_id_a, study_extraction_id_b, ld_block_id, h0, h1, h2, h3, h4, -ld_block_id.y)
+
+  return(pairwise_colocalisations)
 }
 
 format_rare_results <- function(rare_results, studies_db) {

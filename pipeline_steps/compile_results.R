@@ -39,6 +39,10 @@ main <- function() {
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
 
+  #TODO: change this after switching over to pairwise coloc
+  pairwise_file <- sub(args$coloc_results_file, 'raw_coloc_results.tsv', 'pairwise_coloc_results.tsv')
+  vroom::vroom_write(pipeline_data$pairwise_coloc_results, pairwise_file)
+
   # if (is.na(TEST_RUN)) {
   #   rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
   # } else {
@@ -65,6 +69,9 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_results.tsv'))
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
     dplyr::filter(!is.na(traits) & traits != 'None' & posterior_prob >= posterior_prob_threshold)
+  
+  pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/pairwise_coloc_results.tsv'))
+  pairwise_coloc_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F)
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {
@@ -101,6 +108,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
     raw_coloc_results = raw_coloc_results,
+    pairwise_coloc_results = pairwise_coloc_results,
     raw_rare_results = compare_rare_results,
     studies_processed = studies_processed,
     traits_processed = traits_processed

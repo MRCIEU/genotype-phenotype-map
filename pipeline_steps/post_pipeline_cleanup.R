@@ -2,7 +2,7 @@ source('pipeline_steps/constants.R')
 
 parser <- argparser::arg_parser('Post pipeline cleanup')
 #INPUT
-parser <- argparser::add_argument(parser, '--studies_processed', help = 'Current state of processed studies', type = 'character')
+parser <- argparser::add_argument(parser, '--current_results_dir', help = 'Current results directory', type = 'character')
 parser <- argparser::add_argument(parser, '--pipeline_summary_file', help = 'Rendered Rmd file of output', type = 'character')
 args <- argparser::parse_args(parser)
 
@@ -14,14 +14,25 @@ main <- function() {
   cleanup_studies_with_no_extractions()
 
   #only copy the studies_processed.tsv.gz file to the results directory once everything else was successful
-  file.copy(args$studies_processed, file.path(results_dir, 'latest/studies_processed.tsv.gz'), overwrite = T)
-  file.copy(args$studies_processed, file.path(results_dir, 'latest/traits_processed.tsv.gz'), overwrite = T)
+  file.copy(
+    file.path(args$current_results_dir, 'studies_processed.tsv.gz'),
+    file.path(latest_results_dir, 'studies_processed.tsv.gz'),
+    overwrite = T
+  )
+  file.copy(
+    file.path(args$current_results_dir, 'traits_processed.tsv.gz'),
+    file.path(latest_results_dir, 'traits_processed.tsv.gz'),
+    overwrite = T
+  )
 
-  # if (is.na(TEST_RUN)) {
-  #   rmarkdown::render("pipeline_steps/pipeline_summary.Rmd", output_file = args$pipeline_summary_file)
-  # } else {
-  #   vroom::vroom_write(data.frame(), args$pipeline_summary_file)
-  # }
+  if (is.na(TEST_RUN)) {
+    rmarkdown::render("pipeline_steps/pipeline_summary.Rmd",
+      output_file = args$pipeline_summary_file,
+      params = list(compare_results = F)
+    )
+  } else {
+    vroom::vroom_write(data.frame(), args$pipeline_summary_file)
+  }
 }
 
 cleanup_studies_with_no_extractions <- function() {

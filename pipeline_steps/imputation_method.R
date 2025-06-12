@@ -5,7 +5,6 @@
 #' @param pc list of values and vectors from PCA of LD matrix
 #' @param thresh Fraction of variance of LD matrix to use for projection.
 #' @param eval_frac Fraction of largest betas to use to test for agreement of imputation and observed betas
-#' @param npoly_se Number of polynomial terms to use for standard error correction. Default=1
 #' 
 #' @return A list with the following elements:
 #' - gwas: The input data frame with the imputed values added
@@ -14,7 +13,7 @@
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
-perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5, npoly_se=1) {
+perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   unaltered_gwas <- gwas
   b <- gwas$BETA
   se <- gwas$SE
@@ -45,7 +44,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5, npoly_
   D <- diag(sqrt(2 * af * (1 - af)))
   Di <- diag(1 / diag(D))
   sehat <- (diag(Di))
-  se_adj <- adjust(se, sehat, npoly=npoly_se)
+  se_adj <- adjust(se, sehat, npoly=1)
   if (any(is.na(se_adj$adj))) {
     warning(glue::glue('{file} could not be adjusted, skipping imputation'))
     return(list(
@@ -69,16 +68,16 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5, npoly_
 
   # Readjust SE
   gwas$SE[se_outliers] <- gwas$SE_IMPUTED[se_outliers]
-  se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED, npoly=npoly_se)
+  se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED, npoly=1)
   gwas$SE_IMPUTED <- se_adj2$adj
   gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
 
-  # Perform beta imputation
-  imp <- eig_imp(pc, thresh, z)
+  # Perform z imputation
+  imp <- eig_imp_lasso(pc, thresh, z)
   z_sim <- imp$dat$X
 
   # Re-scale effect sizes and standard errors
-  z_adj <- adjust(z, z_sim)
+  z_adj <- adjust(z, z_sim, debug="zadjust.png", npoly=3)
 
   gwas$Z_IMPUTED <- z_adj$adj
   stopifnot(all(!is.na(gwas$Z_IMPUTED)))
@@ -182,6 +181,22 @@ eig_imp <- function(pc, thresh, X) {
 
   temp <- tibble::tibble(X=p, mask, pos=1:length(X))
   return(list(dat=temp, rsq=rsq, cor=co, ncomp=i))
+}
+
+eig_imp_lasso <- function(pc, thresh, X) {
+  i <- which(cumsum(pc$values) / sum(pc$values) >= thresh)[1]
+  E <- pc$vectors[,1:i]
+  mask <- is.na(X)
+  E1 <- E[!mask, ]
+  X1 <- X[!mask]
+  mod <- glmnet::glmnet(x=E1, y=X1, alpha=0.5, family="gaussian")
+  cv_fit <- cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
+  best_lambda <- cv_fit$lambda.min
+  p <- predict(mod, E, s=best_lambda)
+  co <- cor(p, X, use="pair")
+
+  temp <- tibble::tibble(X=p, mask, pos=1:length(X))
+  return(list(dat=temp, cor=co, ncomp=i))
 }
 
 set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {

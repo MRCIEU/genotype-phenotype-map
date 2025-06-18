@@ -1,5 +1,6 @@
 source('constants.R')
 bp_range <- 10000
+h4_threshold <- 0.8
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
@@ -93,9 +94,10 @@ main <- function() {
     vroom::vroom_write(coloc_results, coloc_results_file)
   }
 
-  # clustered_results <- cluster_coloc_results(coloc_results)
-  # vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-
+  clustered_results <- cluster_coloc_results(coloc_results)
+  # vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+  # Do we also want to write out the igraph objects and pruned studies?
+  
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
@@ -153,7 +155,7 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second
     varbeta = first_gwas$SE^2,
     pvalues = first_gwas$P,
     position = first_gwas$BP,
-    MAF = first_gwas$EAF
+    MAF = ifelse(first_gwas$EAF < 0.5, first_gwas$EAF, 1-first_gwas$EAF)
   )
 
   second_coloc_dataset <- list(
@@ -164,7 +166,7 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second
     varbeta = second_gwas$SE^2,
     pvalues = second_gwas$P,
     position = second_gwas$BP,
-    MAF = second_gwas$EAF
+    MAF = ifelse(second_gwas$EAF < 0.5, second_gwas$EAF, 1-second_gwas$EAF)
   )
 
   result <- coloc::coloc.abf(dataset1 = first_coloc_dataset, dataset2 = second_coloc_dataset)
@@ -190,7 +192,80 @@ harmonise_gwases <- function(...) {
 }
 
 cluster_coloc_results <- function(coloc_results) {
-  return(data.frame())
+  h4_adj_mx <- make_adjacency_matrix(coloc_results = coloc_results)
+
+  # Generate graph from adjacency matrix
+  g <- igraph::graph_from_adjacency_matrix(h4_adj_mx, mode="undirected", weighted=TRUE, diag=FALSE)
+  # Extract components (groups of linked studies)
+  g_comps <- igraph::components(g)
+  # Prune singleton studies (vertices) with no connections
+  vert_out <- igraph::V(g)[g_comps$membership %in% which(g_comps$csize == 1)]
+  g2 <- igraph::delete_vertices(g, vert_out)
+  # Rederive components
+  g2_comps <- igraph::components(g2)
+  # Split components into subgraphs
+  g2_subgraphs <- lapply(seq(1:g2_comps$no), function(x){
+    sg <- igraph::induced_subgraph(g2, vids = igraph::V(g2)[g2_comps$membership == x])
+    igraph::V(sg)$group <- x
+    return(sg)
+  })
+  
+  # Calculate edge betweenenss for each subgraph and remove edges to maximise modularity
+  g2_pruned <- lapply(g2_subgraphs, function(x){
+    eb <- igraph::cluster_edge_betweenness(x)
+    if(length(unique(eb$membership)) == 1){
+      igraph::V(x)$ebc_group <- igraph::V(x)$group
+      igraph::V(x)$component <- igraph::V(x)$group
+      return(x)
+    } else {
+      # Delete edges removed to achieve the maximum modularity score
+      x <- igraph::delete_edges(x, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
+      # Resulting study cluster membership
+      igraph::V(x)$ebc_group <- paste(igraph::V(x)$group, eb$membership, sep = ".")
+      # Prune resulting single studies
+      grp_single <- as.numeric(which(table(eb$membership) == 1))
+      vert_out2 <- igraph::V(x)[eb$membership %in% grp_single]
+      x <- igraph::delete_vertices(x, vert_out2)
+      # Label modules unlinked after edge removal (components)
+      x_comps <- igraph::components(x)
+      igraph::V(x)$component <- paste(igraph::V(x)$group, x_comps$membership, sep = ".")
+      return(x)
+    }
+  })
+  
+  # Recombine subgraphs
+  g_out <- igraph::disjoint_union(g2_pruned)
+  # Study group membership
+  grps <- factor(igraph::V(g_out)$ebc_group)
+  levels(grps) <- seq(1:length(unique(grps)))
+  # Study component membership
+  comp <- factor(igraph::V(g_out)$component)
+  levels(comp) <- seq(1:length(unique(comp)))
+  
+  df_out <- data.frame(study_id = igraph::vertex_attr(g_out)$name, ebc_group = grps, component = comp)
+  
+  # Pruned studies with no module membership
+  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(g_out)$name)
+  
+  # Output original igraph obj, clustered and pruned igraph object, cluster membership and studies pruned
+  return(list(igraph_obj = g, igraph_obj_ebc = g_out, groups = df_out, pruned_studies = pruned))
+}
+
+make_adjacency_matrix <- function(coloc_results) {
+  # Make symmetrical adjacency matrix
+  h4_adj_mx <- rbind(
+    coloc_results |> dplyr::select(a = unique_study_a, b = unique_study_b, h4 = h4 ),
+    coloc_results |> dplyr::select(a = unique_study_b, b = unique_study_a, h4 = h4 )) |>
+    tidyr::pivot_wider(names_from = a, values_from = h4) |>
+    tibble::column_to_rownames("b") |>
+    as.matrix()
+  
+  h4_adj_mx <- h4_adj_mx[,rownames(h4_adj_mx)]
+  diag(h4_adj_mx) <- 0
+  h4_adj_mx[is.na(h4_adj_mx)] <- 0
+  h4_adj_mx[h4_adj_mx < h4_threshold] <- 0
+
+  return(h4_adj_mx)
 }
 
 main()

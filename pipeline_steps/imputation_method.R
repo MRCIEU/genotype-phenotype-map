@@ -233,7 +233,9 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
   only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
-  snps_to_remove <- c()
+  snps_to_remove <- dplyr::filter(gwas, gwas$SE <= 0) |> dplyr::pull(SNP)
+  message(glue::glue("Removing {length(snps_to_remove)} SNPs with SE <= 0"))
+
   snps_to_investigate <- which(gwas$IMPUTED == T & (gwas$P < lowest_p_value_threshold | gwas$SE <= 0))
   for (snp_location in snps_to_investigate) {
     ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
@@ -241,10 +243,6 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     gwas_correlations <- gwas[(1:nrow(gwas) %in% ld_correlations) & gwas$IMPUTED == F, ]
 
     snp <- gwas[snp_location, ]
-
-    # if (snp$P < 0 || snp$P > 1 || snp$SE <= 0) {
-      # snps_to_remove <- c(snps_to_remove, snp_location)
-    # }
 
     if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)

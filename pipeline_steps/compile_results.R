@@ -61,7 +61,9 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   standardised_studies <- vroom::vroom(standardised_studies_files, show_col_types = F, col_types = standardised_column_types)
 
   imputed_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv'))
-  imputed_studies <- vroom::vroom(imputed_studies_files, show_col_types = F, col_types = imputed_column_types)
+  imputed_studies <- lapply(imputed_studies_files, function(file) {
+    vroom::vroom(file, show_col_types = F, col_types = imputed_column_types)
+  }) |> dplyr::bind_rows()
 
   finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'))
   finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)

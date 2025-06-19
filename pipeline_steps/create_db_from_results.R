@@ -32,7 +32,6 @@ main <- function() {
   studies_db <- load_data_for_studies_db(studies_db)
 
   lapply(studies_db, \(table) append_unique_rows(studies_conn, table))
-  q()
 
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
@@ -83,7 +82,7 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$traits$data <- vroom::vroom(file.path(args$results_dir, "traits_processed.tsv.gz"), show_col_types = F) |>
     dplyr::filter(study_name %in% studies_db$studies$data$study_name) |>
     dplyr::mutate(id=1:dplyr::n()) |>
-    dplyr::rename(trait_name=trait, trait=study_name)
+    dplyr::rename(trait_name=trait, trait=study_name, trait_category=category)
 
   traits_subset <- studies_db$traits$data |>
     dplyr::select(trait, id) |>
@@ -105,22 +104,20 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::left_join(dplyr::select(studies_db$gene_annotations$data, gene, id) |> dplyr::rename(gene_id=id), by="gene")
   
   snp_annotation_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, id, chr, bp) |>
+    dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
 
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
-    dplyr::left_join(snp_annotation_subset, by=c("chr"="chr", "bp"="bp")) |>
-    dplyr::filter(!duplicated(unique_study_id)) |>
-    dplyr::filter(!is.na(snp_id))
-    # dplyr::left_join(snp_annotation_subset, by="snp")
+    dplyr::left_join(snp_annotation_subset, by="snp") |>
+    dplyr::filter(!is.na(snp))
 
   studies_db$colocalisations$data <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F) |> 
     format_colocalisations(studies_db) |>
     #TODO: Remove this once we have fixed the colocalisations
     dplyr::filter(!is.na(chr))
   
-  studies_db$pairwise_colocalisations$data <- vroom::vroom(file.path(args$results_dir, "pairwise_coloc_results.tsv"), show_col_types = F) |>
-    format_pairwise_colocalisations(studies_db)
+  # studies_db$pairwise_colocalisations$data <- vroom::vroom(file.path(args$results_dir, "pairwise_coloc_results.tsv"), show_col_types = F) |>
+    # format_pairwise_colocalisations(studies_db)
 
   studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "raw_rare_results.tsv"), show_col_types = F) |>
     dplyr::rename_with(tolower) |>
@@ -343,6 +340,11 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   gc()
   associations <- associations[!sapply(associations, is.null)]
   associations <- do.call(rbind, associations)
+
+  original_num_rows <- nrow(associations)
+  associations <- associations |>
+    dplyr::filter(!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf))
+  message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
   DBI::dbAppendTable(conn, associations_table$name, associations)
   num_rows <- DBI::dbGetQuery(conn, glue::glue("SELECT COUNT(*) FROM {associations_table$name}"))

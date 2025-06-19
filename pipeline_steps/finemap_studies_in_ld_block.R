@@ -385,6 +385,9 @@ perform_qc <- function(gwas, study, bfile) {
 #'
 #' @return tibble with altered BETA, SE, P, and Z
 update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
+  if (length(lbf) != nrow(gwas)) {
+    stop("Length of 'lbf' must match number of rows in 'gwas'.")
+  }
   se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
   r <- prior_v / (prior_v + se^2)
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
@@ -395,6 +398,10 @@ update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 
     dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
 
   return(gwas)
+}
+
+convert_z_to_lbf <- function(z, sample_size, prior_v = 50) {
+  lbf = (r * z^2 + log(sqrt(1-r))) / 2
 }
 
 #' Calculates missing BETA, SE, and P values, given a full set of Z-scores

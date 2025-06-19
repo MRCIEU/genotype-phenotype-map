@@ -46,7 +46,7 @@ data_type_names <- list(splice_variant='sQTL',
                            protein='pQTL',
                            methylation='methQTL',
                            metabolome='metaQTL',
-                           phenotype='GWAS'
+                           phenotype='Phenotype'
 )
 study_categories <- list(continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')

@@ -41,7 +41,8 @@ studies_db <- list(
       id INTEGER PRIMARY KEY,
       data_type TEXT NOT NULL,
       trait TEXT NOT NULL,
-      trait_name TEXT NOT NULL
+      trait_name TEXT NOT NULL,
+      trait_category TEXT
     )"
   ),
   studies = list(

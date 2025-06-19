@@ -58,13 +58,18 @@ main <- function() {
     return()
   }
 
-  studies_to_colocalise <- lapply(finemapped_studies$file,
-    function(file) vroom::vroom(file, delim = '\t',
+  studies_to_colocalise <- lapply(finemapped_studies$file, function(file) {
+    if (file.info(file)$size == 0) {
+      message(glue::glue('{file} is empty, delete.'))
+      return(NULL)
+    }
+
+    vroom::vroom(file, delim = '\t',
       show_col_types = F,
       col_select = c('SNP', 'BP', 'BETA', 'SE', 'P', 'EAF'),
       altrep = F
     )
-  )
+})
   names(studies_to_colocalise) <- finemapped_studies$unique_study_id
 
   new_coloc_results <- lapply(1:nrow(study_pairs), function(i) {

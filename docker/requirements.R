@@ -1,4 +1,4 @@
-cran_install <- c('susieR', 'Rfast', 'BiocManager', 'duckdb', 'validate', 'redux', 'sendmailR', 'igraph')
+cran_install <- c('susieR', 'Rfast', 'BiocManager', 'duckdb', 'validate', 'redux', 'sendmailR', 'igraph', 'svglite')
 install.packages(cran_install, repos = 'http://cran.us.r-project.org')
 
 remotes::install_version('RcppEigen', version = '0.3.3.9.3')

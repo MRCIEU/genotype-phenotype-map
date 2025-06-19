@@ -401,6 +401,8 @@ update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 
 }
 
 convert_z_to_lbf <- function(z, sample_size, prior_v = 50) {
+  se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
+  r <- prior_v / (prior_v + se^2)
   lbf = (r * z^2 + log(sqrt(1-r))) / 2
 }
 

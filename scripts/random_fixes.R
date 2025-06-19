@@ -30,14 +30,13 @@ delete_bad_imputations <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-  lapply(ld_info$ld_block_data, function(ld_block) {
+  parallel::mclapply(ld_info$ld_block_data, mc.cores = 10, function(ld_block) {
     print(ld_block)
     imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
     imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
 
     bad_studies <- apply(imputed_studies, 1, function(imputed_study) {
       file <- imputed_study[['file']]
-      # print(file)
       imputed_gwas <- vroom::vroom(file, show_col_types = F)
       if (sum(is.na(imputed_gwas$SE)) > 0 || any(imputed_gwas$SE <= 0)) {
         return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
@@ -45,9 +44,8 @@ delete_bad_imputations <- function() {
     }) |> dplyr::bind_rows()
 
     message(paste('removing', nrow(bad_studies), 'imputed studies from', ld_block))
-    imputed_studies <- dplyr::filter(imputed_studies, !file %in% bad_studies$file)
-    # file.remove(bad_studies$file)
-    # vroom::vroom_write(imputed_studies, imputed_studies_file)
+    good_imputed_studies <- dplyr::filter(imputed_studies, !file %in% bad_studies$file)
+    vroom::vroom_write(good_imputed_studies, imputed_studies_file)
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
     finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
@@ -55,8 +53,13 @@ delete_bad_imputations <- function() {
     good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% bad_studies$study)
     bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% bad_studies$study)
     message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
-    # file.remove(bad_finemapped_studies$file)
-    # vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
+
+    pairwise_coloc_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    pairwise_coloc <- vroom::vroom(pairwise_coloc_file, show_col_types = F)
+    good_pairwise_coloc <- dplyr::filter(pairwise_coloc, !study_a %in% bad_studies$study & !study_b %in% bad_studies$study)
+    bad_pairwise_coloc <- dplyr::filter(pairwise_coloc, study_a %in% bad_studies$study | study_b %in% bad_studies$study)
+    message(paste('removing', nrow(bad_pairwise_coloc), 'pairwise coloc studies from', ld_block))
+    vroom::vroom_write(good_pairwise_coloc, pairwise_coloc_file)
   })
   
 }

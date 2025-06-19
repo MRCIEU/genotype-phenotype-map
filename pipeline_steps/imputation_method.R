@@ -44,7 +44,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   D <- diag(sqrt(2 * af * (1 - af)))
   Di <- diag(1 / diag(D))
   sehat <- (diag(Di))
-  se_adj <- adjust(se, sehat)
+  se_adj <- adjust(se, sehat, npoly=1)
   if (any(is.na(se_adj$adj))) {
     warning(glue::glue('{file} could not be adjusted, skipping imputation'))
     return(list(
@@ -68,16 +68,16 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   # Readjust SE
   gwas$SE[se_outliers] <- gwas$SE_IMPUTED[se_outliers]
-  se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED)
+  se_adj2 <- adjust(gwas$SE, gwas$SE_IMPUTED, npoly=1)
   gwas$SE_IMPUTED <- se_adj2$adj
   gwas$SE[to_impute] <- gwas$SE_IMPUTED[to_impute]
 
-  # Perform beta imputation
-  imp <- eig_imp(pc, thresh, z)
+  # Perform z imputation
+  imp <- eig_imp_lasso(pc, thresh, z)
   z_sim <- imp$dat$X
 
   # Re-scale effect sizes and standard errors
-  z_adj <- adjust(z, z_sim)
+  z_adj <- adjust(z, z_sim, debug="zadjust.png", npoly=3)
 
   gwas$Z_IMPUTED <- z_adj$adj
   stopifnot(all(!is.na(gwas$Z_IMPUTED)))
@@ -93,10 +93,12 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   return(
     list(
       gwas = gwas,
-      z_adj = z_adj$adj_slope,
-      z_adj_intercept = z_adj$adj_intercept,
-      se_adj = se_adj$adj_slope,
-      se_adj_intercept = se_adj$adj_intercept,
+      z_adj_coef1 = z_adj$adj_coef1,
+      z_adj_coef2 = z_adj$adj_coef2,
+      z_adj_coef3 = z_adj$adj_coef3,
+      se_adj_coef1 = se_adj$adj_coef1,
+      se_adj_coef2 = se_adj$adj_coef2,
+      se_adj_coef3 = se_adj$adj_coef3,
       b_cor = z_adj$corr,
       b_corr_top = z_adj$corrw,
       se_cor = se_adj$corr,
@@ -108,6 +110,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
     )
   )
 }
+
 
 outlier_detection <- function(r, thresh=3) {
   sd1 <- sd(r, na.rm=T)
@@ -122,17 +125,39 @@ outlier_detection <- function(r, thresh=3) {
   return(outliers)
 }
 
-adjust <- function(truth, predicted, eval_frac = 0.5) {
+adjust <- function(truth, predicted, eval_frac = 0.5, debug = NULL, npoly = 3) {
   outs <- outlier_detection(truth / predicted)
 
-  reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 3, raw=T))
-  adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2] + predicted^3 * reg$coef[3]
-  if (is.na(reg$coef[3])) {
-    reg <- lm(truth[!outs] ~ 0 + poly(predicted[!outs], 2, raw=T))
-    adj <- predicted * reg$coef[1] + predicted^2 * reg$coef[2]
+  truth_clean <- truth[!outs]
+  predicted_clean <- predicted[!outs]
+
+  reg <- lm(truth_clean ~ 0 + poly(predicted_clean, npoly, raw=T))
+  adj <- rep(0, length(predicted))
+  for(i in 1:npoly) {
+    adj <- adj + predicted^i * reg$coef[i]
+    if (is.na(reg$coef[i])) {
+      warning(glue::glue("Coefficient {i} is NA, stopping adjustment at {i-1}"))
+      break
+    }
   }
 
-  corr <- cor(adj[!outs], truth[!outs], use="pair")
+  if(!is.null(debug)) {
+    # fit <- lm(mpg ~ hp + I(hp^2), data = mtcars)
+    prd <- data.frame(predicted_clean = seq(from = range(predicted_clean)[1], to = range(predicted_clean)[2], length.out = 100))
+    err <- predict(reg, newdata = prd, se.fit = TRUE)
+    prd$lci <- err$fit - 1.96 * err$se.fit
+    prd$fit <- err$fit
+    prd$uci <- err$fit + 1.96 * err$se.fit
+
+    p1 <- ggplot(prd, aes(x = predicted_clean, y = fit)) +
+      theme_bw() +
+      geom_line() +
+      geom_point(data = data.frame(predicted_clean, truth_clean), aes(x = predicted_clean, y = truth_clean)) +
+      geom_smooth(aes(ymin = lci, ymax = uci), stat = "identity")
+    ggsave(p1, filename = debug, width = 8, height = 6)
+  }
+
+  corr <- cor(adj[!outs], truth_clean, use="pair")
   iqr <- truth > quantile(truth, 1-(eval_frac/2), na.rm=T) | truth < quantile(truth, eval_frac/2, na.rm=T)
 
   if (length(adj[!outs & iqr]) == 0) {
@@ -141,7 +166,7 @@ adjust <- function(truth, predicted, eval_frac = 0.5) {
     corrw <- cor(adj[!outs & iqr], truth[!outs & iqr], use="pair")
   }
 
-  return(list(adj=adj, outliers = outs, adj_slope=reg$coef[2], adj_intercept=reg$coef[1], corr=corr, corrw=corrw))
+  return(list(adj=adj, outliers = outs, adj_coef1=reg$coef[1], adj_coef2=reg$coef[2], adj_coef3=reg$coef[3], corr=corr, corrw=corrw))
 }
 
 eig_imp <- function(pc, thresh, X) {
@@ -156,6 +181,22 @@ eig_imp <- function(pc, thresh, X) {
 
   temp <- tibble::tibble(X=p, mask, pos=1:length(X))
   return(list(dat=temp, rsq=rsq, cor=co, ncomp=i))
+}
+
+eig_imp_lasso <- function(pc, thresh, X) {
+  i <- which(cumsum(pc$values) / sum(pc$values) >= thresh)[1]
+  E <- pc$vectors[,1:i]
+  mask <- is.na(X)
+  E1 <- E[!mask, ]
+  X1 <- X[!mask]
+  mod <- glmnet::glmnet(x=E1, y=X1, alpha=0.5, family="gaussian")
+  cv_fit <- cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
+  best_lambda <- cv_fit$lambda.min
+  p <- predict(mod, E, s=best_lambda)
+  co <- cor(p, X, use="pair")
+
+  temp <- tibble::tibble(X=p, mask, pos=1:length(X))
+  return(list(dat=temp, cor=co, ncomp=i))
 }
 
 set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {

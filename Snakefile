@@ -41,7 +41,8 @@ compare_rare_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/compare_rare_complete'
 studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
 traits_processed_file = RESULTS_DIR + 'latest/traits_processed.tsv.gz'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
+current_results_dir = RESULTS_DIR + 'current'
+timestamped_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
 raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
 raw_rare_results = f'{current_results_dir}/raw_rare_results.tsv'
@@ -55,9 +56,9 @@ studies_db_file = f'{current_results_dir}/studies.db'
 associations_db_file = f'{current_results_dir}/associations.db'
 ld_db_file = f'{current_results_dir}/ld.db'
 gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
+create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
 
 backup_done_file = '/tmp/backup_done'
-create_dbs_done_file = '/tmp/create_dbs_done'
 sync_done_file = '/tmp/sync_done'
 
 rule all:
@@ -283,6 +284,17 @@ rule create_results_db:
            --gwas_upload_db_file {gwas_upload_db_file} \
            --completed_output_file {output.create_dbs_done_file}
        """
+
+rule copy_results_to_timestamped_dir:
+    input: create_dbs_done_file
+    threads: 1
+    output: timestamped_results_dir
+    shell:
+        """
+        mkdir -p {timestamped_results_dir}
+        cp -r {current_results_dir} {timestamped_results_dir}
+        rm -f {current_results_dir}/*
+        """
 
 rule sync_to_oracle_server:
     input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file

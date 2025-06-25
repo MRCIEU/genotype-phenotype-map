@@ -25,6 +25,70 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+rejoin_imputed_studies <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  blocks <- ld_info$block
+  for (block in blocks) {
+    backup_ld_block <- glue::glue('/local-scratch/projects/genotype-phenotype-map/backup/data/ld_blocks/{block}')
+    ld_block <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{block}')
+
+    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    file.copy(imputed_studies_file, glue::glue('{imputed_studies_file}.backup'))
+    backup_imputed_studies_file <- glue::glue('{backup_ld_block}/imputed_studies.tsv')
+
+    print(file.info(imputed_studies_file)$mtime)
+    update_me <- file.info(imputed_studies_file)$mtime > '2025-06-20'
+    print(update_me)
+    if (!update_me) {
+      print(paste('NO UPDATE NEEDED:', block))
+      next
+    }
+
+    backup_imputed_studies <- vroom::vroom(backup_imputed_studies_file, show_col_types = F) |>
+      dplyr::mutate(time_taken = as.character(time_taken))
+    imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
+      dplyr::mutate(time_taken = as.character(time_taken))
+
+    imputed_studies <- dplyr::bind_rows(imputed_studies, backup_imputed_studies) |> 
+      dplyr::distinct(study, .keep_all = T)
+    
+    message(glue::glue("Updated imputed {block}: {nrow(imputed_studies)}"))
+    # print(head(imputed_studies))
+    # print(tail(imputed_studies))
+
+    vroom::vroom_write(imputed_studies, imputed_studies_file)
+  }
+}
+
+delete_still_bad_finemapped_studies <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  blocks <- ld_info$ld_block_data
+  for (ld_block in blocks) {
+    print(ld_block)
+    studies_to_remove <- vroom::vroom(glue::glue('{ld_block}/imputed_studies.tsv.backup'), show_col_types = F)
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove$study)
+    bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% studies_to_remove$study)
+    message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
+    vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
+
+    pairwise_coloc_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    pairwise_coloc <- vroom::vroom(pairwise_coloc_file, show_col_types = F)
+    good_pairwise_coloc <- dplyr::filter(pairwise_coloc, !study_a %in% studies_to_remove$study & !study_b %in% studies_to_remove$study)
+    bad_pairwise_coloc <- dplyr::filter(pairwise_coloc, study_a %in% studies_to_remove$study | study_b %in% studies_to_remove$study)
+    message(paste('removing', nrow(bad_pairwise_coloc), 'pairwise coloc studies from', ld_block))
+    vroom::vroom_write(good_pairwise_coloc, pairwise_coloc_file)
+  }
+}
+
 delete_bad_imputations <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -37,6 +101,9 @@ delete_bad_imputations <- function() {
 
     bad_studies <- apply(imputed_studies, 1, function(imputed_study) {
       file <- imputed_study[['file']]
+      if (!file.exists(file)) {
+        return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
+      }
       imputed_gwas <- vroom::vroom(file, show_col_types = F)
       if (sum(is.na(imputed_gwas$SE)) > 0 || any(imputed_gwas$SE <= 0)) {
         return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
@@ -62,6 +129,34 @@ delete_bad_imputations <- function() {
     vroom::vroom_write(good_pairwise_coloc, pairwise_coloc_file)
   })
   
+}
+
+create_svgs_for_all_phenotypes <- function() {
+  source('../pipeline_steps/create_svgs_from_gwas.R')
+
+  studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
+    dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
+  
+  message(paste('creating svgs for', nrow(studies), 'studies'))
+  
+  lapply(1:nrow(studies), function(i) {
+    study <- studies[i, ]
+    print(study$study_name)
+    dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
+
+    vcf_file <- glue::glue('{study$extracted_location}/vcf/hg38.vcf.gz')
+    bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%LP]" ',
+      '{vcf_file}'
+    )
+    gwas <- system(bcf_query, wait = T, intern = T)
+    gwas <- data.table::fread(text = gwas)
+
+    colnames(gwas) <- c('RSID', 'CHR', 'BP', 'LP')
+    gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
+
+    create_svgs_from_gwas(study, gwas)
+  })
 }
 
 get_study_pairs_to_coloc <- function(studies, bp_range) {
@@ -626,4 +721,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-delete_bad_imputations()
+delete_still_bad_finemapped_studies()

@@ -92,8 +92,8 @@ main <- function() {
         rows_imputed=result$rows_imputed,
         b_cor=result$b_cor,
         se_cor=result$se_cor,
-        z_adj=result$z_adj,
-        se_adj=result$se_adj,
+        z_adj=result$z_adj_coef1,
+        se_adj=result$se_adj_coef1,
         time_taken=time_taken,
         significant_rows_imputed=filtered_results$significant_rows_imputed,
         significant_rows_filtered=filtered_results$significant_rows_filtered,
@@ -106,8 +106,8 @@ main <- function() {
 
     if (nrow(imputed_studies) > 0) {
       # TODO: uncomment before committing
-      # imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
-        # dplyr::distinct()
+      imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
+        dplyr::distinct()
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
   }

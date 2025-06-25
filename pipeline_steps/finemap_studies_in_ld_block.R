@@ -406,6 +406,12 @@ convert_z_to_lbf <- function(z, sample_size, prior_v = 50) {
   lbf = (r * z^2 + log(sqrt(1-r))) / 2
 }
 
+generate_lbf_from_z <- function(z, se, prior_v=50) {
+  r <- prior_v / (prior_v + se^2)
+  lbf <- (r * z^2 + log(sqrt(1-r))) / 2
+  lbf
+}
+
 #' Calculates missing BETA, SE, and P values, given a full set of Z-scores
 #'
 #' @param gwas of summary statistics, with partially populated BETA and SE columns, and fully popualted Z and EAF

@@ -77,7 +77,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   z_sim <- imp$dat$X
 
   # Re-scale effect sizes and standard errors
-  z_adj <- adjust(z, z_sim, debug="zadjust.png", npoly=3)
+  z_adj <- adjust(z, z_sim, npoly=3)
 
   gwas$Z_IMPUTED <- z_adj$adj
   stopifnot(all(!is.na(gwas$Z_IMPUTED)))
@@ -162,7 +162,7 @@ adjust <- function(truth, predicted, eval_frac = 0.5, debug = NULL, npoly = 3) {
     prd$fit <- err$fit
     prd$uci <- err$fit + 1.96 * err$se.fit
 
-    p1 <- ggplot(prd, aes(x = predicted_clean, y = fit)) +
+    p1 <- ggplot2::ggplot(prd, aes(x = predicted_clean, y = fit)) +
       theme_bw() +
       geom_line() +
       geom_point(data = data.frame(predicted_clean, truth_clean), aes(x = predicted_clean, y = truth_clean)) +
@@ -202,8 +202,11 @@ eig_imp_lasso <- function(pc, thresh, X) {
   mask <- is.na(X)
   E1 <- E[!mask, ]
   X1 <- X[!mask]
+  # if (length(X1) == 0) {
+    # return(list(dat=tibble::tibble(X=X, mask, pos=1:length(X)), cor=NA, ncomp=i))
+  # }
   mod <- glmnet::glmnet(x=E1, y=X1, alpha=0.5, family="gaussian")
-  cv_fit <- cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
+  cv_fit <- glmnet::cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
   best_lambda <- cv_fit$lambda.min
   p <- predict(mod, E, s=best_lambda)
   co <- cor(p, X, use="pair")
@@ -233,10 +236,10 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
   only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
-  snps_to_remove <- dplyr::filter(gwas, gwas$SE <= 0) |> dplyr::pull(SNP)
+  snps_to_remove <- which(gwas$SE <= 0)
   message(glue::glue("Removing {length(snps_to_remove)} SNPs with SE <= 0"))
 
-  snps_to_investigate <- which(gwas$IMPUTED == T & (gwas$P < lowest_p_value_threshold | gwas$SE <= 0))
+  snps_to_investigate <- which(gwas$IMPUTED == T & gwas$P < lowest_p_value_threshold)
   for (snp_location in snps_to_investigate) {
     ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
     ld_correlations <- ld_correlations[ld_correlations != snp_location]
@@ -249,8 +252,12 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     }
   }
 
-  if (length(snps_to_remove) > 0) gwas <- gwas[-snps_to_remove, ]
-  return(list(gwas = gwas,
+  removed_gwas <- NA 
+  if (length(snps_to_remove) > 0) {
+    gwas <- gwas[-snps_to_remove, ]
+    removed_gwas <- gwas[snps_to_remove, ]
+  }
+  return(list(gwas = gwas, removed_gwas = removed_gwas,
     significant_rows_imputed = length(snps_to_investigate),
     significant_rows_filtered = length(snps_to_remove))
   )

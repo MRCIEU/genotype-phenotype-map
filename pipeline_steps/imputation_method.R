@@ -74,6 +74,11 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   # Perform z imputation
   imp <- eig_imp_lasso(pc, thresh, z)
+  if (is.null(imp)) {
+    return(list(
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+    ))
+  }
   z_sim <- imp$dat$X
 
   # Re-scale effect sizes and standard errors
@@ -202,9 +207,11 @@ eig_imp_lasso <- function(pc, thresh, X) {
   mask <- is.na(X)
   E1 <- E[!mask, ]
   X1 <- X[!mask]
-  # if (length(X1) == 0) {
-    # return(list(dat=tibble::tibble(X=X, mask, pos=1:length(X)), cor=NA, ncomp=i))
-  # }
+  # Check for constant or too few values
+  if (length(unique(X1)) <= 1) {
+    warning("eig_imp_lasso: y is constant or has only one value; skipping glmnet")
+    return(NULL)
+  }
   mod <- glmnet::glmnet(x=E1, y=X1, alpha=0.5, family="gaussian")
   cv_fit <- glmnet::cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
   best_lambda <- cv_fit$lambda.min

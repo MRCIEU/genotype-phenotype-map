@@ -79,6 +79,26 @@ main <- function() {
 
       time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
 
+      message(length(study['study']))
+      message(length(imputed_file))
+      message(length(study['ancestry']))
+      message(length(as.numeric(study['chr'])))
+      message(length(as.numeric(study['bp'])))
+      message(length(as.numeric(study['p_value_threshold'])))
+      message(length(study['category']))
+      message(length(study['sample_size']))
+      message(length(study['cis_trans']))
+      message(length(result$rows_imputed))
+      message(length(result$b_cor))
+      message(length(result$se_cor))
+      message(length(result$z_adj_coef1))
+      message(length(result$se_adj_coef1))
+      message(length(time_taken))
+      message(length(filtered_results$significant_rows_imputed))
+      message(length(filtered_results$significant_rows_filtered))
+      message(length(ld_info$block))
+      message(length(study['variant_type']))
+
       imputation_info <- data.frame(
         study=study[['study']],
         file=imputed_file,

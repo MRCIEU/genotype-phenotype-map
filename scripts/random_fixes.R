@@ -137,9 +137,19 @@ create_svgs_for_all_phenotypes <- function() {
   studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
     dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
   
+  cutoff_index <- which(studies$study_name == 'ebi-a-GCST90001642')
+  
+  if (length(cutoff_index) == 0) {
+    message("Study 'ebi-a-GCST90001642' not found in studies_processed.tsv.gz")
+    return()
+  }
+  
+  studies <- studies[cutoff_index:nrow(studies), ]
+  
   message(paste('creating svgs for', nrow(studies), 'studies'))
   
   lapply(1:nrow(studies), function(i) {
+    gc()
     study <- studies[i, ]
     print(study$study_name)
     dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
@@ -721,4 +731,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-delete_still_bad_finemapped_studies()
+create_svgs_for_all_phenotypes()

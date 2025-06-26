@@ -229,11 +229,11 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   if (!is.na(new_snp)) {
     study['snp'] <- new_snp
   } else {
-    message('finding new snp for: ', study[['chr']], ':', study['bp'])
     snp_entry <- snp_annotations |>
-      dplyr::filter(chr == study[['chr']] & bp == study['bp'])
+      dplyr::filter(chr == as.numeric(study[['chr']]) & bp == as.numeric(study['bp']))
 
     if (nrow(snp_entry) == 0) {
+      message('finding new snp for: ', study[['chr']], ':', study['bp'])
       study['snp'] <- gwas[which.min(gwas$P), ]$SNP
     } else {
       study['snp'] <- snp_entry |>

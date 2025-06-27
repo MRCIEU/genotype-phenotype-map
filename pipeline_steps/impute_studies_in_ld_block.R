@@ -169,8 +169,8 @@ pad_missing_values <- function(gwas) {
     rows_imputed = 0,
     b_cor = NA,
     se_cor = NA,
-    z_adj = NA,
-    se_adj = NA
+    z_adj_coef1 = NA,
+    se_adj_coef1 = NA
   ))
 }
 

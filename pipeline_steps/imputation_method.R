@@ -8,8 +8,8 @@
 #' 
 #' @return A list with the following elements:
 #' - gwas: The input data frame with the imputed values added
-#' - z_adj: The adjustment factor for the effect sizes
-#' - se_adj: The adjustment factor for the standard errors
+#' - z_adj_coef1: The adjustment factor for the effect sizes
+#' - se_adj_coef1: The adjustment factor for the standard errors
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
@@ -24,7 +24,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   if (num_to_impute == 0) {
     return(list(
-      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
     ))
   }
 
@@ -48,7 +48,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   if (any(is.na(se_adj$adj))) {
     warning(glue::glue('{file} could not be adjusted, skipping imputation'))
     return(list(
-      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
     ))
   }
 
@@ -76,7 +76,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   imp <- eig_imp_lasso(pc, thresh, z)
   if (is.null(imp)) {
     return(list(
-      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
     ))
   }
   z_sim <- imp$dat$X

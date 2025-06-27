@@ -94,7 +94,9 @@ delete_bad_imputations <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-  parallel::mclapply(ld_info$ld_block_data, mc.cores = 10, function(ld_block) {
+  block_data <- c('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/1/101384499-103762931/')
+
+  parallel::mclapply(block_data, mc.cores = 10, function(ld_block) {
     print(ld_block)
     imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
     imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
@@ -120,6 +122,7 @@ delete_bad_imputations <- function() {
     good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% bad_studies$study)
     bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% bad_studies$study)
     message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
+    vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
 
     pairwise_coloc_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
     pairwise_coloc <- vroom::vroom(pairwise_coloc_file, show_col_types = F)
@@ -137,21 +140,24 @@ create_svgs_for_all_phenotypes <- function() {
   studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
     dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
   
-  cutoff_index <- which(studies$study_name == 'ebi-a-GCST90001642')
+  # cutoff_study <- 'ebi-a-GCST90092917'
+  # cutoff_index <- which(studies$study_name == cutoff_study)
   
-  if (length(cutoff_index) == 0) {
-    message("Study 'ebi-a-GCST90001642' not found in studies_processed.tsv.gz")
-    return()
-  }
+  # if (length(cutoff_index) == 0) {
+  #   message(paste("Study", cutoff_study, "not found in studies_processed.tsv.gz"))
+  #   return()
+  # }
   
-  studies <- studies[cutoff_index:nrow(studies), ]
-  
-  message(paste('creating svgs for', nrow(studies), 'studies'))
+  # studies <- studies[cutoff_index:nrow(studies), ]
+  # message(paste('creating svgs for', nrow(studies), 'studies'))
   
   lapply(1:nrow(studies), function(i) {
     gc()
     study <- studies[i, ]
+    if (file.exists(glue::glue('{study$extracted_location}/svgs/full.zip'))) return()
+
     print(study$study_name)
+
     dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
 
     vcf_file <- glue::glue('{study$extracted_location}/vcf/hg38.vcf.gz')

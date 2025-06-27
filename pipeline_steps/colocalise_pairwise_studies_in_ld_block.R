@@ -97,12 +97,13 @@ main <- function() {
   if (nrow(new_coloc_results) > 0) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
     vroom::vroom_write(coloc_results, coloc_results_file)
+
+    clustered_results <- cluster_coloc_results(coloc_results)
+    vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+    saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
+    saveRDS(clustered_results$igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds'))
   }
 
-  clustered_results <- cluster_coloc_results(coloc_results)
-  # vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-  # Do we also want to write out the igraph objects and pruned studies?
-  
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
@@ -239,21 +240,21 @@ cluster_coloc_results <- function(coloc_results) {
   })
   
   # Recombine subgraphs
-  g_out <- igraph::disjoint_union(g2_pruned)
+  pruned_g <- igraph::disjoint_union(g2_pruned)
   # Study group membership
-  grps <- factor(igraph::V(g_out)$ebc_group)
+  grps <- factor(igraph::V(pruned_g)$ebc_group)
   levels(grps) <- seq(1:length(unique(grps)))
   # Study component membership
-  comp <- factor(igraph::V(g_out)$component)
+  comp <- factor(igraph::V(pruned_g)$component)
   levels(comp) <- seq(1:length(unique(comp)))
   
-  df_out <- data.frame(study_id = igraph::vertex_attr(g_out)$name, ebc_group = grps, component = comp)
+  coloc_groups <- data.frame(study_id = igraph::vertex_attr(pruned_g)$name, ebc_group = grps, component = comp)
   
   # Pruned studies with no module membership
-  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(g_out)$name)
+  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(pruned_g)$name)
   
   # Output original igraph obj, clustered and pruned igraph object, cluster membership and studies pruned
-  return(list(igraph_obj = g, igraph_obj_ebc = g_out, groups = df_out, pruned_studies = pruned))
+  return(list(igraph_obj = g, pruned_igraph_obj = pruned_g, groups = coloc_groups, pruned_studies = pruned))
 }
 
 make_adjacency_matrix <- function(coloc_results) {

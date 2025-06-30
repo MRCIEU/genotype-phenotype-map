@@ -44,7 +44,8 @@ ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 current_results_dir = RESULTS_DIR + 'current'
 timestamped_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
-raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
+pairwise_coloc_results = f'{current_results_dir}/pairwise_coloc_results.tsv'
+clustered_coloc_results = f'{current_results_dir}/clustered_coloc_results.tsv.gz'
 raw_rare_results = f'{current_results_dir}/raw_rare_results.tsv'
 study_extractions = f'{current_results_dir}/study_extractions.tsv'
 results_metadata = f'{current_results_dir}/results_metadata.tsv'
@@ -68,7 +69,8 @@ rule all:
         expand(finemapping_pattern, ld_block=ld_blocks),
         expand(coloc_pattern, ld_block=ld_blocks),
         expand(compare_rare_pattern, ld_block=ld_blocks),
-        raw_coloc_results,
+        pairwise_coloc_results,
+        clustered_coloc_results,
         raw_rare_results,
         study_extractions,
         results_metadata,
@@ -231,7 +233,8 @@ rule compile_results:
     input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
     output:
-        raw_coloc_results = raw_coloc_results,
+        pairwise_coloc_results = pairwise_coloc_results,
+        clustered_coloc_results = clustered_coloc_results,
         raw_rare_results = raw_rare_results,
         study_extractions = study_extractions,
         results_metadata = results_metadata,
@@ -247,7 +250,8 @@ rule compile_results:
             --new_studies_processed_file {output.new_studies_processed} \
             --new_traits_processed_file {output.new_traits_processed} \
             --study_extractions_file {output.study_extractions} \
-            --coloc_results_file {output.raw_coloc_results} \
+            --pairwise_coloc_results_file {output.pairwise_coloc_results} \
+            --clustered_coloc_results_file {output.clustered_coloc_results} \
             --rare_results_file {output.raw_rare_results} \
             --compiled_results_metadata_file {output.results_metadata}
 
@@ -255,7 +259,7 @@ rule compile_results:
          """
 
 rule backup_data_dir:
-    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
+    input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata
     threads: 1
     output: temporary(backup_done_file)
     shell:
@@ -266,7 +270,7 @@ rule backup_data_dir:
         """
 
 rule create_results_db:
-   input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
+   input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata
    threads: 1
    output:
        studies_db = studies_db_file,
@@ -297,7 +301,7 @@ rule copy_results_to_timestamped_dir:
         """
 
 rule sync_to_oracle_server:
-    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
+    input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
     threads: 1
     output: sync_done_file
     shell:
@@ -307,7 +311,8 @@ rule sync_to_oracle_server:
 
 onsuccess:
     print('Yay!  Please look here:')
-    print(raw_coloc_results)
+    print(pairwise_coloc_results)
+    print(clustered_coloc_results)
     print(raw_rare_results)
     print(study_extractions)
     print(results_metadata)

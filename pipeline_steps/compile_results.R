@@ -11,7 +11,8 @@ parser <- argparser::add_argument(parser, '--traits_processed', help = 'Current 
 parser <- argparser::add_argument(parser, '--new_studies_processed_file', help = 'New studies processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--new_traits_processed_file', help = 'New traits processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
-parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--pairwise_coloc_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--clustered_coloc_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 
@@ -34,14 +35,11 @@ main <- function() {
   message('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
-  vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
+  vroom::vroom_write(pipeline_data$pairwise_coloc_results, args$pairwise_coloc_results_file)
+  vroom::vroom_write(pipeline_data$clustered_coloc_results, args$clustered_coloc_results_file)
   vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
   vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
-
-  #TODO: change this after switching over to pairwise coloc
-  pairwise_file <- sub(args$coloc_results_file, 'raw_coloc_results.tsv', 'pairwise_coloc_results.tsv')
-  vroom::vroom_write(pipeline_data$pairwise_coloc_results, pairwise_file)
 
   # if (is.na(TEST_RUN)) {
   #   rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
@@ -72,8 +70,16 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
     dplyr::filter(!is.na(traits) & traits != 'None' & posterior_prob >= posterior_prob_threshold)
   
-  pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/pairwise_coloc_results.tsv'))
+  #TODO: revert this
+  pairwise_coloc_input_files <- glue::glue('{ld_block_data_dir}/EUR/22/0-17238266/coloc_pairwise_results.tsv.gz')
   pairwise_coloc_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F)
+  # pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/pairwise_coloc_results.tsv'))
+  # pairwise_coloc_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F)
+
+  coloc_clustered_input_files <- glue::glue('{ld_block_data_dir}/EUR/22/0-17238266/coloc_clustered_results.tsv.gz')
+  clustered_coloc_results <- vroom::vroom(coloc_clustered_input_files, delim='\t', show_col_types = F)
+  # coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+  # clustered_coloc_results <- vroom::vroom(coloc_clustered_input_files, delim='\t', show_col_types = F)
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {
@@ -109,8 +115,8 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     standardised_studies = standardised_studies,
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
-    raw_coloc_results = raw_coloc_results,
     pairwise_coloc_results = pairwise_coloc_results,
+    clustered_coloc_results = clustered_coloc_results,
     raw_rare_results = compare_rare_results,
     studies_processed = studies_processed,
     traits_processed = traits_processed

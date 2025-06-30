@@ -126,3 +126,7 @@ update_directories_for_worker <- function(worker_guid) {
   extracted_study_dir <<- glue::glue('{gwas_upload_dir}study/gwas_upload/{worker_guid}/')
   pipeline_metadata_dir <<- glue::glue('{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }
+
+diff_time_taken <- function(start_time) {
+  return(hms::as_hms(difftime(Sys.time(), start_time)))
+}

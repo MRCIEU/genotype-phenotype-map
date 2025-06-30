@@ -111,13 +111,11 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::left_join(snp_annotation_subset, by="snp") |>
     dplyr::filter(!is.na(snp))
 
-  studies_db$colocalisations$data <- vroom::vroom(file.path(args$results_dir, "raw_coloc_results.tsv"), show_col_types = F) |> 
-    format_colocalisations(studies_db) |>
-    #TODO: Remove this once we have fixed the colocalisations
-    dplyr::filter(!is.na(chr))
+  studies_db$coloc_groups$data <- vroom::vroom(file.path(args$results_dir, "clustered_coloc_results.tsv.gz"), show_col_types = F) |> 
+    format_clustered_colocs(studies_db)
   
-  # studies_db$pairwise_colocalisations$data <- vroom::vroom(file.path(args$results_dir, "pairwise_coloc_results.tsv"), show_col_types = F) |>
-    # format_pairwise_colocalisations(studies_db)
+  studies_db$coloc_pairs$data <- vroom::vroom(file.path(args$results_dir, "pairwise_coloc_results.tsv.gz"), show_col_types = F) |>
+    format_pairwise_colocs(studies_db)
 
   studies_db$rare_results$data <- vroom::vroom(file.path(args$results_dir, "raw_rare_results.tsv"), show_col_types = F) |>
     dplyr::rename_with(tolower) |>
@@ -129,7 +127,8 @@ load_data_for_studies_db <- function(studies_db) {
   return(studies_db)
 }
 
-format_colocalisations <- function(colocalisations, studies_db) {
+#TODO: change this to use the new clustered colocalisations
+format_clustered_colocs <- function(clustered_colocs, studies_db) {
   study_extractions_subset <- studies_db$study_extractions$data |>
     dplyr::select(id, study_id, unique_study_id, chr, bp, min_p, cis_trans, ld_block, ld_block_id, gene, gene_id) |>
     dplyr::rename(study_extraction_id=id)
@@ -138,34 +137,45 @@ format_colocalisations <- function(colocalisations, studies_db) {
     dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
 
-  colocalisations <- colocalisations |>
-    dplyr::filter(posterior_prob > 0.5) |>
-    dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
-    dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-one") |>
-    tidyr::separate_longer_delim(cols=traits, delim=", ") |>
-    dplyr::rename(unique_study_id=traits) |>
-    dplyr::left_join(study_extractions_subset, by="unique_study_id", relationship="many-to-one") |>
-    dplyr::group_by(study_extraction_id, snp_id) |>
-    dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+  # Create unique coloc_group_id based on ld_block_id and ebc_group
+  clustered_colocs <- clustered_colocs |>
+    dplyr::group_by(ld_block_id, ebc_group) |>
+    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
     dplyr::ungroup() |>
-    dplyr::select(-dropped_trait)
+    dplyr::group_by(ld_block_id, component) |>
+    dplyr::mutate(coloc_component_id = dplyr::cur_group_id()) |>
+    dplyr::ungroup() |>
+    dplyr::left_join(study_extractions_subset, by=c("study_id"="study_extraction_id")) |>
+    dplyr::left_join(snp_annotations_subset, by="snp") |>
+    dplyr::select(coloc_group_id, study_extraction_id, snp_id, ld_block_id, ebc_group, component)
+
+  # clustered_colocs <- clustered_colocs |>
+  #   dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>
+  #   dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-one") |>
+  #   tidyr::separate_longer_delim(cols=traits, delim=", ") |>
+  #   dplyr::rename(unique_study_id=traits) |>
+  #   dplyr::left_join(study_extractions_subset, by="unique_study_id", relationship="many-to-one") |>
+  #   dplyr::group_by(study_extraction_id, snp_id) |>
+  #   dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
+  #   dplyr::ungroup() |>
+  #   dplyr::select(-dropped_trait)
   
-  return(colocalisations)
+  return(clustered_colocs)
 }
 
-format_pairwise_colocalisations <- function(pairwise_colocalisations, studies_db) {
+format_pairwise_colocs <- function(pairwise_colocs, studies_db) {
   study_extractions_subset <- studies_db$study_extractions$data |>
     dplyr::select(id, unique_study_id, ld_block_id) |>
     dplyr::rename(study_extraction_id=id)
 
-  pairwise_colocalisations <- pairwise_colocalisations |>
+  pairwise_colocs <- pairwise_colocs |>
     dplyr::mutate(id=1:dplyr::n()) |>
     dplyr::left_join(study_extractions_subset, by=c("unique_study_a"="unique_study_id"), relationship="many-to-one") |>
     dplyr::left_join(study_extractions_subset, by=c("unique_study_b"="unique_study_id"), relationship="many-to-one") |>
     dplyr::rename(study_extraction_id_a=id.x, study_extraction_id_b=id.y, ld_block_id=ld_block_id.x) |>
-    dplyr::select(id, study_extraction_id_a, study_extraction_id_b, ld_block_id, h0, h1, h2, h3, h4, -ld_block_id.y)
+    dplyr::select(id, study_extraction_id_a, study_extraction_id_b, ld_block_id, h0, h1, h2, h3, h4)
 
-  return(pairwise_colocalisations)
+  return(pairwise_colocs)
 }
 
 format_rare_results <- function(rare_results, studies_db) {

@@ -128,9 +128,9 @@ studies_db <- list(
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
-  pairwise_colocalisations = list(
-    name = "pairwise_colocalisations",
-    query = "CREATE TABLE pairwise_colocalisations (
+  coloc_pairs = list(
+    name = "coloc_pairs",
+    query = "CREATE TABLE coloc_pairs (
       study_extraction_a_id INTEGER,
       study_extraction_b_id INTEGER,
       ld_block_id INTEGER,
@@ -145,13 +145,41 @@ studies_db <- list(
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )"
   ),
+  coloc_groups = list(
+    name = "coloc_groups",
+    query = "CREATE TABLE coloc_groups (
+      coloc_group_id INTEGER NOT NULL,
+      study_extraction_id INTEGER,
+      snp_id INTEGER,
+      ld_block_id INTEGER,
+      iteration INTEGER,
+      unique_study_id TEXT,
+      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
+      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
+      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
+      candidate_snp TEXT,
+      study_id INTEGER,
+      chr INTEGER NOT NULL,
+      bp INTEGER NOT NULL,
+      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
+      cis_trans TEXT,
+      ld_block TEXT,
+      gene TEXT,
+      gene_id INTEGER,
+      PRIMARY KEY (study_extraction_id, snp_id),
+      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
+      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
+    )"
+  ),
   colocalisations = list(
     name = "colocalisations",
     query = "CREATE TABLE colocalisations (
       study_extraction_id INTEGER,
       snp_id INTEGER,
       ld_block_id INTEGER,
-      coloc_group_id INTEGER,
+      coloc_group_id INTEGER NOT NULL,
       iteration INTEGER,
       unique_study_id TEXT,
       posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),

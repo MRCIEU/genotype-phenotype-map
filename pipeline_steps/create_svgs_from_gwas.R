@@ -1,14 +1,17 @@
 create_svg_for_ld_block <- function(study) {
-  dir.create(glue::glue('{study$extracted_location}/svgs/extractions'), showWarnings = F, recursive = T)
-
   plot_height <- 200
   plot_width <- 1000
   
   ld_block <- vroom::vroom(study[['file']]) |>
-    dplyr::mutate(CHR = as.numeric(CHR), Z = Z) |>
+    dplyr::mutate(CHR = as.numeric(CHR)) |>
     dplyr::filter(!is.na(CHR)) |>
     dplyr::arrange(CHR, BP)
-  
+
+  if (!"Z" %in% names(ld_block)) {
+    ld_block <- dplyr::mutate(ld_block, Z = convert_lbf_to_abs_z(LBF, study$sample_size))
+  }
+  ld_block$Z <- abs(ld_block$Z)
+
   ld_data <- ld_block |>
     dplyr::filter(!is.na(Z)) |>
     dplyr::mutate(bin = floor(BP/10000)) |>
@@ -69,7 +72,8 @@ create_svg_for_ld_block <- function(study) {
   
   block_name <- basename(study[['file']]) |> stringr::str_replace("\\.tsv\\.gz$", "")
   
-  file_name <- glue::glue("{data_dir}{study$study}/svgs/extractions/{block_name}.svg")
+  dir.create(glue::glue('{extracted_study_dir}{study$study}/svgs/extractions'), showWarnings = F, recursive = T)
+  file_name <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
   ggplot2::ggsave(
     file_name,
     p,
@@ -78,6 +82,7 @@ create_svg_for_ld_block <- function(study) {
     units = "in",
     limitsize = FALSE
   )
+  return(file_name)
 }
 
 create_svgs_from_gwas <- function(study, gwas) {
@@ -89,20 +94,21 @@ create_svgs_from_gwas <- function(study, gwas) {
     dplyr::filter(!is.na(CHR)) |>
     dplyr::arrange(CHR, BP)
 
+
   chr_ranges <- original_gwas |>
     dplyr::group_by(CHR) |>
     dplyr::summarise(
       bp_min = min(BP),
       bp_max = max(BP),
       .groups = "drop"
-  ) |>
-  dplyr::mutate(
+    ) |>
+    dplyr::mutate(
       chr_size = bp_max - bp_min,
       # Adding a small buffer between chromosomes (1 unit for example)
       bp_cumulative_start = cumsum(c(0, chr_size[-dplyr::n()] + 1)) +
       (1:dplyr::n() - 1), # Additional 1 for separation if needed
       bp_cumulative_end = bp_cumulative_start + chr_size
-  )
+    )
 
   gwas <- original_gwas |>
     dplyr::filter(!is.na(LP)) |>

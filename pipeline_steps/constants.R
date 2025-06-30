@@ -1,5 +1,6 @@
 options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
+
 data_dir <- Sys.getenv('DATA_DIR')
 gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
@@ -30,8 +31,6 @@ oracle_data_dir <- '/oradiskvdb1/data/'
 
 bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
 
-#This is an intentionally ordered list
-#splice_variant -> transcript -> gene_expression -> protein -> metabolome -> phenotype... methylation goes where?
 data_types <- list(splice_variant='splice_variant',
                            transcript='transcript',
                            gene_expression='gene_expression',
@@ -129,4 +128,41 @@ update_directories_for_worker <- function(worker_guid) {
 
 diff_time_taken <- function(start_time) {
   return(hms::as_hms(difftime(Sys.time(), start_time)))
+}
+
+safe_lapply <- function(X, FUN, ...) {
+  lapply(X, function(x) {
+    tryCatch(
+      FUN(x, ...),
+      error = function(e) {
+        stop("An error occurred: ", conditionMessage(e))
+      }
+    )
+  })
+}
+
+#' Generate log Bayes Factor from Z-score
+#'
+#' @param z Z-score
+#' @param se Standard error
+#' @param prior_v Prior variance
+#'
+#' @return Log Bayes Factor
+convert_z_to_lbf <- function(z, se, prior_v=50) {
+  r <- prior_v / (prior_v + se^2)
+  lbf <- (r * z^2 + log(sqrt(1-r))) / 2
+  return(lbf)
+}
+
+#' Convert log Bayes Factor to abs(Z-score)
+#'
+#' @param lbf Log Bayes Factor
+#' @param se Standard error
+#' @param prior_v Prior variance
+#'
+#' @return abs(Z-score): Note that this is the absolute value of the Z-score, not the Z-score itself
+convert_lbf_to_abs_z <- function(lbf, se, prior_v = 50) {
+  r <- prior_v / (prior_v + se^2)
+  z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
+  return(z)
 }

@@ -75,11 +75,15 @@ main <- function() {
       return(NULL)
     }
 
-    vroom::vroom(file, delim = '\t',
+    gwas <- vroom::vroom(file, delim = '\t',
       show_col_types = F,
-      col_select = c('SNP', 'BP', 'BETA', 'SE', 'P', 'EAF'),
+      col_select = dplyr::any_of(c('SNP', 'BP', 'Z', 'LBF', 'EAF')),
       altrep = F
     )
+    if (!"LBF" %in% names(gwas)) {
+      gwas <- dplyr::mutate(gwas, LBF = convert_z_to_lbf(Z, study$sample_size))
+    }
+    return(gwas)
 })
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   message(glue::glue('Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
@@ -201,29 +205,10 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second
   first_type <- if (first_study$category == study_categories$continuous) "quant" else "cc"
   second_type <- if (second_study$category == study_categories$continuous) "quant" else "cc"
 
-  first_coloc_dataset <- list(
-    N = as.numeric(first_study$sample_size),
-    type = first_type,
-    snp = first_gwas$SNP,
-    beta = first_gwas$BETA,
-    varbeta = first_gwas$SE^2,
-    pvalues = first_gwas$P,
-    position = first_gwas$BP,
-    MAF = ifelse(first_gwas$EAF < 0.5, first_gwas$EAF, 1-first_gwas$EAF)
-  )
+  first_lbf <- first_gwas$LBF
+  second_lbf <- second_gwas$LBF
 
-  second_coloc_dataset <- list(
-    N = as.numeric(second_study$sample_size),
-    type = second_type,
-    snp = second_gwas$SNP,
-    beta = second_gwas$BETA,
-    varbeta = second_gwas$SE^2,
-    pvalues = second_gwas$P,
-    position = second_gwas$BP,
-    MAF = ifelse(second_gwas$EAF < 0.5, second_gwas$EAF, 1-second_gwas$EAF)
-  )
-
-  result <- coloc::coloc.abf(dataset1 = first_coloc_dataset, dataset2 = second_coloc_dataset)
+  result <- coloc::coloc.bf_bf(bf1 = first_lbf, bf2 = second_lbf)
   coloc_results <- tibble::tribble(
     ~h0, ~h1, ~h2, ~h3, ~h4,
     result$summary[2], result$summary[3], result$summary[4], result$summary[5], result$summary[6]

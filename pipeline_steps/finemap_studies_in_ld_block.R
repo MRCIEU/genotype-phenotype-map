@@ -47,11 +47,9 @@ main <- function() {
     finemapped_results <- apply(imputed_studies, 1, function (study) {
       start_time <- Sys.time()
       sample_size <- as.numeric(study['sample_size'])
-      finemap_file_prefix <- sub('imputed', 'finemapped', study[['file']])
-      finemap_file_prefix <- sub('\\..*', '', finemap_file_prefix)
-      finemap_file_prefix_regex <- sub('\\+', '\\\\\\+', finemap_file_prefix)
+      finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{study["study"]}_{args$ld_block}')
 
-      study_already_finemapped <- any(grepl(finemap_file_prefix_regex, existing_finemapped_results$file))
+      study_already_finemapped <- any(grepl(finemap_file_prefix, existing_finemapped_results$file))
 
       if (study_already_finemapped) {
         return()
@@ -116,6 +114,13 @@ main <- function() {
         study['snps_removed_by_qc'] <- NA
         study['second_finemap_num_results'] <- NA
       }
+
+      susie_result_to_save <- list(
+        converged = results$susie_result$converged,
+        cs_index = results$susie_result$sets$cs_index,
+        cs = results$susie_result$sets$cs
+      )
+      saveRDS(susie_result_to_save, glue::glue('{finemap_file_prefix}_results.rds'))
 
       succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
       return(succeeded_finemap_info)
@@ -220,7 +225,6 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
 
 process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_time, message='failed', new_bp=NA, new_snp=NA) {
   sample_size <- as.numeric(study['sample_size'])
-  gwas <- populate_beta_with_known_z_scores(gwas, sample_size)
   min_p <- min(gwas$P)
 
   if (!is.na(new_bp)) {
@@ -241,9 +245,10 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
         dplyr::pull(snp)
     }
   }
+  gwas <- dplyr::select(gwas, SNP, CHR, BP, EAF, Z, IMPUTED)
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
-  unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(study["bp"])}_1')
+  unique_id <- glue::glue('{study["study"]}_{args$ld_block}_1')
 
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -273,11 +278,15 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       new_files <- c()
       min_ps <- c()
       unique_ids <- c()
+      lbf_columns <- list()
+      finemap_gwas <- dplyr::select(gwas, SNP, CHR, BP, EAF)
       for (i in susie_result$sets$cs_index) {
         finemap_num <- which(i == susie_result$sets$cs_index)
-        conditioned_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-        finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
+        conditioned_gwas <- dplyr::mutate(finemap_gwas, lbf = susie_result$lbf_variable[i, ])
 
+        lbf_columns[[glue::glue('lbf_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
+
+        finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
         vroom::vroom_write(conditioned_gwas, finemap_file)
 
         #this finds the lead SNP in new credible set
@@ -288,7 +297,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
         new_files <- c(new_files, finemap_file)
         min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
 
-        unique_id <- glue::glue('{study["study"]}_{study["ancestry"]}_{study["chr"]}_{trimws(new_bp)}_{finemap_num}')
+        unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
         unique_ids <- c(unique_ids, unique_id)
 
         # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
@@ -376,41 +385,6 @@ perform_qc <- function(gwas, study, bfile) {
   return(list(gwas=gwas, study=study))
 }
 
-#' Convert log Bayes Factor to summary stats
-#'
-#' @param gwas of summary statistics, with EAF as a mandatory column (allele frequencies for each SNP)
-#' @param lbf p-vector of log Bayes Factors for each SNP
-#' @param n Overall sample size
-#' @param prior_v Variance of prior distribution. SuSiE uses 50
-#'
-#' @return tibble with altered BETA, SE, P, and Z
-update_gwas_with_log_bayes_factor <- function(gwas, lbf, sample_size, prior_v = 50) {
-  if (length(lbf) != nrow(gwas)) {
-    stop("Length of 'lbf' must match number of rows in 'gwas'.")
-  }
-  se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
-  r <- prior_v / (prior_v + se^2)
-  z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
-  beta <- z * se
-  p <- abs(2 * pnorm(abs(z), lower.tail = F))
-
-  gwas <- dplyr::mutate(gwas, BETA = beta, SE = se, P = p, Z = z) |>
-    dplyr::filter(!is.na(BETA) & !is.na(SE) & BETA != Inf & SE != Inf)
-
-  return(gwas)
-}
-
-convert_z_to_lbf <- function(z, sample_size, prior_v = 50) {
-  se <- sqrt(1 / (2 * sample_size * gwas$EAF * (1-gwas$EAF)))
-  r <- prior_v / (prior_v + se^2)
-  lbf = (r * z^2 + log(sqrt(1-r))) / 2
-}
-
-generate_lbf_from_z <- function(z, se, prior_v=50) {
-  r <- prior_v / (prior_v + se^2)
-  lbf <- (r * z^2 + log(sqrt(1-r))) / 2
-  lbf
-}
 
 #' Calculates missing BETA, SE, and P values, given a full set of Z-scores
 #'

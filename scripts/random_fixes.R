@@ -25,6 +25,85 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+
+big_update_to_finemapped_results <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  ld_info <- ld_info[1, ]
+
+  #STEP 1: Update unique_study_id to use ld block, as opposed to chr_bp
+  for (i in seq_along(nrow(ld_info))) {
+    block_name <- ld_info$ld_block_data[i]$block
+    block_data <- ld_info$ld_block_data[i]$ld_block_data
+
+    message(paste('Processing', block_name))
+    finemapped_studies_file <- glue::glue('{block_data}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+    finemap_id <- as.numeric(sub(".*_", "", finemapped_studies$unique_study_id))
+    finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, '_', finemapped_studies$ld_block, '_', finemap_id)
+
+    old_files <- finemapped_studies$file
+    flattened_block_name <- gsub('[/-]', '_', block_name)
+    new_files <- paste0(sub('(.*/).*', '\\1', old_files), flattened_block_name, '_', finemap_id, '.tsv.gz')
+
+    svg_files <- list()
+    new_lbf_data <- list()
+    for (study in unique(finemapped_studies$study)) {
+      new_lbf_data[[study]] <- list()
+    }
+
+    message(paste('Processing', length(old_files), 'finemapped studies, creating lbf, svgs, and updating coloc and finemapped results'))
+    for (file_index in seq_along(old_files)) {
+      specific_study <- finemapped_studies$study[file_index]
+      finemapped_gwas <- vroom::vroom(old_files[file_index],
+        col_select = c('SNP', 'CHR', 'BP', 'Z', 'SE', 'EAF', 'IMPUTED'),
+        show_col_types = F) |>
+        dplyr::mutate(LBF = convert_z_to_lbf(Z, SE, prior_v = 50))
+
+      finemap_id <- as.numeric(sub(".*_", "", new_files[file_index]))
+      new_lbf_data[[specific_study]][[glue::glue('lbf_{finemap_id}')]] <- finemapped_gwas$LBF
+
+      #STEP 3: Create svg for finemapped study
+      svg_file <- create_svg_for_ld_block(finemapped_studies[file_index, ])
+      svg_files[[file_index]] <- svg_file
+      finemapped_gwas <- dplyr::select(finemapped_gwas, -Z, -SE)
+      vroom::vroom_write(finemapped_gwas, new_files[file_index])
+    }
+
+    finemapped_studies$svg_file <- svg_files
+    finemapped_studies$file <- new_files
+
+    joined_lbf_file <- glue::glue('{block_data}/joined_lbf.tsv.gz')
+
+    coloc_pairwise_results_file <- glue::glue('{block_data}/coloc_pairwise_results.tsv.gz')
+    coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_file, show_col_types = F)
+    finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
+    finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
+    coloc_pairwise_results$unique_study_a <- paste0(coloc_pairwise_results$study_a, '_', block_name, '_', finemap_id_a)
+    coloc_pairwise_results$unique_study_b <- paste0(coloc_pairwise_results$study_b, '_', block_name, '_', finemap_id_b)
+
+    vroom::vroom_write(coloc_pairwise_results, coloc_pairwise_results_file)
+  }
+
+  message('Updating imputed studies with LBF data and saving')
+  imputed_studies_file <- glue::glue('{block_data}/imputed_studies.tsv')
+  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
+  lapply(seq_along(imputed_studies$study), function(i) {
+    study <- imputed_studies[i, ]
+    lbf_file <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}_full.tsv.gz')
+    imputed_gwas <- vroom::vroom(lbf_file, show_col_types = F)
+
+    for (lbf_name in names(new_lbf_files[[study$study]])) {
+      imputed_gwas[[lbf_name]] <- new_lbf_files[[study$study]][[lbf_name]]
+    }
+
+    vroom::vroom_write(imputed_gwas, lbf_file)
+  })
+}
+
+
 rejoin_imputed_studies <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -563,4 +642,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-create_svgs_for_all_phenotypes()
+big_update_to_finemapped_results()

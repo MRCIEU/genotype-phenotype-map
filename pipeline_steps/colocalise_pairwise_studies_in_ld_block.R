@@ -249,64 +249,6 @@ cluster_coloc_results <- function(coloc_results, start_time) {
     igraph::V(sg)$group <- x
     return(sg)
   })
-  message(glue::glue('Pruning fast {length(g2_subgraphs)} subgraphs starting {diff_time_taken(start_time)}'))
-  # g2_pruned_optimized <- lapply(g2_subgraphs, function(x) {
-  #   eb <- igraph::cluster_edge_betweenness(x)
-
-  #   if (length(unique(eb$membership)) == 1) {
-  #     igraph::V(x)$ebc_group <- igraph::V(x)$group
-  #     igraph::V(x)$component <- igraph::V(x)$group
-  #     return(x)
-  #   } else {
-  #     # --- OPTIMIZATION ---
-
-  #     # 1. Identify ALL edges to be removed
-  #     if (is.null(eb$removed.edges) || nrow(eb$removed.edges) == 0 || which.max(eb$modularity) == 0) {
-  #       edges_to_remove_matrix <- matrix(nrow = 0, ncol = 2)
-  #     } else {
-  #       edges_to_remove_matrix <- eb$removed.edges[seq(1, which.max(eb$modularity)), , drop = FALSE]
-  #     }
-  #     # Important: drop=FALSE ensures it remains a matrix even if only one row is selected
-
-  #     # CORRECTED LINE: Convert vertex pairs (from eb$removed.edges) to igraph edge IDs
-  #     # using get.edge.ids(). We flatten the matrix into a vector of alternating vertex IDs.
-  #     edges_to_remove_ids <- igraph::get.edge.ids(x, edges = as.vector(t(edges_to_remove_matrix)))
-
-  #     # 2. Identify ALL vertices to be removed (singletons based on original eb$membership)
-  #     grp_single <- as.numeric(which(table(eb$membership) == 1))
-  #     vertices_to_remove_singletons <- igraph::V(x)[eb$membership %in% grp_single]
-
-  #     # 3. Get the IDs of edges to KEEP
-  #     all_edge_ids <- seq_len(igraph::ecount(x))
-  #     edges_to_keep_ids <- setdiff(all_edge_ids, edges_to_remove_ids) # Now edges_to_remove_ids are correct igraph IDs
-
-  #     # 4. Get the names (or IDs) of vertices that should remain
-  #     final_vertex_names_to_keep <- setdiff(igraph::V(x)$name, igraph::V(vertices_to_remove_singletons)$name)
-  #     # Ensure all original vertices have a 'name' attribute or use numeric IDs consistently.
-  #     # If using numeric IDs, ensure 'V(x)$_nx_id' or similar is robust (or simply V(x) as numeric vector).
-
-  #     # 5. Create the final pruned graph in a single, efficient step
-  #     # First, get the subgraph with only desired edges (keeping all original vertices)
-  #     x_edges_pruned <- igraph::subgraph.edges(x, edges = edges_to_keep_ids, delete.vertices = FALSE)
-
-  #     # Then, from this edge-pruned graph, get the subgraph with only desired vertices
-  #     x_final_pruned <- igraph::subgraph.vertices(x_edges_pruned, igraph::V(x_edges_pruned)[igraph::V(x_edges_pruned)$name %in% final_vertex_names_to_keep])
-
-
-  #     # --- Assign attributes to the final graph ---
-  #     # Assign ebc_group based on original eb$membership (retained for vertices that are kept)
-  #     eb_membership_map <- setNames(eb$membership, igraph::V(x)$name)
-  #     x_final_pruned <- x_final_pruned %>%
-  #       igraph::set_vertex_attr("ebc_group", value = paste(igraph::V(x_final_pruned)$group, eb_membership_map[igraph::V(x_final_pruned)$name], sep = "."))
-
-  #     # Calculate components on the final pruned graph
-  #     x_comps <- igraph::components(x_final_pruned)
-  #     x_final_pruned <- x_final_pruned %>%
-  #       igraph::set_vertex_attr("component", value = paste(igraph::V(x_final_pruned)$group, x_comps$membership, sep = "."))
-
-  #     return(x_final_pruned)
-  #   }
-  # })
 
   message(glue::glue('Pruning slow {length(g2_subgraphs)} subgraphs starting {diff_time_taken(start_time)}'))
 
@@ -369,10 +311,27 @@ make_adjacency_matrix <- function(coloc_results) {
   return(h4_adj_mx)
 }
 
-find_snp_per_cluster <- function(coloc_results) {
-  coloc_results |>
-    dplyr::group_by(unique_study_a, unique_study_b) |>
-    dplyr::summarise(snp = unique(snp))
+find_snp_per_cluster <- function(coloc_groups, studies_to_colocalise) {
+  snp_info <- lapply(unique(coloc_groups$ebc_group), function(group) {
+    group_studies <- coloc_groups$study_id[coloc_groups$ebc_group == group]
+    
+    all_group_data <- lapply(group_studies, function(study_id) {
+      return(studies_to_colocalise[[study_id]])
+    })
+    all_group_data <- do.call(rbind, all_group_data)
+
+    snp <- all_group_data |>
+      dplyr::group_by(SNP) |>
+      dplyr::mutate(cumulative_p = sum(P)) |>
+      dplyr::filter(cumulative_p == min(cumulative_p)) |>
+      dplyr::pull(SNP)
+    
+    return(data.frame(snp = snp, ebc_group = group))
+  })
+  
+  snp_info <- do.call(rbind, snp_info)
+  coloc_groups <- dplyr::left_join(coloc_groups, snp_info, by = "ebc_group")
+  return(coloc_groups)
 }
 
 main()

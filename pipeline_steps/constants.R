@@ -120,6 +120,10 @@ ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
 }
 
+flattened_ld_block_name <- function(ld_block_string) {
+  return(gsub('[/-]', '_', ld_block_string))
+}
+
 update_directories_for_worker <- function(worker_guid) {
   ld_block_data_dir <<- glue::glue('{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/')
   extracted_study_dir <<- glue::glue('{gwas_upload_dir}study/gwas_upload/{worker_guid}/')
@@ -166,3 +170,4 @@ convert_lbf_to_abs_z <- function(lbf, se, prior_v = 50) {
   z <- sqrt((2 * lbf - log(sqrt(1-r)))/r)
   return(z)
 }
+

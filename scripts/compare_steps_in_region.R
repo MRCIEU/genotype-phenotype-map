@@ -16,9 +16,6 @@ main <- function() {
     dplyr::filter(study == args$study)
   imputed_gwas <- vroom::vroom(imputed_study$file, show_col_types=F)
 
-  pre_filter_file <- sub('.tsv.gz', '_pre_filter.tsv.gz', imputed_study$file)
-  pre_filter_gwas <- vroom::vroom(pre_filter_file, show_col_types=F)
-
   finemapped_studies <- vroom::vroom(glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'), show_col_types=F) |>
     dplyr::filter(study == args$study)
 
@@ -28,15 +25,12 @@ main <- function() {
 
   manhattan(standardised_gwas, glue::glue('{standardised_study$study}_standardised.png'))
   manhattan(imputed_gwas, glue::glue('{imputed_study$study}_imputed.png'))
-  manhattan(pre_filter_gwas, glue::glue('{imputed_study$study}_imputed_pre_filter.png'))
-  # manhattan(dentist_gwas, glue::glue('{imputed_study$study}_dentist.png'))
   apply(finemapped_studies, 1, function(study) {
     print(study["file"])
     gwas <- vroom::vroom(study["file"], show_col_types=F)
     manhattan(gwas, glue::glue('{study["unique_study_id"]}_finemapped.png'))
   })
 }
-
 
 manhattan <- function(gwas, manhattan_filename) {
   print(manhattan_filename)

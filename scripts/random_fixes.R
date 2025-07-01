@@ -27,82 +27,122 @@ update_method <- function(file, standardised_file, ld_block) {
 
 
 big_update_to_finemapped_results <- function() {
-  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
-  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
-  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+  # Control data.table threading to prevent spawning new processes
+  data.table::setDTthreads(1)
+  
+  # Control ggplot2 to prevent excessive process spawning
+  options(ggplot2.parallel = FALSE)
+  Sys.setenv(OMP_THREAD_LIMIT = 1)
+  
+  source('../pipeline_steps/create_svgs_from_gwas.R')
 
-  ld_info <- ld_info[1, ]
+  ld_blocks <- data.table::fread('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  ld_info <- ld_info[4:nrow(ld_info), ]
+  Rprof()
 
   #STEP 1: Update unique_study_id to use ld block, as opposed to chr_bp
-  for (i in seq_along(nrow(ld_info))) {
-    block_name <- ld_info$ld_block_data[i]$block
-    block_data <- ld_info$ld_block_data[i]$ld_block_data
+  # For debugging, use mc.cores = 1 to see errors more clearly
+  # results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 1, function(i) {
+  results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 30, function(i) {
+    tryCatch({
+      options(error = function() { 
+        message("Error in worker process:")
+        traceback(20)
+        quit(status = 1) 
+      })
+      block_name <- ld_info[i, ]$block
+      block_data <- ld_info[i, ]$ld_block_data
 
-    message(paste('Processing', block_name))
-    finemapped_studies_file <- glue::glue('{block_data}/finemapped_studies.tsv')
-    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
-    finemap_id <- as.numeric(sub(".*_", "", finemapped_studies$unique_study_id))
-    finemapped_studies$unique_study_id <- paste0(finemapped_studies$study, '_', finemapped_studies$ld_block, '_', finemap_id)
+      message(paste('Processing', block_name))
+      finemapped_studies_file <- paste0(block_data, '/finemapped_studies.tsv')
+      finemapped_studies <- data.table::fread(finemapped_studies_file)
+      finemap_id <- as.numeric(sub(".*_", "", finemapped_studies$unique_study_id))
+      finemapped_studies[, unique_study_id := paste0(study, '_', ld_block, '_', finemap_id)]
 
-    old_files <- finemapped_studies$file
-    flattened_block_name <- gsub('[/-]', '_', block_name)
-    new_files <- paste0(sub('(.*/).*', '\\1', old_files), flattened_block_name, '_', finemap_id, '.tsv.gz')
+      imputed_studies_file <- paste0(block_data, '/imputed_studies.tsv')
+      imputed_studies <- data.table::fread(imputed_studies_file)
 
-    svg_files <- list()
-    new_lbf_data <- list()
-    for (study in unique(finemapped_studies$study)) {
-      new_lbf_data[[study]] <- list()
-    }
+      old_files <- finemapped_studies$file
+      flattened_block_name <- gsub('[/-]', '_', block_name)
+      new_files <- paste0(sub('(.*/).*', '\\1', old_files), flattened_block_name, '_', finemap_id, '.tsv.gz')
 
-    message(paste('Processing', length(old_files), 'finemapped studies, creating lbf, svgs, and updating coloc and finemapped results'))
-    for (file_index in seq_along(old_files)) {
-      specific_study <- finemapped_studies$study[file_index]
-      finemapped_gwas <- vroom::vroom(old_files[file_index],
-        col_select = c('SNP', 'CHR', 'BP', 'Z', 'SE', 'EAF', 'IMPUTED'),
-        show_col_types = F) |>
-        dplyr::mutate(LBF = convert_z_to_lbf(Z, SE, prior_v = 50))
+      svg_files <- c()
+      new_lbf_data <- c()
+      finemap_full_gwas_with_lbf_files  <- paste0(extracted_study_dir, '/', finemapped_studies$study, '/finemapped/', flattened_block_name, '_with_lbf.tsv.gz')
+      imputed_full_gwas_with_lbf_files  <- paste0(extracted_study_dir, '/', imputed_studies$study, '/finemapped/', flattened_block_name, '_with_lbf.tsv.gz')
 
-      finemap_id <- as.numeric(sub(".*_", "", new_files[file_index]))
-      new_lbf_data[[specific_study]][[glue::glue('lbf_{finemap_id}')]] <- finemapped_gwas$LBF
+      for (i in seq_along(imputed_studies$study)) {
+        study <- imputed_studies[i, ]
+        imputed_gwas <- data.table::fread(study$file,
+          select = c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'IMPUTED')
+        )
+        new_lbf_data[[study$study]] <- imputed_gwas
+      }
 
-      #STEP 3: Create svg for finemapped study
-      svg_file <- create_svg_for_ld_block(finemapped_studies[file_index, ])
-      svg_files[[file_index]] <- svg_file
-      finemapped_gwas <- dplyr::select(finemapped_gwas, -Z, -SE)
-      vroom::vroom_write(finemapped_gwas, new_files[file_index])
-    }
+      message(paste(block_name, 'processing', length(old_files), 'finemapped studies, creating lbf, svgs, and updating coloc and finemapped results'))
+      for (file_index in seq_along(old_files)) {
+        specific_study <- finemapped_studies[file_index, ]
+        finemapped_gwas <- data.table::fread(old_files[file_index],
+          select = c('SNP', 'CHR', 'BP', 'Z', 'SE', 'EAF', 'IMPUTED'))
+        if (!"Z" %in% names(finemapped_gwas)) {
+          message(paste('Z missing for', old_files[file_index]))
+        }
+        finemapped_gwas[, LBF := convert_z_to_lbf(Z, SE)]
 
-    finemapped_studies$svg_file <- svg_files
-    finemapped_studies$file <- new_files
+        finemap_id <- as.numeric(sub(".*_", "", specific_study$unique_study_id))
+        lbf_id <- paste0('LBF_', finemap_id)
+        lbf_data <- finemapped_gwas[, .(SNP, LBF)]
+        data.table::setnames(lbf_data, 'LBF', lbf_id)
+        new_lbf_data[[specific_study$study]] <- new_lbf_data[[specific_study$study]][lbf_data, on = "SNP"]
 
-    joined_lbf_file <- glue::glue('{block_data}/joined_lbf.tsv.gz')
+        finemapped_gwas <- finemapped_gwas[, !'Z', with = FALSE]
+        data.table::fwrite(finemapped_gwas, new_files[file_index], sep = '\t')
 
-    coloc_pairwise_results_file <- glue::glue('{block_data}/coloc_pairwise_results.tsv.gz')
-    coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_file, show_col_types = F)
-    finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
-    finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
-    coloc_pairwise_results$unique_study_a <- paste0(coloc_pairwise_results$study_a, '_', block_name, '_', finemap_id_a)
-    coloc_pairwise_results$unique_study_b <- paste0(coloc_pairwise_results$study_b, '_', block_name, '_', finemap_id_b)
+        finemapped_studies[file_index, file := new_files[file_index]]
+        svg_files[[file_index]] <- create_svg_for_ld_block(finemapped_studies[file_index, ])
+      }
 
-    vroom::vroom_write(coloc_pairwise_results, coloc_pairwise_results_file)
-  }
+      message(paste(block_name, 'updating finemapped and coloc studies files'))
+      finemapped_studies[, svg_file := as.character(svg_files)]
+      finemapped_studies[, file_with_lbfs := as.character(finemap_full_gwas_with_lbf_files)]
 
-  message('Updating imputed studies with LBF data and saving')
-  imputed_studies_file <- glue::glue('{block_data}/imputed_studies.tsv')
-  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
-  lapply(seq_along(imputed_studies$study), function(i) {
-    study <- imputed_studies[i, ]
-    lbf_file <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}_full.tsv.gz')
-    imputed_gwas <- vroom::vroom(lbf_file, show_col_types = F)
+      coloc_pairwise_results_file <- paste0(block_data, '/coloc_pairwise_results.tsv.gz')
+      coloc_pairwise_results <- data.table::fread(coloc_pairwise_results_file)
+      finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
+      finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
+      coloc_pairwise_results[, unique_study_a := paste0(study_a, '_', block_name, '_', finemap_id_a)]
+      coloc_pairwise_results[, unique_study_b := paste0(study_b, '_', block_name, '_', finemap_id_b)]
 
-    for (lbf_name in names(new_lbf_files[[study$study]])) {
-      imputed_gwas[[lbf_name]] <- new_lbf_files[[study$study]][[lbf_name]]
-    }
+      message(paste(block_name, 'updating', nrow(imputed_studies), 'imputed studies with LBF data and saving'))
+      results <- lapply(seq_along(imputed_studies$study), function(i) {
+        study <- imputed_studies[i, ]
+        data.table::fwrite(new_lbf_data[[study$study]], imputed_full_gwas_with_lbf_files[i], sep = '\t')
+      })
 
-    vroom::vroom_write(imputed_gwas, lbf_file)
+      data.table::fwrite(finemapped_studies, paste0(finemapped_studies_file), sep = '\t')
+      data.table::fwrite(coloc_pairwise_results, paste0(coloc_pairwise_results_file), sep = '\t')
+      return(paste("Success:", block_name))
+    }, error = function(e) {
+      message(paste("Error in worker process for block", i, ":", e$message))
+      message("Full error:")
+      print(e)
+      return(paste("Error:", e$message))
+    })
   })
+  
+  # Check results for errors
+  error_results <- results[sapply(results, function(x) grepl("^Error:", x))]
+  if (length(error_results) > 0) {
+    message("Errors found in worker processes:")
+    print(error_results)
+  }
+  # Rprof(NULL)
+  # prof_result <- summaryRprof()
+  # saveRDS(prof_result, 'prof_result.rds')
 }
-
 
 rejoin_imputed_studies <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')

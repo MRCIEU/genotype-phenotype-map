@@ -1,14 +1,20 @@
 create_svg_for_ld_block <- function(study) {
+  block_name <- basename(study[['file']]) |> stringr::str_replace("\\.tsv\\.gz$", "")
+  file_name <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+  if (file.exists(file_name)) {
+    return(file_name)
+  }
+
   plot_height <- 200
   plot_width <- 1000
   
-  ld_block <- vroom::vroom(study[['file']]) |>
+  ld_block <- vroom::vroom(study[['file']], show_col_types = F) |>
     dplyr::mutate(CHR = as.numeric(CHR)) |>
     dplyr::filter(!is.na(CHR)) |>
     dplyr::arrange(CHR, BP)
 
   if (!"Z" %in% names(ld_block)) {
-    ld_block <- dplyr::mutate(ld_block, Z = convert_lbf_to_abs_z(LBF, study$sample_size))
+    ld_block <- dplyr::mutate(ld_block, Z = convert_lbf_to_abs_z(LBF, SE))
   }
   ld_block$Z <- abs(ld_block$Z)
 

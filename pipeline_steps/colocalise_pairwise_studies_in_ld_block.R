@@ -8,8 +8,9 @@ parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Col
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
+# For testing only
 #coloc_results_file <- "/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/22/35695831-37164130/coloc_pairwise_results.tsv.gz"
-finemapped_file <- "/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/22/35695831-37164130/finemapped_studies.tsv"
+#finemapped_file <- "/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/22/35695831-37164130/finemapped_studies.tsv"
 
 main <- function() {
   start_time <- Sys.time()
@@ -143,7 +144,7 @@ main <- function() {
       dplyr::mutate(ld_block = args$ld_block)
       vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
       saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
-      saveRDS(clustered_results$igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds'))
+      saveRDS(clustered_results$pruned_igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds'))
     }
   }
 

@@ -8,6 +8,9 @@ parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Col
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
 args <- argparser::parse_args(parser)
 
+#coloc_results_file <- "/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/22/35695831-37164130/coloc_pairwise_results.tsv.gz"
+finemapped_file <- "/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/22/35695831-37164130/finemapped_studies.tsv"
+
 main <- function() {
   start_time <- Sys.time()
   if (!is.na(args$worker_guid)) {
@@ -117,13 +120,31 @@ main <- function() {
       dplyr::mutate(ld_block = args$ld_block)
     vroom::vroom_write(coloc_results, coloc_results_file)
 
-    clustered_results <- cluster_coloc_results(coloc_results, start_time)
-    clustered_results$groups <- clustered_results$groups |>
-      dplyr::mutate(ld_block = args$ld_block)
-    vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-    saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
-    saveRDS(clustered_results$igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds'))
+    # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
+    poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= 0.5)) != 0
+    
+    if(poor_finemapping == TRUE){
+      remove_regions <- prune_finemapped(coloc_results)
+      # Remove dodgy finemapped regions from coloc_results
+      coloc_results <- coloc_results |>
+        dplyr::filter(!(unique_study_a %in% remove_regions) & !(unique_study_b %in% remove_regions))
+      
+      ### HERE, add flag indicating removed regions to finemapped_studies.tsv, and update coloc_results_file (??)
 
+      clustered_results <- cluster_coloc_results(coloc_results, start_time)
+      clustered_results$groups <- clustered_results$groups |>
+      dplyr::mutate(ld_block = args$ld_block)
+      vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+      saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
+      saveRDS(clustered_results$pruned_igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds')) # Return the pruned object instead?
+    } else {
+      clustered_results <- cluster_coloc_results(coloc_results, start_time)
+      clustered_results$groups <- clustered_results$groups |>
+      dplyr::mutate(ld_block = args$ld_block)
+      vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+      saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
+      saveRDS(clustered_results$igraph_obj, glue::glue('{ld_info$ld_block_data}/coloc_igraph_obj.rds'))
+    }
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -230,6 +251,70 @@ harmonise_gwases <- function(...) {
   return(gwases)
 }
 
+## Need to check the performance of this when all finemapped regions per study are added to pairwise coloc results
+## Check matching of finemapped_studies and coloc_results unique IDs with updated convention (currently mismatched for some regions)
+prune_finemapped <- function(coloc_results){
+  # Split colocalising finemapped region by study
+  finemapped_colocs <- coloc_results |> 
+    dplyr::filter(study_a == study_b & h4 >= 0.5) |>
+    dplyr::mutate(
+      minP_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+      minP_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
+    ) |>
+    dplyr::group_by(study_a) |>
+    dplyr::group_split()
+
+  remove_regions <- lapply(finemapped_colocs, function(study_regions){
+    # Store minimum p-value per finemapped region
+    pvals <- data.frame(
+      study = c(study_regions$unique_study_a, study_regions$unique_study_b),
+      minP = c(study_regions$minP_study_a, study_regions$minP_study_b)) |> unique()
+    
+    regions <- pvals$study
+    n_regions <- length(regions)
+    n_links <- nrow(study_regions)
+    n_max_links <- n_regions*(n_regions - 1)/2
+    all_linked <- n_links == n_max_links
+
+    # If all finemapped regions colocalise with each other (maximum connectivity) then retain the region with the smallest minP
+    # Else, if several groups of colocalsing finemapped regions exist for a study, or regions show different connectivity with each other,
+    # retain the region with the smalled minP in each group by ittertively pruning regions that are most connected (splitting ties by minP)
+
+    if(all_linked == TRUE){
+      keep <- pvals$study[which.min(pvals$minP)]
+    } else {
+      links <- data.frame(
+        table(study = c(study_regions$unique_study_a, study_regions$unique_study_b))) |>
+        dplyr::left_join(pvals, by = "study") |>
+        dplyr::arrange(desc(Freq), desc(minP)) |> unique()
+
+      study_regions_pruned <- study_regions
+
+      while(any(links$Freq > 1)){
+        study_regions_pruned <- study_regions_pruned |> 
+          dplyr::filter(!(unique_study_a %in% links$study[1]) & !(unique_study_b %in% links$study[1]))
+
+        links <- data.frame(
+          table(study = c(study_regions_pruned$unique_study_a, study_regions_pruned$unique_study_b))) |>
+          dplyr::left_join(pvals, by = "study") |>
+          dplyr::arrange(desc(Freq), desc(minP)) |> unique()
+      }
+
+      keep <- apply(study_regions_pruned, 1, function(region_pair){
+        minPs <- region_pair[c("minP_study_a","minP_study_b")]
+        regions <- region_pair[c("unique_study_a","unique_study_b")]
+        regions[which.min(minPs)]
+      })
+    }
+
+    remove <- regions[!(regions %in% keep)]
+    return(remove)
+  })
+
+  remove_regions <- unlist(remove_regions)
+  return(remove_regions)
+} 
+
 cluster_coloc_results <- function(coloc_results, start_time) {
   message(glue::glue('Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
   h4_adj_mx <- make_adjacency_matrix(coloc_results = coloc_results)
@@ -241,57 +326,35 @@ cluster_coloc_results <- function(coloc_results, start_time) {
   # Prune singleton studies (vertices) with no connections
   vert_out <- igraph::V(g)[g_comps$membership %in% which(g_comps$csize == 1)]
   g2 <- igraph::delete_vertices(g, vert_out)
-  # Rederive components
-  g2_comps <- igraph::components(g2)
-  # Split components into subgraphs
-  g2_subgraphs <- lapply(seq(1:g2_comps$no), function(x){
-    sg <- igraph::induced_subgraph(g2, vids = igraph::V(g2)[g2_comps$membership == x])
-    igraph::V(sg)$group <- x
-    return(sg)
-  })
 
-  message(glue::glue('Pruning slow {length(g2_subgraphs)} subgraphs starting {diff_time_taken(start_time)}'))
+  message(glue::glue('Pruning graph starting {diff_time_taken(start_time)}'))
 
-  # Calculate edge betweenenss for each subgraph and remove edges to maximise modularity
-  g2_pruned <- lapply(g2_subgraphs, function(x){
-    eb <- igraph::cluster_edge_betweenness(x)
-    if(length(unique(eb$membership)) == 1){
-      igraph::V(x)$ebc_group <- igraph::V(x)$group
-      igraph::V(x)$component <- igraph::V(x)$group
-      return(x)
-    } else {
-      # Delete edges removed to achieve the maximum modularity score
-      x <- igraph::delete_edges(x, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
-      # Resulting study cluster membership
-      igraph::V(x)$ebc_group <- paste(igraph::V(x)$group, eb$membership, sep = ".")
-      # Prune resulting single studies
-      grp_single <- as.numeric(which(table(eb$membership) == 1))
-      vert_out2 <- igraph::V(x)[eb$membership %in% grp_single]
-      x <- igraph::delete_vertices(x, vert_out2)
-      # Label modules unlinked after edge removal (components)
-      x_comps <- igraph::components(x)
-      igraph::V(x)$component <- paste(igraph::V(x)$group, x_comps$membership, sep = ".")
-      return(x)
-    }
-  })
+  # Calculate edge betweenenss and remove edges to maximise modularity
+  eb <- igraph::cluster_edge_betweenness(g2)
 
-  message(glue::glue('Recombining subgraphs in {diff_time_taken(start_time)}'))
-  # Recombine subgraphs
-  pruned_g <- igraph::disjoint_union(g2_pruned)
-  # Study group membership
-  grps <- factor(igraph::V(pruned_g)$ebc_group)
-  levels(grps) <- seq(1:length(unique(grps)))
-  # Study component membership
-  comp <- factor(igraph::V(pruned_g)$component)
-  levels(comp) <- seq(1:length(unique(comp)))
+  g2_pruned <- g2
+  if(length(unique(eb$membership)) == 1){
+    V(g2_pruned)$ebc_group <- 1
+    V(g2_pruned)$component <- 1
+  } else {
+    # Delete edges removed to achieve the maximum modularity score
+    g2_pruned <- igraph::delete_edges(g2_pruned, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
+    # Recalculate components (disconnected modules)
+    g2_pruned_comps <- igraph::components(g2_pruned)
+    igraph::V(g2_pruned)$component <- g2_pruned_comps$membership
+    # Prune new resulting singleton studies (vertices) with no connections
+    vert_out2 <- igraph::V(g2_pruned)[g2_pruned_comps$membership %in% which(g2_pruned_comps$csize == 1)]
+    g2_pruned <- igraph::delete_vertices(g2_pruned, vert_out2)
+  }
 
-  coloc_groups <- data.frame(study_id = igraph::vertex_attr(pruned_g)$name, ebc_group = grps, component = comp)
+  message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
+  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2_pruned)$name, ebc_group = V(g2_pruned)$ebc_group, component = V(g2_pruned)$component)
   
   # Pruned studies with no module membership
-  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(pruned_g)$name)
+  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(g2_pruned)$name)
   
-  # Output original igraph obj, clustered and pruned igraph object, cluster membership and studies pruned
-  return(list(igraph_obj = g, pruned_igraph_obj = pruned_g, groups = coloc_groups, pruned_studies = pruned))
+  # Output original igraph object, pruned igraph object, cluster membership and studies pruned
+  return(list(igraph_obj = g, pruned_igraph_obj = g2_pruned, groups = coloc_groups, pruned_studies = pruned))
 }
 
 make_adjacency_matrix <- function(coloc_results) {

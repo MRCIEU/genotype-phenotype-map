@@ -95,11 +95,20 @@ create_svgs_from_gwas <- function(study, gwas) {
   plot_height <- 500
   plot_width <- 1250
 
+  # Pad GWAS with BP 1 at the start of each chromosome, so we get consistent CHR sizes
+  padded_chrs <- gwas[1,][rep(1, 22),]
+  padded_chrs$CHR <- 1:22
+  padded_chrs$BP <- 1
+  padded_chrs$LP <- 0
+  print(head(padded_chrs))
+  print(head(gwas))
+
+  gwas <- rbind(padded_chrs, gwas)
+
   original_gwas <- gwas |>
     dplyr::mutate(CHR = as.numeric(CHR)) |>
     dplyr::filter(!is.na(CHR)) |>
     dplyr::arrange(CHR, BP)
-
 
   chr_ranges <- original_gwas |>
     dplyr::group_by(CHR) |>
@@ -109,6 +118,7 @@ create_svgs_from_gwas <- function(study, gwas) {
       .groups = "drop"
     ) |>
     dplyr::mutate(
+      #TODO: maybe change this to chr_size = bp_max, cause the bp min should always be 1?
       chr_size = bp_max - bp_min,
       # Adding a small buffer between chromosomes (1 unit for example)
       bp_cumulative_start = cumsum(c(0, chr_size[-dplyr::n()] + 1)) +
@@ -286,6 +296,39 @@ create_svgs_from_gwas <- function(study, gwas) {
   )
 
   jsonlite::write_json(metadata, glue::glue("{study$extracted_location}/svgs/full.json"), pretty = TRUE, auto_unbox = TRUE)
+}
+
+prepare_svg_files_for_use <- function(studies, coloc_groups, finemapped_studies) {
+  #first, change the 'full' svg files to be called by the study id
+  for (study in studies) {
+    file.remove(list.files(glue::glue('{study$extracted_location}/svgs/'), pattern = "^[0-9]+.*$"))
+    file.copy(glue::glue('{study$extracted_location}/svgs/full.zip'), glue::glue('{study$extracted_location}/svgs/{study$trait_id}_svgs.zip'))
+    file.copy(glue::glue('{study$extracted_location}/svgs/full.json'), glue::glue('{study$extracted_location}/svgs/{study$trait_id}_metadata.json'))
+  }
+
+  #second, zip the svg extractions by coloc group
+  old_wd <- getwd()
+  setwd(glue::glue('{data_dir}/svgs'))
+
+  for (group_id in unique(coloc_groups$coloc_group_id)) {
+    specific_coloc_group <- coloc_groups |>
+      dplyr::filter(coloc_group_id == group_id)
+
+    study_ids <- specific_coloc_group |>
+      dplyr::pull(unique_study_id)
+
+    snp_id <- specific_coloc_group$snp_id[1]
+
+    svg_files <- finemapped_studies |>
+      dplyr::filter(unique_study_id %in% study_ids) |>
+      dplyr::pull(svg_file) |>
+      unique()
+
+    files_to_zip <- c()
+    utils::zip(glue::glue('snp_{snp_id}.zip'), svg_files)
+  }
+
+  setwd(old_wd)
 }
 
 bp_to_pixel <- function(cumulative_bp, total_cumulative_bp, svg_width = 1250) {

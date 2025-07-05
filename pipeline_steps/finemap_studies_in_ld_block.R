@@ -44,13 +44,20 @@ main <- function() {
   if (nrow(imputed_studies) == 0) {
     finemapped_results <- data.frame()
   } else {
-    finemapped_results <- apply(imputed_studies, 1, function (study) {
+    if (args$ld_block == 'EUR/6/31282730-32518958') {
+      cores <- 100
+    } else {
+      cores <- 1
+    }
+    # finemapped_results <- apply(imputed_studies, 1, function (study) {
+    finemapped_results <- parallel::mclapply(seq_along(nrow(imputed_studies)), mc.cores = cores, function(i) {
+      study <- imputed_studies[i, ]
       start_time <- Sys.time()
       sample_size <- as.numeric(study['sample_size'])
-      finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{study["study"]}_{args$ld_block}')
+      flattened_block_name <- flattened_ld_block_name(args$ld_block)
+      finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
 
       study_already_finemapped <- any(grepl(finemap_file_prefix, existing_finemapped_results$file))
-
       if (study_already_finemapped) {
         return()
       }

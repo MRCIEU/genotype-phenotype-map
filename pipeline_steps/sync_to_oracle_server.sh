@@ -6,12 +6,20 @@ mkdir -p $RSYNC_DIR
 
 REMOTE_SERVER_DATA_DIR=/oradiskvdb1/data
 REMOTE_SERVER_STUDY_DIR=$REMOTE_SERVER_DATA_DIR/study
+REMOTE_SERVER_SVG_DIR=/oradiskvdb1/static/svgs
 REMOTE_SERVER_DB_DIR=/oradiskvdb1/db
 STUDY_DIR=${DATA_DIR}study
 
 cd $STUDY_DIR
 
-rsync -aRv --prune-empty-dirs --include='*/' --include='*finemapped/*' --exclude='*' . $ORACLE_SERVER:$REMOTE_SERVER_STUDY_DIR
+#Sync the finemapped GWAS results to the oracle server
+#TODO: ucomment that back once we have deleted the old finemapped studies
+# rsync -aRv --prune-empty-dirs --include='*/' --include='*finemapped/*' --exclude='*' . $ORACLE_SERVER:$REMOTE_SERVER_STUDY_DIR
+
+#Sync the full svg files to the oracle server
+# find . -type f -name "full.*" -exec cp --parents {} $RSYNC_DIR \;
+# rsync -aRv --prune-empty-dirs --include='*/' --include='*svg/full*' --exclude='*' . $ORACLE_SERVER:$REMOTE_SERVER_SVG_DIR
+find . -type f -regex '.*/[0-9]\+\.\(zip\|json\)$' -exec rsync -av --remove-source-files {} $ORACLE_SERVER:$REMOTE_SERVER_SVG_DIR/full \;
 
 #Alter the ld block information accordingly and rsync
 echo "preparing ld_blocks directory"

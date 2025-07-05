@@ -53,9 +53,6 @@ main <- function() {
 
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
 
-  # studies_to_process <- vroom::vroom(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'), show_col_types = F)
-  # new_studies <- dplyr::filter(finemapped_studies, study %in% studies_to_process$study_name)
-
   # Get all possible pairs within bp_range, excluding already calculated pairs
   fast_study_pairs <- get_study_pairs_to_coloc_fast(finemapped_studies, coloc_results, args$worker_guid)
   message(glue::glue('Found {nrow(fast_study_pairs)} fast study pairs to coloc for {args$ld_block} in {diff_time_taken(start_time)}'))
@@ -124,7 +121,7 @@ main <- function() {
     # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
     poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= 0.5)) != 0
     
-    if(poor_finemapping == TRUE){
+    if (poor_finemapping) {
       remove_regions <- prune_finemapped(coloc_results)
       # Remove dodgy finemapped regions from coloc_results
       coloc_results <- coloc_results |>
@@ -151,7 +148,15 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-get_study_pairs_to_coloc_fast <- function(studies, existing_results, worker_guid) {
+#' get_study_pairs_to_coloc takes a list of studies and a list of existing coloc results,
+#' and returns a list of study pairs to colocalise
+#' @param studies: list of finemapped studies to colocalise
+#' @param existing_results: list of existing coloc results
+#' @param worker_guid: worker GUID
+#' @returns list of study pairs to colocalise, with the bp distance between the studies
+#' @import data.table
+#' @export
+get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
   studies <- dplyr::mutate(studies, id = dplyr::row_number())
   studies <- data.table::as.data.table(studies)
 
@@ -159,15 +164,16 @@ get_study_pairs_to_coloc_fast <- function(studies, existing_results, worker_guid
 
   pairs_filtered <- studies[ studies, on = .(id < id), allow.cartesian = TRUE ][
     , bp_distance := abs(i.bp - bp) ][
-    bp_distance <= bp_range ][
+    bp_distance <= bp_range | i.study == study ][
     , .(
       unique_study_a = unique_study_id,
+      study_a = study,
       unique_study_b = i.unique_study_id,
+      study_b = i.study,
       bp_distance = bp_distance
     )
   ] |>
-    tibble::as_tibble() |>
-    dplyr::mutate(study_a = sub('_.*', '', unique_study_a), study_b = sub('_.*', '', unique_study_b))
+    tibble::as_tibble()
 
   if (!is.na(worker_guid)) {
     pairs_filtered <- pairs_filtered |>
@@ -179,28 +185,6 @@ get_study_pairs_to_coloc_fast <- function(studies, existing_results, worker_guid
   }
 
   return(pairs_filtered)
-}
-
-get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
-  pairs <- data.frame(t(utils::combn(studies$unique_study_id, 2))) |>
-    dplyr::rename(unique_study_a = X1, unique_study_b = X2) |>
-    dplyr::mutate(study_a = sub('_.*', '', unique_study_a), study_b = sub('_.*', '', unique_study_b))
-  bp_distances <- utils::combn(studies$bp, 2, function(x) {abs(x[1] - x[2])})
-  pairs$bp_distance <- bp_distances
-  
-  if (!is.na(worker_guid)) {
-    pairs <- pairs |>
-      dplyr::filter(study_a == worker_guid | study_b == worker_guid)
-  }
-
-  pairs <- pairs |>
-    dplyr::filter(bp_distance <= bp_range)
-  
-  if (nrow(existing_results) > 0) {
-    pairs <- dplyr::anti_join(pairs, existing_results, by = c("unique_study_a", "unique_study_b")) 
-  }
-
-  return(pairs)
 }
 
 #' run_coloc_analysis takes two already harmonised gwases, and runs coloc on the results

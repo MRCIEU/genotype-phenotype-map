@@ -47,6 +47,7 @@ big_update_to_finemapped_results <- function() {
   # For debugging, use mc.cores = 1 to see errors more clearly
   # results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 1, function(i) {
   results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 30, function(i) {
+    gc()
     tryCatch({
       options(error = function() { 
         message("Error in worker process:")
@@ -59,6 +60,12 @@ big_update_to_finemapped_results <- function() {
       message(paste('Processing', block_name))
       finemapped_studies_file <- paste0(block_data, '/finemapped_studies.tsv')
       finemapped_studies <- data.table::fread(finemapped_studies_file)
+
+      if ("svg_file" %in% names(finemapped_studies)) {
+        message(paste(block_name, 'has already been updated'))
+        return()
+      }
+
       finemap_id <- as.numeric(sub(".*_", "", finemapped_studies$unique_study_id))
       finemapped_studies[, unique_study_id := paste0(study, '_', ld_block, '_', finemap_id)]
 
@@ -142,6 +149,36 @@ big_update_to_finemapped_results <- function() {
   # Rprof(NULL)
   # prof_result <- summaryRprof()
   # saveRDS(prof_result, 'prof_result.rds')
+}
+
+
+create_svgs_for_all_phenotypes <- function() {
+  source('../pipeline_steps/create_svgs_from_gwas.R')
+
+  studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
+    dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
+    # dplyr::filter(study_name == "ebi-a-GCST90002384")
+
+  lapply(1:nrow(studies), function(i) {
+    study <- studies[i, ]
+    # if (file.exists(glue::glue('{study$extracted_location}/svgs/full.zip'))) return()
+
+    print(study$study_name)
+    dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
+
+    vcf_file <- glue::glue('{study$extracted_location}/vcf/hg38.vcf.gz')
+    bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%LP]" ',
+      '{vcf_file}'
+    )
+    gwas <- system(bcf_query, wait = T, intern = T)
+    gwas <- data.table::fread(text = gwas)
+
+    colnames(gwas) <- c('RSID', 'CHR', 'BP', 'LP')
+    gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
+
+    create_svgs_from_gwas(study, gwas)
+  })
 }
 
 rejoin_imputed_studies <- function() {
@@ -682,4 +719,5 @@ print_alleles_to_flip <- function() {
 
 }
 
-big_update_to_finemapped_results()
+# big_update_to_finemapped_results()
+create_svgs_for_all_phenotypes()

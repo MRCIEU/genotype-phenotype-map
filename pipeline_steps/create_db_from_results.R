@@ -33,6 +33,9 @@ main <- function() {
 
   lapply(studies_db, \(table) append_unique_rows(studies_conn, table))
 
+  original_study_extractions <- vroom::vroom(file.path(args$results_dir, "study_extractions.tsv"), show_col_types = F)
+  prepare_svg_files_for_use(studies_db$studies$data, studies_db$coloc_groups$data, original_study_extractions)
+
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
 

@@ -54,9 +54,6 @@ main <- function() {
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
 
   # Get all possible pairs within bp_range, excluding already calculated pairs
-  fast_study_pairs <- get_study_pairs_to_coloc_fast(finemapped_studies, coloc_results, args$worker_guid)
-  message(glue::glue('Found {nrow(fast_study_pairs)} fast study pairs to coloc for {args$ld_block} in {diff_time_taken(start_time)}'))
-
   study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results, args$worker_guid)
   message(glue::glue('Found {nrow(study_pairs)} study pairs to coloc for {args$ld_block} in {diff_time_taken(start_time)}'))
 
@@ -195,11 +192,6 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
 #' @import tibble
 #' @export
 pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second_study) {
-  first_gwas <- dplyr::filter(first_gwas, EAF > 0 & EAF < 1) |>
-    dplyr::mutate(P = ifelse(P == 0, .Machine$double.xmin, P))
-  second_gwas <- dplyr::filter(second_gwas, EAF > 0 & EAF < 1) |>
-    dplyr::mutate(P = ifelse(P == 0, .Machine$double.xmin, P))
-
   harmonised_gwases <- harmonise_gwases(first_gwas, second_gwas)
   if (length(harmonised_gwases) == 0) return(NULL)
   
@@ -212,14 +204,13 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second
   second_type <- if (second_study$category == study_categories$continuous) "quant" else "cc"
 
   first_lbf <- first_gwas$LBF
+  names(first_lbf) <- first_gwas$SNP
   second_lbf <- second_gwas$LBF
+  names(second_lbf) <- second_gwas$SNP
 
   result <- coloc::coloc.bf_bf(bf1 = first_lbf, bf2 = second_lbf)
-  coloc_results <- tibble::tribble(
-    ~h0, ~h1, ~h2, ~h3, ~h4,
-    result$summary[2], result$summary[3], result$summary[4], result$summary[5], result$summary[6]
-  )
-
+  result$summary$h4 <- result$summary$PP.H4.abf
+  coloc_results <- result$summary
   return(coloc_results)
 }
 
@@ -229,8 +220,9 @@ harmonise_gwases <- function(...) {
   if (length(snpids) <= 1) return(list())
 
   gwases <- lapply(gwases, function(gwas) {
-    dplyr::filter(gwas, SNP %in% snpids & !duplicated(SNP)) |>
-      dplyr::arrange(SNP)
+    gwas <- data.table::as.data.table(gwas)
+    gwas[SNP %in% snpids & !duplicated(SNP), ][order(SNP)]
+    return(gwas)
   })
 
   return(gwases)
@@ -319,8 +311,8 @@ cluster_coloc_results <- function(coloc_results, start_time) {
 
   g2_pruned <- g2
   if(length(unique(eb$membership)) == 1){
-    V(g2_pruned)$ebc_group <- 1
-    V(g2_pruned)$component <- 1
+    igraph::V(g2_pruned)$ebc_group <- 1
+    igraph::V(g2_pruned)$component <- 1
   } else {
     # Delete edges removed to achieve the maximum modularity score
     g2_pruned <- igraph::delete_edges(g2_pruned, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])

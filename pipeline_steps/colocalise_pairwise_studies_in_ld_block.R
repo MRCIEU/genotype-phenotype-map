@@ -240,7 +240,7 @@ prune_finemapped <- function(coloc_results){
     ) |>
     dplyr::group_by(study_a) |>
     dplyr::group_split()
-
+  
   remove_regions <- lapply(finemapped_colocs, function(study_regions){
     # Store minimum p-value per finemapped region
     pvals <- data.frame(
@@ -252,11 +252,11 @@ prune_finemapped <- function(coloc_results){
     n_links <- nrow(study_regions)
     n_max_links <- n_regions*(n_regions - 1)/2
     all_linked <- n_links == n_max_links
-
-    # If all finemapped regions colocalise with each other (maximum connectivity) then retain the region with the smallest minP
+    
+    # If all problematic finemapped regions colocalise with each other (maximum connectivity) then retain the region with the smallest minP
     # Else, if several groups of colocalsing finemapped regions exist for a study, or regions show different connectivity with each other,
     # retain the region with the smalled minP in each group by ittertively pruning regions that are most connected (splitting ties by minP)
-
+    
     if(all_linked == TRUE){
       keep <- pvals$study[which.min(pvals$minP)]
     } else {
@@ -264,38 +264,45 @@ prune_finemapped <- function(coloc_results){
         table(study = c(study_regions$unique_study_a, study_regions$unique_study_b))) |>
         dplyr::left_join(pvals, by = "study") |>
         dplyr::arrange(desc(Freq), desc(minP)) |> unique()
-
+      
       study_regions_pruned <- study_regions
-
+      
       while(any(links$Freq > 1)){
         study_regions_pruned <- study_regions_pruned |> 
           dplyr::filter(!(unique_study_a %in% links$study[1]) & !(unique_study_b %in% links$study[1]))
-
+        
+        if(nrow(study_regions_pruned) == 0){
+          keep <- links$study[-1]
+          break
+        }
+        
         links <- data.frame(
           table(study = c(study_regions_pruned$unique_study_a, study_regions_pruned$unique_study_b))) |>
           dplyr::left_join(pvals, by = "study") |>
           dplyr::arrange(desc(Freq), desc(minP)) |> unique()
       }
-
-      keep <- apply(study_regions_pruned, 1, function(region_pair){
-        minPs <- region_pair[c("minP_study_a","minP_study_b")]
-        regions <- region_pair[c("unique_study_a","unique_study_b")]
-        regions[which.min(minPs)]
-      })
+      
+      if(nrow(study_regions_pruned) != 0){
+        keep <- apply(study_regions_pruned, 1, function(region_pair){
+          minPs <- region_pair[c("minP_study_a","minP_study_b")]
+          regions <- region_pair[c("unique_study_a","unique_study_b")]
+          regions[which.min(minPs)]
+        })
+      }
     }
-
+    
     remove <- regions[!(regions %in% keep)]
     return(remove)
   })
-
+  
   remove_regions <- unlist(remove_regions)
   return(remove_regions)
-} 
+}
 
 cluster_coloc_results <- function(coloc_results, start_time) {
   message(glue::glue('Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
   h4_adj_mx <- make_adjacency_matrix(coloc_results = coloc_results)
-
+  
   # Generate graph from adjacency matrix
   g <- igraph::graph_from_adjacency_matrix(h4_adj_mx, mode="undirected", weighted=TRUE, diag=FALSE)
   # Extract components (groups of linked studies)
@@ -303,15 +310,14 @@ cluster_coloc_results <- function(coloc_results, start_time) {
   # Prune singleton studies (vertices) with no connections
   vert_out <- igraph::V(g)[g_comps$membership %in% which(g_comps$csize == 1)]
   g2 <- igraph::delete_vertices(g, vert_out)
-
+  
   message(glue::glue('Pruning graph starting {diff_time_taken(start_time)}'))
-
+  
   # Calculate edge betweenenss and remove edges to maximise modularity
   eb <- igraph::cluster_edge_betweenness(g2)
-
+  
   g2_pruned <- g2
   if(length(unique(eb$membership)) == 1){
-    igraph::V(g2_pruned)$ebc_group <- 1
     igraph::V(g2_pruned)$component <- 1
   } else {
     # Delete edges removed to achieve the maximum modularity score
@@ -323,11 +329,11 @@ cluster_coloc_results <- function(coloc_results, start_time) {
     vert_out2 <- igraph::V(g2_pruned)[g2_pruned_comps$membership %in% which(g2_pruned_comps$csize == 1)]
     g2_pruned <- igraph::delete_vertices(g2_pruned, vert_out2)
   }
-
-  message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
-  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2_pruned)$name, ebc_group = V(g2_pruned)$ebc_group, component = V(g2_pruned)$component)
   
-  # Pruned studies with no module membership
+  message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
+  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2_pruned)$name, component = V(g2_pruned)$component)
+  
+  # Pruned studies with no module membership after edge betweenness clustering (this does not include singleton studies that show no H4 > threshold removed above)
   pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(g2_pruned)$name)
   
   # Output original igraph object, pruned igraph object, cluster membership and studies pruned

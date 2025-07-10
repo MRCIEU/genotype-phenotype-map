@@ -1,4 +1,5 @@
 source("constants.R")
+source("create_svgs_from_gwas.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -49,24 +50,25 @@ main <- function() {
     } else {
       cores <- 1
     }
-    # finemapped_results <- apply(imputed_studies, 1, function (study) {
-    finemapped_results <- parallel::mclapply(seq_along(nrow(imputed_studies)), mc.cores = cores, function(i) {
+    print(cores)
+    finemapped_results_list <- parallel::mclapply(seq_len(nrow(imputed_studies)), mc.cores = cores, function(i) {
       study <- imputed_studies[i, ]
       start_time <- Sys.time()
       sample_size <- as.numeric(study['sample_size'])
       flattened_block_name <- flattened_ld_block_name(args$ld_block)
       finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
 
-      study_already_finemapped <- any(grepl(finemap_file_prefix, existing_finemapped_results$file))
-      if (study_already_finemapped) {
-        return()
+      study_already_finemapped <- any(study['study'] == existing_finemapped_results$study, na.rm = TRUE)
+      if (!is.na(study_already_finemapped) && study_already_finemapped) {
+        print(paste('study already finemapped: ', study$study))
+        return(NULL)
       }
 
       #we don't want to use extracted regions with too few SNPs, due to poor finemapping results
       #and spurious coloc results due to needing to harmonise SNPs 
       gwas <- vroom::vroom(study[['file']], show_col_types = F)
       if (nrow(gwas) < discard_gwas_size) {
-        return()
+        return(NULL)
       }
 
       # GodMC methylation studies are sparsley populated, so finemapping is not useful
@@ -131,7 +133,17 @@ main <- function() {
 
       succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
       return(succeeded_finemap_info)
-    }) |> dplyr::bind_rows()
+    })
+
+    saveRDS(finemapped_results_list, glue::glue('{finemapped_results_file}_list.rds'))
+    
+    # Filter out NULL results and bind rows
+    finemapped_results_list <- finemapped_results_list[!sapply(finemapped_results_list, is.null)]
+    if (length(finemapped_results_list) > 0) {
+      finemapped_results <- dplyr::bind_rows(finemapped_results_list)
+    } else {
+      finemapped_results <- data.frame()
+    }
   }
 
   finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> 
@@ -174,7 +186,10 @@ empty_finemapped_info <- function() {
                     second_finemap_num_results=numeric(),
                     qc_step_run=logical(),
                     snps_removed_by_qc=numeric(),
-                    time_taken=character()
+                    time_taken=character(),
+                    svg_file=character(),
+                    file_with_lbfs=character(),
+                    ignore=logical()
     )
   )
 }
@@ -252,10 +267,20 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
         dplyr::pull(snp)
     }
   }
-  gwas <- dplyr::select(gwas, SNP, CHR, BP, EAF, Z, IMPUTED)
+  gwas <- dplyr::mutate(gwas, LBF = convert_z_to_lbf(Z, SE, EAF, study$sample_size, study$category))
 
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
   unique_id <- glue::glue('{study["study"]}_{args$ld_block}_1')
+
+  finemap_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, Z, IMPUTED, LBF)
+  vroom::vroom_write(finemap_gwas, failed_finemap_file)
+
+  file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
+  write_lbf_gwas(gwas, NULL, file_with_lbfs)
+
+  block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
+  svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+  create_svg_for_ld_block(finemap_gwas, study$study, svg_file)
 
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -272,76 +297,109 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
                                     sample_size=sample_size,
                                     cis_trans=study['cis_trans'],
                                     finemap_message=message,
-                                    time_taken=as.character(hms::as_hms(difftime(Sys.time(), start_time)))
+                                    time_taken=as.character(hms::as_hms(difftime(Sys.time(), start_time))),
+                                    svg_file=svg_file,
+                                    file_with_lbfs=file_with_lbfs,
+                                    ignore=F
   )
 
-  vroom::vroom_write(gwas, failed_finemap_file)
   return(failed_finemap_info)
 }
 
 split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study, sample_size, finemap_file_prefix, start_time) {
-      new_snps <- c()
-      new_bps <- c()
-      new_files <- c()
-      min_ps <- c()
-      unique_ids <- c()
-      lbf_columns <- list()
-      finemap_gwas <- dplyr::select(gwas, SNP, CHR, BP, EAF)
-      for (i in susie_result$sets$cs_index) {
-        finemap_num <- which(i == susie_result$sets$cs_index)
-        conditioned_gwas <- dplyr::mutate(finemap_gwas, lbf = susie_result$lbf_variable[i, ])
+  new_snps <- c()
+  new_bps <- c()
+  new_files <- c()
+  min_ps <- c()
+  unique_ids <- c()
+  svg_files <- c()
+  lbf_columns <- list()
 
-        lbf_columns[[glue::glue('lbf_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
+  for (i in susie_result$sets$cs_index) {
+    finemap_num <- which(i == susie_result$sets$cs_index)
+    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, IMPUTED) |>
+      dplyr::mutate(LBF = susie_result$lbf_variable[i, ])
 
-        finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
-        vroom::vroom_write(conditioned_gwas, finemap_file)
+    lbf_columns[[glue::glue('LBF_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
 
-        #this finds the lead SNP in new credible set
-        important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-        new_snps <- c(new_snps, gwas[important_row, ]$SNP)
-        new_bp <- as.numeric(gwas[important_row, ]$BP)
-        new_bps <- c(new_bps, new_bp)
-        new_files <- c(new_files, finemap_file)
-        min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
+    finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
+    vroom::vroom_write(conditioned_gwas, finemap_file)
 
-        unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
-        unique_ids <- c(unique_ids, unique_id)
+    #this finds the lead SNP in new credible set
+    important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
+    new_snps <- c(new_snps, gwas[important_row, ]$SNP)
+    new_bp <- as.numeric(gwas[important_row, ]$BP)
+    new_bps <- c(new_bps, new_bp)
+    new_files <- c(new_files, finemap_file)
+    min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
 
-        # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
-        if (!is.na(study['cis_trains']) && study['cis_trans'] == cis_trans$cis_only) {
-          if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
-            cis_trans <- cis_trans$cis_only
-          } else {
-            cis_trans <- cis_trans$trans_only
-          }
-        } else {
-          cis_trans <- study[['cis_trans']]
-        }
+    unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
+    unique_ids <- c(unique_ids, unique_id)
+
+    block_name <- basename(finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
+    svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+    svg_files <- c(svg_files, svg_file)
+    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file)
+
+    # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
+    if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
+      if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
+        is_cis_trans <- cis_trans$cis_only
+      } else {
+        is_cis_trans <- cis_trans$trans_only
       }
-      time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
+    } else {
+      is_cis_trans <- study[['cis_trans']]
+    }
+  }
+  is_cis_trans <- as.character(is_cis_trans)
 
-      succeeded_finemap_info <- data.frame(study=study[['study']],
-                                           unique_study_id=unique_ids,
-                                           ld_block=args$ld_block,
-                                           variant_type=study[['variant_type']],
-                                           file=new_files,
-                                           ancestry=study[['ancestry']],
-                                           snp=new_snps,
-                                           chr=as.character(study[['chr']]),
-                                           bp=new_bps,
-                                           p_value_threshold=as.numeric(study[['p_value_threshold']]),
-                                           min_p=min_ps,
-                                           category=study[['category']],
-                                           sample_size=sample_size,
-                                           cis_trans=study[['cis_trans']],
-                                           finemap_message='success',
-                                           first_finemap_num_results=as.numeric(study[['first_finemap_num_results']]),
-                                           second_finemap_num_results=as.numeric(study[['second_finemap_num_results']]),
-                                           qc_step_run=as.logical(study[['qc_step_run']]),
-                                           snps_removed_by_qc=as.numeric(study[['snps_removed_by_qc']]),
-                                           time_taken=time_taken
-      )
-      return(succeeded_finemap_info)
+  lbf_columns <- as.data.frame(lbf_columns)
+  file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
+  write_lbf_gwas(gwas, lbf_columns, file_with_lbfs)
+  time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
+
+  num_credible_sets <- length(unique_ids)
+
+  succeeded_finemap_info <- data.frame(
+    study = rep(study[['study']], num_credible_sets),
+    unique_study_id = unique_ids,
+    ld_block = rep(args$ld_block, num_credible_sets),
+    variant_type = rep(study[['variant_type']], num_credible_sets),
+    file = new_files,
+    ancestry = rep(study[['ancestry']], num_credible_sets),
+    snp = new_snps,
+    chr = rep(as.character(study[['chr']]), num_credible_sets),
+    bp = new_bps,
+    p_value_threshold = rep(as.numeric(study[['p_value_threshold']]), num_credible_sets),
+    min_p = min_ps,
+    category = rep(study[['category']], num_credible_sets),
+    sample_size = rep(sample_size, num_credible_sets),
+    cis_trans = rep(is_cis_trans, num_credible_sets),
+    finemap_message = rep('success', num_credible_sets),
+    first_finemap_num_results = rep(as.numeric(study[['first_finemap_num_results']]), num_credible_sets),
+    second_finemap_num_results = rep(as.numeric(study[['second_finemap_num_results']]), num_credible_sets),
+    qc_step_run = rep(as.logical(study[['qc_step_run']]), num_credible_sets),
+    snps_removed_by_qc = rep(as.numeric(study[['snps_removed_by_qc']]), num_credible_sets),
+    time_taken = rep(time_taken, num_credible_sets),
+    svg_file = svg_files,
+    file_with_lbfs = rep(file_with_lbfs, num_credible_sets),
+    ignore = rep(FALSE, num_credible_sets)
+  )
+  return(succeeded_finemap_info)
+}
+
+write_lbf_gwas <- function(gwas, lbf_columns, lbf_file) {
+  lbf_gwas <- dplyr::select(gwas,
+    dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'IMPUTED', 'LBF'))
+  )
+
+  if (!is.null(lbf_columns) && nrow(lbf_columns) > 0) {
+    lbf_gwas <- dplyr::bind_cols(lbf_gwas, lbf_columns)
+  } else {
+    lbf_gwas <- dplyr::rename(lbf_gwas, LBF_1 = LBF)
+  }
+  vroom::vroom_write(lbf_gwas, lbf_file)
 }
 
 #' perform_qc: 

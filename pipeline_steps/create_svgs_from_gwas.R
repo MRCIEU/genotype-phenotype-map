@@ -1,6 +1,4 @@
-create_svg_for_ld_block <- function(study) {
-  block_name <- basename(study[['file']]) |> stringr::str_replace("\\.tsv\\.gz$", "")
-  file_name <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+create_svg_for_ld_block <- function(gwas, study_name, file_name) {
   if (file.exists(file_name)) {
     return(file_name)
   }
@@ -8,7 +6,7 @@ create_svg_for_ld_block <- function(study) {
   plot_height <- 200
   plot_width <- 1000
   
-  ld_block <- vroom::vroom(study[['file']], show_col_types = F) |>
+  ld_block <- gwas |>
     dplyr::mutate(CHR = as.numeric(CHR)) |>
     dplyr::filter(!is.na(CHR)) |>
     dplyr::arrange(CHR, BP)
@@ -76,10 +74,7 @@ create_svg_for_ld_block <- function(study) {
     ) +
     ggplot2::coord_cartesian(clip = "off")
   
-  block_name <- basename(study[['file']]) |> stringr::str_replace("\\.tsv\\.gz$", "")
-  
-  dir.create(glue::glue('{extracted_study_dir}{study$study}/svgs/extractions'), showWarnings = F, recursive = T)
-  file_name <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+  dir.create(glue::glue('{extracted_study_dir}{study_name}/svgs/extractions'), showWarnings = F, recursive = T)
   ggplot2::ggsave(
     file_name,
     p,
@@ -88,7 +83,6 @@ create_svg_for_ld_block <- function(study) {
     units = "in",
     limitsize = FALSE
   )
-  return(file_name)
 }
 
 create_svgs_from_gwas <- function(study, gwas) {

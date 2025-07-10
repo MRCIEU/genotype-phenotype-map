@@ -41,7 +41,8 @@ big_update_to_finemapped_results <- function() {
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
 
   ld_info <- ld_info[4:nrow(ld_info), ]
-  Rprof()
+  ld_info <- dplyr::filter(ld_info, block == 'EUR/22/35695831-37164130')
+  print(ld_info)
 
   #STEP 1: Update unique_study_id to use ld block, as opposed to chr_bp
   # For debugging, use mc.cores = 1 to see errors more clearly
@@ -97,7 +98,7 @@ big_update_to_finemapped_results <- function() {
         if (!"Z" %in% names(finemapped_gwas)) {
           message(paste('Z missing for', old_files[file_index]))
         }
-        finemapped_gwas[, LBF := convert_z_to_lbf(Z, SE)]
+        finemapped_gwas[, LBF := convert_z_to_lbf(Z, SE, EAF, specific_study$sample_size, specific_study$category)]
 
         finemap_id <- as.numeric(sub(".*_", "", specific_study$unique_study_id))
         lbf_id <- paste0('LBF_', finemap_id)
@@ -105,23 +106,22 @@ big_update_to_finemapped_results <- function() {
         data.table::setnames(lbf_data, 'LBF', lbf_id)
         new_lbf_data[[specific_study$study]] <- new_lbf_data[[specific_study$study]][lbf_data, on = "SNP"]
 
-        finemapped_gwas <- finemapped_gwas[, !'Z', with = FALSE]
         data.table::fwrite(finemapped_gwas, new_files[file_index], sep = '\t')
 
         finemapped_studies[file_index, file := new_files[file_index]]
-        svg_files[[file_index]] <- create_svg_for_ld_block(finemapped_studies[file_index, ])
+        # svg_files[[file_index]] <- create_svg_for_ld_block(finemapped_studies[file_index, ])
       }
 
       message(paste(block_name, 'updating finemapped and coloc studies files'))
       finemapped_studies[, svg_file := as.character(svg_files)]
       finemapped_studies[, file_with_lbfs := as.character(finemap_full_gwas_with_lbf_files)]
 
-      coloc_pairwise_results_file <- paste0(block_data, '/coloc_pairwise_results.tsv.gz')
-      coloc_pairwise_results <- data.table::fread(coloc_pairwise_results_file)
-      finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
-      finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
-      coloc_pairwise_results[, unique_study_a := paste0(study_a, '_', block_name, '_', finemap_id_a)]
-      coloc_pairwise_results[, unique_study_b := paste0(study_b, '_', block_name, '_', finemap_id_b)]
+      # coloc_pairwise_results_file <- paste0(block_data, '/coloc_pairwise_results.tsv.gz')
+      # coloc_pairwise_results <- data.table::fread(coloc_pairwise_results_file)
+      # finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
+      # finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
+      # coloc_pairwise_results[, unique_study_a := paste0(study_a, '_', block_name, '_', finemap_id_a)]
+      # coloc_pairwise_results[, unique_study_b := paste0(study_b, '_', block_name, '_', finemap_id_b)]
 
       message(paste(block_name, 'updating', nrow(imputed_studies), 'imputed studies with LBF data and saving'))
       results <- lapply(seq_along(imputed_studies$study), function(i) {
@@ -130,7 +130,7 @@ big_update_to_finemapped_results <- function() {
       })
 
       data.table::fwrite(finemapped_studies, paste0(finemapped_studies_file), sep = '\t')
-      data.table::fwrite(coloc_pairwise_results, paste0(coloc_pairwise_results_file), sep = '\t')
+      # data.table::fwrite(coloc_pairwise_results, paste0(coloc_pairwise_results_file), sep = '\t')
       return(paste("Success:", block_name))
     }, error = function(e) {
       message(paste("Error in worker process for block", i, ":", e$message))
@@ -719,5 +719,5 @@ print_alleles_to_flip <- function() {
 
 }
 
-# big_update_to_finemapped_results()
-create_svgs_for_all_phenotypes()
+big_update_to_finemapped_results()
+# create_svgs_for_all_phenotypes()

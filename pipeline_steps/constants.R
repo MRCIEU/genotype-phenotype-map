@@ -152,10 +152,35 @@ safe_lapply <- function(X, FUN, ...) {
 #' @param prior_v Prior variance
 #'
 #' @return Log Bayes Factor
-convert_z_to_lbf <- function(z, se, prior_v=50) {
-  r <- prior_v / (prior_v + se^2)
-  lbf <- (r * z^2 + log(sqrt(1-r))) / 2
+convert_z_to_lbf <- function(z, se, eaf, sample_size, study_type, effect_priors=c(continuous=0.15, categorical=0.2)) {
+  estimated_sd <- estimate_variance(se, eaf, sample_size)
+  sd_prior <- if (study_type == "continuous") { effect_priors["continuous"] * estimated_sd } else { effect_priors["categorical"] }
+  r <- sd_prior^2 / (sd_prior^2 + se^2)
+  lbf = (log(1 - r) + (r * z^2)) / 2
   return(lbf)
+}
+
+##' Estimate trait standard deviation given vectors of variance of coefficients,  MAF and sample size
+##'
+##' Estimate is based on var(beta-hat) = var(Y) / (n * var(X))
+##' var(X) = 2*maf*(1-maf)
+##' so we can estimate var(Y) by regressing n*var(X) against 1/var(beta)
+##' 
+##' @title Estimate trait variance, internal function
+##' @param SE vector of standard errors
+##' @param EAF vector of MAF (same length as SE)
+##' @param n sample size
+##' @return estimated standard deviation of Y
+##' 
+estimate_variance <- function(se, eaf, n) {
+    warning("estimating sdY from maf and varbeta, please directly supply sdY if known")
+    oneover <- 1/se^2
+    nvx <- 2 * n * eaf * (1-eaf)
+    m <- lm(nvx ~ oneover - 1)
+    cf <- coef(m)[['oneover']]
+    if(cf < 0)
+        stop("estimated sdY is negative - this can happen with small datasets, or those with errors.  A reasonable estimate of sdY is required to continue.")
+    return(sqrt(cf))
 }
 
 #' Convert log Bayes Factor to abs(Z-score)

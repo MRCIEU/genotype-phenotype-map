@@ -25,6 +25,50 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+fix_existing_min_p_values <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  ld_info <- ld_info[15:nrow(ld_info), , drop = F]
+
+  silent <- lapply(seq_len(nrow(ld_info)), function(i) {
+    gc()
+    block <- ld_info[i, , drop = F]
+    print(block$block)
+    finemapped <- vroom::vroom(paste0(block$ld_block_data, '/finemapped_studies.tsv'), show_col_types = F)
+    imputed <- vroom::vroom(paste0(block$ld_block_data, '/imputed_studies.tsv'), show_col_types = F)
+
+    updated_p_vals <- lapply(seq_len(nrow(finemapped)), function(i) {
+      finemap_study <- finemapped[i, , drop = F]
+      finemap_p <- as.numeric(finemap_study[["min_p"]])
+
+      more_than_one_finemap_file <- nrow(dplyr::filter(finemapped, study == finemap_study[["study"]])) > 1
+      if (!more_than_one_finemap_file) {
+        # message(paste('skipping', finemap_study[["unique_study_id"]]))
+        return(finemap_study)
+      }
+
+      imputed_file <- dplyr::filter(imputed, study == finemap_study[["study"]])$file
+      # message("Checking ", finemap_study[["unique_study_id"]], " ", imputed_file)
+      if (length(imputed_file) == 0 || is.null(imputed_file) || is.na(imputed_file)) return(finemap_study)
+
+      imputed_gwas <- vroom::vroom(imputed_file, show_col_types = F) |> dplyr::slice(which.min(P))
+      imputed_p <- as.numeric(imputed_gwas$P)
+      if (finemap_p < imputed_p) {
+        message(paste('updating study:', finemap_study[["unique_study_id"]], 'from finemap:', finemap_p, 'to imputed:', imputed_p))
+        finemap_study$min_p <- imputed_p
+      }
+
+      return(finemap_study)
+    })
+
+    finemapped <- do.call(rbind, updated_p_vals)
+    message(nrow(finemapped), ' finemapped studies after update')
+    vroom::vroom_write(finemapped, paste0(block$ld_block_data, '/finemapped_studies.tsv'))
+    return()
+  })
+  
+}
 
 big_update_to_finemapped_results <- function() {
   # Control data.table threading to prevent spawning new processes
@@ -719,5 +763,5 @@ print_alleles_to_flip <- function() {
 
 }
 
-big_update_to_finemapped_results()
-# create_svgs_for_all_phenotypes()
+
+fix_existing_min_p_values()

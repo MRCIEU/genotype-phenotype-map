@@ -144,6 +144,8 @@ pad_missing_values <- function(gwas) {
   gwas$SE[is.na(gwas$SE)] <- 1
   gwas$P[is.na(gwas$P)] <- 1
   gwas$Z[is.na(gwas$Z)] <- 0
+  gwas$IMPUTED <- ifelse(gwas$BETA == 0 & gwas$SE == 1, T, F)
+
   return(list(
     gwas = gwas,
     rows_imputed = 0,

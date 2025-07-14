@@ -7,7 +7,7 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   # update_study_dirs()
-  # update_ld_blocks()
+  update_ld_blocks()
   # update_studies_processed()
 }
 
@@ -18,9 +18,46 @@ update_method <- function(studies_file, type) {
     return()
   }
 
-  #FILL OUT
+  godmc_studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    dplyr::filter(grepl('godmc-methylation', study))
 
-  vroom::vroom_write(studies, studies_file)
+  print(paste('updating', type, 'studies for', nrow(godmc_studies), ' godmc studies'))
+
+  lapply(seq_len(nrow(godmc_studies)), function(i) {
+    current_study <- godmc_studies[i, , drop = F]
+
+    if (type == 'imputed') {
+      gwas <- vroom::vroom(current_study$file, show_col_types = F, delim = '\t')
+      if (nrow(gwas) == 0 || !'BETA' %in% colnames(gwas)) {
+        print(paste('DELETING: either no rows or no beta or se in file: ', current_study$file))
+        vroom::vroom(studies_file, show_col_types = F) |>
+          dplyr::filter(study != current_study$study) |>
+          vroom::vroom_write(studies_file)
+        file.remove(current_study$file)
+        return()
+      }
+      if (!'IMPUTED' %in% colnames(gwas)) {
+        gwas$IMPUTED <- ifelse(gwas$BETA == 0 & gwas$SE == 1, T, F)
+        vroom::vroom_write(gwas, current_study$file)
+      }
+    } else if (type == 'finemapped') {
+      gwas <- vroom::vroom(current_study$file_with_lbfs, show_col_types = F, delim = '\t')
+      if (nrow(gwas) == 0 || !'BETA' %in% colnames(gwas)) {
+        print(paste('DELETING: either no rows or no beta or se in file: ', current_study$file_with_lbfs))
+        vroom::vroom(studies_file, show_col_types = F) |>
+          dplyr::filter(study != current_study$study) |>
+          vroom::vroom_write(studies_file)
+        file.remove(current_study$file_with_lbfs)
+        return()
+      }
+      if (!'IMPUTED' %in% colnames(gwas)) {
+        gwas$IMPUTED <- ifelse(gwas$BETA == 0 & gwas$SE == 1, T, F)
+        vroom::vroom_write(gwas, current_study$file_with_lbfs)
+      }
+    }
+    return(current_study)
+  })
+
 }
 
 update_study_dirs <- function() {
@@ -42,16 +79,16 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
-  # cores_to_use <- 128
-  # update_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores=cores_to_use, FUN=function(ld_block) {
   blocks <- ld_info$ld_block_data
+  # cores_to_use <- 40
+  # update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
   update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
-    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    update_method(extracted_studies_file, type='extracted')
+    # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    # update_method(extracted_studies_file, type='extracted')
 
-    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    update_method(standardised_studies_file, type='standardised')
+    # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    # update_method(standardised_studies_file, type='standardised')
 
     imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
     update_method(imputed_studies_file, type='imputed')

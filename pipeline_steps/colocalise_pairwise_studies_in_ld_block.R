@@ -79,7 +79,7 @@ main <- function() {
 
     gwas <- vroom::vroom(file, delim = '\t',
       show_col_types = F,
-      col_select = dplyr::any_of(c('SNP', 'BP', 'Z', 'LBF', 'EAF')),
+      col_select = c('SNP', 'LBF'),
       altrep = F
     )
     if (!"LBF" %in% names(gwas)) {
@@ -118,7 +118,6 @@ main <- function() {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
-    vroom::vroom_write(coloc_results, coloc_results_file)
 
     # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
     poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= 0.5)) != 0
@@ -136,12 +135,14 @@ main <- function() {
       message(glue::glue('Number of coloc results to ignore: {sum(coloc_results$ignore)}'))
       vroom::vroom_write(finemapped_studies, finemapped_file)
     } 
+    vroom::vroom_write(coloc_results, coloc_results_file)
 
     clustered_results <- cluster_coloc_results(coloc_results, start_time)
     snp_per_cluster <- find_snp_per_cluster(clustered_results$groups, studies_to_colocalise)
     clustered_results$groups <- clustered_results$groups |>
       dplyr::mutate(ld_block = args$ld_block) |>
-      dplyr::left_join(snp_per_cluster, by = "component")
+      dplyr::left_join(snp_per_cluster, by = "component") |>
+      dplyr::arrange(component)
 
     vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
     saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
@@ -381,8 +382,8 @@ find_snp_per_cluster <- function(coloc_groups, studies_to_colocalise) {
 
     snp <- all_group_data |>
       dplyr::group_by(SNP) |>
-      dplyr::summarise(cumulative_abs_z = sum(abs(Z))) |>
-      dplyr::slice(which.max(cumulative_abs_z)) |>
+      dplyr::summarise(cumulative_lbf = sum(LBF)) |>
+      dplyr::slice(which.max(cumulative_lbf)) |>
       dplyr::pull(SNP)
 
     return(snp)

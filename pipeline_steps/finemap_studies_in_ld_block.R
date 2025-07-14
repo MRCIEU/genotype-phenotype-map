@@ -45,94 +45,93 @@ main <- function() {
   if (nrow(imputed_studies) == 0) {
     finemapped_results <- data.frame()
   } else {
-    if (args$ld_block == 'EUR/6/31282730-32518958') {
-      cores <- 100
-    } else {
-      cores <- 1
-    }
-    print(cores)
-    finemapped_results_list <- parallel::mclapply(seq_len(nrow(imputed_studies)), mc.cores = cores, function(i) {
-      study <- imputed_studies[i, ]
-      start_time <- Sys.time()
-      sample_size <- as.numeric(study['sample_size'])
-      flattened_block_name <- flattened_ld_block_name(args$ld_block)
-      finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
+    finemapped_results_list <- lapply(seq_len(nrow(imputed_studies)), function(i) {
+      gc()
+      tryCatch({
+        study <- imputed_studies[i, , drop = FALSE]
+        start_time <- Sys.time()
+        sample_size <- as.numeric(study['sample_size'])
+        flattened_block_name <- flattened_ld_block_name(args$ld_block)
+        finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
 
-      study_already_finemapped <- any(study['study'] == existing_finemapped_results$study, na.rm = TRUE)
-      if (!is.na(study_already_finemapped) && study_already_finemapped) {
-        print(paste('study already finemapped: ', study$study))
-        return(NULL)
-      }
-
-      #we don't want to use extracted regions with too few SNPs, due to poor finemapping results
-      #and spurious coloc results due to needing to harmonise SNPs 
-      gwas <- vroom::vroom(study[['file']], show_col_types = F)
-      if (nrow(gwas) < discard_gwas_size) {
-        return(NULL)
-      }
-
-      # GodMC methylation studies are sparsley populated, so finemapping is not useful
-      if (grepl('godmc-methylation', study['study'])) {
-        unfinemapped_results <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, message='sparse_population')
-        unfinemapped_results <- dplyr::bind_cols(unfinemapped_results, data.frame(
-          first_finemap_num_results = NA,
-          second_finemap_num_results = NA,
-          qc_step_run = F,
-          snps_removed_by_qc = NA
-        ))
-        return(unfinemapped_results)
-      }
-
-      results <- run_susie_finemapping(gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
-      if (!is.null(results$failed_finemap_info)) {
-        results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
-          first_finemap_num_results = 0,
-          second_finemap_num_results = NA,
-          qc_step_run = F,
-          snps_removed_by_qc = NA
-        ))
-        return(results$failed_finemap_info)
-      }
-      study['first_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
-
-      #if there are a lot of susie results, run DENTIST, to see if there are any bad SNPs, then rerun susie if any SNPs are removed
-      if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold) {
-        message('performing qc')
-        qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
-        study <- qc_results$study
-
-        if (study['snps_removed_by_qc'] > 0) {
-          results <- run_susie_finemapping(qc_results$gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
-          if (!is.null(results$failed_finemap_info)) {
-            results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
-              first_finemap_num_results = as.numeric(study['first_finemap_num_results']),
-              second_finemap_num_results = 0,
-              qc_step_run = T,
-              snps_removed_by_qc = as.numeric(study['snps_removed_by_qc'])
-            ))
-            return(results$failed_finemap_info)
-          }
-          study['second_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
-          gwas <- qc_results$gwas
+        study_already_finemapped <- any(study[['study']] == existing_finemapped_results$study, na.rm = TRUE)
+        if (!is.na(study_already_finemapped) && study_already_finemapped) {
+          return(NULL)
         }
-        else {
+
+        #we don't want to use extracted regions with too few SNPs, due to poor finemapping results
+        #and spurious coloc results due to needing to harmonise SNPs 
+        gwas <- vroom::vroom(study[['file']], show_col_types = F)
+        if (nrow(gwas) < discard_gwas_size) {
+          return(NULL)
+        }
+
+        # GodMC methylation studies are sparsley populated, so finemapping is not useful
+        if (grepl('godmc-methylation', study['study'])) {
+          unfinemapped_results <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, message='sparse_population')
+          unfinemapped_results <- dplyr::bind_cols(unfinemapped_results, data.frame(
+            first_finemap_num_results = NA,
+            second_finemap_num_results = NA,
+            qc_step_run = F,
+            snps_removed_by_qc = NA
+          ))
+          return(unfinemapped_results)
+        }
+
+        results <- run_susie_finemapping(gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
+        if (!is.null(results$failed_finemap_info)) {
+          results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
+            first_finemap_num_results = 0,
+            second_finemap_num_results = NA,
+            qc_step_run = F,
+            snps_removed_by_qc = NA
+          ))
+          return(results$failed_finemap_info)
+        }
+        study['first_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
+
+        #if there are a lot of susie results, run DENTIST, to see if there are any bad SNPs, then rerun susie if any SNPs are removed
+        if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold) {
+          message('performing qc')
+          qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
+          study <- qc_results$study
+
+          if (study['snps_removed_by_qc'] > 0) {
+            results <- run_susie_finemapping(qc_results$gwas, study, ld_matrix_info, ld_matrix, finemap_file_prefix, sample_size, start_time)
+            if (!is.null(results$failed_finemap_info)) {
+              results$failed_finemap_info <- dplyr::bind_cols(results$failed_finemap_info, data.frame(
+                first_finemap_num_results = as.numeric(study['first_finemap_num_results']),
+                second_finemap_num_results = 0,
+                qc_step_run = T,
+                snps_removed_by_qc = as.numeric(study['snps_removed_by_qc'])
+              ))
+              return(results$failed_finemap_info)
+            }
+            study['second_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
+            gwas <- qc_results$gwas
+          }
+          else {
+            study['second_finemap_num_results'] <- NA
+          }
+        } else {
+          study['qc_step_run'] <- F
+          study['snps_removed_by_qc'] <- NA
           study['second_finemap_num_results'] <- NA
         }
-      } else {
-        study['qc_step_run'] <- F
-        study['snps_removed_by_qc'] <- NA
-        study['second_finemap_num_results'] <- NA
-      }
 
-      susie_result_to_save <- list(
-        converged = results$susie_result$converged,
-        cs_index = results$susie_result$sets$cs_index,
-        cs = results$susie_result$sets$cs
-      )
-      saveRDS(susie_result_to_save, glue::glue('{finemap_file_prefix}_results.rds'))
+        susie_result_to_save <- list(
+          converged = results$susie_result$converged,
+          cs_index = results$susie_result$sets$cs_index,
+          cs = results$susie_result$sets$cs
+        )
+        saveRDS(susie_result_to_save, glue::glue('{finemap_file_prefix}_results.rds'))
 
-      succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
-      return(succeeded_finemap_info)
+        succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result, gwas, study, sample_size, finemap_file_prefix, start_time)
+          return(succeeded_finemap_info)
+      }, error = function(e) {
+        message(paste('Error finemapping:', study$study, e))
+        stop(e)
+      })
     })
 
     saveRDS(finemapped_results_list, glue::glue('{finemapped_results_file}_list.rds'))
@@ -214,9 +213,9 @@ run_susie_finemapping <- function(gwas, study, ld_matrix_info, ld_matrix, finema
   tryCatch(expr = {
     susie_result <- susieR::susie_rss(z=gwas$Z, R=ld_matrix_subset, n=sample_size)
   }, error = function(e) {
-    message(e)
+    message(paste('Susie error for', study[['file']], ':', e$message))
+    susie_result <<- list(converged=F, sets=list(cs_index=c(), cs=list()))
   })
-
 
   if (susie_result$converged == F || is.null(susie_result$sets$cs) || length(susie_result$sets$cs) <= 1) {
     new_bp <- NA
@@ -315,15 +314,25 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
   svg_files <- c()
   lbf_columns <- list()
 
+  original_min_p <- min(gwas$P, na.rm = T)
+
   for (i in susie_result$sets$cs_index) {
     finemap_num <- which(i == susie_result$sets$cs_index)
-    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, IMPUTED) |>
+    #occasionally, the new min p is smaller than the original min p, which is wrong, so we set it to the original min p
+    p_value_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
+    new_min_p <- min(p_value_gwas$P, na.rm = T)
+
+    if (new_min_p < original_min_p) {
+      new_min_p <- original_min_p
+    }
+
+    min_ps <- c(min_ps, new_min_p)
+
+    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
       dplyr::mutate(LBF = susie_result$lbf_variable[i, ])
 
     lbf_columns[[glue::glue('LBF_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
-
     finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
-    vroom::vroom_write(conditioned_gwas, finemap_file)
 
     #this finds the lead SNP in new credible set
     important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
@@ -331,7 +340,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     new_bp <- as.numeric(gwas[important_row, ]$BP)
     new_bps <- c(new_bps, new_bp)
     new_files <- c(new_files, finemap_file)
-    min_ps <- c(min_ps, min(conditioned_gwas$P, na.rm = F))
+
 
     unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
     unique_ids <- c(unique_ids, unique_id)
@@ -344,15 +353,15 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
       if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
-        is_cis_trans <- cis_trans$cis_only
+        study['cis_trans'] <- cis_trans$cis_only
       } else {
-        is_cis_trans <- cis_trans$trans_only
+        study['cis_trans'] <- cis_trans$trans_only
       }
-    } else {
-      is_cis_trans <- study[['cis_trans']]
     }
+
+    conditioned_gwas <- dplyr::select(conditioned_gwas, -P)
+    vroom::vroom_write(conditioned_gwas, finemap_file)
   }
-  is_cis_trans <- as.character(is_cis_trans)
 
   lbf_columns <- as.data.frame(lbf_columns)
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
@@ -375,7 +384,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     min_p = min_ps,
     category = rep(study[['category']], num_credible_sets),
     sample_size = rep(sample_size, num_credible_sets),
-    cis_trans = rep(is_cis_trans, num_credible_sets),
+    cis_trans = rep(study[['cis_trans']], num_credible_sets),
     finemap_message = rep('success', num_credible_sets),
     first_finemap_num_results = rep(as.numeric(study[['first_finemap_num_results']]), num_credible_sets),
     second_finemap_num_results = rep(as.numeric(study[['second_finemap_num_results']]), num_credible_sets),
@@ -411,7 +420,7 @@ perform_qc <- function(gwas, study, bfile) {
     dplyr::mutate(N = as.numeric(study[['sample_size']])) |>
     dplyr::select(SNP, A1, A2, freq, beta, se, p, N)
 
-  dentist_tmp_file <- tempfile(basename(study[['file']]))
+  dentist_tmp_file <- withr::local_tempfile()
   vroom::vroom_write(dentist_gwas, dentist_tmp_file)
 
   dentist_command <- paste('DENTIST --bfile', bfile,
@@ -432,11 +441,12 @@ perform_qc <- function(gwas, study, bfile) {
   else {
     dentist_to_remove <- vroom::vroom(dentist_file_to_remove, col_names = F, delim = ' ', show_col_types = F)
     if (nrow(dentist_to_remove) > 0) {
+      message('removing ', nrow(dentist_to_remove), ' snps from gwas')
       gwas <- dplyr::filter(gwas, !SNP %in% dentist_to_remove$X1) |>
         dplyr::select(SNP, RSID, dplyr::everything())
-      vroom::vroom_write(gwas, study['file'])
+      vroom::vroom_write(gwas, study[['file']])
 
-      dentist_file <- sub('.tsv.gz', '_dentist_removed.tsv', study['file'])
+      dentist_file <- sub('.tsv.gz', '_dentist_removed.tsv', study[['file']])
       dentist_full_remove <- vroom::vroom(dentist_full_file, col_names = F, show_col_types = F) |>
         dplyr::filter(X1 %in% dentist_to_remove$X1) |>
         dplyr::rename(SNP='X1', chisq='X2', nlogp='X3', dup='X4')
@@ -446,7 +456,7 @@ perform_qc <- function(gwas, study, bfile) {
 
     study['snps_removed_by_qc'] <- nrow(dentist_to_remove)
   }
-  message(paste('keeping:', nrow(gwas), 'deleting:', study['snps_removed_by_qc']))
+  message(paste('keeping:', nrow(gwas), 'deleting:', study[['snps_removed_by_qc']]))
   return(list(gwas=gwas, study=study))
 }
 

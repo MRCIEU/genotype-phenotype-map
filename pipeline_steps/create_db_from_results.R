@@ -140,17 +140,14 @@ format_clustered_colocs <- function(clustered_colocs, studies_db) {
     dplyr::select(snp, id) |>
     dplyr::rename(snp_id=id)
 
-  # Create unique coloc_group_id based on ld_block_id and ebc_group
+  # Create unique coloc_group_id based on ld_block_id and component
   clustered_colocs <- clustered_colocs |>
-    dplyr::group_by(ld_block_id, ebc_group) |>
-    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
-    dplyr::ungroup() |>
     dplyr::group_by(ld_block_id, component) |>
-    dplyr::mutate(coloc_component_id = dplyr::cur_group_id()) |>
+    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
     dplyr::ungroup() |>
     dplyr::left_join(study_extractions_subset, by=c("study_id"="study_extraction_id")) |>
     dplyr::left_join(snp_annotations_subset, by="snp") |>
-    dplyr::select(coloc_group_id, study_extraction_id, snp_id, ld_block_id, ebc_group, component)
+    dplyr::select(coloc_group_id, study_extraction_id, snp_id, ld_block_id, component)
 
   # clustered_colocs <- clustered_colocs |>
   #   dplyr::mutate(coloc_group_id=1:dplyr::n(), candidate_snp=trimws(candidate_snp)) |>

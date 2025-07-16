@@ -25,6 +25,7 @@ ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
 liftover_dir <- glue::glue('{data_dir}liftover/')
 extracted_study_dir <- glue::glue('{data_dir}study/')
 variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
+svg_dir <- glue::glue('{data_dir}svgs/')
 
 server_sync_dir <- file.path(data_dir, 'rsync_to_server')
 oracle_data_dir <- '/oradiskvdb1/data/'

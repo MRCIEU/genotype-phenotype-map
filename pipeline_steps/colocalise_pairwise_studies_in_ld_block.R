@@ -82,11 +82,8 @@ main <- function() {
       col_select = c('SNP', 'LBF'),
       altrep = F
     )
-    if (!"LBF" %in% names(gwas)) {
-      gwas <- dplyr::mutate(gwas, LBF = convert_z_to_lbf(Z, study$sample_size))
-    }
     return(gwas)
-})
+  })
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   message(glue::glue('Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
@@ -106,7 +103,6 @@ main <- function() {
     })
 
     result <- dplyr::bind_cols(pair, result)
-    message(glue::glue('coloc {result$h4} in {diff_time_taken(start_time)}'))
     return(result)
   })
 

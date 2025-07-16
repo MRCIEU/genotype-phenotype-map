@@ -100,7 +100,7 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::mutate(id=1:dplyr::n(), snp=trimws(snp))
 
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
-    dplyr::mutate(id=1:dplyr::n(), file=sub(ld_block_data_dir, "", file)) |>
+    dplyr::mutate(id=1:dplyr::n(), file=sub(ld_block_data_dir, "", file), svg_file=sub(data_dir, "", svg_file), file_with_lbfs=sub(data_dir, "", file_with_lbfs)) |>
     dplyr::rename(gene=known_gene) |>
     dplyr::left_join(dplyr::select(studies_db$studies$data, study_name, id) |> dplyr::rename(study_id=id), by=c("study"="study_name")) |>
     dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id), by="ld_block") |>

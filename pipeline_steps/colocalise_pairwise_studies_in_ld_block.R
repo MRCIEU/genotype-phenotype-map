@@ -1,6 +1,7 @@
 source('constants.R')
 bp_range <- 10000
 h4_threshold <- 0.8
+subgraph_density_theshold <- 0.6
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
@@ -229,8 +230,6 @@ harmonise_gwases <- function(...) {
   return(gwases)
 }
 
-## Need to check the performance of this when all finemapped regions per study are added to pairwise coloc results
-## Check matching of finemapped_studies and coloc_results unique IDs with updated convention (currently mismatched for some regions)
 prune_finemapped <- function(finemapped_studies, coloc_results){
   # Split colocalising finemapped region by study
   finemapped_colocs <- coloc_results |> 
@@ -315,31 +314,57 @@ cluster_coloc_results <- function(coloc_results, start_time) {
   
   message(glue::glue('Pruning graph starting {diff_time_taken(start_time)}'))
   
-  # Calculate edge betweenenss and remove edges to maximise modularity
-  eb <- igraph::cluster_edge_betweenness(g2)
+  g2_orig <- g2
   
-  g2_pruned <- g2
-  if(length(unique(eb$membership)) == 1){
-    igraph::V(g2_pruned)$component <- 1
+  # Recalculate components
+  g2_comps <- igraph::components(g2)
+  
+  if(g2_comps$no == 1){
+    igraph::V(g2)$component <- 1
   } else {
-    # Delete edges removed to achieve the maximum modularity score
-    g2_pruned <- igraph::delete_edges(g2_pruned, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
-    # Recalculate components (disconnected modules)
-    g2_pruned_comps <- igraph::components(g2_pruned)
-    igraph::V(g2_pruned)$component <- g2_pruned_comps$membership
-    # Prune new resulting singleton studies (vertices) with no connections
-    vert_out2 <- igraph::V(g2_pruned)[g2_pruned_comps$membership %in% which(g2_pruned_comps$csize == 1)]
-    g2_pruned <- igraph::delete_vertices(g2_pruned, vert_out2)
+    # Split into subgraphs and calculate subgraph density (a maximally connected graph had a density of 1)
+    sg2 <- lapply(1:g2_comps$no, function(x){
+      igraph::induced_subgraph(g2, vids = igraph::V(g2)[g2_comps$membership == x])
+    })
+    sg2_density <- sapply(sg2, function(x){igraph::edge_density(x)})
+    
+    if(all(sg2_density >= subgraph_density_theshold)){
+      # If all subgraphs are connected > threshold, keep g2 and skip edge pruning
+      igraph::V(g2)$component <- g2_comps$membership
+    } else {
+      # Split out subgraphs requiring pruning
+      g2_keep <- igraph::disjoint_union(sg2[sg2_density >= subgraph_density_theshold])
+      g2_prune <- igraph::disjoint_union(sg2[sg2_density < subgraph_density_theshold])
+      
+      # Calculate edge betweenness and remove edges to maximise modularity
+      eb <- igraph::cluster_edge_betweenness(g2_prune)
+      # Delete edges from graph object
+      if(which.max(eb$modularity) > length(eb$removed.edges)){
+        # Remove all edges
+        g2_prune <- igraph::delete_edges(g2_prune, edges = eb$removed.edges)
+      } else {
+        g2_prune <- igraph::delete_edges(g2_prune, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
+      }
+      
+      # Recombine graphs
+      g2 <- igraph::disjoint_union(g2_keep, g2_prune)
+      # Recalculate components
+      g2_comps_pruned <- igraph::components(g2)
+      igraph::V(g2)$component <- g2_comps_pruned$membership
+      # Prune new resulting singleton studies (vertices) with no connections
+      vert_out2 <- igraph::V(g2)[g2_comps_pruned$membership %in% which(g2_comps_pruned$csize == 1)]
+      g2 <- igraph::delete_vertices(g2, vert_out2)
+    }
   }
   
   message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
-  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2_pruned)$name, component = igraph::V(g2_pruned)$component)
+  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2)$name, component = igraph::V(g2)$component)
   
   # Pruned studies with no module membership after edge betweenness clustering (this does not include singleton studies that show no H4 > threshold removed above)
-  pruned <- setdiff(igraph::vertex_attr(g2)$name, igraph::vertex_attr(g2_pruned)$name)
+  pruned <- setdiff(igraph::vertex_attr(g2_orig)$name, igraph::vertex_attr(g2)$name)
   
   # Output original igraph object, pruned igraph object, cluster membership and studies pruned
-  return(list(igraph_obj = g, pruned_igraph_obj = g2_pruned, groups = coloc_groups, pruned_studies = pruned))
+  return(list(igraph_obj = g, pruned_igraph_obj = g2, groups = coloc_groups, pruned_studies = pruned))
 }
 
 make_adjacency_matrix <- function(coloc_results) {

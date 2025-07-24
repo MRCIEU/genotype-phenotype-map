@@ -14,16 +14,10 @@ main <- function() {
   cleanup_studies_with_no_extractions()
 
   #only copy the studies_processed.tsv.gz file to the results directory once everything else was successful
-  file.copy(
-    file.path(args$current_results_dir, 'studies_processed.tsv.gz'),
-    file.path(latest_results_dir, 'studies_processed.tsv.gz'),
-    overwrite = T
-  )
-  file.copy(
-    file.path(args$current_results_dir, 'traits_processed.tsv.gz'),
-    file.path(latest_results_dir, 'traits_processed.tsv.gz'),
-    overwrite = T
-  )
+  files <- Sys.glob(glue::glue('{args$current_results_dir}/*.tsv.gz'))
+  for (file in files) {
+    file.copy(file, latest_results_dir, overwrite = T)
+  }
 
   if (is.na(TEST_RUN)) {
     rmarkdown::render("pipeline_steps/pipeline_summary.Rmd",

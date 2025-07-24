@@ -44,23 +44,24 @@ ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
 current_results_dir = RESULTS_DIR + 'current'
 timestamped_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
-pairwise_coloc_results = f'{current_results_dir}/pairwise_coloc_results.tsv'
-clustered_coloc_results = f'{current_results_dir}/clustered_coloc_results.tsv.gz'
-raw_rare_results = f'{current_results_dir}/raw_rare_results.tsv'
-study_extractions = f'{current_results_dir}/study_extractions.tsv'
-results_metadata = f'{current_results_dir}/results_metadata.tsv'
+coloc_pairwise_results = f'{current_results_dir}/coloc_pairwise_results.tsv.gz'
+coloc_clustered_results = f'{current_results_dir}/coloc_clustered_results.tsv.gz'
+rare_results = f'{current_results_dir}/rare_results.tsv.gz'
+study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_db_file = f'{current_results_dir}/associations.db'
+coloc_pairs_db_file = f'{current_results_dir}/coloc_pairs.db'
 ld_db_file = f'{current_results_dir}/ld.db'
 gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
 create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
 
-backup_done_file = '/tmp/backup_done'
-sync_done_file = '/tmp/sync_done'
+backup_done_file = f'{current_results_dir}/backup_done'
+sync_done_file = f'{current_results_dir}/sync_done'
+svg_files_ready_file = f'{current_results_dir}/svg_files_ready'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -69,20 +70,21 @@ rule all:
         expand(finemapping_pattern, ld_block=ld_blocks),
         expand(coloc_pattern, ld_block=ld_blocks),
         expand(compare_rare_pattern, ld_block=ld_blocks),
-        pairwise_coloc_results,
-        clustered_coloc_results,
-        raw_rare_results,
+        coloc_pairwise_results,
+        coloc_clustered_results,
+        rare_results,
         study_extractions,
-        results_metadata,
         new_studies_processed,
         new_traits_processed,
         studies_db_file,
         associations_db_file,
+        coloc_pairs_db_file,
         ld_db_file,
         gwas_upload_db_file,
         create_dbs_done_file,
-        sync_done_file,
-        backup_done_file
+        backup_done_file,
+        svg_files_ready_file
+        # sync_done_file,
         # pipeline_summary_output
 
 rule extract_regions_from_studies:
@@ -210,7 +212,7 @@ rule coloc_rule:
 rule compare_rare_rule:
     name: f'compare_rare_per_ld_block'
     retries: 2
-    threads: 5
+    threads: 3
     input:
         standardisation = standardisation_pattern 
     output: temporary(compare_rare_pattern)
@@ -233,11 +235,10 @@ rule compile_results:
     input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
     output:
-        pairwise_coloc_results = pairwise_coloc_results,
-        clustered_coloc_results = clustered_coloc_results,
-        raw_rare_results = raw_rare_results,
+        coloc_pairwise_results = coloc_pairwise_results,
+        coloc_clustered_results = coloc_clustered_results,
+        rare_results = rare_results,
         study_extractions = study_extractions,
-        results_metadata = results_metadata,
         new_studies_processed = new_studies_processed,
         new_traits_processed = new_traits_processed
     shell:
@@ -250,16 +251,15 @@ rule compile_results:
             --new_studies_processed_file {output.new_studies_processed} \
             --new_traits_processed_file {output.new_traits_processed} \
             --study_extractions_file {output.study_extractions} \
-            --pairwise_coloc_results_file {output.pairwise_coloc_results} \
-            --clustered_coloc_results_file {output.clustered_coloc_results} \
-            --rare_results_file {output.raw_rare_results} \
-            --compiled_results_metadata_file {output.results_metadata}
+            --coloc_pairwise_results_file {output.coloc_pairwise_results} \
+            --coloc_clustered_results_file {output.coloc_clustered_results} \
+            --rare_results_file {output.rare_results}
 
          rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
 
 rule backup_data_dir:
-    input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata
+    input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions
     threads: 1
     output: temporary(backup_done_file)
     shell:
@@ -270,27 +270,38 @@ rule backup_data_dir:
         """
 
 rule create_results_db:
-   input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata
+   input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions, new_studies_processed, new_traits_processed
    threads: 1
    output:
-       studies_db = studies_db_file,
-       associations_db = associations_db_file,
-       ld_db = ld_db_file,
-       gwas_upload_db = gwas_upload_db_file,
+       studies_db_file = studies_db_file,
+       associations_db_file = associations_db_file,
+       coloc_pairs_db_file = coloc_pairs_db_file,
+       ld_db_file = ld_db_file,
+       gwas_upload_db_file = gwas_upload_db_file,
        create_dbs_done_file = temporary(create_dbs_done_file)
    shell:
        """
        Rscript create_db_from_results.R \
-           --results_dir {current_results_dir} \
            --studies_db_file {studies_db_file} \
            --associations_db_file {associations_db_file} \
+           --coloc_pairs_db_file {coloc_pairs_db_file} \
            --ld_db_file {ld_db_file} \
            --gwas_upload_db_file {gwas_upload_db_file} \
            --completed_output_file {output.create_dbs_done_file}
        """
 
+rule prepare_svg_files_for_use:
+    input: studies_db_file, create_dbs_done_file
+    threads: 1
+    output: temporary(svg_files_ready_file)
+    shell:
+        """
+        R -e "source('svg_helpers.R'); prepare_svg_files_for_use()"
+        touch {output}
+        """
+
 rule copy_results_to_timestamped_dir:
-    input: create_dbs_done_file
+    input: svg_files_ready_file
     threads: 1
     output: timestamped_results_dir
     shell:
@@ -299,23 +310,12 @@ rule copy_results_to_timestamped_dir:
         cp -r {current_results_dir} {timestamped_results_dir}
         rm -f {current_results_dir}/*
         """
-
-rule sync_to_oracle_server:
-    input: pairwise_coloc_results, clustered_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
-    threads: 1
-    output: sync_done_file
-    shell:
-        """
-        ./sync_to_oracle_server.sh
-        """
-
 onsuccess:
     print('Yay!  Please look here:')
-    print(pairwise_coloc_results)
-    print(clustered_coloc_results)
-    print(raw_rare_results)
+    print(coloc_pairwise_results)
+    print(coloc_clustered_results)
+    print(rare_results)
     print(study_extractions)
-    print(results_metadata)
 
 onerror:
     print(':(')

@@ -25,6 +25,110 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+delete_some_coloc_complete <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  target_date_str <- "2025-07-19" # The cutoff date (YYYY-MM-DD)
+  file_to_delete <- "coloc_complete" # The specific file name to look for
+  file_to_check <- "coloc_clustered_results.tsv.gz" # The specific file name to look for
+  target_date <- as.Date(target_date_str)
+  all_dirs <- ld_info$ld_block_data
+
+  # Loop through each directory
+  for (dir_path in all_dirs) {
+    # print(dir_path)
+    file_path <- file.path(dir_path, file_to_delete)
+    file_path_check <- file.path(dir_path, file_to_check)
+
+    # Check if the file exists in the current directory
+    if (file.exists(file_path_check)) {
+      # Get file information, specifically the modification time
+      file_info <- file.info(file_path_check)
+      file_mtime <- as.Date(file_info$mtime) # Convert modification time to Date
+      message(file_mtime, ' ', target_date)
+
+      if (file_mtime < target_date) {
+        cat(paste0("  -> '", file_to_check, "' is OLDER than ", target_date_str, ". Deleting...\n", file_path))
+        file.remove(file_path)
+      }
+    } else {
+        cat(paste0("  -> '", file_to_check, "' is missing, delete."))
+        file.remove(file_path)
+    }
+  }
+}
+
+remove_duplicate_unique_study_ids <- function() {
+  # duplicates <- vroom::vroom(glue::glue('{current_results_dir}/study_extractions.tsv.gz'))
+  # duplicates <- duplicates[duplicated(duplicates$unique_study_id), ]
+
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  # ld_info <- ld_info[ld_info$block == 'EUR/1/24201011-28100360', ]
+
+  dont_print <- lapply(ld_info$ld_block_data, function(ld_block) {
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+    dedup_finemapped_studies <- finemapped_studies[!duplicated(finemapped_studies$unique_study_id), ]
+    print(paste('deduped finemapped studies:', nrow(finemapped_studies), 'to', nrow(dedup_finemapped_studies)))
+    vroom::vroom_write(dedup_finemapped_studies, finemapped_studies_file)
+  })
+}
+
+fix_rare_unique_study_ids <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  dont_print <- lapply(ld_info$ld_block_data, function(ld_block) {
+    print(ld_block)
+    rare_results_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
+    if (!file.exists(rare_results_file)) {
+      print(paste('file missing:', rare_results_file))
+      return()
+    }
+    rare_results <- vroom::vroom(rare_results_file, show_col_types = F)
+
+    rare_results <- rare_results |>
+      tidyr::separate_rows(traits, min_ps, genes, files, sep = ', ') |>
+      dplyr::mutate(traits = mapply(function(trait, snp) {
+        new_bp <- strsplit(snp, ':')[[1]][2]
+        new_bp <- gsub('_', '-', new_bp)
+        sub('(.*)_[0-9A-Za-z-]+', paste0('\\1_', new_bp), trait)
+      }, traits, candidate_snp)) |>
+      dplyr::group_by(candidate_snp, ld_block) |>
+      dplyr::summarise(
+        traits = paste(traits, collapse = ", "),
+        min_ps = paste(min_ps, collapse = ", "),
+        genes = paste(genes, collapse = ", "),
+        files = paste(files, collapse = ", "),
+        .groups = "drop"
+      )
+    vroom::vroom_write(rare_results |> dplyr::select(traits, candidate_snp, min_ps, genes, ld_block, files), rare_results_file)
+  })
+}
+
+remove_na_coloc_results <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  lapply(ld_info$ld_block_data, function(ld_block) {
+    coloc_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    if (!file.exists(coloc_results_file)) return()
+    coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
+    orig_size <- nrow(coloc_results)
+    coloc_results <- dplyr::filter(coloc_results, !is.na(h4))
+    new_size <- nrow(coloc_results)
+    message(glue::glue('{ld_block}: removing {orig_size - new_size} rows: {(orig_size - new_size)/orig_size*100}%'))
+
+    if (orig_size != new_size) {
+      vroom::vroom_write(coloc_results, coloc_results_file)
+    }
+  })
+}
+
 fix_existing_min_p_values <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -70,6 +174,43 @@ fix_existing_min_p_values <- function() {
   
 }
 
+add_missing_svgs_to_finemapped_studies <- function() {
+  source('../pipeline_steps/svg_helpers.R')
+
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  ld_info <- dplyr::filter(ld_info, block == 'EUR/22/35695831-37164130')
+  
+  results <- lapply(seq_len(nrow(ld_info)), function(i) {
+    block <- ld_info[i, ]
+    print(block$block)
+    finemapped_studies_file <- paste0(block$ld_block_data, '/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    updated_studies <- lapply(seq_len(nrow(finemapped_studies)), function(j) {
+      study <- finemapped_studies[j, ]
+      if (!is.na(study$svg_file)) return(study)
+      message('creating svg for', study$study)
+
+      svg_file <- sub('finemapped', 'svgs/extractions', study$file)
+      svg_file <- sub('tsv.gz', 'svg', svg_file)
+      study$svg_file <- svg_file
+      gwas <- vroom::vroom(study$file, show_col_types = F)
+      create_svg_for_ld_block(gwas, study$study, svg_file)
+      return(study)
+    })
+
+    updated_studies <- do.call(rbind, updated_studies)
+    if (nrow(updated_studies) == nrow(finemapped_studies)) {
+      vroom::vroom_write(updated_studies, finemapped_studies_file)
+    } else {
+      print(paste('ERROR: number of studies changed for', block$block))
+    }
+  })
+  
+}
+
 big_update_to_finemapped_results <- function() {
   # Control data.table threading to prevent spawning new processes
   data.table::setDTthreads(1)
@@ -78,7 +219,7 @@ big_update_to_finemapped_results <- function() {
   options(ggplot2.parallel = FALSE)
   Sys.setenv(OMP_THREAD_LIMIT = 1)
   
-  source('../pipeline_steps/create_svgs_from_gwas.R')
+  source('../pipeline_steps/svg_helpers.R')
 
   ld_blocks <- data.table::fread('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -197,7 +338,7 @@ big_update_to_finemapped_results <- function() {
 
 
 create_svgs_for_all_phenotypes <- function() {
-  source('../pipeline_steps/create_svgs_from_gwas.R')
+  source('../pipeline_steps/svg_helpers.R')
 
   studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
     dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
@@ -763,5 +904,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-
-fix_existing_min_p_values()
+delete_some_coloc_complete()

@@ -11,6 +11,12 @@ genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 lowest_rare_p_value_threshold <- 1.5e-4
 minimum_extraction_size <- 150
+posterior_prob_threshold <- 0.5
+
+posterior_prob_thresholds <- list(
+  strong=0.8
+  # moderate=0.6
+)
 
 gpm_website_data <- list(
   url = 'https://gpm.opengwas.io',
@@ -19,6 +25,7 @@ gpm_website_data <- list(
 )
 
 latest_results_dir <- glue::glue('{results_dir}latest/')
+current_results_dir <- glue::glue('{results_dir}current/')
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')

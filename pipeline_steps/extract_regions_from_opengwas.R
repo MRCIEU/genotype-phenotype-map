@@ -1,4 +1,5 @@
 source('constants.R')
+source('svg_helpers.R')
 # 1. Clump GWAS at requested --value threshold to find all regions to extract
 # 2. Deduplicate list to ensure we are only extracting 1 SNP per region (and using the top hit)
 #  with these 2 steps, I can create extracted_snps.tsv, but with cis_trans filled out appropriately

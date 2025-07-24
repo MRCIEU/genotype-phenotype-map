@@ -1,6 +1,7 @@
 studies_db <- list(
   study_sources = list(
     name = "study_sources",
+    persist_id_from = "source",
     query = "CREATE TABLE study_sources (
       id INTEGER PRIMARY KEY,
       source TEXT NOT NULL,
@@ -11,6 +12,7 @@ studies_db <- list(
   ),
   ld_blocks = list(
     name = "ld_blocks",
+    persist_id_from = "ld_block",
     query = "CREATE TABLE ld_blocks (
       id INTEGER PRIMARY KEY,
       chr INTEGER NOT NULL,
@@ -22,6 +24,7 @@ studies_db <- list(
   ),
   gene_annotations = list(
     name = "gene_annotations",
+    persist_id_from = "gene",
     query = "CREATE TABLE gene_annotations (
       id INTEGER PRIMARY KEY,
       ensembl_id TEXT NOT NULL,
@@ -37,27 +40,26 @@ studies_db <- list(
   ),
   traits = list(
     name = "traits",
-    query = "CREATE TABLE traits (
+    persist_id_from = "trait",
+    query = glue::glue("CREATE TABLE traits (
       id INTEGER PRIMARY KEY,
       data_type TEXT NOT NULL,
       trait TEXT NOT NULL,
       trait_name TEXT NOT NULL,
       trait_category TEXT
-    )"
+    )")
   ),
   studies = list(
     name = "studies",
-    query = "CREATE TABLE studies (
+    persist_id_from = "study_name",
+    query = glue::glue("CREATE TABLE studies (
       id INTEGER PRIMARY KEY,
       data_type TEXT NOT NULL,
-      data_format TEXT NOT NULL,
       study_name TEXT NOT NULL,
       trait_id INTEGER NOT NULL,
       ancestry TEXT NOT NULL,
       sample_size INTEGER NOT NULL,
-      category TEXT,
-      study_location TEXT,
-      extracted_location TEXT,
+      category TEXT NOT NULL,
       probe TEXT,
       tissue TEXT,
       source_id INTEGER ,
@@ -69,17 +71,21 @@ studies_db <- list(
       FOREIGN KEY (trait_id) REFERENCES traits(id),
       FOREIGN KEY (source_id) REFERENCES study_sources(id),
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
-    )"
+    )")
   ),
   snp_annotations = list(
     name = "snp_annotations",
+    persist_id_from = "snp",
+    #ref_allele TEXT,
+    #flipped BOOLEAN,
+    #display_snp TEXT,
     query = "CREATE TABLE snp_annotations (
       id INTEGER PRIMARY KEY,
-      snp TEXT,
-      chr INTEGER,
-      bp INTEGER,
-      ea TEXT,
-      oa TEXT,
+      snp TEXT NOT NULL,
+      chr INTEGER NOT NULL,
+      bp INTEGER NOT NULL,
+      ea TEXT NOT NULL,
+      oa TEXT NOT NULL,
       gene_id INTEGER,
       gene TEXT,
       feature_type TEXT,
@@ -106,6 +112,7 @@ studies_db <- list(
   ),
   study_extractions = list(
     name = "study_extractions",
+    persist_id_from = "unique_study_id",
     query = "CREATE TABLE study_extractions (
       id INTEGER PRIMARY KEY,
       study_id INTEGER,
@@ -115,6 +122,8 @@ studies_db <- list(
       unique_study_id TEXT NOT NULL,
       study TEXT NOT NULL,
       file TEXT NOT NULL,
+      svg_file TEXT,
+      file_with_lbfs TEXT,
       chr INTEGER NOT NULL,
       bp INTEGER NOT NULL,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
@@ -128,121 +137,59 @@ studies_db <- list(
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
   ),
-  coloc_pairs = list(
-    name = "coloc_pairs",
-    query = "CREATE TABLE coloc_pairs (
-      study_extraction_a_id INTEGER,
-      study_extraction_b_id INTEGER,
-      ld_block_id INTEGER,
-      bp_distance INTEGER,
-      h0 REAL CHECK (h0 BETWEEN 0 AND 1),
-      h1 REAL CHECK (h1 BETWEEN 0 AND 1),
-      h2 REAL CHECK (h2 BETWEEN 0 AND 1),
-      h3 REAL CHECK (h3 BETWEEN 0 AND 1),
-      h4 REAL CHECK (h4 BETWEEN 0 AND 1),
-      FOREIGN KEY (study_extraction_a_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (study_extraction_b_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-    )"
-  ),
   coloc_groups = list(
     name = "coloc_groups",
-    query = "CREATE TABLE coloc_groups (
+    persist_id_from = NA,
+    query = glue::glue("CREATE TABLE coloc_groups (
       coloc_group_id INTEGER NOT NULL,
-      study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
-      iteration INTEGER,
-      unique_study_id TEXT,
-      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
-      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
-      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
-      candidate_snp TEXT,
-      study_id INTEGER,
-      chr INTEGER NOT NULL,
-      bp INTEGER NOT NULL,
-      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      ld_block TEXT,
-      gene TEXT,
-      gene_id INTEGER,
-      PRIMARY KEY (study_extraction_id, snp_id),
+      study_id INTEGER NOT NULL,
+      study_extraction_id INTEGER NOT NULL,
+      snp_id INTEGER NOT NULL,
+      ld_block_id INTEGER NOT NULL,
+      group_threshold TEXT NOT NULL,
+      PRIMARY KEY (coloc_group_id, study_extraction_id),
+      FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
-      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
-    )"
-  ),
-  colocalisations = list(
-    name = "colocalisations",
-    query = "CREATE TABLE colocalisations (
-      study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
-      coloc_group_id INTEGER NOT NULL,
-      iteration INTEGER,
-      unique_study_id TEXT,
-      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
-      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
-      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
-      candidate_snp TEXT,
-      study_id INTEGER,
-      chr INTEGER NOT NULL,
-      bp INTEGER NOT NULL,
-      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      ld_block TEXT,
-      gene TEXT,
-      gene_id INTEGER,
-      PRIMARY KEY (study_extraction_id, snp_id),
-      FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
-      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
-    )"
+    )")
   ),
   rare_results = list(
     name = "rare_results",
+    persist_id_from = NA,
     query = "CREATE TABLE rare_results (
       rare_result_group_id INTEGER,
+      study_id INTEGER,
       study_extraction_id INTEGER,
       snp_id INTEGER,
       ld_block_id INTEGER,
-      unique_study_id TEXT,
-      candidate_snp TEXT,
-      study_id INTEGER,
-      file TEXT,
-      chr INTEGER,
-      bp INTEGER,
-      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      gene TEXT,
-      gene_id INTEGER,
+      FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
-      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
-    )"
-  ),
-  results_metadata = list(
-    name = "results_metadata",
-    query = "CREATE TABLE results_metadata (
-      ld_block_id INTEGER,
-      ld_block TEXT,
-      number_extracted INTEGER,
-      number_standardised INTEGER,
-      mean_snps_removed_by_reference_panel REAL,
-      number_imputed INTEGER,
-      significant_snps_imputed INTEGER,
-      significant_imputed_snps_filtered INTEGER,
-      number_finemapped INTEGER,
-      finemapped_per_imputed REAL,
-      num_finemap_failed INTEGER,
-      standardised_time_taken REAL,
-      imputed_time_taken REAL,
-      finemapped_time_taken REAL,
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )"
   )
+  # results_metadata = list(
+  #   name = "results_metadata",
+  #   persist_id_from = NA,
+  #   query = "CREATE TABLE results_metadata (
+  #     ld_block_id INTEGER,
+  #     ld_block TEXT,
+  #     number_extracted INTEGER,
+  #     number_standardised INTEGER,
+  #     mean_snps_removed_by_reference_panel REAL,
+  #     number_imputed INTEGER,
+  #     significant_snps_imputed INTEGER,
+  #     significant_imputed_snps_filtered INTEGER,
+  #     number_finemapped INTEGER,
+  #     finemapped_per_imputed REAL,
+  #     num_finemap_failed INTEGER,
+  #     standardised_time_taken REAL,
+  #     imputed_time_taken REAL,
+  #     finemapped_time_taken REAL,
+  #     FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+  #   )"
+  # )
 )
 
 ld_table <- list(
@@ -255,14 +202,25 @@ ld_table <- list(
   )"
 )
 
-#TODO: add in se > 0 check later, once that is resolved
+coloc_pairs_table <- list(
+  name = "coloc_pairs",
+  query = "CREATE TABLE coloc_pairs (
+    study_extraction_a_id INTEGER NOT NULL,
+    study_extraction_b_id INTEGER NOT NULL,
+    ld_block_id INTEGER NOT NULL,
+    h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
+    h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
+    PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
+  )"
+)
+
 associations_table <- list(
   name = "associations",
   query = "CREATE TABLE associations (
     snp_id INTEGER,
     study_id INTEGER,
     beta REAL NOT NULL,
-    se REAL NOT NULL,
+    se REAL NOT NULL CHECK (se > 0),
     p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
     eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
     imputed BOOLEAN NOT NULL,
@@ -308,29 +266,29 @@ gwas_upload_db <- list(
       gene TEXT
     )"
   ),
-  colocalisations = list(
-    name = "colocalisations",
-    query = "CREATE TABLE colocalisations (
-      gwas_upload_id INTEGER,
-      upload_study_extraction_id INTEGER,
-      existing_study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
-      coloc_group_id INTEGER,
-      iteration INTEGER,
-      unique_study_id TEXT,
-      posterior_prob REAL CHECK (posterior_prob BETWEEN 0 AND 1),
-      regional_prob REAL CHECK (regional_prob BETWEEN 0 AND 1),
-      posterior_explained_by_snp REAL CHECK (posterior_explained_by_snp BETWEEN 0 AND 1),
-      candidate_snp TEXT,
-      study_id INTEGER,
-      chr INTEGER NOT NULL,
-      bp INTEGER NOT NULL,
-      min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
-      ld_block TEXT,
-      gene TEXT,
-      gene_id INTEGER
+  coloc_pairs = list(
+    name = "coloc_pairs",
+    query = "CREATE TABLE coloc_pairs (
+      gwas_upload_id INTEGER NOT NULL,
+      existing_study_extraction_a BOOLEAN NOT NULL,
+      study_extraction_a_id INTEGER NOT NULL,
+      existing_study_extraction_b BOOLEAN NOT NULL,
+      study_extraction_b_id INTEGER NOT NULL,
+      ld_block_id INTEGER NOT NULL,
+      h3 REAL CHECK (h3 BETWEEN 0 AND 1),
+      h4 REAL CHECK (h4 BETWEEN 0 AND 1)
     )"
+  ),
+  coloc_groups = list(
+    name = "coloc_groups",
+    query = glue::glue("CREATE TABLE coloc_groups (
+      gwas_upload_id INTEGER NOT NULL,
+      coloc_group_id INTEGER NOT NULL,
+      existing_study_extraction BOOLEAN NOT NULL,
+      study_extraction_id INTEGER NOT NULL,
+      snp_id INTEGER NOT NULL,
+      ld_block_id INTEGER NOT NULL,
+      group_threshold TEXT NOT NULL,
+    )")
   )
 )

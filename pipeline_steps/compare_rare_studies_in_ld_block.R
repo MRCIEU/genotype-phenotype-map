@@ -102,13 +102,18 @@ compare_by_variant <- function(studies, variants, P_thresh) {
   for (var in variants_keep) {
     found_studies <- lapply(studies, function(study) {
       study <- dplyr::filter(study, SNP == var & P <= P_thresh) |>
-        dplyr::select(unique_study_id, P, GENE, file) |>
+        dplyr::select(unique_study_id, BP, P, GENE, file) |>
         dplyr::mutate(GENE = as.character(GENE))
     }) |> dplyr::bind_rows()
 
     if (nrow(found_studies) <= 1) {
       next
     }
+
+    #Update unique study id to include the new BP value, to avoid duplicates
+    new_bp <- strsplit(var, ':')[[1]][2]
+    new_bp <- gsub('_', '-', new_bp)
+    found_studies$unique_study_id <- sub('(.*)_\\d+', paste0('\\1_', new_bp), found_studies$unique_study_id)
 
     compare_wide <- rbind(compare_wide, data.frame(
       traits = paste(found_studies$unique_study_id, collapse = ", "),

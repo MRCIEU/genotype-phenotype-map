@@ -1,5 +1,5 @@
 source("constants.R")
-source("create_svgs_from_gwas.R")
+source("svg_helpers.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -12,6 +12,7 @@ minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
 snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+  #TODO: remove tolower
   dplyr::rename_with(tolower) |>
   dplyr::select(chr, bp, snp)
 
@@ -251,6 +252,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   if (!is.na(new_bp)) {
     study['bp'] <- new_bp
   }
+
   if (!is.na(new_snp)) {
     study['snp'] <- new_snp
   } else {

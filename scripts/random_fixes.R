@@ -25,6 +25,88 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+fix_missing_snps_in_rare_results <- function() {
+  source('../pipeline_steps/common_extraction_functions.R')
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  missing_snps <- vroom::vroom(glue::glue('{current_results_dir}/missing_snps_in_study_extractions.tsv')) |>
+    dplyr::filter(grepl('-wes-', unique_study_id) & grepl('TRUE', snp))
+
+  message(glue::glue('Fixing {nrow(missing_snps)} missing SNPs in study extractions'))
+  dont_print <- lapply(seq_len(nrow(missing_snps)), function(i) {
+    missing_snp <- missing_snps[i, ]
+    message(glue::glue('Fixing {missing_snp$unique_study_id} {missing_snp$snp} {missing_snp$ld_block}'))
+    gwas <- vroom::vroom(missing_snp$file, show_col_types = F) |>
+      dplyr::mutate(EA = dplyr::case_when(
+        grepl('TRUE', EA) ~ 'T',
+        T ~ 'A'
+      ),
+      OA = dplyr::case_when(
+        grepl('TRUE', OA) ~ 'T',
+        T ~ 'A'
+      ),
+      SNP = dplyr::case_when(
+        grepl('TRUE', SNP) ~ glue::glue('{CHR}:{BP}_{EA}_{OA}'),
+        T ~ SNP
+      ))
+    
+    # vroom::vroom_write(gwas, missing_snp$file)
+
+    new_snp <- sub('TRUE', 'T', missing_snp$snp)
+
+    message(glue::glue('Updated {missing_snp$unique_study_id} to {new_snp}'))
+
+    rare_results_file <- glue::glue('{ld_block_data_dir}/{missing_snp$ld_block}/compare_rare_results.tsv')
+    rare_results <- vroom::vroom(rare_results_file, show_col_types = F)
+    rare_results$candidate_snp[rare_results$candidate_snp == missing_snp$snp] <- new_snp
+    message(glue::glue('Rows updated: {sum(rare_results$candidate_snp == missing_snp$snp)}'))
+
+    vroom::vroom_write(rare_results, rare_results_file)
+  })
+}
+
+fix_missing_snps_in_study_extractions <- function() {
+  source('../pipeline_steps/common_extraction_functions.R')
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  missing_snps <- vroom::vroom(glue::glue('{current_results_dir}/missing_snps_in_study_extractions.tsv')) |>
+    dplyr::filter(!grepl('-wes-', unique_study_id))
+
+  message(glue::glue('Fixing {nrow(missing_snps)} missing SNPs in study extractions'))
+  lapply(seq_len(nrow(missing_snps)), function(i) {
+    missing_snp <- missing_snps[i, ]
+    message(glue::glue('Fixing {missing_snp$unique_study_id} {missing_snp$snp}'))
+    message(missing_snp$file_with_lbfs)
+    gwas <- vroom::vroom(file.path(data_dir, missing_snp$file_with_lbfs), show_col_types = F) |>
+      dplyr::filter(!is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(EAF)) |>
+      dplyr::mutate(COMPRESSED_SNP = format_compressed_allele_snp_string(CHR, BP, EA, OA))
+
+    new_snp <- gwas |>
+      dplyr::filter(COMPRESSED_SNP == missing_snp$snp) |>
+      dplyr::pull(SNP)
+    
+    if (length(new_snp) == 0) {
+      message(glue::glue('No SNP found for {missing_snp$unique_study_id} {missing_snp$snp}, using max abs_beta_over_se'))
+      new_snp <- gwas |>
+        dplyr::filter(Z == max(Z)) |>
+        dplyr::pull(SNP)
+    }
+
+    message(glue::glue('Updated {missing_snp$unique_study_id} to {new_snp}'))
+
+    finemapped_studies_file <- glue::glue('{ld_block_data_dir}/{missing_snp$ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+    finemapped_studies$snp[finemapped_studies$unique_study_id == missing_snp$unique_study_id] <- new_snp
+    message(glue::glue('Rows updated: {sum(finemapped_studies$unique_study_id == missing_snp$unique_study_id)}'))
+
+    vroom::vroom_write(finemapped_studies, finemapped_studies_file)
+  })
+}
+
 delete_some_coloc_complete <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -904,4 +986,5 @@ print_alleles_to_flip <- function() {
 
 }
 
-delete_some_coloc_complete()
+fix_missing_snps_in_rare_results()
+# fix_missing_snps_in_study_extractions()

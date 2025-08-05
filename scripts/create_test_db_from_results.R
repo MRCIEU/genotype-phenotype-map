@@ -93,10 +93,12 @@ main <- function() {
         sprintf("SELECT * FROM study_extractions WHERE id IN (%s)",
         paste(coloc_groups$study_extraction_id, collapse=",")
     ))
+
+    all_study_ids <- unique(c(traits$study_id, studies$id))
     DBI::dbAppendTable(studies_con, "study_extractions", study_extractions)
     rare_results <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM rare_results WHERE study_id IN (%s)",
-        paste(studies$id, collapse=",")
+        paste(all_study_ids, collapse=",")
     ))
     DBI::dbAppendTable(studies_con, "rare_results", rare_results)
 

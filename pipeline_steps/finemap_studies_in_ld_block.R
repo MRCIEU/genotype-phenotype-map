@@ -12,8 +12,6 @@ minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
 snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-  #TODO: remove tolower
-  dplyr::rename_with(tolower) |>
   dplyr::select(chr, bp, snp)
 
 main <- function() {
@@ -402,7 +400,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
 write_lbf_gwas <- function(gwas, lbf_columns, lbf_file) {
   lbf_gwas <- dplyr::select(gwas,
-    dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'IMPUTED', 'LBF'))
+    dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'P', 'IMPUTED', 'LBF'))
   )
 
   if (!is.null(lbf_columns) && nrow(lbf_columns) > 0) {
@@ -410,6 +408,7 @@ write_lbf_gwas <- function(gwas, lbf_columns, lbf_file) {
   } else {
     lbf_gwas <- dplyr::rename(lbf_gwas, LBF_1 = LBF)
   }
+  lbf_gwas <- dplyr::filter(lbf_gwas, !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(EAF))
   vroom::vroom_write(lbf_gwas, lbf_file)
 }
 

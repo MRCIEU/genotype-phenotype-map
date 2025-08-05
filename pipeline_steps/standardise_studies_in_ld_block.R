@@ -1,4 +1,5 @@
 source('constants.R')
+source('common_extraction_functions.R')
 
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -167,11 +168,7 @@ standardise_alleles <- function(gwas) {
     gwas$EA[to_flip] <- temp
   }
 
-  compressed_ea <- compress_alleles(gwas$EA)
-  compressed_oa <- compress_alleles(gwas$OA)
-  formatted_bp <- format(gwas$BP, scientific = F, trim = T)
-
-  gwas$SNP <- glue::glue('{gwas$CHR}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  gwas$SNP <- format_unique_snp_string(gwas$CHR, gwas$BP, gwas$EA, gwas$OA)
   return(gwas)
 }
 
@@ -196,10 +193,6 @@ filter_gwas <- function(gwas, is_rare_study = F) {
   )
 
   return(gwas)
-}
-
-compress_alleles <- function(alleles) {
-  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else as.character(allele))
 }
 
 main()

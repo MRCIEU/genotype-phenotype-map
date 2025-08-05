@@ -76,16 +76,16 @@ studies_db <- list(
   snp_annotations = list(
     name = "snp_annotations",
     persist_id_from = "snp",
-    #ref_allele TEXT,
-    #flipped BOOLEAN,
-    #display_snp TEXT,
     query = "CREATE TABLE snp_annotations (
       id INTEGER PRIMARY KEY,
       snp TEXT NOT NULL,
+      display_snp TEXT,
       chr INTEGER NOT NULL,
       bp INTEGER NOT NULL,
       ea TEXT NOT NULL,
       oa TEXT NOT NULL,
+      ref_allele TEXT,
+      flipped BOOLEAN,
       gene_id INTEGER,
       gene TEXT,
       feature_type TEXT,
@@ -210,6 +210,7 @@ coloc_pairs_table <- list(
     ld_block_id INTEGER NOT NULL,
     h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
     h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
+    spurious BOOLEAN NOT NULL,
     PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
   )"
 )

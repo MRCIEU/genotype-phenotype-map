@@ -278,8 +278,6 @@ compile_results <- function() {
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
   
   snp_annotations <- vroom::vroom( file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types = FALSE) |>
-    #TODO: remove tolower
-    dplyr::rename_with(tolower) |>
     dplyr::mutate(snp = trimws(snp), chr = as.character(chr), bp = as.numeric(bp)) |>
     dplyr::select(snp, chr, bp)
   

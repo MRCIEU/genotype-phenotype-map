@@ -204,7 +204,7 @@ rule coloc_rule:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript colocalise_pairwise_studies_in_ld_block.R \
+            command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
                 --ld_block {ld_block} \
                 --completed_output_file {output}"
         subprocess.run(command, shell=True)
@@ -296,7 +296,7 @@ rule prepare_svg_files_for_use:
     output: temporary(svg_files_ready_file)
     shell:
         """
-        R -e "source('svg_helpers.R'); prepare_svg_files_for_use()"
+        R -e "source('constants.R'); source('svg_helpers.R'); prepare_svg_files_for_use()"
         touch {output}
         """
 

@@ -14,8 +14,8 @@ minimum_extraction_size <- 150
 posterior_prob_threshold <- 0.5
 
 posterior_prob_thresholds <- list(
-  strong=0.8
-  # moderate=0.6
+  strong=0.8,
+  moderate=0.6
 )
 
 gpm_website_data <- list(

@@ -33,10 +33,10 @@ main <- function() {
   message('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
-  vroom::vroom_write(pipeline_data$coloc_pairwise_results, args$coloc_pairwise_results_file)
-  vroom::vroom_write(pipeline_data$coloc_clustered_results, args$coloc_clustered_results_file)
   vroom::vroom_write(pipeline_data$rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
+  vroom::vroom_write(pipeline_data$coloc_clustered_results, args$coloc_clustered_results_file)
+  vroom::vroom_write(pipeline_data$coloc_pairwise_results, args$coloc_pairwise_results_file)
   # vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
 
   # if (is.na(TEST_RUN)) {
@@ -65,22 +65,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
 
   pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz'))
-  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F)
+  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F, col_select = c('unique_study_a', 'unique_study_b', 'PP.H3.abf', 'h4', 'ld_block', 'spurious', 'ignore'))
   message('pairwise coloc results: ', nrow(coloc_pairwise_results))
 
-  # coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-  # coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim='\t', show_col_types = F)
-
-  #TODO: remove this once we have fixed the issue with the coloc_clustered_results.tsv.gz files
-  coloc_clustered_input_files <- Filter(function(file) file.exists(file) & file.size(file) > 200, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-
-  coloc_clustered_results <- lapply(coloc_clustered_input_files, function(file) {
-    clustered_results <- vroom::vroom(file, delim='\t', show_col_types = F)
-    if (!"group_threshold" %in% names(clustered_results)) {
-      clustered_results$group_threshold <- 'strong'
-    }
-    return(clustered_results)
-  }) |> dplyr::bind_rows()
+  coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+  coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim='\t', show_col_types = F)
   message('clustered coloc results: ', nrow(coloc_clustered_results))
 
   coloc_clustered_results <- coloc_clustered_results |>

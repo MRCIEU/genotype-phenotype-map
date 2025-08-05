@@ -1,8 +1,8 @@
 source('constants.R')
 dplyr.summarise.inform = FALSE
-bp_range <- 20000
+bp_range <- 50000
 subgraph_density_theshold <- 0.6
-min_internal_degree_percentage <- 0.1
+min_internal_degree_percentage <- 0.05
 
 parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
@@ -87,15 +87,12 @@ main <- function() {
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
   new_coloc_results <- lapply(seq_len(nrow(study_pairs)), function(i) {
-    start_time <- Sys.time()
     pair <- study_pairs[i,]
     first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
     second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
-    first_study <- finemapped_subset[finemapped_subset$unique_study_id == pair$unique_study_a,]
-    second_study <- finemapped_subset[finemapped_subset$unique_study_id == pair$unique_study_b,]
 
     tryCatch({
-      result <- pairwise_coloc_analysis(first_gwas, second_gwas, first_study, second_study)
+      result <- pairwise_coloc_analysis(first_gwas, second_gwas)
     }, error = function(e) {
       message(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
       stop(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
@@ -108,6 +105,7 @@ main <- function() {
         unique_study_b = pair$unique_study_b,
         study_b = NA,
         ignore = T,
+        spurious = F,
         bp_distance = NA,
         nsnps = NA,
         hit1 = NA,
@@ -131,6 +129,7 @@ main <- function() {
   new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
+  #TODO: uncomment this before merging 
   # if (!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
@@ -157,8 +156,12 @@ main <- function() {
     clustered_results <- lapply(names(posterior_prob_thresholds), function(threshold) {
       h4_threshold <- posterior_prob_thresholds[[threshold]]
 
-      clustered_results <- cluster_coloc_results_new(coloc_results, h4_threshold, start_time)
-      # clustered_results <- cluster_coloc_results_orig(coloc_results, start_time)
+      clustered_results <- cluster_coloc_results(coloc_results, h4_threshold, start_time)
+      if (h4_threshold == posterior_prob_thresholds$strong) { #TODO: and a p-value check if we put that in
+        coloc_results <- mark_spurious_colocs(coloc_results, clustered_results$pruned_edges)
+        message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$spurious)} spurious colocs'))
+        vroom::vroom_write(coloc_results, coloc_results_file)
+      }
       snp_per_cluster <- find_snp_per_cluster(clustered_results$groups, studies_to_colocalise)
 
       clustered_results$groups <- clustered_results$groups |>
@@ -180,7 +183,6 @@ main <- function() {
     })
 
     clustered_results <- dplyr::bind_rows(clustered_results)
-    # saveRDS(clustered_results$pruned_studies, glue::glue('{ld_info$ld_block_data}/coloc_pruned_studies.rds'))
     vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
   # }
 
@@ -208,7 +210,8 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
       unique_study_b = i.unique_study_id,
       study_b = i.study,
       bp_distance = bp_distance,
-      ignore = F
+      ignore = F,
+      spurious = F
     )
   ] |>
     tibble::as_tibble()
@@ -233,7 +236,7 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
 #' @import coloc
 #' @import tibble
 #' @export
-pairwise_coloc_analysis <- function(first_gwas, second_gwas, first_study, second_study) {
+pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
   harmonised_gwases <- harmonise_gwases(first_gwas, second_gwas)
   if (length(harmonised_gwases) == 0) return(NULL)
   
@@ -340,77 +343,7 @@ prune_finemapped <- function(finemapped_studies, coloc_results){
   return(remove_regions)
 }
 
-cluster_coloc_results_orig <- function(coloc_results, h4_threshold, start_time) {
-  coloc_results <- coloc_results |> dplyr::filter(!ignore)
-  message(glue::glue('Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
-  h4_adj_mx <- make_adjacency_matrix(coloc_results, 0.8)
-  
-  # Generate graph from adjacency matrix
-  g <- igraph::graph_from_adjacency_matrix(h4_adj_mx, mode="undirected", weighted=TRUE, diag=FALSE)
-  # Extract components (groups of linked studies)
-  g_comps <- igraph::components(g)
-  # Prune singleton studies (vertices) with no connections
-  vert_out <- igraph::V(g)[g_comps$membership %in% which(g_comps$csize == 1)]
-  g2 <- igraph::delete_vertices(g, vert_out)
-  
-  message(glue::glue('Pruning graph starting {diff_time_taken(start_time)}'))
-  
-  g2_orig <- g2
-  
-  # Recalculate components
-  g2_comps <- igraph::components(g2)
-  
-  if(g2_comps$no == 1){
-    igraph::V(g2)$component <- 1
-  } else {
-    # Split into subgraphs and calculate subgraph density (a maximally connected graph had a density of 1)
-    sg2 <- lapply(1:g2_comps$no, function(x){
-      igraph::induced_subgraph(g2, vids = igraph::V(g2)[g2_comps$membership == x])
-    })
-    sg2_density <- sapply(sg2, function(x){igraph::edge_density(x)})
-    
-    if(all(sg2_density >= subgraph_density_theshold)){
-      # If all subgraphs are connected > threshold, keep g2 and skip edge pruning
-      igraph::V(g2)$component <- g2_comps$membership
-    } else {
-      # Split out subgraphs requiring pruning
-      g2_keep <- igraph::disjoint_union(sg2[sg2_density >= subgraph_density_theshold])
-      g2_prune <- igraph::disjoint_union(sg2[sg2_density < subgraph_density_theshold])
-      
-      # Calculate edge betweenness and remove edges to maximise modularity
-      eb <- igraph::cluster_edge_betweenness(g2_prune)
-      # Delete edges from graph object
-      if(which.max(eb$modularity) > length(eb$removed.edges)){
-        # Remove all edges
-        g2_prune <- igraph::delete_edges(g2_prune, edges = eb$removed.edges)
-      } else {
-        g2_prune <- igraph::delete_edges(g2_prune, edges = eb$removed.edges[seq(1:which.max(eb$modularity))])
-      }
-      
-      # Recombine graphs
-      g2 <- igraph::disjoint_union(g2_keep, g2_prune)
-      # Recalculate components
-      g2_comps_pruned <- igraph::components(g2)
-      igraph::V(g2)$component <- g2_comps_pruned$membership
-      # Prune new resulting singleton studies (vertices) with no connections
-      vert_out2 <- igraph::V(g2)[g2_comps_pruned$membership %in% which(g2_comps_pruned$csize == 1)]
-      g2 <- igraph::delete_vertices(g2, vert_out2)
-      message(glue::glue('{args$ld_block}: Deleted {length(vert_out2)} vertices and {length(eb$removed.edges)} edges starting {diff_time_taken(start_time)}'))
-    }
-  }
-  
-  message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
-  coloc_groups <- data.frame(study_id = igraph::vertex_attr(g2)$name, component = igraph::V(g2)$component)
-  
-  # Pruned studies with no module membership after edge betweenness clustering (this does not include singleton studies that show no H4 > threshold removed above)
-  pruned <- setdiff(igraph::vertex_attr(g2_orig)$name, igraph::vertex_attr(g2)$name)
-  
-  # Output original igraph object, pruned igraph object, cluster membership and studies pruned
-  return(list(igraph_obj = g, pruned_igraph_obj = g2, groups = coloc_groups, pruned_studies = pruned))
-}
-
-
-cluster_coloc_results_new <- function(coloc_results, h4_threshold, start_time) {
+cluster_coloc_results <- function(coloc_results, h4_threshold, start_time) {
   coloc_results <- coloc_results |> dplyr::filter(!ignore)
   message(glue::glue('{args$ld_block}: Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
 
@@ -424,12 +357,18 @@ cluster_coloc_results_new <- function(coloc_results, h4_threshold, start_time) {
 
   message(glue::glue('{args$ld_block}: Pruning graph starting {diff_time_taken(start_time)}'))
 
-  original_graph <- h4_graph # Keep original_graph for later comparison for pruned_studies
   h4_graph_components <- igraph::components(h4_graph)
+  recombined_graph <- h4_graph
+  subgraph_to_cluster_and_prune <- NULL
+  modified_pruned_graph <- NULL
+  pruned_studies <- c()
+  pruned_edges <- data.frame(V1 = character(), V2 = character())
 
-  if(h4_graph_components$no == 1){
+  if(h4_graph_components$no == 1) {
+    message(glue::glue('Only one component found, assigning all vertices to component 1'))
     igraph::V(h4_graph)$component <- 1
   } else {
+    message(glue::glue('{args$ld_block}: Clustering {h4_graph_components$no} components'))
     subgraphs <- lapply(1:h4_graph_components$no, function(x){
       igraph::induced_subgraph(h4_graph, vids = igraph::V(h4_graph)[h4_graph_components$membership == x])
     })
@@ -438,17 +377,41 @@ cluster_coloc_results_new <- function(coloc_results, h4_threshold, start_time) {
     if(all(subgraph_density >= subgraph_density_theshold)){
       # If all components are dense enough, just assign their component IDs
       igraph::V(h4_graph)$component <- h4_graph_components$membership
+      recombined_graph <- h4_graph
     } else {
       subgraph_to_keep <- igraph::disjoint_union(subgraphs[subgraph_density >= subgraph_density_theshold])
       subgraph_to_cluster_and_prune <- igraph::disjoint_union(subgraphs[subgraph_density < subgraph_density_theshold])
-      modified_pruned_graph <- igraph::make_empty_graph(0, directed = FALSE)
+      modified_pruned_graph <- subgraph_to_cluster_and_prune
+
+      pruned_edge_ids <- c()
       
-      if (igraph::vcount(subgraph_to_cluster_and_prune) > 0) {
-        clustered_graph <- igraph::cluster_fast_greedy(subgraph_to_cluster_and_prune)
+      if (igraph::vcount(modified_pruned_graph) > 0) {
+        clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
         clustered_memberships <- igraph::membership(clustered_graph)
 
-        robust_communities_list <- list()
 
+        # FIrst, remove all edges between communities
+        edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
+        if (nrow(edge_list_names) > 0) {
+          for (i in 1:nrow(edge_list_names)) {
+            v1_name <- edge_list_names[i, 1]
+            v2_name <- edge_list_names[i, 2]
+            comm_v1 <- clustered_memberships[v1_name]
+            comm_v2 <- clustered_memberships[v2_name]
+
+            if (comm_v1 != comm_v2) {
+              pruned_edges <- rbind(pruned_edges, 
+                data.frame(V1 = edge_list_names[i, 1], V2 = edge_list_names[i, 2]))
+              pruned_edge_ids <- c(pruned_edge_ids, i)
+            }
+          }
+        }
+
+        # Second, remove orphaned vertices after edge pruning
+        current_degrees <- igraph::degree(modified_pruned_graph)
+        pruned_studies <- c(pruned_studies, names(current_degrees[current_degrees == 0]))
+
+        # Then, remove all studies with degree less than the threshold
         for (comm_id in unique(clustered_memberships)) {
           current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
 
@@ -458,29 +421,43 @@ cluster_coloc_results_new <- function(coloc_results, h4_threshold, start_time) {
 
           community_graph <- igraph::induced_subgraph(subgraph_to_cluster_and_prune, vids = current_community_vertices)
           internal_degrees <- igraph::degree(community_graph)
-          max_degree_in_community <- ifelse(length(internal_degrees) > 0, max(internal_degrees), 0)
+          max_degree_in_community <- max(internal_degrees)
           threshold_degree <- max_degree_in_community * min_internal_degree_percentage
 
-          message(glue::glue('Community ID: {comm_id} with {length(current_community_vertices)} vertices and max degree {max_degree_in_community}'))
-          vertices_to_keep_in_this_community <- names(internal_degrees[internal_degrees >= threshold_degree])
-          vertices_to_remove_from_this_community <- names(internal_degrees[internal_degrees < threshold_degree])
-          message(glue::glue('Vertices to remove: {length(vertices_to_remove_from_this_community)}'))
-
-          if (length(vertices_to_keep_in_this_community) > 0) {
-            robust_community_subgraph <- igraph::induced_subgraph(community_graph, vids = vertices_to_keep_in_this_community)
-            robust_communities_list[[length(robust_communities_list) + 1]] <- robust_community_subgraph
-          }
+          pruned_studies <- c(pruned_studies, names(internal_degrees[internal_degrees < threshold_degree]))
         }
-        
-        if (length(robust_communities_list) > 0) {
-          modified_pruned_graph <- igraph::disjoint_union(robust_communities_list)
+
+        pruned_studies <- unique(pruned_studies)
+
+        message(glue::glue('Removing {nrow(pruned_edges)} edges'))
+        if (nrow(pruned_edges) > 0) {
+          modified_pruned_graph <- igraph::delete_edges(
+            modified_pruned_graph,
+            edges = pruned_edge_ids
+          )
+        }
+
+        message(glue::glue('Removing {length(pruned_studies)} vertices'))
+        if (length(pruned_studies) > 0) {
+          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, pruned_studies)
         }
       }
 
+      # Adding edges from pruned studies, to mark as spurious later
+      for (study in pruned_studies) {
+        study_edges <- igraph::incident_edges(subgraph_to_cluster_and_prune, study)
+        if (length(study_edges) > 0) {
+          for (edge in study_edges) {
+            edge_vertices <- igraph::ends(subgraph_to_cluster_and_prune, edge)
+            pruned_edges <- rbind(pruned_edges, 
+              data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
+          }
+        }
+      }
+      pruned_edges <- unique(pruned_edges)
+
       # Recombine the 'kept' components and the 'modified pruned' components
       recombined_graph <- igraph::disjoint_union(subgraph_to_keep, modified_pruned_graph)
-
-      # Recalculate components on the fully recombined graph for final membership
       recombined_graph_components <- igraph::components(recombined_graph)
       igraph::V(recombined_graph)$component <- recombined_graph_components$membership
     }
@@ -489,22 +466,36 @@ cluster_coloc_results_new <- function(coloc_results, h4_threshold, start_time) {
   message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
   coloc_groups <- data.frame(unique_study_id = igraph::vertex_attr(recombined_graph)$name, component = igraph::V(recombined_graph)$component)
 
-  # pruned_studies should compare initial graph g to final_g2
-  pruned <- setdiff(igraph::vertex_attr(h4_graph)$name, igraph::vertex_attr(recombined_graph)$name)
-
-  # Calculate total vertices and edges removed
-  vertices_removed_from_clustering <- igraph::vcount(subgraph_to_cluster_and_prune) - igraph::vcount(modified_pruned_graph)
-  edges_removed_from_clustering <- igraph::ecount(subgraph_to_cluster_and_prune) - igraph::ecount(modified_pruned_graph)
-
   message(glue::glue('Summary of pruning:'))
   message(glue::glue('  Initial vertices (after H4 adj matrix): {igraph::vcount(h4_graph)}'))
   message(glue::glue('  Initial edges (after H4 adj matrix): {igraph::ecount(h4_graph)}'))
   message(glue::glue('  Final vertices after all pruning: {igraph::vcount(recombined_graph)}'))
   message(glue::glue('  Final edges after all pruning: {igraph::ecount(recombined_graph)}'))
-  message(glue::glue('  Total vertices removed from clustering: {vertices_removed_from_clustering}'))
-  message(glue::glue('  Total edges removed from clustering: {edges_removed_from_clustering}'))
+  message(glue::glue('  Total vertices removed from clustering: {length(pruned_studies)}'))
+  message(glue::glue('  Total edges removed from clustering: {nrow(pruned_edges)}'))
 
-  return(list(igraph_obj = h4_graph, pruned_igraph_obj = recombined_graph, groups = coloc_groups, pruned_studies = pruned))
+  return(list(
+    pruned_graph = recombined_graph,
+    groups = coloc_groups,
+    pruned_edges = pruned_edges
+  ))
+}
+
+mark_spurious_colocs <- function(coloc_results, pruned_edges) {
+  coloc_results$spurious <- FALSE
+
+  # Only mark specific edge pairs as spurious
+  for (i in seq_len(nrow(pruned_edges))) {
+    v1 <- pruned_edges$V1[i]
+    v2 <- pruned_edges$V2[i]
+    
+    coloc_results$spurious[
+      (coloc_results$unique_study_a == v1 & coloc_results$unique_study_b == v2) |
+      (coloc_results$unique_study_a == v2 & coloc_results$unique_study_b == v1)
+    ] <- TRUE
+  }
+  
+  return(coloc_results)
 }
 
 make_adjacency_matrix <- function(coloc_results, h4_threshold) {
@@ -519,6 +510,7 @@ make_adjacency_matrix <- function(coloc_results, h4_threshold) {
       dplyr::group_by(a, b) |>
       dplyr::summarise(h4 = max(h4), .groups = 'keep')
   ) |>
+    dplyr::distinct() |>
     tidyr::pivot_wider(names_from = a, values_from = h4) |>
     tibble::column_to_rownames("b") |>
     as.matrix()

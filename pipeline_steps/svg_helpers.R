@@ -292,37 +292,54 @@ create_svgs_from_gwas <- function(study, gwas) {
   jsonlite::write_json(metadata, glue::glue("{study$extracted_location}/svgs/full.json"), pretty = TRUE, auto_unbox = TRUE)
 }
 
-prepare_svg_files_for_use <- function() {
+prepare_svg_files_for_use <- function(do_all = FALSE) {
   dir.create(glue::glue('{svg_dir}/traits'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/groups'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/extractions'), showWarnings = F, recursive = T)
 
   #first, find out which new studies and extractions have been added
-  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"))
-  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
+  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
+  #TODO: change this back to studies.db
+  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies_backup.db"), read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"
-  latest_studies <- duckdb::dbGetQuery(latest_studies_conn, studies_query)
-  current_studies <- duckdb::dbGetQuery(current_studies_conn, studies_query)
+  latest_studies <- DBI::dbGetQuery(latest_studies_conn, studies_query)
+  current_studies <- DBI::dbGetQuery(current_studies_conn, studies_query)
   new_studies <- dplyr::anti_join(latest_studies, current_studies, by = "trait_id")
 
-  for (study in new_studies) {
-    file.copy(glue::glue('{extracted_study_dir}{study$study_name}/svgs/full.zip'), glue::glue('{svg_dir}/traits/{study$trait_id}_svgs.zip'))
-    file.copy(glue::glue('{extracted_study_dir}{study$study_name}/svgs/full.json'), glue::glue('{svg_dir}/traits/{study$trait_id}_metadata.json'))
+  if (do_all) {
+    new_studies <- current_studies
   }
+  message(glue::glue('Preparing {nrow(new_studies)} full trait svgs'))
 
-  study_extractions_query <- "SELECT * FROM study_extractions WHERE variant_type = 'common'"
-  latest_study_extractions <- duckdb::dbGetQuery(latest_studies_conn, study_extractions_query)
-  current_study_extractions <- duckdb::dbGetQuery(current_studies_conn, study_extractions_query)
+  lapply(seq_len(nrow(new_studies)), function(i) {
+    study <- new_studies[i, , drop = FALSE]
+    file.link(glue::glue('{extracted_study_dir}{study$study_name}/svgs/full.zip'), glue::glue('{svg_dir}/traits/{study$trait_id}_svgs.zip'))
+    file.link(glue::glue('{extracted_study_dir}{study$study_name}/svgs/full.json'), glue::glue('{svg_dir}/traits/{study$trait_id}_metadata.json'))
+  })
+
+  study_extractions_query <- "SELECT study_extractions.*, studies.study_name
+    FROM study_extractions LEFT JOIN studies ON study_extractions.study_id = studies.id
+    WHERE studies.variant_type = 'common'
+  "
+  latest_study_extractions <- DBI::dbGetQuery(latest_studies_conn, study_extractions_query)
+  current_study_extractions <- DBI::dbGetQuery(current_studies_conn, study_extractions_query)
   new_study_extractions <- dplyr::anti_join(latest_study_extractions, current_study_extractions, by = "id")
 
-  apply(new_study_extractions, 1, function(extraction) {
-    file.link(glue::glue('{data_dir}{extraction["svg_file"]}'), glue::glue('{svg_dir}/extraction/{extraction["id"]}.svg'))
+  if (do_all) {
+    new_study_extractions <- current_study_extractions
+  }
+  message(glue::glue('Preparing {nrow(new_study_extractions)} extraction svgs'))
+
+  lapply(seq_len(nrow(new_study_extractions)), function(i) {
+    extraction <- new_study_extractions[i, , drop = FALSE]
+    file.link(glue::glue('{data_dir}{extraction$svg_file}'), glue::glue('{svg_dir}/extractions/{extraction$id}.svg'))
   })
 
   #third, find out which new coloc groups have been added
   coloc_groups_query <- "SELECT * FROM coloc_groups"
-  coloc_groups <- duckdb::dbGetQuery(current_studies_conn, coloc_groups_query)
+  coloc_groups <- DBI::dbGetQuery(current_studies_conn, coloc_groups_query)
+  message(glue::glue('Preparing {nrow(coloc_groups)} coloc group svgs'))
 
   setwd(glue::glue('{svg_dir}/groups'))
 
@@ -338,6 +355,7 @@ prepare_svg_files_for_use <- function() {
     
     zip::zipr(glue::glue('snp_{snp_id}_svgs.zip'), paste0('{svg_files}.svg'))
   }
+  print(warnings())
 }
 
 bp_to_pixel <- function(cumulative_bp, total_cumulative_bp, svg_width = 1250) {

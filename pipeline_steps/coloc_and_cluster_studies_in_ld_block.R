@@ -57,9 +57,9 @@ main <- function() {
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue('{args$ld_block}: No study pairs to coloc, skipping.'))
-    #TODO: uncomment this before merging 
-    # vroom::vroom_write(data.frame(), args$completed_output_file)
-    # return()
+    TODO: uncomment this before merging 
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
   }
 
   if (!is.na(args$worker_guid)) {
@@ -129,8 +129,7 @@ main <- function() {
   new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
-  #TODO: uncomment this before merging 
-  # if (!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) {
+  if (!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
@@ -157,7 +156,7 @@ main <- function() {
       h4_threshold <- posterior_prob_thresholds[[threshold]]
 
       clustered_results <- cluster_coloc_results(coloc_results, h4_threshold, start_time)
-      if (h4_threshold == posterior_prob_thresholds$strong) { #TODO: and a p-value check if we put that in
+      if (h4_threshold == posterior_prob_thresholds$strong) {
         coloc_results <- mark_spurious_colocs(coloc_results, clustered_results$pruned_edges)
         message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$spurious)} spurious colocs'))
         vroom::vroom_write(coloc_results, coloc_results_file)
@@ -184,7 +183,7 @@ main <- function() {
 
     clustered_results <- dplyr::bind_rows(clustered_results)
     vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
-  # }
+  }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }

@@ -105,9 +105,8 @@ main <- function() {
     }) |> dplyr::bind_rows()
 
     if (nrow(imputed_studies) > 0) {
-      # TODO: uncomment before committing
       imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
-        dplyr::distinct()
+        dplyr::distinct(study, .keep_all = TRUE)
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
   }

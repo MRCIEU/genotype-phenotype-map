@@ -112,11 +112,9 @@ create_svgs_from_gwas <- function(study, gwas) {
       .groups = "drop"
     ) |>
     dplyr::mutate(
-      #TODO: maybe change this to chr_size = bp_max, cause the bp min should always be 1?
       chr_size = bp_max - bp_min,
-      # Adding a small buffer between chromosomes (1 unit for example)
       bp_cumulative_start = cumsum(c(0, chr_size[-dplyr::n()] + 1)) +
-      (1:dplyr::n() - 1), # Additional 1 for separation if needed
+      (1:dplyr::n() - 1),
       bp_cumulative_end = bp_cumulative_start + chr_size
     )
 
@@ -299,8 +297,7 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
 
   #first, find out which new studies and extractions have been added
   latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
-  #TODO: change this back to studies.db
-  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies_backup.db"), read_only = TRUE)
+  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies.db"), read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"
   latest_studies <- DBI::dbGetQuery(latest_studies_conn, studies_query)
@@ -338,7 +335,7 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
     file.link(glue::glue('{data_dir}{extraction$svg_file}'), extraction$new_svg_file)
   })
 
-  #third, find out which new coloc groups have been added
+  #second, find out which new coloc groups have been added
   coloc_groups_query <- "SELECT * FROM coloc_groups"
   coloc_groups <- DBI::dbGetQuery(current_studies_conn, coloc_groups_query)
   unique_coloc_group_ids <- unique(coloc_groups$coloc_group_id)

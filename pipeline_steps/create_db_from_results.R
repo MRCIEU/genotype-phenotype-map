@@ -12,11 +12,11 @@ parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Com
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
-  if (file.exists(args$associations_db_file)) file.remove(args$associations_db_file)
-  if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
-  if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
-  if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
+  # if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
+  # if (file.exists(args$associations_db_file)) file.remove(args$associations_db_file)
+  # if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
+  # if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
+  # if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
   latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
@@ -36,15 +36,15 @@ main <- function() {
   studies_db <- load_data_for_studies_db(studies_db)
 
   message('Writing data to studies db')
-  lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
+  # lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
   message('Creating coloc pairs db...')
-  load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
+  # load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
 
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
   message('Creating ld db...')
-  load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
+  # load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -57,6 +57,7 @@ main <- function() {
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
 
   file.copy(args$studies_db_file, file.path(latest_results_dir, "studies.db"), overwrite = TRUE)
+  file.copy(args$coloc_pairs_db_file, file.path(latest_results_dir, "coloc_pairs.db"), overwrite = TRUE)
   file.copy(args$associations_db_file, file.path(latest_results_dir, "associations.db"), overwrite = TRUE)
   file.copy(args$ld_db_file, file.path(latest_results_dir, "ld.db"), overwrite = TRUE)
   file.copy(args$gwas_upload_db_file, file.path(latest_results_dir, "gwas_upload.db"), overwrite = TRUE)
@@ -350,18 +351,14 @@ format_rare_results <- function(rare_results, studies_db) {
 
 # Find relevant snps: all coloc SNPs and all finemapped SNPs that colocalise with nothing (at genome wide significance)
 find_relevant_snps <- function(studies_db) {
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, id) |>
-    dplyr::rename(snp_id=id, candidate_snp=snp)
+  snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(candidate_snp = snp, snp_id = id)]
 
-  ld_blocks_subset <- studies_db$ld_blocks$data |>
-    dplyr::select(ld_block, id) |>
-    dplyr::rename(ld_block_id=id)
+  ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
 
-  colocalising_snps <- studies_db$coloc_groups$data |> 
-    dplyr::select(snp_id, ld_block_id) |> dplyr::distinct() |>
-    dplyr::left_join(snp_annotations_subset, by=c("snp_id"="snp_id")) |>
-    dplyr::left_join(ld_blocks_subset, by="ld_block_id")
+  colocalising_snps <- data.table::as.data.table(studies_db$coloc_groups$data)[, .(snp_id, ld_block_id)]
+  colocalising_snps <- unique(colocalising_snps)
+  colocalising_snps <- snp_annotations_subset[colocalising_snps, on = "snp_id"]
+  colocalising_snps <- ld_blocks_subset[colocalising_snps, on = "ld_block_id"]
 
   return(colocalising_snps)
 }
@@ -372,23 +369,24 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
   ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=30, \(relevant_ld_block) {
     gc()
     tryCatch({
-      relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == relevant_ld_block)
+      relevant_snps <- data.table::as.data.table(all_relevant_snps)[ld_block == relevant_ld_block]
       generate_ld_obj(relevant_ld_block, relevant_snps$candidate_snp)
     }, error = function(e) {
       message("Error generating LD object for ", relevant_ld_block, " - ", e)
       throw(e)
     })
-  }) |> dplyr::bind_rows()
+  }) |> data.table::rbindlist(fill = TRUE)
 
-  variant_annotations_subset_lead <- dplyr::select(studies_db$snp_annotations$data, snp, id) |> dplyr::rename(lead_snp_id=id)
-  variant_annotations_subset_variant <- dplyr::select(studies_db$snp_annotations$data, snp, id) |> dplyr::rename(variant_snp_id=id)
-  ld_blocks_subset <- dplyr::select(studies_db$ld_blocks$data, ld_block, id) |> dplyr::rename(ld_block_id=id)
+  # Convert to data.table for better performance
+  variant_annotations_subset_lead <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, lead_snp_id = id)]
+  variant_annotations_subset_variant <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, variant_snp_id = id)]
+  ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
 
-  ld_data <- ld_data |>
-    dplyr::left_join(variant_annotations_subset_lead, by=c("lead"="snp")) |>
-    dplyr::left_join(variant_annotations_subset_variant, by=c("variant"="snp")) |>
-    dplyr::left_join(ld_blocks_subset, by="ld_block") |>
-    dplyr::select(-lead, -variant, -ld_block)
+  # Use data.table joins for better performance
+  ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
+  ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
+  ld_data <- ld_blocks_subset[ld_data, on = "ld_block"]
+  ld_data <- ld_data[, .(lead_snp_id, variant_snp_id, ld_block_id, r)]
 
   DBI::dbAppendTable(ld_conn, ld_table$name, ld_data)
 }
@@ -396,31 +394,29 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 generate_ld_obj <- function(ld_block, snps) {
   message("Generating LD object for ", ld_block)
   ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1"))
-  ld <- vroom::vroom(ld_file, col_names = FALSE, show_col_types = F)
-  ldvars <- vroom::vroom(glue::glue("{ld_file}.vars"), delim = " ", col_names = FALSE, show_col_types = F)
+  ld <- data.table::fread(ld_file, header = FALSE, showProgress = FALSE)
+  ldvars <- data.table::fread(glue::glue("{ld_file}.vars"), sep = " ", header = FALSE, showProgress = FALSE)
 
-  names(ld) <- ldvars$X1
-  ld$lead <- ldvars$X1
-  ind <- which(ldvars$X1 %in% snps)
-  ld <- ld[ind,]
+  data.table::setnames(ld, ldvars$V1)
+  ld[, lead := ldvars$V1]
+  ind <- which(ldvars$V1 %in% snps)
+  ld <- ld[ind]
 
-  ldl <- tidyr::pivot_longer(ld, cols=-lead, names_to="variant", values_to="r") |>
-    dplyr::filter(r^2 > 0.8 | variant %in% ld$lead) |> 
-    dplyr::filter(lead != variant) |>
-    dplyr::mutate(ld_block=ld_block)
-  return(ldl)
+  # Convert to long format using data.table
+  ld_long <- data.table::melt(ld, id.vars = "lead", variable.name = "variant", value.name = "r")
+  ld_long <- ld_long[r^2 > 0.8 | variant %in% ld$lead]
+  ld_long <- ld_long[lead != variant]
+  ld_long[, ld_block := ld_block]
+  
+  return(ld_long)
 }
 
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
   message('Retrieving ', nrow(all_relevant_snps), ' SNPs for ', nrow(studies_db$studies$data), ' studies')
 
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, id) |>
-    dplyr::rename(snp_id=id)
-
-  studies_subset <- studies_db$studies$data |>
-    dplyr::select(study_name, id) |>
-    dplyr::rename(study_id=id)
+  # Convert to data.table for better performance
+  snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, snp_id = id)]
+  studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(study_name, study_id = id)]
 
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
   associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=40, \(ld_block) {
@@ -431,24 +427,26 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
       imputed_studies_file <- file.path(ld_block_data_dir, ld_block, "imputed_studies.tsv")
       if (!file.exists(imputed_studies_file)) return(NULL)
       
-      imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
-        dplyr::filter(study %in% studies_db$studies$data$study_name)
+      imputed_studies <- data.table::fread(imputed_studies_file, showProgress = FALSE)
+      imputed_studies <- imputed_studies[study %in% studies_db$studies$data$study_name]
       if (nrow(imputed_studies) == 0) return(NULL)
 
-      associations <- apply(imputed_studies, 1, \(study) {
+      associations <- apply(imputed_studies, 1, function(study) {
         tryCatch({
-          extractions <- vroom::vroom(study[['file']],
-            show_col_types = F,
-            altrep = FALSE,
-            col_select = dplyr::any_of(c("SNP", "BETA", "SE", "P", "EAF", "IMPUTED"))
-          )
-          if (!"IMPUTED" %in% names(extractions)) {
-            extractions$IMPUTED <- FALSE
+          extractions <- data.table::fread(study[['file']], showProgress = FALSE, nThread = 1)
+          needed_cols <- c("SNP", "BETA", "SE", "P", "EAF", "IMPUTED")
+          missing_cols <- setdiff(needed_cols, names(extractions))
+          for (col in missing_cols) {
+            if (col == "IMPUTED") {
+              extractions[, (col) := FALSE]
+            } else {
+              extractions[, (col) := NA]
+            }
           }
-          extractions <- extractions |>
-            dplyr::filter(SNP %in% relevant_snps$candidate_snp) |>
-            dplyr::mutate(study = study[['study']]) |>
-            dplyr::rename_with(tolower)
+          extractions <- extractions[, ..needed_cols]
+          extractions <- extractions[SNP %in% relevant_snps$candidate_snp]
+          extractions[, study := study[['study']]]
+          data.table::setnames(extractions, tolower(names(extractions)))
           return(extractions)
         }, error = function(e) {
           message('Error processing file: ', study[['file']], ' - ', e)
@@ -457,12 +455,12 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
       })
       associations <- associations[!sapply(associations, is.null)]
       if (length(associations) == 0) return(NULL)
-      associations <- do.call(rbind, associations)
+      associations <- data.table::rbindlist(associations, fill = TRUE)
 
-      associations <- associations |> 
-        dplyr::left_join(snp_annotations_subset, by="snp") |>
-        dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
-        dplyr::select(snp_id, study_id, beta, se, imputed, p, eaf)
+      # Use data.table joins for better performance
+      associations <- snp_annotations_subset[associations, on = "snp"]
+      associations <- studies_subset[associations, on = c("study_name" = "study")]
+      associations <- associations[, .(snp_id, study_id, beta, se, imputed, p, eaf)]
 
       message('Extracted ', nrow(associations), ' associations for ', ld_block)
 
@@ -474,20 +472,15 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   }) 
 
   associations <- associations[!sapply(associations, is.null)]
-  associations <- do.call(rbind, associations)
+  associations <- data.table::rbindlist(associations, fill = TRUE)
 
   original_num_rows <- nrow(associations)
-  associations <- associations |>
-    dplyr::filter(!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf))
+  associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
   message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
   DBI::dbAppendTable(conn, associations_table$name, associations)
   num_rows <- DBI::dbGetQuery(conn, glue::glue("SELECT COUNT(*) FROM {associations_table$name}"))
   message('Added ', num_rows$count_star, ' rows to ', associations_table$name)
-  # if (num_rows$count_star > 1000000) {
-    # association_files <- Sys.glob(glue::glue("{args$results_dir}/*_associations.tsv.gz"))
-    # file.remove(association_files)
-  # }
 }
 
 get_table_column_names <- function(table) {

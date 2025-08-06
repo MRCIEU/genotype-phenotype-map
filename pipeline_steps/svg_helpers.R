@@ -318,43 +318,52 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
     file.link(glue::glue('{extracted_study_dir}{study$study_name}/svgs/full.json'), glue::glue('{svg_dir}/traits/{study$trait_id}_metadata.json'))
   })
 
-  study_extractions_query <- "SELECT study_extractions.*, studies.study_name
+  study_extractions_query <- "SELECT study_extractions.id, study_extractions.svg_file
     FROM study_extractions LEFT JOIN studies ON study_extractions.study_id = studies.id
     WHERE studies.variant_type = 'common'
   "
-  latest_study_extractions <- DBI::dbGetQuery(latest_studies_conn, study_extractions_query)
   current_study_extractions <- DBI::dbGetQuery(current_studies_conn, study_extractions_query)
-  new_study_extractions <- dplyr::anti_join(latest_study_extractions, current_study_extractions, by = "id")
+  current_study_extractions$new_svg_file <- glue::glue('{svg_dir}/extractions/{current_study_extractions$id}.svg')
+
+  existing_extraction_svgs <- list.files(glue::glue('{svg_dir}/extractions'), full.names = TRUE)
+  missing_extraction_svgs <- current_study_extractions[!current_study_extractions$new_svg_file %in% existing_extraction_svgs, ]
 
   if (do_all) {
-    new_study_extractions <- current_study_extractions
+    missing_extraction_svgs <- current_study_extractions
   }
-  message(glue::glue('Preparing {nrow(new_study_extractions)} extraction svgs'))
+  message(glue::glue('Preparing {nrow(missing_extraction_svgs)} extraction svgs'))
 
-  lapply(seq_len(nrow(new_study_extractions)), function(i) {
-    extraction <- new_study_extractions[i, , drop = FALSE]
-    file.link(glue::glue('{data_dir}{extraction$svg_file}'), glue::glue('{svg_dir}/extractions/{extraction$id}.svg'))
+  copied_extraction_svgs <- lapply(seq_len(nrow(missing_extraction_svgs)), function(i) {
+    extraction <- missing_extraction_svgs[i, , drop = FALSE]
+    file.link(glue::glue('{data_dir}{extraction$svg_file}'), extraction$new_svg_file)
   })
 
   #third, find out which new coloc groups have been added
   coloc_groups_query <- "SELECT * FROM coloc_groups"
   coloc_groups <- DBI::dbGetQuery(current_studies_conn, coloc_groups_query)
-  message(glue::glue('Preparing {nrow(coloc_groups)} coloc group svgs'))
+  unique_coloc_group_ids <- unique(coloc_groups$coloc_group_id)
+  message(glue::glue('Preparing {length(unique_coloc_group_ids)} coloc group svgs'))
 
   setwd(glue::glue('{svg_dir}/groups'))
+  # file.remove(Sys.glob('*.zip'))
 
   #third, zip the svg extractions by coloc group
-  for (group_id in unique(coloc_groups$group_id)) {
-    specific_coloc_group <- coloc_groups |>
-      dplyr::filter(coloc_group_id == group_id)
+  completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 20, function(group_id) {
+    tryCatch({
+      zip_file <- glue::glue('coloc_group_{group_id}_svgs.zip')
+      if (file.exists(zip_file)) return()
 
-    snp_id <- specific_coloc_group$snp_id[1]
+      specific_coloc_group <- coloc_groups |>
+        dplyr::filter(coloc_group_id == group_id)
 
-    study_ids <- specific_coloc_group$study_extraction_id
-    svg_files <- current_study_extractions$svg_file[current_study_extractions$id %in% study_ids]
-    
-    zip::zipr(glue::glue('snp_{snp_id}_svgs.zip'), paste0('{svg_files}.svg'))
-  }
+      extraction_ids_in_group <- specific_coloc_group$study_extraction_id
+      svg_files <- paste0(svg_dir, '/extractions/', extraction_ids_in_group, '.svg')
+      
+      zip::zipr(glue::glue('coloc_group_{group_id}_svgs.zip'), svg_files)
+    }, error = function(e) {
+      message(glue::glue('Error zipping group {group_id}: {e$message}, {paste(svg_files, collapse = ", ")}'))
+    })
+  })
   print(warnings())
 }
 

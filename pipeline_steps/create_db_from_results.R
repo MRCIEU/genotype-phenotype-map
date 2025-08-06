@@ -11,26 +11,24 @@ parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Com
 
 args <- argparser::parse_args(parser)
 
-max_cores <- 40
-
 main <- function() {
   if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
   if (file.exists(args$associations_db_file)) file.remove(args$associations_db_file)
-  # if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
+  if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
   if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
   if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
-  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"))
+  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
   associations_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
-  # coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_db_file)
+  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_db_file)
   ld_conn <- duckdb::dbConnect(duckdb::duckdb(), args$ld_db_file)
   gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), args$gwas_upload_db_file)
 
   lapply(studies_db, \(table) DBI::dbExecute(studies_conn, table$query))
   lapply(gwas_upload_db, \(table) DBI::dbExecute(gwas_upload_conn, table$query))
   DBI::dbExecute(associations_conn, associations_table$query)
-  # DBI::dbExecute(coloc_pairs_conn, coloc_pairs_table$query)
+  DBI::dbExecute(coloc_pairs_conn, coloc_pairs_table$query)
   DBI::dbExecute(ld_conn, ld_table$query)
 
   message('Loading data for studies db')
@@ -41,7 +39,7 @@ main <- function() {
   lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
   message('Creating coloc pairs db...')
-  # load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
+  load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
 
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
@@ -54,7 +52,7 @@ main <- function() {
   DBI::dbDisconnect(latest_studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(associations_conn, shutdown=TRUE)
-  # DBI::dbDisconnect(coloc_pairs_conn, shutdown=TRUE)
+  DBI::dbDisconnect(coloc_pairs_conn, shutdown=TRUE)
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
 
@@ -280,23 +278,33 @@ format_clustered_colocs <- function(clustered_colocs, studies_db) {
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_conn, studies_db) {
-  pairwise_colocs <- vroom::vroom(file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"), show_col_types = F)
+  pairwise_colocs <- data.table::fread(file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"))
+  pairwise_colocs <- pairwise_colocs[!is.na(h4) & ignore == FALSE]
 
   study_extractions_subset <- studies_db$study_extractions$data |>
     dplyr::select(id, unique_study_id, ld_block_id) |>
-    dplyr::rename(study_extraction_id=id)
+    dplyr::rename(study_extraction_id=id) |>
+    data.table::as.data.table()
+  
+  data.table::setkey(pairwise_colocs, unique_study_a)
+  data.table::setkey(study_extractions_subset, unique_study_id)
+  pairwise_colocs <- study_extractions_subset[pairwise_colocs, on = "unique_study_id==unique_study_a"]
+  data.table::setnames(pairwise_colocs, c("study_extraction_id", "ld_block_id"), c("study_extraction_a_id", "ld_block_id_a"))
+  
+  data.table::setkey(pairwise_colocs, unique_study_b)
+  pairwise_colocs <- study_extractions_subset[pairwise_colocs, on = "unique_study_id==unique_study_b"]
+  data.table::setnames(pairwise_colocs, c("study_extraction_id", "ld_block_id"), c("study_extraction_b_id", "ld_block_id_b"))
+  data.table::setnames(pairwise_colocs, "PP.H3.abf", "h3")
+  
+  # Use ld_block_id from study A (they should be the same for both studies in a pair)
+  pairwise_colocs[, ld_block_id := ld_block_id_a]
+  pairwise_colocs[, c("ld_block_id_a", "ld_block_id_b") := NULL]
 
-  pairwise_colocs <- pairwise_colocs |>
-    dplyr::filter(!is.na(h4) & ignore == F) |>
-    dplyr::left_join(study_extractions_subset, by=c("unique_study_a"="unique_study_id"), relationship="many-to-one") |>
-    dplyr::left_join(study_extractions_subset, by=c("unique_study_b"="unique_study_id"), relationship="many-to-one") |>
-    dplyr::rename(h3=PP.H3.abf, study_extraction_a_id=study_extraction_id.x, study_extraction_b_id=study_extraction_id.y, ld_block_id=ld_block_id.x)
-
-  missing_study_extractions <- dplyr::filter(pairwise_colocs, is.na(study_extraction_a_id) | is.na(study_extraction_b_id))
+  missing_study_extractions <- pairwise_colocs[is.na(study_extraction_a_id) | is.na(study_extraction_b_id)]
   if (nrow(missing_study_extractions) > 0) {
-    message("WARNING: Found ", nrow(missing_study_extractions), " rows with missing study extractions.  Removing rows with missing data.")
-    vroom::vroom_write(missing_study_extractions, file.path(current_results_dir, "missing_study_extractions_in_pairwise_colocs.tsv"))
-    pairwise_colocs <- pairwise_colocs[!is.na(pairwise_colocs$study_extraction_a_id) & !is.na(pairwise_colocs$study_extraction_b_id), ]
+    message("WARNING: Found ", nrow(missing_study_extractions), " rows with missing study extractions. Removing rows with missing data.")
+    data.table::fwrite(missing_study_extractions, file.path(current_results_dir, "missing_study_extractions_in_pairwise_colocs.tsv"))
+    pairwise_colocs <- pairwise_colocs[!is.na(study_extraction_a_id) & !is.na(study_extraction_b_id)]
   }
 
   pairwise_colocs <- pairwise_colocs |>
@@ -361,7 +369,8 @@ find_relevant_snps <- function(studies_db) {
 load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
   relevant_ld_blocks <- unique(studies_db$study_extractions$data$ld_block)
 
-  ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=max_cores, \(relevant_ld_block) {
+  ld_data <- parallel::mclapply(relevant_ld_blocks, mc.cores=30, \(relevant_ld_block) {
+    gc()
     tryCatch({
       relevant_snps <- all_relevant_snps |> dplyr::filter(ld_block == relevant_ld_block)
       generate_ld_obj(relevant_ld_block, relevant_snps$candidate_snp)
@@ -414,7 +423,7 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
     dplyr::rename(study_id=id)
 
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=max_cores, \(ld_block) {
+  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=40, \(ld_block) {
     gc()
     message("Processing ld_block: ", ld_block)
     tryCatch({

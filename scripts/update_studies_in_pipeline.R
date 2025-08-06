@@ -50,18 +50,37 @@ standardise_alleles <- function(gwas) {
 }
 
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
-update_method <- function(studies_file, type) {
+update_method <- function(studies_file, ld_block, type) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
+  imputed_studies <- vroom::vroom(glue::glue('{ld_block}/imputed_studies.tsv'), show_col_types = F, altrep = F)
+  finemapped_studies <- vroom::vroom(studies_file, show_col_types = F, altrep = F)
 
-  if (type == 'coloc_pairwise') {
-    coloc_pairwise_results <- vroom::vroom(studies_file, show_col_types = F, altrep = F)
-    if (!'spurious' %in% names(coloc_pairwise_results)) {
-      coloc_pairwise_results$spurious <- FALSE
-    }
-    vroom::vroom_write(coloc_pairwise_results, studies_file)
+  if (type == 'finemapped') {
+    lapply(seq_len(nrow(finemapped_studies)), function(i) {
+      finemapped_study <- finemapped_studies[i, , drop = FALSE]
+      gwas_with_lbf <- vroom::vroom(finemapped_study$file_with_lbfs, show_col_types = F, altrep = F)
+
+      if (!"P" %in% names(gwas_with_lbf)) {
+        imputed_gwas_file <- dplyr::filter(imputed_studies, study == finemapped_study$study)$file
+
+        if (length(imputed_gwas_file) == 0) {
+          print(paste('Imputed gwas entry missing, deleting finemapped study:', finemapped_study$file_with_lbfs))
+          # finemapped_studies <- finemapped_studies[-i, ]
+          # vroom::vroom_write(finemapped_studies, studies_file)
+          return()
+        }
+
+        message(paste('Adding P values to', finemapped_study$file_with_lbfs, 'from', imputed_gwas_file))
+
+        imputed_gwas <- vroom::vroom(imputed_gwas_file, show_col_types = F) |>
+          dplyr::select(SNP, P)
+        gwas_with_lbf <- dplyr::left_join(gwas_with_lbf, imputed_gwas, by = 'SNP')
+        vroom::vroom_write(gwas_with_lbf, finemapped_study$file_with_lbfs)
+      }
+    })
   }
 
 }
@@ -89,8 +108,8 @@ update_ld_blocks <- function() {
   # blocks <- blocks[20:length(blocks)]
 
   cores_to_use <- 20
-  update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
-  # update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
+  # update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
+  update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
     # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
     # update_method(extracted_studies_file, type='extracted')
@@ -101,11 +120,11 @@ update_ld_blocks <- function() {
     # imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
     # update_method(imputed_studies_file, type='imputed')
 
-    # finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
-    # update_method(finemapped_studies_file, type='finemapped')
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    update_method(finemapped_studies_file, ld_block, type='finemapped')
 
-    coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
-    update_method(coloc_pairwise_results_file, type='coloc_pairwise')
+    # coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    # update_method(coloc_pairwise_results_file, type='coloc_pairwise')
 
     # coloc_clustered_results_file <- glue::glue('{ld_block}/coloc_clustered_results.tsv.gz')
     # update_method(coloc_clustered_results_file, type='coloc_clustered')

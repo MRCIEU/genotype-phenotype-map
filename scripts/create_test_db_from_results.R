@@ -40,10 +40,10 @@ main <- function() {
     unlink(associations_db_file)
     unlink(coloc_pairs_db_file)
 
-    orig_studies_con <- duckdb::dbConnect(duckdb::duckdb(), orig_studies_db_file)
-    orig_ld_con <- duckdb::dbConnect(duckdb::duckdb(), orig_ld_db_file)
-    orig_associations_con <- duckdb::dbConnect(duckdb::duckdb(), orig_associations_db_file)
-    orig_coloc_pairs_con <- duckdb::dbConnect(duckdb::duckdb(), orig_coloc_pairs_db_file)
+    orig_studies_con <- duckdb::dbConnect(duckdb::duckdb(), orig_studies_db_file, read_only=TRUE)
+    orig_ld_con <- duckdb::dbConnect(duckdb::duckdb(), orig_ld_db_file, read_only=TRUE)
+    orig_associations_con <- duckdb::dbConnect(duckdb::duckdb(), orig_associations_db_file, read_only=TRUE)
+    orig_coloc_pairs_con <- duckdb::dbConnect(duckdb::duckdb(), orig_coloc_pairs_db_file, read_only=TRUE)
 
     studies_con <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
     ld_con <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file)
@@ -137,7 +137,7 @@ main <- function() {
     DBI::dbAppendTable(associations_con, "associations", associations_to_keep)
     ld_to_keep <- DBI::dbGetQuery(
         orig_ld_con,
-        sprintf("SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s) LIMIT 50000",
+        sprintf("SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s)",
         paste(snp_ids_to_keep, collapse=","),
         paste(snp_ids_to_keep, collapse=",")
     ))

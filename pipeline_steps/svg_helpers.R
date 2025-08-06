@@ -345,10 +345,10 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   message(glue::glue('Preparing {length(unique_coloc_group_ids)} coloc group svgs'))
 
   setwd(glue::glue('{svg_dir}/groups'))
-  # file.remove(Sys.glob('*.zip'))
+  file.remove(Sys.glob('*.zip'))
 
   #third, zip the svg extractions by coloc group
-  completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 20, function(group_id) {
+  completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 10, function(group_id) {
     tryCatch({
       zip_file <- glue::glue('coloc_group_{group_id}_svgs.zip')
       if (file.exists(zip_file)) return()

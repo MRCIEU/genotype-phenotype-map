@@ -12,11 +12,11 @@ parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Com
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  # if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
-  # if (file.exists(args$associations_db_file)) file.remove(args$associations_db_file)
-  # if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
-  # if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
-  # if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
+  if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
+  if (file.exists(args$associations_db_file)) file.remove(args$associations_db_file)
+  if (file.exists(args$coloc_pairs_db_file)) file.remove(args$coloc_pairs_db_file)
+  if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
+  if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
   latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
@@ -36,15 +36,15 @@ main <- function() {
   studies_db <- load_data_for_studies_db(studies_db)
 
   message('Writing data to studies db')
-  # lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
+  lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
   message('Creating coloc pairs db...')
-  # load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
+  load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
 
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
   message('Creating ld db...')
-  # load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
+  load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -419,7 +419,7 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(study_name, study_id = id)]
 
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=40, \(ld_block) {
+  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=30, \(ld_block) {
     gc()
     message("Processing ld_block: ", ld_block)
     tryCatch({

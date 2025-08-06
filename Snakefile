@@ -258,16 +258,16 @@ rule compile_results:
          rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
 
-rule backup_data_dir:
-    input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions
-    threads: 1
-    output: temporary(backup_done_file)
-    shell:
-        """
-        rsync -Lavzh --exclude='*cached*' $DATA_DIR/ld_blocks $BACKUP_DIR/data/
-        rsync -Lavzh --ignore-missing-args $DATA_DIR/study $BACKUP_DIR/data/
-        touch {output}
-        """
+# rule backup_data_dir:
+#     input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions
+#     threads: 1
+#     output: temporary(backup_done_file)
+#     shell:
+#         """
+#         rsync -Lavzh --exclude='*cached*' $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+#         rsync -Lavzh --ignore-missing-args $DATA_DIR/study $BACKUP_DIR/data/
+#         touch {output}
+#         """
 
 rule create_results_db:
    input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions, new_studies_processed, new_traits_processed
@@ -308,8 +308,8 @@ rule copy_results_to_timestamped_dir:
         """
         mkdir -p {timestamped_results_dir}
         cp -r {current_results_dir} {timestamped_results_dir}
-        rm -f {current_results_dir}/*
         """
+
 onsuccess:
     print('Yay!  Please look here:')
     print(coloc_pairwise_results)

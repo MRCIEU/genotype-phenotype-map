@@ -8,6 +8,8 @@ parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
+parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force clustering', type = 'logical', default = FALSE)
+
 args <- argparser::parse_args(parser)
 
 main <- function() {
@@ -57,9 +59,10 @@ main <- function() {
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue('{args$ld_block}: No study pairs to coloc, skipping.'))
-    TODO: uncomment this before merging 
-    vroom::vroom_write(data.frame(), args$completed_output_file)
-    return()
+    if (args$force_clustering) {
+      vroom::vroom_write(data.frame(), args$completed_output_file)
+      return()
+    }
   }
 
   if (!is.na(args$worker_guid)) {
@@ -129,13 +132,13 @@ main <- function() {
   new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
-  if (!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) {
+  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
 
     # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
-    poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= 0.5)) != 0
+    poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= posterior_prob_threshold)) != 0
 
     if (poor_finemapping) {
       ignore_regions <- prune_finemapped(finemapped_studies, coloc_results)

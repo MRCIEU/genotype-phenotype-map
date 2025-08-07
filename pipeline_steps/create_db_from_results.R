@@ -297,7 +297,6 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_conn, studies_db) {
   data.table::setnames(pairwise_colocs, c("study_extraction_id", "ld_block_id"), c("study_extraction_b_id", "ld_block_id_b"))
   data.table::setnames(pairwise_colocs, "PP.H3.abf", "h3")
   
-  # Use ld_block_id from study A (they should be the same for both studies in a pair)
   pairwise_colocs[, ld_block_id := ld_block_id_a]
   pairwise_colocs[, c("ld_block_id_a", "ld_block_id_b") := NULL]
 
@@ -377,12 +376,10 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
     })
   }) |> data.table::rbindlist(fill = TRUE)
 
-  # Convert to data.table for better performance
   variant_annotations_subset_lead <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, lead_snp_id = id)]
   variant_annotations_subset_variant <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, variant_snp_id = id)]
   ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
 
-  # Use data.table joins for better performance
   ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
   ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
   ld_data <- ld_blocks_subset[ld_data, on = "ld_block"]
@@ -402,7 +399,6 @@ generate_ld_obj <- function(ld_block, snps) {
   ind <- which(ldvars$V1 %in% snps)
   ld <- ld[ind]
 
-  # Convert to long format using data.table
   ld_long <- data.table::melt(ld, id.vars = "lead", variable.name = "variant", value.name = "r")
   ld_long <- ld_long[r^2 > 0.8 | variant %in% ld$lead]
   ld_long <- ld_long[lead != variant]
@@ -414,7 +410,6 @@ generate_ld_obj <- function(ld_block, snps) {
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
   message('Retrieving ', nrow(all_relevant_snps), ' SNPs for ', nrow(studies_db$studies$data), ' studies')
 
-  # Convert to data.table for better performance
   snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, snp_id = id)]
   studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(study_name, study_id = id)]
 
@@ -457,7 +452,6 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
       if (length(associations) == 0) return(NULL)
       associations <- data.table::rbindlist(associations, fill = TRUE)
 
-      # Use data.table joins for better performance
       associations <- snp_annotations_subset[associations, on = "snp"]
       associations <- studies_subset[associations, on = c("study_name" = "study")]
       associations <- associations[, .(snp_id, study_id, beta, se, imputed, p, eaf)]

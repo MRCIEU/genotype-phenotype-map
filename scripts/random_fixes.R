@@ -25,57 +25,536 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
-add_data_to_rare_studies <- function() {
+fix_missing_snps_in_rare_results <- function() {
+  source('../pipeline_steps/common_extraction_functions.R')
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
-  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
 
-  update_data_in_ld_blocks <- lapply(ld_info$ld_block_data, function(ld_block) {
-    print(glue::glue('block: {ld_block}\n'))
-    rare_studies_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
-    file.copy(rare_studies_file, glue::glue('{rare_studies_file}.backup'))
+  missing_snps <- vroom::vroom(glue::glue('{current_results_dir}/missing_snps_in_study_extractions.tsv')) |>
+    dplyr::filter(grepl('-wes-', unique_study_id) & grepl('TRUE', snp))
 
-    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    update_method(rare_studies_file, standardised_studies_file, ld_block)
+  message(glue::glue('Fixing {nrow(missing_snps)} missing SNPs in study extractions'))
+  dont_print <- lapply(seq_len(nrow(missing_snps)), function(i) {
+    missing_snp <- missing_snps[i, ]
+    message(glue::glue('Fixing {missing_snp$unique_study_id} {missing_snp$snp} {missing_snp$ld_block}'))
+    gwas <- vroom::vroom(missing_snp$file, show_col_types = F) |>
+      dplyr::mutate(EA = dplyr::case_when(
+        grepl('TRUE', EA) ~ 'T',
+        T ~ 'A'
+      ),
+      OA = dplyr::case_when(
+        grepl('TRUE', OA) ~ 'T',
+        T ~ 'A'
+      ),
+      SNP = dplyr::case_when(
+        grepl('TRUE', SNP) ~ glue::glue('{CHR}:{BP}_{EA}_{OA}'),
+        T ~ SNP
+      ))
+    
+    # vroom::vroom_write(gwas, missing_snp$file)
+
+    new_snp <- sub('TRUE', 'T', missing_snp$snp)
+
+    message(glue::glue('Updated {missing_snp$unique_study_id} to {new_snp}'))
+
+    rare_results_file <- glue::glue('{ld_block_data_dir}/{missing_snp$ld_block}/compare_rare_results.tsv')
+    rare_results <- vroom::vroom(rare_results_file, show_col_types = F)
+    rare_results$candidate_snp[rare_results$candidate_snp == missing_snp$snp] <- new_snp
+    message(glue::glue('Rows updated: {sum(rare_results$candidate_snp == missing_snp$snp)}'))
+
+    vroom::vroom_write(rare_results, rare_results_file)
   })
 }
 
-fix_bp_mismatch <- function() {
-  problematic_studies <- vroom::vroom('~/problematic_extractions.tsv')
-  
-  # Use mclapply for parallel processing
-  apply(problematic_studies, 1, function(study) {
-  # parallel::mclapply(seq_len(nrow(problematic_studies)), mc.cores = 40, function(i) {
-    # study <- problematic_studies[i, ]
-    old_bp <- study[['bp']]
-    new_bp <- vroom::vroom(study[['file']], show_col_types = F)
-    new_bp <- new_bp[which.min(new_bp$P), ]$BP
+fix_missing_snps_in_study_extractions <- function() {
+  source('../pipeline_steps/common_extraction_functions.R')
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
 
-    finemapped_studies_file <- glue::glue('{ld_block_data_dir}/{study[["ld_block"]]}/finemapped_studies.tsv')
+  missing_snps <- vroom::vroom(glue::glue('{current_results_dir}/missing_snps_in_study_extractions.tsv')) |>
+    dplyr::filter(!grepl('-wes-', unique_study_id))
+
+  message(glue::glue('Fixing {nrow(missing_snps)} missing SNPs in study extractions'))
+  lapply(seq_len(nrow(missing_snps)), function(i) {
+    missing_snp <- missing_snps[i, ]
+    message(glue::glue('Fixing {missing_snp$unique_study_id} {missing_snp$snp}'))
+    message(missing_snp$file_with_lbfs)
+    gwas <- vroom::vroom(file.path(data_dir, missing_snp$file_with_lbfs), show_col_types = F) |>
+      dplyr::filter(!is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(EAF)) |>
+      dplyr::mutate(COMPRESSED_SNP = format_compressed_allele_snp_string(CHR, BP, EA, OA))
+
+    new_snp <- gwas |>
+      dplyr::filter(COMPRESSED_SNP == missing_snp$snp) |>
+      dplyr::pull(SNP)
+    
+    if (length(new_snp) == 0) {
+      message(glue::glue('No SNP found for {missing_snp$unique_study_id} {missing_snp$snp}, using max abs_beta_over_se'))
+      new_snp <- gwas |>
+        dplyr::filter(Z == max(Z)) |>
+        dplyr::pull(SNP)
+    }
+
+    message(glue::glue('Updated {missing_snp$unique_study_id} to {new_snp}'))
+
+    finemapped_studies_file <- glue::glue('{ld_block_data_dir}/{missing_snp$ld_block}/finemapped_studies.tsv')
     finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
-    finemapped_studies$bp[finemapped_studies$unique_study_id == study['unique_study_id']] <- new_bp
-
-    print(paste(study[['unique_study_id']], study[['chr']], old_bp, new_bp))
+    finemapped_studies$snp[finemapped_studies$unique_study_id == missing_snp$unique_study_id] <- new_snp
+    message(glue::glue('Rows updated: {sum(finemapped_studies$unique_study_id == missing_snp$unique_study_id)}'))
 
     vroom::vroom_write(finemapped_studies, finemapped_studies_file)
   })
 }
 
-flippy_flippy <- function(ld_block_matrix, gwas) {
-  rsid_match <- match(gwas$RSID, ld_block_matrix$RSID)
+delete_some_coloc_complete <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
 
-  gwas$REF_EA <- ld_block_matrix$EA[rsid_match]
-  gwas$REF_OA <- ld_block_matrix$OA[rsid_match]
+  target_date_str <- "2025-07-19" # The cutoff date (YYYY-MM-DD)
+  file_to_delete <- "coloc_complete" # The specific file name to look for
+  file_to_check <- "coloc_clustered_results.tsv.gz" # The specific file name to look for
+  target_date <- as.Date(target_date_str)
+  all_dirs <- ld_info$ld_block_data
 
-  to_flip <- gwas$EA == gwas$REF_OA & gwas$OA == gwas$REF_EA
-  right_way_around <- gwas$EA == gwas$REF_EA & gwas$OA == gwas$REF_OA
-  weird <- nrow(gwas) - sum(to_flip) - sum(right_way_around)
-  print(paste('flipping', sum(to_flip), 'eaf values. ', sum(right_way_around), 'are good. ', weird, ' are weird'))
-  gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
+  # Loop through each directory
+  for (dir_path in all_dirs) {
+    # print(dir_path)
+    file_path <- file.path(dir_path, file_to_delete)
+    file_path_check <- file.path(dir_path, file_to_check)
 
-  gwas <- dplyr::select(gwas, -REF_EA, -REF_OA)
+    # Check if the file exists in the current directory
+    if (file.exists(file_path_check)) {
+      # Get file information, specifically the modification time
+      file_info <- file.info(file_path_check)
+      file_mtime <- as.Date(file_info$mtime) # Convert modification time to Date
+      message(file_mtime, ' ', target_date)
 
-  return(gwas)
+      if (file_mtime < target_date) {
+        cat(paste0("  -> '", file_to_check, "' is OLDER than ", target_date_str, ". Deleting...\n", file_path))
+        file.remove(file_path)
+      }
+    } else {
+        cat(paste0("  -> '", file_to_check, "' is missing, delete."))
+        file.remove(file_path)
+    }
+  }
+}
+
+remove_duplicate_unique_study_ids <- function() {
+  # duplicates <- vroom::vroom(glue::glue('{current_results_dir}/study_extractions.tsv.gz'))
+  # duplicates <- duplicates[duplicated(duplicates$unique_study_id), ]
+
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  # ld_info <- ld_info[ld_info$block == 'EUR/1/24201011-28100360', ]
+
+  dont_print <- lapply(ld_info$ld_block_data, function(ld_block) {
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+    dedup_finemapped_studies <- finemapped_studies[!duplicated(finemapped_studies$unique_study_id), ]
+    print(paste('deduped finemapped studies:', nrow(finemapped_studies), 'to', nrow(dedup_finemapped_studies)))
+    vroom::vroom_write(dedup_finemapped_studies, finemapped_studies_file)
+  })
+}
+
+fix_rare_unique_study_ids <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  dont_print <- lapply(ld_info$ld_block_data, function(ld_block) {
+    print(ld_block)
+    rare_results_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
+    if (!file.exists(rare_results_file)) {
+      print(paste('file missing:', rare_results_file))
+      return()
+    }
+    rare_results <- vroom::vroom(rare_results_file, show_col_types = F)
+
+    rare_results <- rare_results |>
+      tidyr::separate_rows(traits, min_ps, genes, files, sep = ', ') |>
+      dplyr::mutate(traits = mapply(function(trait, snp) {
+        new_bp <- strsplit(snp, ':')[[1]][2]
+        new_bp <- gsub('_', '-', new_bp)
+        sub('(.*)_[0-9A-Za-z-]+', paste0('\\1_', new_bp), trait)
+      }, traits, candidate_snp)) |>
+      dplyr::group_by(candidate_snp, ld_block) |>
+      dplyr::summarise(
+        traits = paste(traits, collapse = ", "),
+        min_ps = paste(min_ps, collapse = ", "),
+        genes = paste(genes, collapse = ", "),
+        files = paste(files, collapse = ", "),
+        .groups = "drop"
+      )
+    vroom::vroom_write(rare_results |> dplyr::select(traits, candidate_snp, min_ps, genes, ld_block, files), rare_results_file)
+  })
+}
+
+remove_na_coloc_results <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  lapply(ld_info$ld_block_data, function(ld_block) {
+    coloc_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    if (!file.exists(coloc_results_file)) return()
+    coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
+    orig_size <- nrow(coloc_results)
+    coloc_results <- dplyr::filter(coloc_results, !is.na(h4))
+    new_size <- nrow(coloc_results)
+    message(glue::glue('{ld_block}: removing {orig_size - new_size} rows: {(orig_size - new_size)/orig_size*100}%'))
+
+    if (orig_size != new_size) {
+      vroom::vroom_write(coloc_results, coloc_results_file)
+    }
+  })
+}
+
+fix_existing_min_p_values <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  ld_info <- ld_info[15:nrow(ld_info), , drop = F]
+
+  silent <- lapply(seq_len(nrow(ld_info)), function(i) {
+    gc()
+    block <- ld_info[i, , drop = F]
+    print(block$block)
+    finemapped <- vroom::vroom(paste0(block$ld_block_data, '/finemapped_studies.tsv'), show_col_types = F)
+    imputed <- vroom::vroom(paste0(block$ld_block_data, '/imputed_studies.tsv'), show_col_types = F)
+
+    updated_p_vals <- lapply(seq_len(nrow(finemapped)), function(i) {
+      finemap_study <- finemapped[i, , drop = F]
+      finemap_p <- as.numeric(finemap_study[["min_p"]])
+
+      more_than_one_finemap_file <- nrow(dplyr::filter(finemapped, study == finemap_study[["study"]])) > 1
+      if (!more_than_one_finemap_file) {
+        # message(paste('skipping', finemap_study[["unique_study_id"]]))
+        return(finemap_study)
+      }
+
+      imputed_file <- dplyr::filter(imputed, study == finemap_study[["study"]])$file
+      # message("Checking ", finemap_study[["unique_study_id"]], " ", imputed_file)
+      if (length(imputed_file) == 0 || is.null(imputed_file) || is.na(imputed_file)) return(finemap_study)
+
+      imputed_gwas <- vroom::vroom(imputed_file, show_col_types = F) |> dplyr::slice(which.min(P))
+      imputed_p <- as.numeric(imputed_gwas$P)
+      if (finemap_p < imputed_p) {
+        message(paste('updating study:', finemap_study[["unique_study_id"]], 'from finemap:', finemap_p, 'to imputed:', imputed_p))
+        finemap_study$min_p <- imputed_p
+      }
+
+      return(finemap_study)
+    })
+
+    finemapped <- do.call(rbind, updated_p_vals)
+    message(nrow(finemapped), ' finemapped studies after update')
+    vroom::vroom_write(finemapped, paste0(block$ld_block_data, '/finemapped_studies.tsv'))
+    return()
+  })
+  
+}
+
+add_missing_svgs_to_finemapped_studies <- function() {
+  source('../pipeline_steps/svg_helpers.R')
+
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  ld_info <- dplyr::filter(ld_info, block == 'EUR/22/35695831-37164130')
+  
+  results <- lapply(seq_len(nrow(ld_info)), function(i) {
+    block <- ld_info[i, ]
+    print(block$block)
+    finemapped_studies_file <- paste0(block$ld_block_data, '/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    updated_studies <- lapply(seq_len(nrow(finemapped_studies)), function(j) {
+      study <- finemapped_studies[j, ]
+      if (!is.na(study$svg_file)) return(study)
+      message('creating svg for', study$study)
+
+      svg_file <- sub('finemapped', 'svgs/extractions', study$file)
+      svg_file <- sub('tsv.gz', 'svg', svg_file)
+      study$svg_file <- svg_file
+      gwas <- vroom::vroom(study$file, show_col_types = F)
+      create_svg_for_ld_block(gwas, study$study, svg_file)
+      return(study)
+    })
+
+    updated_studies <- do.call(rbind, updated_studies)
+    if (nrow(updated_studies) == nrow(finemapped_studies)) {
+      vroom::vroom_write(updated_studies, finemapped_studies_file)
+    } else {
+      print(paste('ERROR: number of studies changed for', block$block))
+    }
+  })
+  
+}
+
+big_update_to_finemapped_results <- function() {
+  # Control data.table threading to prevent spawning new processes
+  data.table::setDTthreads(1)
+  
+  # Control ggplot2 to prevent excessive process spawning
+  options(ggplot2.parallel = FALSE)
+  Sys.setenv(OMP_THREAD_LIMIT = 1)
+  
+  source('../pipeline_steps/svg_helpers.R')
+
+  ld_blocks <- data.table::fread('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  ld_info <- ld_info[4:nrow(ld_info), ]
+  ld_info <- dplyr::filter(ld_info, block == 'EUR/22/35695831-37164130')
+  print(ld_info)
+
+  #STEP 1: Update unique_study_id to use ld block, as opposed to chr_bp
+  # For debugging, use mc.cores = 1 to see errors more clearly
+  # results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 1, function(i) {
+  results <- parallel::mclapply(seq_len(nrow(ld_info)), mc.cores = 30, function(i) {
+    gc()
+    tryCatch({
+      options(error = function() { 
+        message("Error in worker process:")
+        traceback(20)
+        quit(status = 1) 
+      })
+      block_name <- ld_info[i, ]$block
+      block_data <- ld_info[i, ]$ld_block_data
+
+      message(paste('Processing', block_name))
+      finemapped_studies_file <- paste0(block_data, '/finemapped_studies.tsv')
+      finemapped_studies <- data.table::fread(finemapped_studies_file)
+
+      if ("svg_file" %in% names(finemapped_studies)) {
+        message(paste(block_name, 'has already been updated'))
+        return()
+      }
+
+      finemap_id <- as.numeric(sub(".*_", "", finemapped_studies$unique_study_id))
+      finemapped_studies[, unique_study_id := paste0(study, '_', ld_block, '_', finemap_id)]
+
+      imputed_studies_file <- paste0(block_data, '/imputed_studies.tsv')
+      imputed_studies <- data.table::fread(imputed_studies_file)
+
+      old_files <- finemapped_studies$file
+      flattened_block_name <- gsub('[/-]', '_', block_name)
+      new_files <- paste0(sub('(.*/).*', '\\1', old_files), flattened_block_name, '_', finemap_id, '.tsv.gz')
+
+      svg_files <- c()
+      new_lbf_data <- c()
+      finemap_full_gwas_with_lbf_files  <- paste0(extracted_study_dir, '/', finemapped_studies$study, '/finemapped/', flattened_block_name, '_with_lbf.tsv.gz')
+      imputed_full_gwas_with_lbf_files  <- paste0(extracted_study_dir, '/', imputed_studies$study, '/finemapped/', flattened_block_name, '_with_lbf.tsv.gz')
+
+      for (i in seq_along(imputed_studies$study)) {
+        study <- imputed_studies[i, ]
+        imputed_gwas <- data.table::fread(study$file,
+          select = c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'IMPUTED')
+        )
+        new_lbf_data[[study$study]] <- imputed_gwas
+      }
+
+      message(paste(block_name, 'processing', length(old_files), 'finemapped studies, creating lbf, svgs, and updating coloc and finemapped results'))
+      for (file_index in seq_along(old_files)) {
+        specific_study <- finemapped_studies[file_index, ]
+        finemapped_gwas <- data.table::fread(old_files[file_index],
+          select = c('SNP', 'CHR', 'BP', 'Z', 'SE', 'EAF', 'IMPUTED'))
+        if (!"Z" %in% names(finemapped_gwas)) {
+          message(paste('Z missing for', old_files[file_index]))
+        }
+        finemapped_gwas[, LBF := convert_z_to_lbf(Z, SE, EAF, specific_study$sample_size, specific_study$category)]
+
+        finemap_id <- as.numeric(sub(".*_", "", specific_study$unique_study_id))
+        lbf_id <- paste0('LBF_', finemap_id)
+        lbf_data <- finemapped_gwas[, .(SNP, LBF)]
+        data.table::setnames(lbf_data, 'LBF', lbf_id)
+        new_lbf_data[[specific_study$study]] <- new_lbf_data[[specific_study$study]][lbf_data, on = "SNP"]
+
+        data.table::fwrite(finemapped_gwas, new_files[file_index], sep = '\t')
+
+        finemapped_studies[file_index, file := new_files[file_index]]
+        # svg_files[[file_index]] <- create_svg_for_ld_block(finemapped_studies[file_index, ])
+      }
+
+      message(paste(block_name, 'updating finemapped and coloc studies files'))
+      finemapped_studies[, svg_file := as.character(svg_files)]
+      finemapped_studies[, file_with_lbfs := as.character(finemap_full_gwas_with_lbf_files)]
+
+      # coloc_pairwise_results_file <- paste0(block_data, '/coloc_pairwise_results.tsv.gz')
+      # coloc_pairwise_results <- data.table::fread(coloc_pairwise_results_file)
+      # finemap_id_a <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_a))
+      # finemap_id_b <- as.numeric(sub(".*_", "", coloc_pairwise_results$unique_study_b))
+      # coloc_pairwise_results[, unique_study_a := paste0(study_a, '_', block_name, '_', finemap_id_a)]
+      # coloc_pairwise_results[, unique_study_b := paste0(study_b, '_', block_name, '_', finemap_id_b)]
+
+      message(paste(block_name, 'updating', nrow(imputed_studies), 'imputed studies with LBF data and saving'))
+      results <- lapply(seq_along(imputed_studies$study), function(i) {
+        study <- imputed_studies[i, ]
+        data.table::fwrite(new_lbf_data[[study$study]], imputed_full_gwas_with_lbf_files[i], sep = '\t')
+      })
+
+      data.table::fwrite(finemapped_studies, paste0(finemapped_studies_file), sep = '\t')
+      # data.table::fwrite(coloc_pairwise_results, paste0(coloc_pairwise_results_file), sep = '\t')
+      return(paste("Success:", block_name))
+    }, error = function(e) {
+      message(paste("Error in worker process for block", i, ":", e$message))
+      message("Full error:")
+      print(e)
+      return(paste("Error:", e$message))
+    })
+  })
+  
+  # Check results for errors
+  error_results <- results[sapply(results, function(x) grepl("^Error:", x))]
+  if (length(error_results) > 0) {
+    message("Errors found in worker processes:")
+    print(error_results)
+  }
+  # Rprof(NULL)
+  # prof_result <- summaryRprof()
+  # saveRDS(prof_result, 'prof_result.rds')
+}
+
+
+create_svgs_for_all_phenotypes <- function() {
+  source('../pipeline_steps/svg_helpers.R')
+
+  studies <- vroom::vroom(glue::glue(results_dir, 'latest/studies_processed.tsv.gz'), show_col_types = F) |>
+    dplyr::filter(data_type == 'phenotype' & variant_type == 'common')
+    # dplyr::filter(study_name == "ebi-a-GCST90002384")
+
+  lapply(1:nrow(studies), function(i) {
+    study <- studies[i, ]
+    # if (file.exists(glue::glue('{study$extracted_location}/svgs/full.zip'))) return()
+
+    print(study$study_name)
+    dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
+
+    vcf_file <- glue::glue('{study$extracted_location}/vcf/hg38.vcf.gz')
+    bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%LP]" ',
+      '{vcf_file}'
+    )
+    gwas <- system(bcf_query, wait = T, intern = T)
+    gwas <- data.table::fread(text = gwas)
+
+    colnames(gwas) <- c('RSID', 'CHR', 'BP', 'LP')
+    gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
+
+    create_svgs_from_gwas(study, gwas)
+  })
+}
+
+rejoin_imputed_studies <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  blocks <- ld_info$block
+  for (block in blocks) {
+    backup_ld_block <- glue::glue('/local-scratch/projects/genotype-phenotype-map/backup/data/ld_blocks/{block}')
+    ld_block <- glue::glue('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/{block}')
+
+    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    file.copy(imputed_studies_file, glue::glue('{imputed_studies_file}.backup'))
+    backup_imputed_studies_file <- glue::glue('{backup_ld_block}/imputed_studies.tsv')
+
+    print(file.info(imputed_studies_file)$mtime)
+    update_me <- file.info(imputed_studies_file)$mtime > '2025-06-20'
+    print(update_me)
+    if (!update_me) {
+      print(paste('NO UPDATE NEEDED:', block))
+      next
+    }
+
+    backup_imputed_studies <- vroom::vroom(backup_imputed_studies_file, show_col_types = F) |>
+      dplyr::mutate(time_taken = as.character(time_taken))
+    imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
+      dplyr::mutate(time_taken = as.character(time_taken))
+
+    imputed_studies <- dplyr::bind_rows(imputed_studies, backup_imputed_studies) |> 
+      dplyr::distinct(study, .keep_all = T)
+    
+    message(glue::glue("Updated imputed {block}: {nrow(imputed_studies)}"))
+    # print(head(imputed_studies))
+    # print(tail(imputed_studies))
+
+    vroom::vroom_write(imputed_studies, imputed_studies_file)
+  }
+}
+
+delete_still_bad_finemapped_studies <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  blocks <- ld_info$ld_block_data
+  for (ld_block in blocks) {
+    print(ld_block)
+    studies_to_remove <- vroom::vroom(glue::glue('{ld_block}/imputed_studies.tsv.backup'), show_col_types = F)
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove$study)
+    bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% studies_to_remove$study)
+    message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
+    vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
+
+    pairwise_coloc_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    pairwise_coloc <- vroom::vroom(pairwise_coloc_file, show_col_types = F)
+    good_pairwise_coloc <- dplyr::filter(pairwise_coloc, !study_a %in% studies_to_remove$study & !study_b %in% studies_to_remove$study)
+    bad_pairwise_coloc <- dplyr::filter(pairwise_coloc, study_a %in% studies_to_remove$study | study_b %in% studies_to_remove$study)
+    message(paste('removing', nrow(bad_pairwise_coloc), 'pairwise coloc studies from', ld_block))
+    vroom::vroom_write(good_pairwise_coloc, pairwise_coloc_file)
+  }
+}
+
+delete_bad_imputations <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+
+  block_data <- c('/local-scratch/projects/genotype-phenotype-map/data/ld_blocks/EUR/1/101384499-103762931/')
+
+  parallel::mclapply(block_data, mc.cores = 10, function(ld_block) {
+    print(ld_block)
+    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
+
+    bad_studies <- apply(imputed_studies, 1, function(imputed_study) {
+      file <- imputed_study[['file']]
+      if (!file.exists(file)) {
+        return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
+      }
+      imputed_gwas <- vroom::vroom(file, show_col_types = F)
+      if (sum(is.na(imputed_gwas$SE)) > 0 || any(imputed_gwas$SE <= 0)) {
+        return(data.frame(ld_block=ld_block, study=imputed_study[['study']], file=file))
+      }
+    }) |> dplyr::bind_rows()
+
+    message(paste('removing', nrow(bad_studies), 'imputed studies from', ld_block))
+    good_imputed_studies <- dplyr::filter(imputed_studies, !file %in% bad_studies$file)
+    vroom::vroom_write(good_imputed_studies, imputed_studies_file)
+
+    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, show_col_types = F)
+
+    good_finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% bad_studies$study)
+    bad_finemapped_studies <- dplyr::filter(finemapped_studies, study %in% bad_studies$study)
+    message(paste('removing', nrow(bad_finemapped_studies), 'finemapped studies from', ld_block))
+    vroom::vroom_write(good_finemapped_studies, finemapped_studies_file)
+
+    pairwise_coloc_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    pairwise_coloc <- vroom::vroom(pairwise_coloc_file, show_col_types = F)
+    good_pairwise_coloc <- dplyr::filter(pairwise_coloc, !study_a %in% bad_studies$study & !study_b %in% bad_studies$study)
+    bad_pairwise_coloc <- dplyr::filter(pairwise_coloc, study_a %in% bad_studies$study | study_b %in% bad_studies$study)
+    message(paste('removing', nrow(bad_pairwise_coloc), 'pairwise coloc studies from', ld_block))
+    vroom::vroom_write(good_pairwise_coloc, pairwise_coloc_file)
+  })
+  
 }
 
 update_existing_eafs <- function() {
@@ -145,53 +624,6 @@ update_existing_eafs <- function() {
   }
 }
 
-standardise_everything <- function() {
-  #ld_matrix_info_files <- Sys.glob(paste0(ld_block_matrices_dir, 'EUR/*/*.tsv'))
-
-  #print('standardising...')
-  #for (file in ld_matrix_info_files) {
-  #  print(file)
-  #  ld_matrix_info <- vroom::vroom(file, show_col_types = F)
-  #  ld_matrix_info <- standardise_alleles(ld_matrix_info)
-  #  vroom::vroom_write(ld_matrix_info, file)
-  #}
-
-  all_studies <- Sys.glob(paste0(extracted_study_dir, '*/'))
-
-  for (study in all_studies) {
-    print(paste('standardising', study))
-    extracted_snps_file <- paste0(study, '/extracted_snps.tsv')
-    extracted_snps <- vroom::vroom(extracted_snps_file, show_col_types = F)
-    if (nrow(extracted_snps) == 0) next
-
-    apply(extracted_snps, 1, function(extraction) {
-      imputed_study <- sub('original', 'imputed', extraction[['file']])
-      if (!file.exists(imputed_study)) {
-        print(paste('IMPUTATION MISSING: ', imputed_study))
-        return()
-      }
-      imputed_gwas <- vroom::vroom(imputed_study, show_col_types = F)
-      imputed_gwas <- standardise_alleles(imputed_gwas)
-      vroom::vroom_write(imputed_gwas, imputed_study)
-
-      finemapped_studies <- sub('original', 'finemapped', extraction[['file']])
-      finemap_file_prefix <- sub('\\..*', '', finemapped_studies)
-      all_finemaps <- Sys.glob(paste0(finemap_file_prefix, '*'))
-
-      if (length(all_finemaps) == 0) {
-        print(paste('FINEMAPPING MISSING: ', finemap_file_prefix))
-        return()
-      }
-
-      for (finemap_study in all_finemaps) {
-        finemap_gwas <- vroom::vroom(finemap_study, show_col_types = F)
-        finemap_gwas <- standardise_alleles(finemap_gwas)
-        vroom::vroom_write(finemap_gwas, finemap_study)
-      }
-
-    })
-  }
-}
 
 standardise_z_scores <- function() {
   library(parallel)
@@ -554,4 +986,5 @@ print_alleles_to_flip <- function() {
 
 }
 
-add_data_to_rare_studies()
+fix_missing_snps_in_rare_results()
+# fix_missing_snps_in_study_extractions()

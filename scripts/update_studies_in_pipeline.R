@@ -1,5 +1,4 @@
 source('../pipeline_steps/constants.R')
-library(parallel)
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -11,16 +10,15 @@ main <- function() {
   # update_studies_processed()
 }
 
+
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
-update_method <- function(studies_file, type) {
+update_method <- function(studies_file, ld_block, type) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
 
-  #FILL OUT
-
-  vroom::vroom_write(studies, studies_file)
+  #...
 }
 
 update_study_dirs <- function() {
@@ -42,9 +40,10 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
-  # cores_to_use <- 128
-  # update_data_in_ld_blocks <- parallel::mclapply(X=ld_info$ld_block_data, mc.cores=cores_to_use, FUN=function(ld_block) {
   blocks <- ld_info$ld_block_data
+
+  # cores_to_use <- 20
+  # update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
   update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
     extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
@@ -58,6 +57,15 @@ update_ld_blocks <- function() {
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
     update_method(finemapped_studies_file, type='finemapped')
+
+    coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    update_method(coloc_pairwise_results_file, type='coloc_pairwise')
+
+    coloc_clustered_results_file <- glue::glue('{ld_block}/coloc_clustered_results.tsv.gz')
+    update_method(coloc_clustered_results_file, type='coloc_clustered')
+
+    compare_rare_results_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
+    update_method(compare_rare_results_file, type='compare_rare')
   })
 }
 
@@ -70,11 +78,11 @@ update_studies_processed <- function() {
     # vroom::vroom_write(studies_to_process, studies_to_process_file)
   }
 
-  studies_processed_file <- glue::glue('{results_dir}/studies_processed.tsv') 
+  studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz') 
   processed_studies <- vroom::vroom(studies_processed_file, show_col_types = F)
   processed_studies$variant_type <- variant_types$common
   # ...
-  vroom::vroom_write(processed_studies, studies_processed_file)
+  # vroom::vroom_write(processed_studies, studies_processed_file)
 
 }
 

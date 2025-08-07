@@ -8,8 +8,8 @@
 #' 
 #' @return A list with the following elements:
 #' - gwas: The input data frame with the imputed values added
-#' - z_adj: The adjustment factor for the effect sizes
-#' - se_adj: The adjustment factor for the standard errors
+#' - z_adj_coef1: The adjustment factor for the effect sizes
+#' - se_adj_coef1: The adjustment factor for the standard errors
 #' - b_cor: The correlation between the true and imputed effect sizes - this is critical for evaluation of the performance of the imputation,
 #'      it should be close to 1 e.g > 0.7 would be a reasonable threshold
 #' - se_cor: The correlation between the true and imputed standard errors
@@ -24,7 +24,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   if (num_to_impute == 0) {
     return(list(
-      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
     ))
   }
 
@@ -48,7 +48,7 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
   if (any(is.na(se_adj$adj))) {
     warning(glue::glue('{file} could not be adjusted, skipping imputation'))
     return(list(
-      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj = NA, se_adj = NA, indices = NA, rows_imputed = 0
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
     ))
   }
 
@@ -74,10 +74,15 @@ perform_imputation <- function(file, gwas, pc, thresh=0.9, eval_frac=0.5) {
 
   # Perform z imputation
   imp <- eig_imp_lasso(pc, thresh, z)
+  if (is.null(imp)) {
+    return(list(
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA, z_adj_coef1 = NA, se_adj_coef1 = NA, indices = NA, rows_imputed = 0
+    ))
+  }
   z_sim <- imp$dat$X
 
   # Re-scale effect sizes and standard errors
-  z_adj <- adjust(z, z_sim, debug="zadjust.png", npoly=3)
+  z_adj <- adjust(z, z_sim, npoly=3)
 
   gwas$Z_IMPUTED <- z_adj$adj
   stopifnot(all(!is.na(gwas$Z_IMPUTED)))
@@ -125,6 +130,19 @@ outlier_detection <- function(r, thresh=3) {
   return(outliers)
 }
 
+rescale_se <- function(truth_se, predicted_se) {
+  if (min(predicted_se, na.rm=T) > 0) return(predicted_se)
+
+  truth_min <- min(truth_se, na.rm=T)
+  truth_max <- max(truth_se, na.rm=T)
+  truth_range <- truth_max - truth_min
+  predicted_min <- min(predicted_se, na.rm=T)
+  predicted_max <- max(predicted_se, na.rm=T)
+  predicted_range <- predicted_max - predicted_min
+  se_rescaled <- predicted_se / predicted_range * truth_range + truth_min
+  return(se_rescaled)
+}
+
 adjust <- function(truth, predicted, eval_frac = 0.5, debug = NULL, npoly = 3) {
   outs <- outlier_detection(truth / predicted)
 
@@ -149,7 +167,7 @@ adjust <- function(truth, predicted, eval_frac = 0.5, debug = NULL, npoly = 3) {
     prd$fit <- err$fit
     prd$uci <- err$fit + 1.96 * err$se.fit
 
-    p1 <- ggplot(prd, aes(x = predicted_clean, y = fit)) +
+    p1 <- ggplot2::ggplot(prd, aes(x = predicted_clean, y = fit)) +
       theme_bw() +
       geom_line() +
       geom_point(data = data.frame(predicted_clean, truth_clean), aes(x = predicted_clean, y = truth_clean)) +
@@ -189,8 +207,13 @@ eig_imp_lasso <- function(pc, thresh, X) {
   mask <- is.na(X)
   E1 <- E[!mask, ]
   X1 <- X[!mask]
+  # Check for constant or too few values
+  if (length(unique(X1)) <= 1) {
+    warning("eig_imp_lasso: y is constant or has only one value; skipping glmnet")
+    return(NULL)
+  }
   mod <- glmnet::glmnet(x=E1, y=X1, alpha=0.5, family="gaussian")
-  cv_fit <- cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
+  cv_fit <- glmnet::cv.glmnet(E1, X1, alpha = 0.5, family = "gaussian")
   best_lambda <- cv_fit$lambda.min
   p <- predict(mod, E, s=best_lambda)
   co <- cor(p, X, use="pair")
@@ -213,14 +236,17 @@ set_se_outliers_missing <- function(se, se_imputed, outthresh = 3) {
 #' 
 #' First, filters the imputation results to inside the range of the original gwas
 #' Second, finds imputed variants with low pvalues, non-imputed rows that are correlated
-#' If imputed variant is more significant the non-imputed rows, drop that variant
+#' If imputed variant is more significant the non-imputed rows, drop that variant.
+#' Also, if the imputed variant has an illegal value, drop that variant.
 #' @return filtered gwas
 filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
   only_keep_inside_gwas_range <- gwas$BP > min_bp & gwas$BP < max_bp 
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
-  snps_to_remove <- c()
-  snps_to_investigate <- which(gwas$P < lowest_p_value_threshold & gwas$IMPUTED == T)
+  snps_to_remove <- which(gwas$SE <= 0)
+  message(glue::glue("Removing {length(snps_to_remove)} SNPs with SE <= 0"))
+
+  snps_to_investigate <- which(gwas$IMPUTED == T & gwas$P < lowest_p_value_threshold)
   for (snp_location in snps_to_investigate) {
     ld_correlations <- which(c(ld_matrix[snp_location, ]) > p_value_filter_correlation_threshold)
     ld_correlations <- ld_correlations[ld_correlations != snp_location]
@@ -233,8 +259,12 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     }
   }
 
-  if (length(snps_to_remove) > 0) gwas <- gwas[-snps_to_remove, ]
-  return(list(gwas = gwas,
+  removed_gwas <- NA 
+  if (length(snps_to_remove) > 0) {
+    gwas <- gwas[-snps_to_remove, ]
+    removed_gwas <- gwas[snps_to_remove, ]
+  }
+  return(list(gwas = gwas, removed_gwas = removed_gwas,
     significant_rows_imputed = length(snps_to_investigate),
     significant_rows_filtered = length(snps_to_remove))
   )

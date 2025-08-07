@@ -67,6 +67,7 @@ main <- function() {
         vroom::vroom_write(result$gwas, imputed_file)
       } else {
         result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
+        verify_imputation_results(result$gwas, imputed_file)
         filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
         if( !is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) {
@@ -91,8 +92,8 @@ main <- function() {
         rows_imputed=result$rows_imputed,
         b_cor=result$b_cor,
         se_cor=result$se_cor,
-        z_adj=result$z_adj,
-        se_adj=result$se_adj,
+        z_adj=result$z_adj_coef1,
+        se_adj=result$se_adj_coef1,
         time_taken=time_taken,
         significant_rows_imputed=filtered_results$significant_rows_imputed,
         significant_rows_filtered=filtered_results$significant_rows_filtered,
@@ -105,7 +106,7 @@ main <- function() {
 
     if (nrow(imputed_studies) > 0) {
       imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
-        dplyr::distinct()
+        dplyr::distinct(study, .keep_all = TRUE)
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
   }
@@ -142,14 +143,27 @@ pad_missing_values <- function(gwas) {
   gwas$SE[is.na(gwas$SE)] <- 1
   gwas$P[is.na(gwas$P)] <- 1
   gwas$Z[is.na(gwas$Z)] <- 0
+  gwas$IMPUTED <- ifelse(gwas$BETA == 0 & gwas$SE == 1, T, F)
+
   return(list(
     gwas = gwas,
     rows_imputed = 0,
     b_cor = NA,
     se_cor = NA,
-    z_adj = NA,
-    se_adj = NA
+    z_adj_coef1 = NA,
+    se_adj_coef1 = NA
   ))
 }
 
+verify_imputation_results <- function(gwas, imputed_file) {
+  if (any(is.na(gwas$BETA))) {
+    message(glue::glue('BETA: NA in imputed study {imputed_file}'))
+  }
+  if (any(is.na(gwas$SE) | gwas$SE <= 0)) {
+    message(glue::glue('SE: NA or <= 0 in imputed study {imputed_file}'))
+  }
+  if (any(is.na(gwas$P) | gwas$P < 0 | gwas$P > 1)) {
+    message(glue::glue('P: NA or < 0 or > 1 in imputed study {imputed_file}'))
+  }
+}
 main()

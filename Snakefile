@@ -28,72 +28,62 @@ relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestr
 ld_blocks = ld_blocks[relevant_ancestries]
 ld_blocks = [f'{ld.ancestry}/{ld.chr}/{ld.start}-{ld.stop}' for i, ld in ld_blocks.iterrows()]
 
-#TODO: if imputation goes well, we can remove the idea of simple and complex ld blocks, and just have ld blocks
-complex_ld_blocks = []
-simple_ld_blocks = [block for block in ld_blocks if block not in complex_ld_blocks]
-# if TEST_RUN == 'test':
-#     complex_ld_blocks = ['EUR/8/80453471-82816871']
-# TODO: this is just removing badly behaving regions, this shouldn't be kept around later
-complex_ld_blocks = []
-
 extracted_studies = [s["extracted_location"] for i,s in studies_to_process.iterrows()]
 extracted_study_pattern = '{study_location}extracted_snps.tsv'
 
-standardisation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/standardisation_complete'
-complex_standardisation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_standardisation_complete'
-imputation_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/imputation_complete'
-complex_imputation_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_imputation_complete'
-finemapping_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/finemapping_complete'
-complex_finemapping_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_finemapping_complete'
-coloc_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/coloc_complete'
-complex_coloc_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_coloc_complete'
-compare_rare_pattern = LD_BLOCK_DATA_DIR + '{simple_ld_block}/compare_rare_complete'
-complex_compare_rare_pattern = LD_BLOCK_DATA_DIR + '{complex_ld_block}/complex_compare_rare_complete'
+standardisation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/standardisation_complete'
+imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
+finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
+coloc_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/coloc_complete'
+compare_rare_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/compare_rare_complete'
 
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
 traits_processed_file = RESULTS_DIR + 'latest/traits_processed.tsv.gz'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-current_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
+current_results_dir = RESULTS_DIR + 'current'
+timestamped_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
-raw_coloc_results = f'{current_results_dir}/raw_coloc_results.tsv'
-raw_rare_results = f'{current_results_dir}/raw_rare_results.tsv'
-study_extractions = f'{current_results_dir}/study_extractions.tsv'
-results_metadata = f'{current_results_dir}/results_metadata.tsv'
+coloc_pairwise_results = f'{current_results_dir}/coloc_pairwise_results.tsv.gz'
+coloc_clustered_results = f'{current_results_dir}/coloc_clustered_results.tsv.gz'
+rare_results = f'{current_results_dir}/rare_results.tsv.gz'
+study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
 pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_db_file = f'{current_results_dir}/associations.db'
+coloc_pairs_db_file = f'{current_results_dir}/coloc_pairs.db'
 ld_db_file = f'{current_results_dir}/ld.db'
 gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
+create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
 
-backup_done_file = '/tmp/backup_done'
-sync_done_file = '/tmp/sync_done'
+backup_done_file = f'{current_results_dir}/backup_done'
+sync_done_file = f'{current_results_dir}/sync_done'
+svg_files_ready_file = f'{current_results_dir}/svg_files_ready'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
         ld_blocks_to_process,
-        expand(imputation_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_imputation_pattern, complex_ld_block=complex_ld_blocks),
-        expand(finemapping_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_finemapping_pattern, complex_ld_block=complex_ld_blocks),
-        expand(coloc_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks),
-        expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks),
-        raw_coloc_results,
-        raw_rare_results,
+        expand(imputation_pattern, ld_block=ld_blocks),
+        expand(finemapping_pattern, ld_block=ld_blocks),
+        expand(coloc_pattern, ld_block=ld_blocks),
+        expand(compare_rare_pattern, ld_block=ld_blocks),
+        coloc_pairwise_results,
+        coloc_clustered_results,
+        rare_results,
         study_extractions,
-        results_metadata,
         new_studies_processed,
         new_traits_processed,
         studies_db_file,
         associations_db_file,
+        coloc_pairs_db_file,
         ld_db_file,
-        gwas_upload_db_file
-        # backup_done_file,
+        gwas_upload_db_file,
+        create_dbs_done_file,
+        backup_done_file,
+        svg_files_ready_file
         # sync_done_file,
         # pipeline_summary_output
 
@@ -133,144 +123,122 @@ rule organise_extracted_studies_into_ld_blocks:
         Rscript organise_extracted_regions_into_ld_blocks.R --output_file {output}
         """
 
-def standardise_rule(standardisation_pattern, name):
-    rule:
-        name: f'{name}_standardise_per_ld_block'
-        input: ld_blocks_to_process
-        output: temporary(standardisation_pattern)
-        retries: 1
-        threads: 1
-        params:
-            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-        run:
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+rule standardise_rule:
+    name: f'standardise_per_ld_block'
+    input: ld_blocks_to_process
+    output: temporary(standardisation_pattern)
+    retries: 1
+    threads: 1
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-                command = f"Rscript standardise_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
-            subprocess.run(command, shell=True)
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript standardise_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
+        subprocess.run(command, shell=True)
 
 
-def impute_rule(standardisation_pattern, imputation_pattern, name):
-    rule:
-        name: f'{name}_impute_per_ld_block'
-        input: standardisation_pattern
-        output: temporary(imputation_pattern)
-        retries: 1
-        threads: 5
-        params:
-            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-        run:
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+rule:
+    name: 'impute_per_ld_block'
+    input: standardisation_pattern
+    output: temporary(imputation_pattern)
+    retries: 1
+    threads: 5
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-                command = f"Rscript impute_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
-            subprocess.run(command, shell=True)
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript impute_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
+        subprocess.run(command, shell=True)
 
-def finemap_rule(imputation_pattern, finemaping_pattern, name):
-    rule:
-        name: f'{name}_finemap_per_ld_block'
-        input: imputation_pattern 
-        output: temporary(finemaping_pattern)
-        retries: 1
-        threads: 3
-        params:
-            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-        run:
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+rule finemap_rule:
+    name: f'finemap_per_ld_block'
+    input: imputation_pattern 
+    output: temporary(finemapping_pattern)
+    retries: 1
+    threads: 3
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-                command = f"Rscript finemap_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output} \
-                    --complex_block {name == 'complex'}"
-            subprocess.run(command, shell=True)
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript finemap_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
+        subprocess.run(command, shell=True)
 
-def coloc_rule(finemapping_pattern, coloc_pattern, name):
-    rule:
-        name: f'{name}_coloc_per_ld_block'
-        retries: 2
-        threads: 8
-        input:
-            finemap = finemapping_pattern
-        output: temporary(coloc_pattern)
-        params:
-            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-        run:
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+rule coloc_rule:
+    name: f'coloc_per_ld_block'
+    retries: 2
+    threads: 2
+    input:
+        finemap = finemapping_pattern
+    output: temporary(coloc_pattern)
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-                command = f"Rscript colocalise_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
-            subprocess.run(command, shell=True)
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
+        subprocess.run(command, shell=True)
 
-def compare_rare_rule(standardisation_pattern, compare_rare_pattern, name):
-    rule:
-        name: f'{name}_compare_rare_per_ld_block'
-        retries: 2
-        threads: 5
-        input:
-            standardisation = standardisation_pattern 
-        output: temporary(compare_rare_pattern)
-        params:
-            ld_dir=lambda wildcards, output: os.path.dirname(output[0])
-        run:
-            ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
-            skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+rule compare_rare_rule:
+    name: f'compare_rare_per_ld_block'
+    retries: 2
+    threads: 3
+    input:
+        standardisation = standardisation_pattern 
+    output: temporary(compare_rare_pattern)
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
 
-            if skip_block:
-                command = f"mkdir -p $(dirname {output}) && touch {output}"
-            else:
-                ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-                command = f"Rscript compare_rare_studies_in_ld_block.R \
-                    --ld_block {ld_block} \
-                    --completed_output_file {output}"
-            subprocess.run(command, shell=True)
-
-standardise_rule(complex_standardisation_pattern, 'complex')
-standardise_rule(standardisation_pattern, 'simple')
-
-impute_rule(complex_standardisation_pattern, complex_imputation_pattern,'complex')
-impute_rule(standardisation_pattern, imputation_pattern,'simple')
-
-finemap_rule(complex_imputation_pattern, complex_finemapping_pattern, 'complex')
-finemap_rule(imputation_pattern, finemapping_pattern, 'simple')
-
-coloc_rule(complex_finemapping_pattern, complex_coloc_pattern, 'complex')
-coloc_rule(finemapping_pattern, coloc_pattern, 'simple')
-
-compare_rare_rule(complex_standardisation_pattern, complex_compare_rare_pattern, 'complex')
-compare_rare_rule(standardisation_pattern, compare_rare_pattern, 'simple')
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript compare_rare_studies_in_ld_block.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output}"
+        subprocess.run(command, shell=True)
 
 rule compile_results:
-    input: expand(coloc_pattern, simple_ld_block=simple_ld_blocks), expand(complex_coloc_pattern, complex_ld_block=complex_ld_blocks),
-        expand(compare_rare_pattern, simple_ld_block=simple_ld_blocks), expand(complex_compare_rare_pattern, complex_ld_block=complex_ld_blocks)
+    input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
     output:
-        raw_coloc_results = raw_coloc_results,
-        raw_rare_results = raw_rare_results,
+        coloc_pairwise_results = coloc_pairwise_results,
+        coloc_clustered_results = coloc_clustered_results,
+        rare_results = rare_results,
         study_extractions = study_extractions,
-        results_metadata = results_metadata,
         new_studies_processed = new_studies_processed,
         new_traits_processed = new_traits_processed
     shell:
@@ -283,15 +251,15 @@ rule compile_results:
             --new_studies_processed_file {output.new_studies_processed} \
             --new_traits_processed_file {output.new_traits_processed} \
             --study_extractions_file {output.study_extractions} \
-            --coloc_results_file {output.raw_coloc_results} \
-            --rare_results_file {output.raw_rare_results} \
-            --compiled_results_metadata_file {output.results_metadata}
+            --coloc_pairwise_results_file {output.coloc_pairwise_results} \
+            --coloc_clustered_results_file {output.coloc_clustered_results} \
+            --rare_results_file {output.rare_results}
 
          rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
 
 # rule backup_data_dir:
-#     input: raw_coloc_results, rare_results, study_extractions, results_metadata
+#     input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions
 #     threads: 1
 #     output: temporary(backup_done_file)
 #     shell:
@@ -302,38 +270,52 @@ rule compile_results:
 #         """
 
 rule create_results_db:
-   input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata
+   input: coloc_pairwise_results, coloc_clustered_results, rare_results, study_extractions, new_studies_processed, new_traits_processed
    threads: 1
    output:
-       studies_db = studies_db_file,
-       associations_db = associations_db_file,
-       ld_db = ld_db_file,
-       gwas_upload_db = gwas_upload_db_file,
+       studies_db_file = studies_db_file,
+       associations_db_file = associations_db_file,
+       coloc_pairs_db_file = coloc_pairs_db_file,
+       ld_db_file = ld_db_file,
+       gwas_upload_db_file = gwas_upload_db_file,
+       create_dbs_done_file = temporary(create_dbs_done_file)
    shell:
        """
        Rscript create_db_from_results.R \
-           --results_dir {current_results_dir} \
            --studies_db_file {studies_db_file} \
            --associations_db_file {associations_db_file} \
+           --coloc_pairs_db_file {coloc_pairs_db_file} \
            --ld_db_file {ld_db_file} \
-           --gwas_upload_db_file {gwas_upload_db_file}
+           --gwas_upload_db_file {gwas_upload_db_file} \
+           --completed_output_file {output.create_dbs_done_file}
        """
 
-rule sync_to_oracle_server:
-    input: raw_coloc_results, raw_rare_results, study_extractions, results_metadata, studies_db_file, associations_db_file, ld_db_file, gwas_upload_db_file
+rule prepare_svg_files_for_use:
+    input: studies_db_file, create_dbs_done_file
     threads: 1
-    output: sync_done_file
+    output: temporary(svg_files_ready_file)
     shell:
         """
-        ./sync_to_oracle_server.sh
+        R -e "source('constants.R'); source('svg_helpers.R'); prepare_svg_files_for_use()"
+        touch {output}
+        """
+
+rule copy_results_to_timestamped_dir:
+    input: svg_files_ready_file
+    threads: 1
+    output: timestamped_results_dir
+    shell:
+        """
+        mkdir -p {timestamped_results_dir}
+        cp -r {current_results_dir} {timestamped_results_dir}
         """
 
 onsuccess:
     print('Yay!  Please look here:')
-    print(raw_coloc_results)
-    print(raw_rare_results)
+    print(coloc_pairwise_results)
+    print(coloc_clustered_results)
+    print(rare_results)
     print(study_extractions)
-    print(results_metadata)
 
 onerror:
     print(':(')

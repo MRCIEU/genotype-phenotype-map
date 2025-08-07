@@ -24,7 +24,7 @@ if [[ $EXTRA_ARG =~ "delete" ]]; then
 fi
 
 export IMAGE=docker://mrcieu/genotype-phenotype-map:1.0.0
-export APPTAINER_VARS="-B /local-scratch -B /projects -B /home/$(whoami) -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
+export APPTAINER_VARS="-B /local-scratch -B /projects -B /home/$(whoami) -B $(pwd):/home/pipeline -B /local-scratch/tmp:/tmp --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline"
 
 echo "Start time $(date)"
 echo "Testing hg38 tsv"

@@ -1,9 +1,4 @@
 source('constants.R')
-#TODO: 3 step process per 'study' (<data_source>-<specifier>-<gene>)
-# 1. Find cis snps (via cis-wind)
-# 2. Find all other significant hits, which will be considered trans
-#  with these 2 steps, I can create extracted_snps.tsv, but with cis_trans filled out appropriately
-# 3. Using extracted_snps, extract whole regions and store
 
 parser <- argparser::arg_parser('Extract genomic regions from a BESD file')
 parser <- argparser::add_argument(parser, '--extracted_study_location', help = 'Study location', type = 'character')

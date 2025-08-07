@@ -1,4 +1,5 @@
 source('constants.R')
+source('svg_helpers.R')
 # 1. Clump GWAS at requested --value threshold to find all regions to extract
 # 2. Deduplicate list to ensure we are only extracting 1 SNP per region (and using the top hit)
 #  with these 2 steps, I can create extracted_snps.tsv, but with cis_trans filled out appropriately
@@ -30,6 +31,7 @@ main <- function() {
   vroom::vroom_write(clumped_snps, clumped_hits_file)
 
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
+  create_svgs_from_gwas(study)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
 }
@@ -119,6 +121,7 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     return(extracted_snps)
   }
 
+  dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/standardised'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/imputed'), showWarnings = F, recursive = T)

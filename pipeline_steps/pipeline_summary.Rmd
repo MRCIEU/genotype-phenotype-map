@@ -1,55 +1,21 @@
 ---
-title: "Latest GPM Pipeline Run"
+title: "Current State of GP Map Data"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output:
-  prettydoc::html_pretty:
-    theme: cayman
-    css: pipeline_summary.css
+output: html_fragment
+params:
+  compare_results: F
 ---
+
 
 ```{r setup, include=FALSE} 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 ```
 
-```{r echo=F}
+```{r load-data, echo=F}
 source('constants.R')
 ld_blocks <- vroom::vroom('data/ld_blocks.tsv', show_col_types = F)
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
   dplyr::filter(dir.exists(ld_block_data))
-
-load_results_data <- function(pipeline_timestamp) {
-  latest_results_dir <- glue::glue('{results_dir}/{pipeline_timestamp}')
-  studies_processed <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz'), show_col_types=F)
-  all_study_results <- vroom::vroom(glue::glue('{latest_results_dir}/study_extractions.tsv'), show_col_types=F)
-  raw_coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/raw_coloc_results.tsv'), show_col_types=F)
-  coloc_results <- vroom::vroom(glue::glue('{latest_results_dir}/coloc_results.tsv'), show_col_types=F)
-  results_metadata <- vroom::vroom(glue::glue('{latest_results_dir}/results_metadata.tsv'), show_col_types=F)
-  finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'))
-  all_finemapped_results <- vroom::vroom(finemapped_studies_files, show_col_types=F)
-  all_finemapped_results <- merge(all_finemapped_results, studies_processed, by.x='study', by.y='study_name')
-
-  studies <- merge(all_study_results, studies_processed, by.x='study', by.y='study_name')
-  studies$p_val_bucket <- cut(studies$min_p,
-    breaks = c(0, 1e-8, 1e-5, 1),
-    labels = c("< 1e-8", "1e-5 - 1e-8","> 1e-5")
-  )
-
-  ebi <- vroom::vroom(glue::glue('{results_dir}/phenotype_categorisation/ebi_gwas_metadata.tsv'), col_select=c('accessionId', 'reportedTrait', 'efoTraits'), show_col_types=F) |>
-    tidyr::separate(sep=',', col = "efoTraits", into = c("efo_trait_1", "efo_trait_2", "efo_trait_3", "efo_trait_4", "efo_trait_5"), remove = F)
-  ebi <- dplyr::filter(ebi, accessionId %in% studies$study)
-  ebi_studies <- merge(studies, ebi, by.x='study', by.y='accessionId', all.x=T)
-
-  return(list(
-    studies_processed = studies_processed,
-    all_study_results = all_study_results,
-    raw_coloc_results = raw_coloc_results,
-    coloc_results = coloc_results,
-    results_metadata = results_metadata,
-    all_finemapped_results = all_finemapped_results,
-    studies = studies,
-    ebi_studies = ebi_studies
-  ))
-}
 
 pad_data_frames <- function(df1, df2) {
   df1 <- as.data.frame(df1)
@@ -90,31 +56,170 @@ subtract_data_frames <- function(df1, df2) {
   return(final_result)
 }
 
+
+pad_data_frames <- function(df1, df2) {
+  df1 <- as.data.frame(df1)
+  df2 <- as.data.frame(df2)
+  nrow1 <- nrow(df1)
+  ncol1 <- ncol(df1)
+  nrow2 <- nrow(df2)
+  ncol2 <- ncol(df2)
+  
+  # Create column names for consistency
+  all_columns <- union(names(df1), names(df2))
+  
+  # Add missing columns filled with 0
+  df1 <- cbind(df1, setNames(as.data.frame(matrix(0, nrow = nrow1, ncol = length(setdiff(all_columns, names(df1))))), 
+                             setdiff(all_columns, names(df1))))
+  df2 <- cbind(df2, setNames(as.data.frame(matrix(0, nrow = nrow2, ncol = length(setdiff(all_columns, names(df2))))), 
+                             setdiff(all_columns, names(df2))))
+  
+  # Reorder columns to match
+  df1 <- df1[, all_columns]
+  df2 <- df2[, all_columns]
+  
+  # Add missing rows filled with 0
+  if (nrow1 < nrow2) {
+    df1 <- rbind(df1, as.data.frame(matrix(0, nrow = nrow2 - nrow1, ncol = ncol(df1))))
+  } else if (nrow2 < nrow1) {
+    df2 <- rbind(df2, as.data.frame(matrix(0, nrow = nrow1 - nrow2, ncol = ncol(df2))))
+  }
+  
+  return(list(df1 = df1, df2 = df2))
+}
+
+
+subtract_data_frames <- function(df1, df2) {
+  numeric_columns <- sapply(df1, is.numeric)
+  result <- df1[, numeric_columns] - df2[, numeric_columns]
+  final_result <- cbind(df1[, !numeric_columns, drop = FALSE], result)
+  return(final_result)
+}
+
+load_results_data <- function(specific_results_dir) {
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'studies.db'))
+  associations_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'associations.db'))
+  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'ld.db'))
+
+  # imputed studies are not stored in the database, so we need to load them from the file
+  return(list(
+    studies_conn = studies_conn,
+    associations_conn = associations_conn,
+    ld_conn = ld_conn
+  ))
+}
+
 last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
-latest_results <- load_results_data(last_two_pipeline_runs[1])
-previous_results <- load_results_data(last_two_pipeline_runs[2])
+latest_results <- load_results_data(latest_results_dir)
+# previous_results <- load_results_data(last_two_pipeline_runs[2])
 ```
 
+### What has been ingested?
 
-# Current State of pipeline
+Broken down by data source:
+```{r data-source, echo=F}
 
-What has been ingested? Count of all finemapped regions
-```{r echo=F}
-latest_sources <- table(latest_results$studies$source)
+latest_sources <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_sources.name, COUNT(studies.*) as num_studies
+  FROM studies
+  JOIN study_sources ON studies.source_id = study_sources.id
+  GROUP BY study_sources.name"
+)
+latest_sources$num_studies <- scales::comma(latest_sources$num_studies)
 knitr::kable(latest_sources)
 ```
 
-Compared to last pipeline run
-```{r echo=F}
-previous_sources <- table(previous_results$studies$source)
-knitr::kable(previous_sources)
-# summary_data <- pad_data_frames(latest_sources, previous_sources)
-# knitr::kable(subtract_data_frames(summary_data$df1, summary_data$df2))
+Broken down by data type:
+```{r data-type, echo=F}
+latest_data_types <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT data_type, COUNT(*) as num_studies
+  FROM studies GROUP BY data_type"
+)
+latest_data_types$num_studies <- scales::comma(latest_data_types$num_studies)
+knitr::kable(latest_data_types)
 ```
+
+### Study Breakdown 
+```{r study-extractions, echo=F}
+latest_study_extractions <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT 
+  study_sources.name as source_name,
+  studies.id as study_id,
+  studies.data_type as data_type,
+  study_sources.id as study_sources_id,
+  study_extractions.id as study_extraction_id,
+  study_extractions.min_p as min_p,
+  study_extractions.cis_trans,
+  study_extractions.unique_study_id as unique_study_id,
+  FROM studies
+  JOIN study_sources ON studies.source_id = study_sources.id
+  JOIN study_extractions ON studies.id = study_extractions.study_id"
+)
+
+unique_data_types <- unique(latest_study_extractions$data_type)
+
+study_extractions_summary <- lapply(unique_data_types, function(this_data_type) {
+  study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type)
+  num_studies <- length(unique(study_extractions$study_id))
+
+  num_study_extractions <- nrow(study_extractions)
+  num_extracted_regions <- nrow(dplyr::filter(study_extractions, grepl('_1$', unique_study_id)))
+
+  return(data.frame(
+    data_type = this_data_type,
+    num_studies = scales::comma(num_studies),
+    num_extracted_regions = scales::comma(num_extracted_regions),
+    extracted_region_ratio = scales::number(num_extracted_regions / num_studies, accuracy = 0.01),
+    num_study_extractions = scales::comma(num_study_extractions),
+    finemap_ratio = scales::number(num_study_extractions / num_extracted_regions, accuracy = 0.01),
+    num_cis = scales::comma(nrow(dplyr::filter(study_extractions, cis_trans == 'cis'))),
+    num_trans = scales::comma(nrow(dplyr::filter(study_extractions, cis_trans == 'trans'))),
+    p_between_1e4_and_1e5 = scales::comma(nrow(dplyr::filter(study_extractions, min_p >=1e-5))),
+    p_between_1e5_and_1e8 = scales::comma(nrow(dplyr::filter(study_extractions, min_p < 1e-5 & min_p >= 1e-8))),
+    p_under_1e8 = scales::comma(nrow(dplyr::filter(study_extractions, min_p < 1e-8)))
+  ))
+}) |> dplyr::bind_rows()
+
+knitr::kable(dplyr::select(study_extractions_summary, data_type, num_studies, num_extracted_regions, extracted_region_ratio, num_study_extractions, finemap_ratio, num_cis, num_trans))
+knitr::kable(dplyr::select(study_extractions_summary, data_type, p_between_1e4_and_1e5, p_between_1e5_and_1e8, p_under_1e8))
+```
+
+### Number of colocs per data type
+
+```{r colocs-summary-by-data-type, echo=F, eval=F}
+latest_coloc_results <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT
+  colocalisations.*, studies.data_type, study_sources.name as source_name, study_extractions.min_p as min_p
+  FROM colocalisations 
+  JOIN studies ON colocalisations.study_id = studies.id
+  JOIN study_sources ON studies.source_id = study_sources.id
+  JOIN study_extractions ON studies.id = study_extractions.study_id"
+  )
+
+#percent of study_extractions that have colocs
+unique_data_types <- unique(latest_coloc_results$data_type)
+
+coloc_summary <- lapply(unique_data_types, function(this_data_type) {
+  coloc_results <- dplyr::filter(latest_coloc_results, data_type == this_data_type)
+  high_coloc_results <- dplyr::filter(coloc_results, posterior_prob > 0.8)
+  mid_coloc_results <- dplyr::filter(coloc_results, posterior_prob > 0.6 & posterior_prob <= 0.8)
+  num_study_extractions <- nrow(latest_study_extractions)
+  num_colocs <- nrow(coloc_results)
+  percent_colocs <- scales::percent(num_colocs / num_study_extractions)
+
+  return(data.frame(
+    data_type = this_data_type,
+    num_study_extractions = scales::comma(num_study_extractions),
+    num_colocs = scales::comma(num_colocs),
+    percent_colocs = percent_colocs
+  ))
+}) |> dplyr::bind_rows()
+
+knitr::kable(coloc_summary)
+```
+
+### Direction concordance?
+
 
 ## Breakdown by dataset:
 
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 breakdown_by_dataset <- function(results) {
   unique_data_types <- unique(results$studies$data_type)
 
@@ -150,7 +255,7 @@ knitr::kable(latest_summary_data)
 ```
 
 Compared to last pipeline run:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 previous_summary_data <- breakdown_by_dataset(previous_results)
 knitr::kable(previous_summary_data)
 # summary_data <- pad_data_frames(latest_summary_data, previous_summary_data)
@@ -159,7 +264,7 @@ knitr::kable(previous_summary_data)
 
 # Imputed vs. Finemapped Results per dataset: 
 
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 unique_data_types <- unique(latest_results$all_finemapped_results$data_type)
 dont_print <- lapply(unique_data_types, function(used_data_type) {
   studies_by_data_type <- dplyr::filter(latest_results$all_finemapped_results, data_type == used_data_type)
@@ -179,7 +284,7 @@ dont_print <- lapply(unique_data_types, function(used_data_type) {
 ```
 
 
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 finemapping_breakdown <- function(results) {
   unique_data_types <- unique(results$studies$data_type)
 
@@ -208,7 +313,7 @@ knitr::kable(latest_finemap_breakdown)
 ```
 
 Compared to last pipeline run:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 previous_finemap_breakdown <- finemapping_breakdown(previous_results)
 knitr::kable(previous_finemap_breakdown)
 # summary_data <- pad_data_frames(latest_summary_data, previous_summary_data)
@@ -216,7 +321,7 @@ knitr::kable(previous_finemap_breakdown)
 ```
 
 # Number of hyprcoloc clusters by posterior_prob (across all studies)
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 
 hyprcoloc_clusters <- function(results) {
   more_than_50 <- dplyr::filter(results$raw_coloc_results, posterior_prob > 0.5)
@@ -244,7 +349,7 @@ knitr::kable(latest_clusters)
 ```
 
 Compared to last pipeline run:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 previous_clusters <- hyprcoloc_clusters(previous_results)
 knitr::kable(previous_clusters)
 # summary_data <- pad_data_frames(latest_clusters, previous_clusters)
@@ -252,7 +357,7 @@ knitr::kable(previous_clusters)
 ```
 
 # Coloc Results Broken Down p-val threshold and data source:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 
 additional_coloc_columns <- function(results) {
   study_a_match <- match(results$coloc_results$unique_study_a, results$studies$unique_study_id)
@@ -279,7 +384,7 @@ latest_coloc_results <- additional_coloc_columns(latest_results)
 previous_coloc_results <- additional_coloc_columns(previous_results)
 ```
 
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 coloc_by_p_val_and_type <- function(coloc_results) {
   coloc_split_p_val <- split(coloc_results,
     interaction(coloc_results$p_val_bucket_a, coloc_results$p_val_bucket_b)
@@ -313,7 +418,7 @@ knitr::kable(latest_coloc_split_results)
 ```
 
 Compared to last pipeline run:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 previous_coloc_split_results <- coloc_by_p_val_and_type(previous_coloc_results)
 knitr::kable(previous_coloc_split_results)
 # summary_data <- pad_data_frames(latest_coloc_split_results, previous_coloc_split_results)
@@ -321,7 +426,7 @@ knitr::kable(previous_coloc_split_results)
 ```
 
 # Coloc results broken down by cis, trans, or phenotype
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 
 coloc_cis_trans <- function(coloc_results) {
   coloc_for_cis_trans <- coloc_results
@@ -351,7 +456,7 @@ knitr::kable(latest_coloc_cis_trans)
 ```
 
 Compared to last pipeline run:
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 previous_coloc_cis_trans <- coloc_cis_trans(previous_coloc_results)
 knitr::kable(previous_coloc_cis_trans)
 # summary_data <- pad_data_frames(latest_coloc_cis_trans, previous_coloc_cis_trans)
@@ -360,23 +465,23 @@ knitr::kable(previous_coloc_cis_trans)
 
 # Pipeline Metadata
 
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 metadata <- latest_results$results_metadata |> dplyr::select(number_extracted, number_standardised, number_imputed, number_finemapped, num_finemap_failed)
 ```
 
 sum of results across all LD blocks
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 knitr::kable(colSums(metadata))
 ```
 mean of results per LD block
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 knitr::kable(colMeans(metadata))
 hist_size <- max(metadata$number_finemapped)
 hist(metadata$number_finemapped, xlim = c(1,hist_size), breaks=seq(1,hist_size), main='Finemapped results per LD Region')
 ```
 
 Regions worst finemapping rate
-```{r echo=F}
+```{r echo=F, eval=params$compare_results}
 results_subset <- dplyr::select(latest_results$results_metadata, ld_block, number_finemapped, finemapped_per_imputed, num_finemap_failed) |>
   dplyr::arrange(dplyr::desc(num_finemap_failed / number_finemapped))
 

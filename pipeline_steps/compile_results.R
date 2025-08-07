@@ -1,7 +1,5 @@
 source('constants.R')
 
-posterior_prob_threshold <- 0.5
-
 parser <- argparser::arg_parser('Compile results from pipeline')
 #INPUT
 parser <- argparser::add_argument(parser, '--studies_to_process', help = 'Studies to process', type = 'character')
@@ -11,7 +9,8 @@ parser <- argparser::add_argument(parser, '--traits_processed', help = 'Current 
 parser <- argparser::add_argument(parser, '--new_studies_processed_file', help = 'New studies processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--new_traits_processed_file', help = 'New traits processed file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--study_extractions_file', help = 'Compiled result file to save', type = 'character')
-parser <- argparser::add_argument(parser, '--coloc_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--coloc_pairwise_results_file', help = 'Compiled result file to save', type = 'character')
+parser <- argparser::add_argument(parser, '--coloc_clustered_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--rare_results_file', help = 'Compiled result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--compiled_results_metadata_file', help = 'Compiled result metadata file to save', type = 'character')
 
@@ -29,15 +28,16 @@ main <- function() {
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
 
   message('Aggregating pipeline metadata')
-  results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
+  # results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   message('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
-  vroom::vroom_write(pipeline_data$raw_coloc_results, args$coloc_results_file)
-  vroom::vroom_write(pipeline_data$raw_rare_results, args$rare_results_file)
+  vroom::vroom_write(pipeline_data$rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
-  vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
+  vroom::vroom_write(pipeline_data$coloc_clustered_results, args$coloc_clustered_results_file)
+  vroom::vroom_write(pipeline_data$coloc_pairwise_results, args$coloc_pairwise_results_file)
+  # vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
 
   # if (is.na(TEST_RUN)) {
   #   rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
@@ -57,14 +57,25 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   standardised_studies <- vroom::vroom(standardised_studies_files, show_col_types = F, col_types = standardised_column_types)
 
   imputed_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv'))
-  imputed_studies <- vroom::vroom(imputed_studies_files, show_col_types = F, col_types = imputed_column_types)
+  imputed_studies <- lapply(imputed_studies_files, function(file) {
+    vroom::vroom(file, show_col_types = F, col_types = imputed_column_types)
+  }) |> dplyr::bind_rows()
 
   finemapped_studies_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv'))
   finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
 
-  coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_results.tsv'))
-  raw_coloc_results <- vroom::vroom(coloc_input_files, delim='\t', show_col_types = F) |>
-    dplyr::filter(!is.na(traits) & traits != 'None' & posterior_prob >= posterior_prob_threshold)
+  pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz'))
+  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F, col_select = c('unique_study_a', 'unique_study_b', 'PP.H3.abf', 'h4', 'ld_block', 'spurious', 'ignore'))
+  message('pairwise coloc results: ', nrow(coloc_pairwise_results))
+
+  coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+  coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim='\t', show_col_types = F)
+  message('clustered coloc results: ', nrow(coloc_clustered_results))
+
+  coloc_clustered_results <- coloc_clustered_results |>
+    dplyr::group_by(ld_block, component, group_threshold) |>
+    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
+    dplyr::ungroup()
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {
@@ -73,9 +84,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     compare_rare_results <- vroom::vroom(compare_rare_input_files, delim='\t', show_col_types = F)
   }
 
+  studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
-    studies_processed <- rbind(studies_processed, studies_to_process) |> dplyr::distinct()
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_process) |> dplyr::distinct()
   } else {
     studies_processed <- studies_to_process
   }
@@ -91,15 +104,16 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     dplyr::select(data_type, study_name, trait_name) |>
     dplyr::rename(trait=trait_name)
 
-  traits_processed <- rbind(traits_processed, traits_unprocessed) |> dplyr::distinct()
+  traits_processed <- dplyr::bind_rows(traits_processed, traits_unprocessed) |> dplyr::distinct()
 
   return(list(
     extracted_studies = extracted_studies,
     standardised_studies = standardised_studies,
     imputed_studies = imputed_studies,
     finemapped_studies = finemapped_studies,
-    raw_coloc_results = raw_coloc_results,
-    raw_rare_results = compare_rare_results,
+    coloc_pairwise_results = coloc_pairwise_results,
+    coloc_clustered_results = coloc_clustered_results,
+    rare_results = compare_rare_results,
     studies_processed = studies_processed,
     traits_processed = traits_processed
   ))
@@ -108,17 +122,20 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 create_study_extractions <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
     dplyr::filter(min_p <= p_value_threshold) |>
-    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block)
+    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, svg_file, file_with_lbfs, ignore)
 
-  finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
+finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  rare_studies <- pipeline_data$raw_rare_results |>
+  rare_studies <- pipeline_data$rare_results |>
     dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
     tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
     dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files, snp=candidate_snp) |>
     dplyr::mutate(min_p = as.numeric(min_p), cis_trans = NA) |>
     tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
-    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, known_gene)
+    dplyr::mutate(bp = sub('-.*', '', bp)) |>
+    dplyr::mutate(bp = as.numeric(bp)) |>
+    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, known_gene) |>
+    dplyr::mutate(file_with_lbfs = NA, svg_file = NA, ignore = F)
 
   all_studies <- rbind(finemapped_studies, rare_studies)
   return(all_studies)

@@ -12,7 +12,7 @@ snakemake_log=$DATA_DIR/pipeline_metadata/logs/snakemake.log
 mkdir -p $(dirname $snakemake_log)
 
 export IMAGE=docker://mrcieu/genotype-phenotype-map:1.0.0
-export APPTAINER_VARS="--nv -B /local-scratch -B /projects  -B /home/$(whoami) -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline "
+export APPTAINER_VARS="--nv -B /local-scratch -B /projects -B /local-scratch/tmp:/tmp -B /home/$(whoami) -B $(pwd):/home/pipeline --env TIMESTAMP=$TIMESTAMP --pwd /home/pipeline "
 
 echo "Start time $(date)"
 apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
@@ -37,7 +37,9 @@ fi
 
 apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG &>> $snakemake_log
 
-apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/post_pipeline_cleanup.R --studies_processed $RESULTS_DIR/$TIMESTAMP/studies_processed.tsv.gz --pipeline_summary_file $RESULTS_DIR/$TIMESTAMP/pipeline_summary.html &>> $snakemake_log
+apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/post_pipeline_cleanup.R \ 
+  --current_results_dir $RESULTS_DIR/$TIMESTAMP \ 
+  --pipeline_summary_file $RESULTS_DIR/$TIMESTAMP/pipeline_summary.html &>> $snakemake_log
 
 rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

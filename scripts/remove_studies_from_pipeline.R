@@ -9,17 +9,6 @@ ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
-safe_lapply <- function(X, FUN, ...) {
-  lapply(X, function(x) {
-    tryCatch(
-      FUN(x, ...),
-      error = function(e) {
-        stop("An error occurred: ", conditionMessage(e))
-      }
-    )
-  })
-}
-
 main <- function() {
   delete_data_in_ld_blocks <- safe_lapply(ld_info$ld_block_data, function(ld_block) {
     print(glue::glue('block: {ld_block}'))

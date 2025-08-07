@@ -1,4 +1,25 @@
-source('constants.R')
+format_unique_snp_string <- function(chr, bp, ea, oa) {
+  # Was going to use compress_alleles but the reference panel doesn't have compressed alleles
+  compressed_ea <- trimws(as.character(ea))
+  compressed_oa <- trimws(as.character(oa))
+  formatted_bp <- trimws(as.character(bp))
+
+  snp_string <- glue::glue('{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  return(snp_string)
+}
+
+format_compressed_allele_snp_string <- function(chr, bp, ea, oa) {
+  compressed_ea <- compress_alleles(as.character(ea))
+  compressed_oa <- compress_alleles(as.character(oa))
+  formatted_bp <- trimws(as.character(bp))
+  snp_string <- glue::glue('{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  return(snp_string)
+}
+
+compress_alleles <- function(alleles) {
+  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else as.character(allele))
+}
+
 
 convert_reference_build <- function(study,
                                     file_type,

@@ -59,7 +59,7 @@ main <- function() {
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue('{args$ld_block}: No study pairs to coloc, skipping.'))
-    if (args$force_clustering) {
+    if (args$force_clustering == FALSE) {
       vroom::vroom_write(data.frame(), args$completed_output_file)
       return()
     }
@@ -132,7 +132,7 @@ main <- function() {
   new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
-  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering) {
+  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
@@ -151,19 +151,28 @@ main <- function() {
 
       message(glue::glue('{args$ld_block}: Number of studies to ignore: {sum(finemapped_studies$ignore)}'))
       message(glue::glue('{args$ld_block}: Number of coloc results to ignore: {sum(coloc_results$ignore)}'))
-      vroom::vroom_write(finemapped_studies, finemapped_file)
+      # vroom::vroom_write(finemapped_studies, finemapped_file)
     } 
-    vroom::vroom_write(coloc_results, coloc_results_file)
+    # vroom::vroom_write(coloc_results, coloc_results_file)
+
+    coloc_results_with_min_p <- coloc_results |>
+      dplyr::mutate(
+        min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+        min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
+      )
+
+    p_threshold <- 5e-8
 
     clustered_results <- lapply(names(posterior_prob_thresholds), function(threshold) {
       h4_threshold <- posterior_prob_thresholds[[threshold]]
 
-      clustered_results <- cluster_coloc_results(coloc_results, h4_threshold, start_time)
-      if (h4_threshold == posterior_prob_thresholds$strong) {
-        coloc_results <- mark_spurious_colocs(coloc_results, clustered_results$pruned_edges)
-        message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$spurious)} spurious colocs'))
-        vroom::vroom_write(coloc_results, coloc_results_file)
-      }
+      clustered_results <- cluster_coloc_results(coloc_results_with_min_p, h4_threshold, p_threshold, start_time)
+      saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/clustered_results_{h4_threshold}_{p_threshold}.rds'))
+      # if (h4_threshold == posterior_prob_thresholds$strong) {
+      #   coloc_results <- mark_spurious_colocs(coloc_results, clustered_results$pruned_edges)
+      #   message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$spurious)} spurious colocs'))
+      #   vroom::vroom_write(coloc_results, coloc_results_file)
+      # }
       snp_per_cluster <- find_snp_per_cluster(clustered_results$groups, studies_to_colocalise)
 
       clustered_results$groups <- clustered_results$groups |>
@@ -185,7 +194,7 @@ main <- function() {
     })
 
     clustered_results <- dplyr::bind_rows(clustered_results)
-    vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+    # vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -345,8 +354,8 @@ prune_finemapped <- function(finemapped_studies, coloc_results){
   return(remove_regions)
 }
 
-cluster_coloc_results <- function(coloc_results, h4_threshold, start_time) {
-  coloc_results <- coloc_results |> dplyr::filter(!ignore)
+cluster_coloc_results <- function(coloc_results, h4_threshold, p_threshold, start_time) {
+  coloc_results <- coloc_results |> dplyr::filter(!ignore & min_p_study_a < p_threshold & min_p_study_b < p_threshold)
   message(glue::glue('{args$ld_block}: Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
 
   h4_adj_mx <- make_adjacency_matrix(coloc_results, h4_threshold)
@@ -477,6 +486,7 @@ cluster_coloc_results <- function(coloc_results, h4_threshold, start_time) {
   message(glue::glue('  Total edges removed from clustering: {nrow(pruned_edges)}'))
 
   return(list(
+    unpruned_graph = h4_graph,
     pruned_graph = recombined_graph,
     groups = coloc_groups,
     pruned_edges = pruned_edges

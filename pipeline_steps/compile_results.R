@@ -65,7 +65,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
 
   pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz'))
-  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F, col_select = c('unique_study_a', 'unique_study_b', 'PP.H3.abf', 'h4', 'ld_block', 'spurious', 'ignore'))
+  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
+    delim='\t',
+    show_col_types = F,
+    col_select = c('unique_study_a', 'unique_study_b', 'PP.H0.abf', 'PP.H1.abf', 'PP.H2.abf', 'PP.H3.abf', 'PP.H4.abf', 'ld_block', 'spurious', 'ignore')
+  )
   message('pairwise coloc results: ', nrow(coloc_pairwise_results))
 
   coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))

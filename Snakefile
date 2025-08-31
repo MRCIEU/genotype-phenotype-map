@@ -50,11 +50,12 @@ rare_results = f'{current_results_dir}/rare_results.tsv.gz'
 study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
-pipeline_summary_output = f'{current_results_dir}/pipeline_summary.html'
+pipeline_summary_file = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_db_file = f'{current_results_dir}/associations.db'
-coloc_pairs_db_file = f'{current_results_dir}/coloc_pairs.db'
+coloc_pairs_full_db_file = f'{current_results_dir}/coloc_pairs_full.db'
+coloc_pairs_significant_db_file = f'{current_results_dir}/coloc_pairs.db'
 ld_db_file = f'{current_results_dir}/ld.db'
 gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
 create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
@@ -78,14 +79,15 @@ rule all:
         new_traits_processed,
         studies_db_file,
         associations_db_file,
-        coloc_pairs_db_file,
+        coloc_pairs_full_db_file,
+        coloc_pairs_significant_db_file,
         ld_db_file,
         gwas_upload_db_file,
         create_dbs_done_file,
         backup_done_file,
         svg_files_ready_file
+        pipeline_summary_output
         # sync_done_file,
-        # pipeline_summary_output
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -275,7 +277,8 @@ rule create_results_db:
    output:
        studies_db_file = studies_db_file,
        associations_db_file = associations_db_file,
-       coloc_pairs_db_file = coloc_pairs_db_file,
+       coloc_pairs_full_db_file = coloc_pairs_full_db_file,
+       coloc_pairs_significant_db_file = coloc_pairs_significant_db_file,
        ld_db_file = ld_db_file,
        gwas_upload_db_file = gwas_upload_db_file,
        create_dbs_done_file = temporary(create_dbs_done_file)
@@ -284,7 +287,8 @@ rule create_results_db:
        Rscript create_db_from_results.R \
            --studies_db_file {studies_db_file} \
            --associations_db_file {associations_db_file} \
-           --coloc_pairs_db_file {coloc_pairs_db_file} \
+           --coloc_pairs_full_db_file {coloc_pairs_full_db_file} \
+           --coloc_pairs_significant_db_file {coloc_pairs_significant_db_file} \
            --ld_db_file {ld_db_file} \
            --gwas_upload_db_file {gwas_upload_db_file} \
            --completed_output_file {output.create_dbs_done_file}
@@ -300,7 +304,16 @@ rule prepare_svg_files_for_use:
         touch {output}
         """
 
-rule copy_results_to_timestamped_dir:
+rule pipeline_summary:
+    input: studies_db_file, coloc_pairs_significant_db_file, associations_db_file, create_dbs_done_file
+    threads: 1
+    output: pipeline_summary_file
+    shell:
+        """
+        R -e "rmarkdown::render('pipeline_summary.Rmd', output_file = '{output}')"
+        """
+
+rule copy_results_to_other_directories:
     input: svg_files_ready_file
     threads: 1
     output: timestamped_results_dir
@@ -308,6 +321,7 @@ rule copy_results_to_timestamped_dir:
         """
         mkdir -p {timestamped_results_dir}
         cp -r {current_results_dir} {timestamped_results_dir}
+        cp -r {current_results_dir} {latest_results_dir}
         """
 
 onsuccess:

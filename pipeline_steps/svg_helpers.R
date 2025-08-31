@@ -1,10 +1,22 @@
-create_svg_for_ld_block <- function(gwas, study_name, file_name) {
-  if (file.exists(file_name)) {
-    return(file_name)
+create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
+  # if (file.exists(file_name)) {
+    # return(file_name)
+  # }
+
+  if (is_sparse) {
+    bin_size <- 1000
+  } else {
+    bin_size <- 20000
   }
 
   plot_height <- 200
   plot_width <- 1000
+
+  ld_blocks <- vroom::vroom(glue::glue('../pipeline_steps/data/ld_blocks.tsv'), show_col_types = F)
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  specific_ld_info <- ld_info[ld_info$block == ld_block, ]
+  start_bp <- specific_ld_info$start
+  end_bp <- specific_ld_info$stop
   
   ld_block <- gwas |>
     dplyr::mutate(CHR = as.numeric(CHR)) |>
@@ -15,10 +27,11 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
     ld_block <- dplyr::mutate(ld_block, Z = convert_lbf_to_abs_z(LBF, SE))
   }
   ld_block$Z <- abs(ld_block$Z)
+  ld_block <- dplyr::mutate(ld_block, Z = ifelse(Z == 0, 0.001, Z))
 
   ld_data <- ld_block |>
     dplyr::filter(!is.na(Z)) |>
-    dplyr::mutate(bin = floor(BP/10000)) |>
+    dplyr::mutate(bin = floor(BP/bin_size)) |>
     dplyr::group_by(CHR, bin) |>
     dplyr::summarise(
       BP = mean(BP),
@@ -27,7 +40,7 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
     )
   
   ld_area <- ld_data |>
-    dplyr::mutate(bin = floor(BP/10000)) |>
+    dplyr::mutate(bin = floor(BP/bin_size)) |>
     dplyr::group_by(CHR, bin) |>
     dplyr::summarise(
       BP = mean(BP),
@@ -44,9 +57,11 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
       max_bp <- max(.x$BP)
       
       dplyr::bind_rows(
-        dplyr::tibble(CHR = .x$CHR[1], BP = min_bp, Z = 0),
+        dplyr::tibble(CHR = .x$CHR[1], BP = start_bp, Z = 0),
+        dplyr::tibble(CHR = .x$CHR[1], BP = min_bp, Z = 0.001),
         .x,
-        dplyr::tibble(CHR = .x$CHR[1], BP = max_bp, Z = 0)
+        dplyr::tibble(CHR = .x$CHR[1], BP = max_bp, Z = 0.001),
+        dplyr::tibble(CHR = .x$CHR[1], BP = end_bp, Z = 0)
       )
     }) |>
     dplyr::ungroup()
@@ -94,8 +109,6 @@ create_svgs_from_gwas <- function(study, gwas) {
   padded_chrs$CHR <- 1:22
   padded_chrs$BP <- 1
   padded_chrs$LP <- 0
-  print(head(padded_chrs))
-  print(head(gwas))
 
   gwas <- rbind(padded_chrs, gwas)
 

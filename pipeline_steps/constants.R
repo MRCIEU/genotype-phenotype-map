@@ -121,7 +121,9 @@ ld_block_dirs <- function(block) {
 
 construct_ld_block <- function(ancestry, chr, start, stop) {
   block <- ld_block_string(ancestry, chr, start, stop)
-  return(ld_block_dirs(block))
+  ld_info <- ld_block_dirs(block)
+  ld_info <- dplyr::bind_cols(ld_info, data.frame(ancestry = ancestry, chr = chr, start = start, stop = stop))
+  return(ld_info)
 }
 
 ld_block_string <- function(ancestry, chr, start, stop) {

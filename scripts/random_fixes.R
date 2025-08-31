@@ -25,6 +25,72 @@ update_method <- function(file, standardised_file, ld_block) {
   vroom::vroom_write(rare_results, file)
 }
 
+fix_all_svg_extractions <- function() {
+  source('../pipeline_steps/svg_helpers.R')
+  studies <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz'))
+  study_extractions <- vroom::vroom(glue::glue('{latest_results_dir}/study_extractions.tsv.gz')) |>
+    dplyr::left_join(studies, by = c('study'='study_name'))
+  
+  study_extractions <- study_extractions[630000:nrow(study_extractions), ]
+  # lapply(seq_len(nrow(study_extractions)), function(i) {
+  parallel::mclapply(seq_len(nrow(study_extractions)), mc.cores = 50, function(i) {
+    study <- study_extractions[i, ]
+    print(i)
+    gwas <- vroom::vroom(study$file, show_col_types = F)
+    is_sparse <- study$data_type == data_types$methylation
+    create_svg_for_ld_block(gwas, study$study, study$svg_file, study$ld_block, is_sparse=is_sparse)
+  })
+}
+
+fix_bad_full_svgs <- function() {
+  source('../pipeline_steps/svg_helpers.R')
+  bad_studies <- c(
+    'ebi-a-GCST90000618',
+    'ebi-a-GCST90002232',
+    'ebi-a-GCST90002304',
+    'ebi-a-GCST90002386',
+    'ebi-a-GCST90012000',
+    'ebi-a-GCST90012006',
+    'ebi-a-GCST90012009',
+    'ebi-a-GCST90012017',
+    'ebi-a-GCST90012025',
+    'ebi-a-GCST90012027',
+    'ebi-a-GCST90012039',
+    'ebi-a-GCST90012040',
+    'ebi-a-GCST90012041',
+    'ebi-a-GCST90012046',
+    'ebi-a-GCST90012049',
+    'ebi-a-GCST90012057',
+    'ebi-a-GCST90012065',
+    'ebi-a-GCST90012070',
+    'ebi-a-GCST90012081',
+    'ebi-a-GCST90012110',
+    'ebi-a-GCST90012114',
+    'ebi-a-GCST90012877',
+    'ebi-a-GCST90012878',
+    'ebi-a-GCST90013405'
+  )
+  bad_svg_studies <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz')) |>
+    dplyr::filter(study_name %in% bad_studies)
+  
+  lapply(seq_len(nrow(bad_svg_studies)), function(i) {
+    study <- bad_svg_studies[i, ]
+    vcf_file <- glue::glue('{study$extracted_location}/vcf/hg38.vcf.gz')
+    bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+      '--format "[%ID]\t[%CHROM]\t[%POS]\t[%LP]" ',
+      '{vcf_file}'
+    )
+    gwas <- system(bcf_query, wait = T, intern = T)
+    gwas <- data.table::fread(text = gwas)
+
+    colnames(gwas) <- c('RSID', 'CHR', 'BP', 'LP')
+    gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
+    print(gwas[gwas$LP == Inf,])
+    create_svgs_from_gwas(study, gwas)
+  })
+  
+}
+
 fix_missing_snps_in_rare_results <- function() {
   source('../pipeline_steps/common_extraction_functions.R')
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
@@ -986,5 +1052,4 @@ print_alleles_to_flip <- function() {
 
 }
 
-fix_missing_snps_in_rare_results()
-# fix_missing_snps_in_study_extractions()
+fix_all_svg_extractions()

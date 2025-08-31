@@ -198,11 +198,12 @@ ld_table <- list(
     lead_snp_id INTEGER,
     variant_snp_id INTEGER,
     ld_block_id INTEGER,
-    r REAL CHECK (r BETWEEN -1 AND 1)
+    r REAL CHECK (r BETWEEN -1 AND 1),
+    PRIMARY KEY (lead_snp_id, variant_snp_id)
   )"
 )
 
-coloc_pairs_table <- list(
+coloc_pairs_full_table <- list(
   name = "coloc_pairs",
   query = "CREATE TABLE coloc_pairs (
     study_extraction_a_id INTEGER NOT NULL,
@@ -215,18 +216,44 @@ coloc_pairs_table <- list(
   )"
 )
 
-associations_table <- list(
-  name = "associations",
-  query = "CREATE TABLE associations (
-    snp_id INTEGER,
-    study_id INTEGER,
-    beta REAL NOT NULL,
-    se REAL NOT NULL CHECK (se > 0),
-    p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
-    eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
-    imputed BOOLEAN NOT NULL,
-    PRIMARY KEY (snp_id, study_id)
-  )"
+coloc_pairs_significant_table <- list(
+  name = "coloc_pairs",
+  query = "CREATE TABLE coloc_pairs (
+    study_extraction_a_id INTEGER NOT NULL,
+    study_extraction_b_id INTEGER NOT NULL,
+    ld_block_id INTEGER NOT NULL,
+    h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
+    h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
+    spurious BOOLEAN NOT NULL,
+    PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
+  )",
+  indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
+    CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
+    CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);"
+)
+
+associations_db <- list(
+  associations_metadata = list(
+    name = "associations_metadata",
+    query = "CREATE TABLE associations_metadata (
+      start_snp_id INTEGER,
+      stop_snp_id INTEGER,
+      associations_table_name TEXT NOT NULL
+    )"
+  ),
+  associations = list(
+    name = "associations",
+    query = "CREATE TABLE table_name (
+      snp_id INTEGER,
+      study_id INTEGER,
+      beta REAL NOT NULL,
+      se REAL NOT NULL CHECK (se > 0),
+      p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
+      eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
+      imputed BOOLEAN NOT NULL,
+      PRIMARY KEY (snp_id, study_id)
+    )"
+  )
 )
 
 gwas_upload_db <- list(
@@ -289,7 +316,7 @@ gwas_upload_db <- list(
       study_extraction_id INTEGER NOT NULL,
       snp_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
-      group_threshold TEXT NOT NULL,
+      group_threshold TEXT NOT NULL
     )")
   )
 )

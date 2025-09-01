@@ -1,5 +1,6 @@
 source('constants.R')
 source('common_extraction_functions.R')
+source('gwas_calculations.R')
 
 parser <- argparser::arg_parser('Standardise GWAS for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -152,21 +153,7 @@ standardise_alleles <- function(gwas) {
   gwas <- dplyr::mutate(gwas, dplyr::across(dplyr::all_of(columns_to_coerce), as.numeric))
 
   to_flip <- (gwas$EA > gwas$OA) & (!gwas$EA %in% c("D", "I"))
-  if (any(to_flip)) {
-    if ('EAF' %in% names(gwas)) {
-      gwas$EAF[to_flip] <- 1 - gwas$EAF[to_flip]
-    }
-    if ('BETA' %in% names(gwas)) {
-      gwas$BETA[to_flip] <- -1 * gwas$BETA[to_flip]
-    }
-    if ('Z' %in% names(gwas)) {
-      gwas$Z[to_flip] <- -1 * gwas$Z[to_flip]
-    }
-
-    temp <- gwas$OA[to_flip]
-    gwas$OA[to_flip] <- gwas$EA[to_flip]
-    gwas$EA[to_flip] <- temp
-  }
+  gwas <- flip_alleles(gwas, to_flip)
 
   gwas$SNP <- format_unique_snp_string(gwas$CHR, gwas$BP, gwas$EA, gwas$OA)
   return(gwas)

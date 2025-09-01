@@ -1,5 +1,6 @@
 source('constants.R')
 source('database_definitions.R')
+source('gwas_calculations.R')
 
 parser <- argparser::arg_parser('Create DuckDB from pipeline results')
 parser <- argparser::add_argument(parser, '--studies_db_file', help = 'Studies DB file', type = 'character')
@@ -61,13 +62,6 @@ main <- function() {
   DBI::dbDisconnect(coloc_pairs_significant_conn, shutdown=TRUE)
   DBI::dbDisconnect(ld_conn, shutdown=TRUE)
   DBI::dbDisconnect(gwas_upload_conn, shutdown=TRUE)
-
-  file.copy(args$studies_db_file, sub(current_results_dir, latest_results_dir, args$studies_db_file), overwrite = TRUE)
-  file.copy(args$coloc_pairs_full_db_file, sub(current_results_dir, latest_results_dir, args$coloc_pairs_full_db_file), overwrite = TRUE)
-  file.copy(args$coloc_pairs_significant_db_file, sub(current_results_dir, latest_results_dir, args$coloc_pairs_significant_db_file), overwrite = TRUE)
-  file.copy(args$associations_db_file, sub(current_results_dir, latest_results_dir, args$associations_db_file), overwrite = TRUE)
-  file.copy(args$ld_db_file, sub(current_results_dir, latest_results_dir, args$ld_db_file), overwrite = TRUE)
-  file.copy(args$gwas_upload_db_file, sub(current_results_dir, latest_results_dir, args$gwas_upload_db_file), overwrite = TRUE)
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
@@ -398,15 +392,17 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
     })
   }) |> data.table::rbindlist(fill = TRUE)
 
-  variant_annotations_subset_lead <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, lead_snp_id = id)]
-  variant_annotations_subset_variant <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, variant_snp_id = id)]
+  variant_annotations_subset_lead <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, lead_flipped=flipped, lead_snp_id = id)]
+  variant_annotations_subset_variant <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, variant_flipped=flipped, variant_snp_id = id)]
   ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
 
   ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
   ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
   ld_data <- ld_blocks_subset[ld_data, on = "ld_block"]
-  ld_data <- ld_data[, .(lead_snp_id, variant_snp_id, ld_block_id, r)]
 
+  ld_data$r <- ld_data$r * ifelse(ld_data$lead_flipped, -1, 1) * ifelse(ld_data$variant_flipped, -1, 1)
+
+  ld_data <- ld_data[, .(lead_snp_id, variant_snp_id, ld_block_id, r)]
   ld_data <- ld_data[order(lead_snp_id, variant_snp_id)]
 
   DBI::dbAppendTable(ld_conn, ld_table$name, ld_data)
@@ -434,7 +430,7 @@ generate_ld_obj <- function(ld_block, snps) {
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
   message('Retrieving ', nrow(all_relevant_snps), ' SNPs for ', nrow(studies_db$studies$data), ' studies')
 
-  snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, snp_id = id)]
+  snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, flipped, snp_id = id)]
   studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(study_name, study_id = id)]
 
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
@@ -484,10 +480,9 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
 
       associations <- snp_annotations_subset[associations, on = "snp"]
       associations <- studies_subset[associations, on = c("study_name" = "study")]
-      associations <- associations[, .(snp_id, study_id, beta, se, imputed, p, eaf)]
+      associations <- associations[, .(snp_id, study_id, BETA=beta, SE=se, imputed, p, EAF=eaf, flipped)]
 
       message('Extracted ', nrow(associations), ' associations for ', ld_block)
-
       return(associations)
     }, error = function(e) {
       message('Error processing ld_block: ', ld_block, ' - ', e)
@@ -498,12 +493,14 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   associations <- associations[!sapply(associations, is.null)]
   associations <- data.table::rbindlist(associations, fill = TRUE)
 
+  associations <- flip_alleles(associations, associations$flipped)
+  associations <- associations[, .(snp_id, study_id, beta=BETA, se=SE, imputed, p, eaf=EAF)]
+
   original_num_rows <- nrow(associations)
   associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
   message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
   associations <- associations[order(snp_id, study_id)]
-
   association_chunk_info <- split_large_dataframe_into_chunks(associations)
 
   DBI::dbExecute(conn, associations_db$associations_metadata$query)
@@ -515,17 +512,17 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
     )
   )
 
-  lapply(seq_along(association_chunk_info$association_chunks), function(i) {
+  lapply(seq_along(association_chunk_info$dataframe_chunks), function(i) {
     table_chunk_name <- glue::glue("associations_{i}")
     create_table_query <- sub("table_name", table_chunk_name, associations_db$associations$query)
     DBI::dbExecute(conn, create_table_query)
-    DBI::dbAppendTable(conn, table_chunk_name, association_chunk_info$association_chunks[[i]])
-    message('Added ', nrow(association_chunk_info$association_chunks[[i]]), ' rows to ', table_chunk_name)
+    DBI::dbAppendTable(conn, table_chunk_name, association_chunk_info$dataframe_chunks[[i]])
+    message('Added ', nrow(association_chunk_info$dataframe_chunks[[i]]), ' rows to ', table_chunk_name)
   })
 }
 
 split_large_dataframe_into_chunks <- function(dataframe) {
-  chunk_size <- 10000000
+  chunk_size <- 5000000
   num_chunks <- ceiling(nrow(dataframe) / chunk_size)
   dataframe_size <- nrow(dataframe)
 

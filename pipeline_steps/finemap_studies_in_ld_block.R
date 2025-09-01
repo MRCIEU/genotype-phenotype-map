@@ -1,5 +1,6 @@
 source("constants.R")
 source("svg_helpers.R")
+source("gwas_calculations.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')

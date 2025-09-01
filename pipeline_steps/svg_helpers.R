@@ -1,8 +1,6 @@
-create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
-  # if (file.exists(file_name)) {
-    # return(file_name)
-  # }
+source("gwas_calculations.R")
 
+create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
   if (is_sparse) {
     bin_size <- 1000
   } else {
@@ -12,6 +10,7 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sp
   plot_height <- 200
   plot_width <- 1000
 
+  #TODO: change this to just data/ld_blocks.tsv after backfill
   ld_blocks <- vroom::vroom(glue::glue('../pipeline_steps/data/ld_blocks.tsv'), show_col_types = F)
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   specific_ld_info <- ld_info[ld_info$block == ld_block, ]
@@ -308,14 +307,15 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   dir.create(glue::glue('{svg_dir}/groups'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/extractions'), showWarnings = F, recursive = T)
 
-  #first, find out which new studies and extractions have been added
+  #find out which new studies and extractions have been added
   latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
   current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies.db"), read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"
-  latest_studies <- DBI::dbGetQuery(latest_studies_conn, studies_query)
   current_studies <- DBI::dbGetQuery(current_studies_conn, studies_query)
-  new_studies <- dplyr::anti_join(latest_studies, current_studies, by = "trait_id")
+  existing_full_svgs <- list.files(glue::glue('{svg_dir}/traits'), full.names = TRUE)
+  current_studies$new_full_svgs <- glue::glue('{svg_dir}/traits/{current_studies$id}_svgs.zip')
+  new_studies <- current_studies[!current_studies$new_full_svgs %in% existing_full_svgs, ]
 
   if (do_all) {
     new_studies <- current_studies
@@ -348,7 +348,6 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
     file.link(glue::glue('{data_dir}{extraction$svg_file}'), extraction$new_svg_file)
   })
 
-  #second, find out which new coloc groups have been added
   coloc_groups_query <- "SELECT * FROM coloc_groups"
   coloc_groups <- DBI::dbGetQuery(current_studies_conn, coloc_groups_query)
   unique_coloc_group_ids <- unique(coloc_groups$coloc_group_id)
@@ -357,11 +356,11 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   setwd(glue::glue('{svg_dir}/groups'))
   file.remove(Sys.glob('*.zip'))
 
-  #third, zip the svg extractions by coloc group
+  #zip the svg extractions by coloc group
   completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 10, function(group_id) {
     tryCatch({
       zip_file <- glue::glue('coloc_group_{group_id}_svgs.zip')
-      if (file.exists(zip_file)) return()
+      # if (file.exists(zip_file)) return()
 
       specific_coloc_group <- coloc_groups |>
         dplyr::filter(coloc_group_id == group_id)

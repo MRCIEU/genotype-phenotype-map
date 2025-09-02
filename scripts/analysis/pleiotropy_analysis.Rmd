@@ -8,6 +8,7 @@ output: html_document
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 source('../../pipeline_steps/constants.R')
 
 studies_db_file <- file.path(latest_results_dir, 'studies.db')
@@ -1040,7 +1041,9 @@ ggplot(all_coloc_groups, aes(x = cumulative_bp, y = type, color = type)) +
 
 ```{r gwas_hits_no_molecular_trait, echo=F}
 all_phenotype_study_extractions <- DBI::dbGetQuery(studies_conn, "SELECT study_extractions.*,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position, snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons
+  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+  snp_annotations.gene as snp_gene 
   FROM study_extractions
   JOIN studies ON study_extractions.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
@@ -1049,13 +1052,18 @@ all_phenotype_study_extractions <- DBI::dbGetQuery(studies_conn, "SELECT study_e
 ")
 
 all_coloc_groups <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position, snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons
+  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+  snp_annotations.gene as snp_gene
   FROM coloc_groups
   JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
   JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
   JOIN studies ON coloc_groups.study_id = studies.id
   WHERE coloc_groups.group_threshold = 'strong'
 ")
+
+ensembl_gene_map <- DBI::dbGetQuery(studies_conn, "SELECT gene as gene_name, ensembl_id FROM gene_annotations")
+
 all_study_extractions_in_coloc_groups <- unique(all_coloc_groups$study_extraction_id)
 
 all_phenotype_study_extractions_without_coloc <- all_phenotype_study_extractions %>%
@@ -1080,11 +1088,269 @@ nrow(all_significant_phenotype_study_extractions)
 nrow(all_significant_phenotype_study_extractions_without_coloc)
 nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc)
 
+all_significant_non_molecular_coloc <- dplyr::bind_rows(all_significant_phenotype_study_extractions_without_coloc, significant_phenotype_study_extractions_with_phenotype_only_coloc)
+
 (nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc) + nrow(all_significant_phenotype_study_extractions_without_coloc)) / nrow(all_significant_phenotype_study_extractions)
 
-no_molecular_trait_coloc_percentage <- (nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc) + nrow(all_significant_phenotype_study_extractions_without_coloc)) / nrow(all_significant_phenotype_study_extractions)
-
 #TODO: maybe figure this out, but deduplicate on if the study_extraction_id is from the same region, just finemapped
+
+# Deduplicate all_coloc_groups by snp_id and create histograms for VEP annotations
+all_coloc_groups_dedup <- all_coloc_groups %>%
+  group_by(snp_id) %>%
+  slice(1) %>%  # Keep first occurrence of each snp_id
+  ungroup()
+
+all_significant_non_molecular_coloc_dedup <- all_significant_non_molecular_coloc %>%
+  group_by(snp_id) %>%
+  slice(1) %>%  # Keep first occurrence of each snp_id
+  ungroup()
+
+cat("Original all_coloc_groups rows:", nrow(all_coloc_groups), "\n")
+cat("Deduplicated rows:", nrow(all_coloc_groups_dedup), "\n")
+
+# Create histograms for consequence, impact, and cdna_position
+
+
+all_consequence_counts <- all_coloc_groups_dedup %>%
+  filter(!is.na(consequence)) %>%
+  mutate(consequence_split = strsplit(consequence, ",")) %>%
+  tidyr::unnest(consequence_split) %>%
+  mutate(consequence_split = trimws(consequence_split)) %>%  # Remove whitespace
+  count(consequence_split, sort = TRUE)
+
+all_non_molecular_coloc_consequence_counts <- all_significant_non_molecular_coloc_dedup %>%
+  filter(!is.na(consequence)) %>%
+  mutate(consequence_split = strsplit(consequence, ",")) %>%
+  tidyr::unnest(consequence_split) %>%
+  mutate(consequence_split = trimws(consequence_split)) %>%  # Remove whitespace
+  count(consequence_split, sort = TRUE)
+
+
+
+# Calculate percent difference between all_coloc_groups and non_molecular_coloc consequences
+consequence_comparison <- all_consequence_counts %>%
+  full_join(all_non_molecular_coloc_consequence_counts, 
+            by = "consequence_split", 
+            suffix = c("_all", "_non_molecular")) %>%
+  mutate(
+    n_all = replace_na(n_all, 0),
+    n_non_molecular = replace_na(n_non_molecular, 0),
+    percent_diff = ((n_non_molecular - n_all) / n_all) * 100,
+    proportion = (n_non_molecular / n_all) * 100
+  ) %>%
+  filter(n_all > 0)  # Only include consequences that appear in the main dataset
+
+consequence_hist <- ggplot(consequence_comparison, aes(x = reorder(consequence_split, proportion), y = proportion)) +
+  geom_bar(stat = "identity", fill = ifelse(consequence_comparison$proportion> 0, "red", "blue"), alpha = 0.7) +
+  geom_hline(yintercept = 0, color = "black", linetype = "solid", size = 0.5) +
+  labs(
+    title = "Percent Difference in Consequence Prevalence",
+    subtitle = "Non-molecular coloc vs All coloc groups (Positive = more common in non-molecular)",
+    x = "VEP Consequence",
+    y = "Proportion Difference (Non-molecular / All) * 100",
+    caption = paste("Consequences with data in both datasets:", nrow(consequence_comparison))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 10)
+  ) +
+  coord_flip()  # Flip to make consequence names readable
+
+consequence_hist
+
+# 2. Impact comparison
+all_impact_counts <- all_coloc_groups_dedup %>%
+  filter(!is.na(impact)) %>%
+  count(impact, sort = TRUE)
+
+all_non_molecular_coloc_impact_counts <- all_significant_non_molecular_coloc_dedup %>%
+  filter(!is.na(impact)) %>%
+  count(impact, sort = TRUE)
+
+impact_comparison <- all_impact_counts %>%
+  full_join(all_non_molecular_coloc_impact_counts, 
+            by = "impact", 
+            suffix = c("_all", "_non_molecular")) %>%
+  mutate(
+    n_all = replace_na(n_all, 0),
+    n_non_molecular = replace_na(n_non_molecular, 0),
+    percent_diff = ((n_non_molecular - n_all) / n_all) * 100,
+    proportion = (n_non_molecular / n_all) * 100
+  ) %>%
+  filter(n_all > 0)
+
+impact_hist <- ggplot(impact_comparison, aes(x = reorder(impact, proportion), y = proportion)) +
+  geom_bar(stat = "identity", fill = ifelse(impact_comparison$proportion > 0, "red", "blue"), alpha = 0.7) +
+  geom_hline(yintercept = 0, color = "black", linetype = "solid", size = 0.5) +
+  labs(
+    title = "Proportion Difference in Impact Prevalence",
+    subtitle = "Non-molecular coloc vs All coloc groups (Positive = more common in non-molecular)",
+    x = "VEP Impact",
+    y = "Proportion Difference (Non-molecular / All) * 100",
+    caption = paste("Impact levels with data in both datasets:", nrow(impact_comparison))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 10)
+  ) +
+  coord_flip()
+impact_hist
+# 3. Feature type comparison
+all_feature_type_counts <- all_coloc_groups_dedup %>%
+  filter(!is.na(feature_type)) %>%
+  count(feature_type, sort = TRUE)
+
+all_non_molecular_coloc_feature_type_counts <- all_significant_non_molecular_coloc_dedup %>%
+  filter(!is.na(feature_type)) %>%
+  count(feature_type, sort = TRUE)
+
+feature_type_comparison <- all_feature_type_counts %>%
+  full_join(all_non_molecular_coloc_feature_type_counts, 
+            by = "feature_type", 
+            suffix = c("_all", "_non_molecular")) %>%
+  mutate(
+    n_all = replace_na(n_all, 0),
+    n_non_molecular = replace_na(n_non_molecular, 0),
+    percent_diff = ((n_non_molecular - n_all) / n_all) * 100,
+    proportion = (n_non_molecular / n_all) * 100
+  ) %>%
+  filter(n_all > 0)
+
+feature_type_hist <- ggplot(feature_type_comparison, aes(x = reorder(feature_type, proportion), y = proportion)) +
+  geom_bar(stat = "identity", fill = ifelse(feature_type_comparison$proportion > 0, "red", "blue"), alpha = 0.7) +
+  geom_hline(yintercept = 0, color = "black", linetype = "solid", size = 0.5) +
+  labs(
+    title = "Proportion Difference in Feature Type Prevalence",
+    subtitle = "Non-molecular coloc vs All coloc groups (Positive = more common in non-molecular)",
+    x = "Feature Type",
+    y = "Proportion Difference (Non-molecular / All) * 100",
+    caption = paste("Feature types with data in both datasets:", nrow(feature_type_comparison))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 10)
+  ) +
+  coord_flip()
+
+feature_type_hist
+
+# 4. cDNA position comparison (histogram since it's continuous)
+all_cdna_positions <- all_coloc_groups_dedup %>%
+  filter(!is.na(cdna_position)) %>%
+  mutate(cdna_position = as.numeric(cdna_position)) %>%
+  filter(!is.na(cdna_position))
+
+all_non_molecular_coloc_cdna_positions <- all_significant_non_molecular_coloc_dedup %>%
+  filter(!is.na(cdna_position)) %>%
+  mutate(cdna_position = as.numeric(cdna_position)) %>%
+  filter(!is.na(cdna_position))
+
+cdna_hist <- ggplot() +
+  geom_histogram(data = all_cdna_positions, aes(x = cdna_position, y = ..density..), 
+                 bins = 30, fill = "blue", alpha = 0.5, color = "black") +
+  geom_histogram(data = all_non_molecular_coloc_cdna_positions, aes(x = cdna_position, y = ..density..), 
+                 bins = 30, fill = "red", alpha = 0.5, color = "black") +
+  labs(
+    title = "Distribution of cDNA Positions",
+    subtitle = "Blue = All coloc groups, Red = Non-molecular coloc groups",
+    x = "cDNA Position",
+    y = "Density",
+    caption = paste("All coloc SNPs:", nrow(all_cdna_positions), 
+                   "Non-molecular SNPs:", nrow(all_non_molecular_coloc_cdna_positions))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10)
+  )
+
+cdna_hist
+
+# 5. Protein position comparison (histogram since it's continuous)
+all_protein_positions <- all_coloc_groups_dedup %>%
+  filter(!is.na(protein_position)) %>%
+  mutate(protein_position = as.numeric(protein_position)) %>%
+  filter(!is.na(protein_position))
+
+all_non_molecular_coloc_protein_positions <- all_significant_non_molecular_coloc_dedup %>%
+  filter(!is.na(protein_position)) %>%
+  mutate(protein_position = as.numeric(protein_position)) %>%
+  filter(!is.na(protein_position))
+
+protein_hist <- ggplot() +
+  geom_histogram(data = all_protein_positions, aes(x = protein_position, y = ..density..), 
+                 bins = 30, fill = "blue", alpha = 0.5, color = "black") +
+  geom_histogram(data = all_non_molecular_coloc_protein_positions, aes(x = protein_position, y = ..density..), 
+                 bins = 30, fill = "red", alpha = 0.5, color = "black") +
+  labs(
+    title = "Distribution of Protein Positions",
+    subtitle = "Blue = All coloc groups, Red = Non-molecular coloc groups",
+    x = "Protein Position",
+    y = "Density",
+    caption = paste("All coloc SNPs:", nrow(all_protein_positions), 
+                   "Non-molecular SNPs:", nrow(all_non_molecular_coloc_protein_positions))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+all_gene_counts <- all_coloc_groups_dedup %>%
+  left_join(ensembl_gene_map, by = c("snp_gene" = "ensembl_id")) %>%
+  count(gene_name, sort = TRUE)
+
+all_non_molecular_coloc_gene_counts <- all_significant_non_molecular_coloc_dedup %>%
+  left_join(ensembl_gene_map, by = c("snp_gene" = "ensembl_id")) %>%
+  count(gene_name, sort = TRUE)
+
+na_gene_count <- all_non_molecular_coloc_gene_counts$n[is.na(all_non_molecular_coloc_gene_counts$gene_name)]
+
+all_non_molecular_coloc_gene_counts <- all_non_molecular_coloc_gene_counts %>%
+  filter(!is.na(gene_name))
+
+
+# Show most common genes in non-molecular coloc groups
+gene_hist <- ggplot(all_non_molecular_coloc_gene_counts %>% head(50), aes(x = reorder(gene_name, n), y = n)) +
+  geom_bar(stat = "identity", fill = "red", alpha = 0.7) +
+  labs(
+    title = "Most Common Genes without molecular coloc results (Top 50)",
+    subtitle = paste("Number of SNPs without known gene name:", na_gene_count),
+    x = "Gene",
+    y = "Count",
+    caption = paste("Total unique genes in non-molecular coloc:", nrow(all_non_molecular_coloc_gene_counts))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 10)
+  ) +
+  coord_flip()
+
+# Display the plots
+print(consequence_hist)
+print(impact_hist)
+print(feature_type_hist)
+print(cdna_hist)
+print(protein_hist)
+print(gene_hist)
+
 
 #Other questions: for the 'credible set' / candidate snp for the non-colocing hits, are there patterns from VEP that we can learn about the type of variants that are not colocing?
 

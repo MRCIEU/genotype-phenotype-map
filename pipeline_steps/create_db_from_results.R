@@ -32,8 +32,8 @@ main <- function() {
   lapply(studies_db, \(table) DBI::dbExecute(studies_conn, table$query))
   lapply(gwas_upload_db, \(table) DBI::dbExecute(gwas_upload_conn, table$query))
   DBI::dbExecute(coloc_pairs_full_conn, coloc_pairs_full_table$query)
-  DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_table$query)
-  DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_table$indexes)
+  # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_table$query)
+  # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_table$indexes)
   DBI::dbExecute(ld_conn, ld_table$query)
 
   message('Loading data for studies db')
@@ -46,14 +46,16 @@ main <- function() {
   all_relevant_snps <- find_relevant_snps(studies_db)
   message("Found ", nrow(all_relevant_snps), " relevant SNPs")
 
+  message('Creating coloc pairs db...')
+  load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
+  q()
+
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
 
   message('Creating ld db...')
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
 
-  message('Creating coloc pairs db...')
-  load_data_into_coloc_pairs_db(coloc_pairs_conn, studies_db)
 
   DBI::dbDisconnect(latest_studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
@@ -173,6 +175,8 @@ load_data_for_studies_db <- function(studies_db) {
   studies_db$rare_results$data <- vroom::vroom(file.path(current_results_dir, "rare_results.tsv.gz"), show_col_types = F) |>
     dplyr::rename_with(tolower) |>
     format_rare_results(studies_db)
+  
+  create_wide_tables(studies_db)
 
   # studies_db$results_metadata$data <- vroom::vroom(file.path(current_results_dir, "results_metadata.tsv"), show_col_types = F) |>
   #   dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |>
@@ -262,6 +266,7 @@ format_clustered_colocs <- function(clustered_colocs, studies_db) {
     dplyr::rename(snp_id=id)
 
   clustered_colocs <- clustered_colocs |>
+    dplyr::arrange(coloc_group_id) |>
     dplyr::left_join(study_extractions_subset, by=c("unique_study_id"="unique_study_id")) |>
     dplyr::left_join(snp_annotations_subset, by="snp")
   
@@ -317,7 +322,37 @@ format_rare_results <- function(rare_results, studies_db) {
   return(rare_results)
 }
 
-load_data_into_coloc_pairs_db <- function(coloc_pairs_conn, studies_db) {
+create_wide_tables <- function(studies_conn, studies_db) {
+  DBI::dbExecute(studies_conn, 'CREATE TABLE coloc_groups_wide AS 
+    SELECT coloc_groups.*, 
+      study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
+      study_extractions.ld_block, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
+      traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+      study_sources.id as source_id, study_sources.name as source_name
+    FROM coloc_groups 
+    JOIN studies ON coloc_groups.study_id = studies.id
+    JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id 
+    JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
+    LEFT JOIN gene_annotations on study_extractions.gene_id = gene_annotations.id
+    JOIN traits ON studies.trait_id = traits.id
+    JOIN study_sources ON studies.source_id = study_sources.id 
+  ')
+
+  DBI::dbExecute(studies_conn, 'CREATE TABLE rare_results_wide AS 
+    SELECT rare_results.*,
+      study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
+      traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, ld_blocks.ld_block
+    FROM rare_results
+    JOIN studies ON rare_results.study_id = studies.id
+    JOIN snp_annotations ON rare_results.snp_id = snp_annotations.id
+    JOIN study_extractions ON rare_results.study_extraction_id = study_extractions.id
+    LEFT JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id
+    JOIN traits ON studies.trait_id = traits.id
+    JOIN ld_blocks ON rare_results.ld_block_id = ld_blocks.id
+  ')
+}
+
+load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {
   pairwise_colocs <- data.table::fread(file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"))
   pairwise_colocs <- pairwise_colocs[!is.na(h4) & ignore == FALSE]
 
@@ -334,7 +369,7 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_conn, studies_db) {
   data.table::setkey(pairwise_colocs, unique_study_b)
   pairwise_colocs <- study_extractions_subset[pairwise_colocs, on = "unique_study_id==unique_study_b"]
   data.table::setnames(pairwise_colocs, c("study_extraction_id", "ld_block_id"), c("study_extraction_b_id", "ld_block_id_b"))
-  data.table::setnames(pairwise_colocs, c("PP.H3.abf", "PP.H4.abf"), c("h3", "h4"))
+  data.table::setnames(pairwise_colocs, c("PP.H3.abf"), c("h3"))
   
   pairwise_colocs[, ld_block_id := ld_block_id_a]
   pairwise_colocs[, c("ld_block_id_a", "ld_block_id_b") := NULL]
@@ -350,10 +385,23 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_conn, studies_db) {
     dplyr::select(get_table_column_names(coloc_pairs_full_table)) |>
     dplyr::arrange(study_extraction_a_id, study_extraction_b_id)
 
-  DBI::dbAppendTable(coloc_pairs_conn, coloc_pairs_full_table$name, pairwise_colocs)
+  DBI::dbAppendTable(coloc_pairs_full_conn, coloc_pairs_full_table$name, pairwise_colocs)
 
   significant_colocs <- pairwise_colocs[h4 > 0.6]
-  DBI::dbAppendTable(coloc_pairs_conn, coloc_pairs_significant_table$name, significant_colocs)
+
+  significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "study_extraction_a_id")
+  DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)
+  lapply(seq_along(significant_colocs_chunk_info$dataframe_chunks), function(i) {
+    table_chunk_name <- glue::glue("coloc_pairs_{i}")
+    create_table_query <- sub("table_name", table_chunk_name, coloc_pairs_significant_db$coloc_pairs$query)
+    DBI::dbExecute(coloc_pairs_significant_conn, create_table_query)
+    DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs$indexes)
+
+    DBI::dbAppendTable(coloc_pairs_significant_conn, table_chunk_name, significant_colocs_chunk_info$dataframe_chunks[[i]])
+    message('Added ', nrow(significant_colocs_chunk_info$dataframe_chunks[[i]]), ' rows to ', table_chunk_name)
+  })
+
+  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
 }
 
 # Find relevant snps: all coloc SNPs and all finemapped SNPs that colocalise with nothing (at genome wide significance)
@@ -501,14 +549,14 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
   associations <- associations[order(snp_id, study_id)]
-  association_chunk_info <- split_large_dataframe_into_chunks(associations)
+  association_chunk_info <- split_large_dataframe_into_chunks(associations, "snp_id")
 
   DBI::dbExecute(conn, associations_db$associations_metadata$query)
   DBI::dbAppendTable(conn, associations_db$associations_metadata$name,
     data.frame(
-      start_snp_id = association_chunk_info$snp_metadata$start_snp_id,
-      stop_snp_id = association_chunk_info$snp_metadata$end_snp_id,
-      associations_table_name = glue::glue("associations_{1:nrow(association_chunk_info$snp_metadata)}")
+      start_snp_id = association_chunk_info$dataframe_metadata$start_snp_id,
+      stop_snp_id = association_chunk_info$dataframe_metadata$end_snp_id,
+      associations_table_name = glue::glue("associations_{1:nrow(association_chunk_info$dataframe_metadata)}")
     )
   )
 
@@ -521,34 +569,36 @@ load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) 
   })
 }
 
-split_large_dataframe_into_chunks <- function(dataframe) {
+split_large_dataframe_into_chunks <- function(dataframe, specific_id) {
   chunk_size <- 5000000
   num_chunks <- ceiling(nrow(dataframe) / chunk_size)
   dataframe_size <- nrow(dataframe)
+  start_id <- paste0("start_", specific_id, "_id")
+  stop_id <- paste0("end_", specific_id, "_id")
 
-  snp_metadata_per_chunk <- lapply(seq_len(num_chunks), function(i) {
+  dataframe_metadata_per_chunk <- lapply(seq_len(num_chunks), function(i) {
     start_boundary <- (i - 1) * chunk_size + 1
     stop_boundary <- min(i * chunk_size, dataframe_size)
-    snp_id_at_start_boundary <- dataframe$snp_id[start_boundary]
-    snp_id_at_stop_boundary <- dataframe$snp_id[stop_boundary]
+    id_at_start_boundary <- dataframe[[specific_id]][start_boundary]
+    id_at_stop_boundary <- dataframe[[specific_id]][stop_boundary]
 
     dataframe_chunk <- dataframe[start_boundary:stop_boundary, ]
     return(list(
       dataframe_chunk=dataframe_chunk,
       chunk_number=i,
-      start_snp_id=snp_id_at_start_boundary,
-      end_snp_id=snp_id_at_stop_boundary
+      !!start_id := id_at_start_boundary,
+      !!stop_id := id_at_stop_boundary
     ))
   })
-  dataframe_chunks <- lapply(snp_metadata_per_chunk, function(x) x$dataframe_chunk)
+  dataframe_chunks <- lapply(dataframe_metadata_per_chunk, function(x) x$dataframe_chunk)
 
-  snp_metadata <- data.frame(
-    chunk_number=sapply(snp_metadata_per_chunk, function(x) x$chunk_number),
-    start_snp_id=sapply(snp_metadata_per_chunk, function(x) x$start_snp_id),
-    end_snp_id=sapply(snp_metadata_per_chunk, function(x) x$end_snp_id)
+  dataframe_metadata <- data.frame(
+    chunk_number=sapply(dataframe_metadata_per_chunk, function(x) x$chunk_number),
+    !!start_id:=sapply(dataframe_metadata_per_chunk, function(x) x[[start_id]]),
+    !!stop_id:=sapply(dataframe_metadata_per_chunk, function(x) x[[stop_id]])
   )
 
-  return(list(dataframe_chunks=dataframe_chunks, snp_metadata=snp_metadata))
+  return(list(dataframe_chunks=dataframe_chunks, dataframe_metadata=dataframe_metadata))
 }
 
 

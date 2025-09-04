@@ -78,8 +78,9 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 
   coloc_clustered_results <- coloc_clustered_results |>
     dplyr::group_by(ld_block, component, group_threshold) |>
-    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
+    dplyr::mutate(coloc_group_id = dplyr::group_indices()) |>
     dplyr::ungroup()
+  
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {

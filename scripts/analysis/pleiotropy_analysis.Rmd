@@ -325,10 +325,11 @@ h4_ratio_histogram(0.6)
 coloc_group_data <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*,
   studies.gene, studies.sample_size, studies.data_type, studies.tissue, studies.study_name,
   gene_annotations.chr, gene_annotations.start, gene_annotations.stop, gene_annotations.gene_biotype,
-  study_extractions.cis_trans
+  study_extractions.cis_trans, traits.trait_category, traits.trait_name
   FROM coloc_groups
   JOIN studies ON coloc_groups.study_id = studies.id
-  JOIN studies.study_extractions ON coloc_groups.study_extraction_id = studies.study_extractions.id
+  JOIN study_extractions ON coloc_groups.study_extraction_id = studies.study_extractions.id
+  JOIN traits ON studies.trait_id = traits.id
   LEFT JOIN gene_annotations ON studies.gene_id = gene_annotations.id
   WHERE study_extractions.min_p < 1e-8
   AND (study_extractions.cis_trans = 'cis' OR study_extractions.cis_trans IS NULL)
@@ -339,8 +340,6 @@ coloc_group_data <- coloc_group_data |>
   group_by(coloc_group_id) |>
   filter(n() > 1) |>
   ungroup()
-
-
 
 gene_phenotype_counts_per_coloc_group <- coloc_group_data |>
   filter(group_threshold == "strong") |>
@@ -395,6 +394,37 @@ knitr::kable(percentage_of_coloc_groups, caption = "Percentage of coloc groups b
 
 
 ```
+
+### Distinct phenotype categories in the same coloc group
+
+How can we quantify the pleiotropy of phenotypes, when different phenotypes can be so similar?
+How else can we quantify biological pleiotropy (vs. LD)?
+
+
+```{r distinct_phenotype_categories_in_same_coloc_group, echo=F}
+distinct_phenotype_categories_in_same_coloc_group <- coloc_group_data |>
+  filter(group_threshold == 'strong' & data_type == 'phenotype') |>
+  group_by(coloc_group_id) |>
+  summarise(distinct_phenotype_categories = n_distinct(trait_category)) |>
+  filter(distinct_phenotype_categories > 0)
+
+
+trait_category_counts_per_coloc_group <- distinct_phenotype_categories_in_same_coloc_group |>
+  mutate(
+    trait_category_bin = case_when(
+      distinct_phenotype_categories == 0 ~ "0 trait categories",
+      TRUE ~ paste0(distinct_phenotype_categories, " trait categories")
+    )
+  ) |>
+  group_by(trait_category_bin) |>
+  summarise(count = n(), .groups = 'drop')
+
+knitr::kable(trait_category_counts_per_coloc_group, caption = "Distinct trait categories in the same coloc group")
+
+example_coloc_group <- coloc_group_data[coloc_group_data$coloc_group_id == 560164 & !is.na(coloc_group_data$trait_category), c('trait_category', 'trait_name')]
+knitr::kable(example_coloc_group, caption = "Example coloc group with multiple trait categories")
+```
+SNP in question: https://gpmap.opengwas.io/snp.html?id=7790443
 
 ### Breakdown of coloc groups by number of genes 
 

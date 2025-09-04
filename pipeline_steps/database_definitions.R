@@ -216,20 +216,30 @@ coloc_pairs_full_table <- list(
   )"
 )
 
-coloc_pairs_significant_table <- list(
-  name = "coloc_pairs",
-  query = "CREATE TABLE coloc_pairs (
-    study_extraction_a_id INTEGER NOT NULL,
-    study_extraction_b_id INTEGER NOT NULL,
-    ld_block_id INTEGER NOT NULL,
-    h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
-    h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
-    spurious BOOLEAN NOT NULL,
-    PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
-  )",
-  indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
-    CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
-    CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);"
+coloc_pairs_significant_db <- list(
+  coloc_pairs_metadata = list(
+    name = "coloc_pairs_metadata",
+    query = "CREATE TABLE coloc_pairs_metadata (
+      start_study_extraction_id INTEGER NOT NULL,
+      stop_study_extraction_id INTEGER NOT NULL,
+      coloc_pairs_table_name TEXT NOT NULL
+    )"
+  ),
+  coloc_pairs = list(
+    name = "coloc_pairs",
+    query = "CREATE TABLE table_name (
+      study_extraction_a_id INTEGER NOT NULL,
+      study_extraction_b_id INTEGER NOT NULL,
+      ld_block_id INTEGER NOT NULL,
+      h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
+      h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
+      spurious BOOLEAN NOT NULL,
+      PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
+    )",
+    indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
+      CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
+      CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);"
+  )
 )
 
 associations_db <- list(

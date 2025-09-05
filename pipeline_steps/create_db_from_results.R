@@ -176,7 +176,7 @@ load_data_for_studies_db <- function(studies_db) {
     dplyr::rename_with(tolower) |>
     format_rare_results(studies_db)
   
-  create_wide_tables(studies_db)
+  create_wide_tables(studies_conn)
 
   # studies_db$results_metadata$data <- vroom::vroom(file.path(current_results_dir, "results_metadata.tsv"), show_col_types = F) |>
   #   dplyr::left_join(dplyr::select(studies_db$ld_blocks$data, ld_block, id) |>
@@ -322,34 +322,11 @@ format_rare_results <- function(rare_results, studies_db) {
   return(rare_results)
 }
 
-create_wide_tables <- function(studies_conn, studies_db) {
-  DBI::dbExecute(studies_conn, 'CREATE TABLE coloc_groups_wide AS 
-    SELECT coloc_groups.*, 
-      study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
-      study_extractions.ld_block, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
-      traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
-      study_sources.id as source_id, study_sources.name as source_name
-    FROM coloc_groups 
-    JOIN studies ON coloc_groups.study_id = studies.id
-    JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id 
-    JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
-    LEFT JOIN gene_annotations on study_extractions.gene_id = gene_annotations.id
-    JOIN traits ON studies.trait_id = traits.id
-    JOIN study_sources ON studies.source_id = study_sources.id 
-  ')
-
-  DBI::dbExecute(studies_conn, 'CREATE TABLE rare_results_wide AS 
-    SELECT rare_results.*,
-      study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
-      traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, ld_blocks.ld_block
-    FROM rare_results
-    JOIN studies ON rare_results.study_id = studies.id
-    JOIN snp_annotations ON rare_results.snp_id = snp_annotations.id
-    JOIN study_extractions ON rare_results.study_extraction_id = study_extractions.id
-    LEFT JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id
-    JOIN traits ON studies.trait_id = traits.id
-    JOIN ld_blocks ON rare_results.ld_block_id = ld_blocks.id
-  ')
+create_wide_tables <- function(studies_conn) {
+  safe_lapply(additional_studies_tables, function(table) {
+    DBI::dbExecute(studies_conn, table$query)
+    DBI::dbExecute(studies_conn, table$indexes)
+  })
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {

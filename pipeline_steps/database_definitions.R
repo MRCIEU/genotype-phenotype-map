@@ -136,6 +136,7 @@ studies_db <- list(
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )"
+    indexes = "CREATE INDEX idx_study_extractions_study_id ON study_extractions(study_id);"
   ),
   coloc_groups = list(
     name = "coloc_groups",
@@ -168,28 +169,47 @@ studies_db <- list(
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )"
+  ),
+)
+
+additional_studies_tables <- list(
+  coloc_groups_wide = list(
+    name = "coloc_groups_wide",
+    query = "
+    CREATE TABLE coloc_groups_wide AS 
+    SELECT coloc_groups.*, 
+      study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
+      study_extractions.ld_block, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
+      traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+      study_sources.id as source_id, study_sources.name as source_name
+    FROM coloc_groups 
+    JOIN studies ON coloc_groups.study_id = studies.id
+    JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id 
+    JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
+    LEFT JOIN gene_annotations on study_extractions.gene_id = gene_annotations.id
+    JOIN traits ON studies.trait_id = traits.id
+    JOIN study_sources ON studies.source_id = study_sources.id",
+    indexes = "CREATE INDEX idx_coloc_groups_wide_study_id ON coloc_groups_wide(study_id);
+      CREATE INDEX idx_coloc_groups_wide_study_extraction_id ON coloc_groups_wide(study_extraction_id);"
+  ),
+  rare_results_wide = list(
+    name = "rare_results_wide",
+    query = "CREATE TABLE rare_results_wide AS 
+      SELECT rare_results.*,
+        study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp,
+        gene_annotations.gene, gene_annotations.id as gene_id,
+        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+        ld_blocks.ld_block
+      FROM rare_results
+      JOIN studies ON rare_results.study_id = studies.id
+      JOIN snp_annotations ON rare_results.snp_id = snp_annotations.id
+      JOIN study_extractions ON rare_results.study_extraction_id = study_extractions.id
+      LEFT JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id
+      JOIN traits ON studies.trait_id = traits.id
+      JOIN ld_blocks ON rare_results.ld_block_id = ld_blocks.id",
+    indexes = "CREATE INDEX idx_rare_results_wide_study_id ON rare_results_wide(study_id);
+      CREATE INDEX idx_rare_results_wide_study_extraction_id ON rare_results_wide(study_extraction_id);"
   )
-  # results_metadata = list(
-  #   name = "results_metadata",
-  #   persist_id_from = NA,
-  #   query = "CREATE TABLE results_metadata (
-  #     ld_block_id INTEGER,
-  #     ld_block TEXT,
-  #     number_extracted INTEGER,
-  #     number_standardised INTEGER,
-  #     mean_snps_removed_by_reference_panel REAL,
-  #     number_imputed INTEGER,
-  #     significant_snps_imputed INTEGER,
-  #     significant_imputed_snps_filtered INTEGER,
-  #     number_finemapped INTEGER,
-  #     finemapped_per_imputed REAL,
-  #     num_finemap_failed INTEGER,
-  #     standardised_time_taken REAL,
-  #     imputed_time_taken REAL,
-  #     finemapped_time_taken REAL,
-  #     FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
-  #   )"
-  # )
 )
 
 ld_table <- list(
@@ -216,30 +236,20 @@ coloc_pairs_full_table <- list(
   )"
 )
 
-coloc_pairs_significant_db <- list(
-  coloc_pairs_metadata = list(
-    name = "coloc_pairs_metadata",
-    query = "CREATE TABLE coloc_pairs_metadata (
-      start_study_extraction_id INTEGER NOT NULL,
-      stop_study_extraction_id INTEGER NOT NULL,
-      coloc_pairs_table_name TEXT NOT NULL
-    )"
-  ),
-  coloc_pairs = list(
-    name = "coloc_pairs",
-    query = "CREATE TABLE table_name (
-      study_extraction_a_id INTEGER NOT NULL,
-      study_extraction_b_id INTEGER NOT NULL,
-      ld_block_id INTEGER NOT NULL,
-      h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
-      h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
-      spurious BOOLEAN NOT NULL,
-      PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
-    )",
-    indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
-      CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
-      CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);"
-  )
+coloc_pairs_significant_table <- list(
+  name = "coloc_pairs",
+  query = "CREATE TABLE coloc_pairs (
+    study_extraction_a_id INTEGER NOT NULL,
+    study_extraction_b_id INTEGER NOT NULL,
+    ld_block_id INTEGER NOT NULL,
+    h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
+    h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
+    spurious BOOLEAN NOT NULL,
+    PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
+  )",
+  indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
+    CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
+    CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);"
 )
 
 associations_db <- list(

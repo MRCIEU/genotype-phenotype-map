@@ -1,6 +1,7 @@
 source("gwas_calculations.R")
 
 create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
+  if (file.exists(file_name)) return()
   if (is_sparse) {
     bin_size <- 1000
   } else {
@@ -11,7 +12,7 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sp
   plot_width <- 1000
 
   #TODO: change this to just data/ld_blocks.tsv after backfill
-  ld_blocks <- vroom::vroom(glue::glue('../pipeline_steps/data/ld_blocks.tsv'), show_col_types = F)
+  ld_blocks <- vroom::vroom(glue::glue('data/ld_blocks.tsv'), show_col_types = F)
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   specific_ld_info <- ld_info[ld_info$block == ld_block, ]
   start_bp <- specific_ld_info$start

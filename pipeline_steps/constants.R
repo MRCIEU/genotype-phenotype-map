@@ -109,7 +109,8 @@ finemapped_column_types <- vroom::cols(
   qc_step_run = vroom::col_logical(),
   snps_removed_by_qc = vroom::col_number(),
   time_taken = vroom::col_character(),
-  cis_trans = vroom::col_character()
+  cis_trans = vroom::col_character(),
+  ignore = vroom::col_logical()
 )
 
 file_prefix <- function(file_path) {

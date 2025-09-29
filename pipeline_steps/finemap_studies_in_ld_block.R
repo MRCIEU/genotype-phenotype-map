@@ -38,7 +38,6 @@ main <- function() {
   ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 

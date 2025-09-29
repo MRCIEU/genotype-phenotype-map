@@ -1,6 +1,13 @@
 source('../pipeline_steps/constants.R')
 options(dplyr.width = Inf)
 
+repopulate_missing_finemapped_results <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  ld_info <- ld_info[15:nrow(ld_info), , drop = F]
+}
+
 update_trait_names <- function() {
   traits_processed <- vroom::vroom('/local-scratch/projects/genotype-phenotype-map/results/latest/traits_processed.tsv.gz')
   studies_processed <- vroom::vroom('/local-scratch/projects/genotype-phenotype-map/results/latest/studies_processed.tsv.gz')

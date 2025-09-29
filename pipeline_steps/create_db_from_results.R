@@ -129,7 +129,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
   gene_subset <- studies_db$gene_annotations$data |>
     dplyr::select(ensembl_id, id) |>
     dplyr::rename(gene_id=id)
-
+  
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- vroom::vroom(file.path(current_results_dir, "studies_processed.tsv.gz"), show_col_types = F) |>
     dplyr::left_join(sources_subset, by=c("source"="source")) |>

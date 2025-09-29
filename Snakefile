@@ -314,14 +314,15 @@ rule pipeline_summary:
         """
 
 rule copy_results_to_other_directories:
-    input: svg_files_ready_file
+    input: pipeline_summary_file
     threads: 1
     output: timestamped_results_dir
     shell:
         """
         mkdir -p {timestamped_results_dir}
         cp -r {current_results_dir} {timestamped_results_dir}
-        cp -r {current_results_dir} {latest_results_dir}
+        #TODO: uncomment this when we have a way to handle the case where the pipeline fails
+        # cp -r {current_results_dir} {latest_results_dir}
         """
 
 onsuccess:

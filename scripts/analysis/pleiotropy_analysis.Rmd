@@ -39,7 +39,8 @@ dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_f
    * Genes that colocalise with the most traits (or trait categories?).  
 5. What fraction of known GWAS hits are no known molecular trait associated with it?
 6. Is there consistency between of molecule-disease associations between common cis, rare cis and trans instruments?
-7. Can we calculate a 'pleiotropy score' for each SNP?  Would it be useful?
+7. Tissue specificity: can we break down coloc groups by tissue?
+8. Can we calculate a 'pleiotropy score' for each SNP?  Would it be useful?
 
 
 ```{r load-data, echo=F}
@@ -53,6 +54,7 @@ joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   study_a.study_name AS study_name_a,
   study_a.gene AS gene_a,
   study_a.tissue AS tissue_a,
+  study_a.sample_size AS sample_size_a,
   study_a.data_type AS data_type_a,
   trait_a.trait_category AS trait_category_a,
   trait_a.trait_name AS trait_name_a,
@@ -64,6 +66,7 @@ joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   study_b.study_name AS study_name_b,
   study_b.gene AS gene_b,
   study_b.tissue AS tissue_b,
+  study_b.sample_size AS sample_size_b,
   study_b.data_type AS data_type_b,
   trait_b.trait_category AS trait_category_b,
   trait_b.trait_name AS trait_name_b
@@ -484,19 +487,21 @@ multiple_genes_in_coloc_group <- function(threshold, only_protein_coding = FALSE
     geom_bar(stat = "identity", fill = "lightblue", color = "black", alpha = 0.7) +
     geom_text(aes(label = count), vjust = -0.5, size = 2) +
     labs(
-      title = glue::glue("{if (only_protein_coding) 'protein coding' else 'all'} unique genes per coloc group, {if (include_trans) 'including trans' else 'excluding trans'}"),
+      title = glue::glue("Unique {if (only_protein_coding) 'Protein Coding' else 'All'} genes per coloc group, {if (include_trans) 'including trans' else 'excluding trans'}"),
       x = "Number of unique genes per coloc group",
-      y = "Frequency (log scale)",
+      y = "Frequency",
       caption = paste("Total groups:", nrow(coloc_group_analysis), 
-                     "| Groups with 0 genes:", sum(coloc_group_analysis$unique_genes == 0),
-                     "| Groups with >1 unique gene:", sum(coloc_group_analysis$unique_genes > 1))
+                     "| Groups with 0 genes:", sum(coloc_group_analysis$unique_genes == 0)
+                    #  "| Groups with >1 unique gene:", sum(coloc_group_analysis$unique_genes > 1)
+                    )
     ) +
     theme_minimal() +
-    scale_y_log10() +
+    # scale_y_log10() +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
       plot.title = element_text(hjust = 0.5, size = 11)
     )
+  ggsave(p_gene_dist, filename = glue::glue("num_genes_per_coloc_group_{if (only_protein_coding) 'protein_coding' else 'all'}_{if (include_trans) 'including_trans' else 'excluding_trans'}.png"), width = 8, height = 6)
   return(p_gene_dist)
 }
 
@@ -522,7 +527,18 @@ most_gene_b_colocalising <- significant_cis_coloc_pairs %>%
   group_by(gene_b) %>%
   rename(gene = gene_b, trait = trait_name_a)
 
+most_gene_a_colocalising_trait_category <- significant_cis_coloc_pairs %>%
+  filter(!is.na(gene_a) & data_type_b == 'phenotype') %>%
+  group_by(gene_a) %>%
+  rename(gene = gene_a, trait_category = trait_category_b)
+
+most_gene_b_colocalising_trait_category <- significant_cis_coloc_pairs %>%
+  filter(!is.na(gene_b) & data_type_a == 'phenotype') %>%
+  group_by(gene_b) %>%
+  rename(gene = gene_b, trait_category = trait_category_a)
+
 most_genes_colocalising_with_traits <- rbind(most_gene_a_colocalising, most_gene_b_colocalising)
+most_genes_colocalising_with_trait_categories <- rbind(most_gene_a_colocalising_trait_category, most_gene_b_colocalising_trait_category)
 
 most_genes_colocalising_summary <- most_genes_colocalising_with_traits %>%
   group_by(gene) %>%
@@ -539,6 +555,67 @@ all_phenotypes_for_top_gene <- most_genes_colocalising_with_traits %>%
   distinct()
 
 knitr::kable(head(all_phenotypes_for_top_gene, 30), caption = glue::glue("Phenotypes for top gene: {top_gene}"))
+
+```
+
+### Distribution of number of phenotypes per gene
+
+```{r phenotypes_per_gene_distribution, echo=F}
+# Create a summary with counts and add small offset for visibility
+gene_phenotype_counts <- most_genes_colocalising_with_traits %>%
+  group_by(gene) %>%
+  summarise(num_phenotypes = n_distinct(trait), .groups = 'drop')
+
+gene_phenotype_count_data <- gene_phenotype_counts %>%
+  count(num_phenotypes, name = "count") %>%
+  mutate(count_offset = count + 0.1)  # Add small offset to make count=1 visible
+
+gene_trait_category_counts <- most_genes_colocalising_with_trait_categories %>%
+  group_by(gene) %>%
+  summarise(num_trait_categories = n_distinct(trait_category), .groups = 'drop')
+
+gene_trait_category_count_data <- gene_trait_category_counts %>%
+  count(num_trait_categories, name = "count") %>%
+  mutate(count_offset = count + 0.1)  # Add small offset to make count=1 visible
+
+p_gene_phenotype <- ggplot(gene_phenotype_count_data, aes(x = num_phenotypes, y = count_offset)) +
+  geom_col(fill = "darkgreen", alpha = 1, width = 0.8) +
+  scale_x_continuous() +
+  scale_y_log10() +
+  labs(
+    title = "Number of phenotypes per gene",
+    x = "Number of phenotypes",
+    y = "Count of genes (log scale)",
+    caption = paste("Mean:", round(mean(gene_phenotype_counts$num_phenotypes), 2),
+                   "| Median:", round(median(gene_phenotype_counts$num_phenotypes), 2))
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(p_gene_phenotype, filename = "num_phenotypes_per_gene.png", width = 8, height = 6)
+print(p_gene_phenotype)
+
+p_gene_trait_category <- ggplot(gene_trait_category_count_data, aes(x = num_trait_categories, y = count_offset)) +
+  geom_col(fill = "darkgreen", alpha = 1, width = 0.8) +
+  scale_x_continuous() +
+  # scale_y_log10() +
+  labs(
+    title = "Number of trait categories per gene",
+    x = "Number of trait categories",
+    y = "Count of genes (log scale)",
+    caption = paste("Mean:", round(mean(gene_trait_category_counts$num_trait_categories), 2),
+                   "| Median:", round(median(gene_trait_category_counts$num_trait_categories), 2))
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(p_gene_trait_category, filename = "num_trait_categories_per_gene.png", width = 8, height = 6)
+print(p_gene_trait_category)
+
+gene_phenotype_summary <- gene_phenotype_counts %>%
+  arrange(desc(num_phenotypes)) %>%
+  head(20)
+knitr::kable(gene_phenotype_summary, caption = "Top 20 genes by number of phenotypes colocalising")
 
 ```
 
@@ -722,11 +799,17 @@ number_of_genes <- lapply(seq_along(all_phenotype_studies$id), function(i) {
 })
 number_of_genes <- do.call(rbind, number_of_genes)
 
-ggplot(number_of_genes, aes(x = num_genes)) +
-  geom_histogram(binwidth = 1, fill = "steelblue", alpha = 0.7) +
+# Create a summary with counts and add small offset for visibility
+count_data <- number_of_genes %>%
+  count(num_genes, name = "count") %>%
+  mutate(count_offset = count + 0.1)  # Add small offset to make count=1 visible
+
+p <- ggplot(count_data, aes(x = num_genes, y = count_offset)) +
+  geom_col(fill = "steelblue", alpha = 1, width = 3) +
+  scale_x_continuous() +
   scale_y_log10() +
   labs(
-    title = "Distribution of number of genes colocalising per phenotype study",
+    title = "Number of cis-genes colocalising per phenotype study",
     x = "Number of genes",
     y = "Count of studies (log scale)",
     caption = paste("Mean:", round(mean(number_of_genes$num_genes), 2),
@@ -735,6 +818,8 @@ ggplot(number_of_genes, aes(x = num_genes)) +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5))
 
+ggsave(p, filename = "num_genes_colocalising.png", width = 8, height = 6)
+print(p)
 
 number_of_genes_summary <- number_of_genes %>%
   arrange(desc(num_genes)) %>%
@@ -1067,63 +1152,128 @@ ggplot(all_coloc_groups, aes(x = cumulative_bp, y = type, color = type)) +
 # ggsave("coloc_groups_manhattan_jittered.png", p1, width = 10, height = 6)
 ```
 
+```{r num_qtls_per_ld_block, echo=F}
+options(scipen = 999)
+all_qtls_in_ld_blocks <- DBI::dbGetQuery(studies_conn, "SELECT count(*) as num_qtls, max(ld_blocks.start) as start, max(ld_blocks.stop) as stop, study_extractions.ld_block_id FROM study_extractions
+ JOIN ld_blocks ON study_extractions.ld_block_id = ld_blocks.id
+ JOIN studies ON study_extractions.study_id = studies.id
+ WHERE data_type != 'phenotype' GROUP BY study_extractions.ld_block_id")
+
+all_qtls_in_ld_blocks_counts <- all_qtls_in_ld_blocks %>%
+  mutate(block_size = stop - start)
+
+p_num_qtls_per_ld_block <- ggplot(all_qtls_in_ld_blocks_counts, aes(x = block_size, y = num_qtls)) +
+  geom_point(color = "steelblue") +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Number of QTLs per LD block size",
+    x = "LD Block Size",
+    y = "Number of QTLs"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(labels = scales::label_number(accuracy = 1, big.mark = ","))
+
+ggsave(p_num_qtls_per_ld_block, filename = "num_qtls_per_ld_block.png", width = 8, height = 6)
+print(p_num_qtls_per_ld_block)
+
+knitr::kable(
+  all_qtls_in_ld_blocks_counts %>% mutate(block_size = scales::comma(block_size)),
+  caption = "Number of QTLs per LD block"
+)
+```
+
 # What fraction of known GWAS hits are no known molecular trait associated with it?
 
 ```{r gwas_hits_no_molecular_trait, echo=F}
 all_phenotype_study_extractions <- DBI::dbGetQuery(studies_conn, "SELECT study_extractions.*,
   snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
   snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene 
+  snp_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
   FROM study_extractions
   JOIN studies ON study_extractions.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
   JOIN snp_annotations ON study_extractions.snp_id = snp_annotations.id
-  WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common'
+  WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common' and study_extractions.min_p < 5e-8
 ")
 
 all_coloc_groups <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
   snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
   snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene
+  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
   FROM coloc_groups
   JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
   JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
   JOIN studies ON coloc_groups.study_id = studies.id
-  WHERE coloc_groups.group_threshold = 'strong'
+  JOIN traits ON studies.trait_id = traits.id
+  WHERE coloc_groups.group_threshold = 'strong' and study_extractions.min_p < 5e-8
 ")
 
-ensembl_gene_map <- DBI::dbGetQuery(studies_conn, "SELECT gene as gene_name, ensembl_id FROM gene_annotations")
 
 all_study_extractions_in_coloc_groups <- unique(all_coloc_groups$study_extraction_id)
-
 all_phenotype_study_extractions_without_coloc <- all_phenotype_study_extractions %>%
   filter(!id %in% all_study_extractions_in_coloc_groups)
-
-all_significant_phenotype_study_extractions <- all_phenotype_study_extractions %>%
-  filter(min_p < 1e-8)
-
-all_significant_phenotype_study_extractions_without_coloc <- all_phenotype_study_extractions_without_coloc %>%
-  filter(min_p < 1e-8)
-
 study_extractions_with_phenotype_only_coloc <- all_coloc_groups %>%
   group_by(coloc_group_id) %>%
   filter(all(data_type == "phenotype")) %>%
   ungroup()
+all_significant_non_molecular_coloc <- dplyr::bind_rows(all_phenotype_study_extractions_without_coloc, study_extractions_with_phenotype_only_coloc)
 
-significant_phenotype_study_extractions_with_phenotype_only_coloc <- study_extractions_with_phenotype_only_coloc %>%
-  filter(min_p < 1e-8)
+gwas_hits_and_molecular_traits_by_trait_category <- function(tc) {
+  all_study_extractions_in_coloc_groups <- unique(all_coloc_groups$study_extraction_id)
+  if (is.na(tc)) {
+    all_phenotype_study_extractions_for_tc <- all_phenotype_study_extractions
+  } else {
+    all_phenotype_study_extractions_for_tc <- all_phenotype_study_extractions[all_phenotype_study_extractions$trait_category == tc, ]
+  }
 
-nrow(all_phenotype_study_extractions)
-nrow(all_significant_phenotype_study_extractions)
-nrow(all_significant_phenotype_study_extractions_without_coloc)
-nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc)
+  all_phenotype_study_extractions_without_coloc <- all_phenotype_study_extractions_for_tc %>%
+    filter(!id %in% all_study_extractions_in_coloc_groups)
 
-all_significant_non_molecular_coloc <- dplyr::bind_rows(all_significant_phenotype_study_extractions_without_coloc, significant_phenotype_study_extractions_with_phenotype_only_coloc)
+  if (is.na(tc)) {
+    study_extractions_with_phenotype_only_coloc <- all_coloc_groups %>%
+      group_by(coloc_group_id) %>%
+      filter(all(data_type == "phenotype")) %>%
+      ungroup()
+  } else {
+    study_extractions_with_phenotype_only_coloc <- all_coloc_groups %>%
+      group_by(coloc_group_id) %>%
+      filter(any(trait_category == tc)) %>%
+      filter(all(data_type == "phenotype")) %>%
+      ungroup() %>%
+      filter(trait_category == tc)
+  }
 
-(nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc) + nrow(all_significant_phenotype_study_extractions_without_coloc)) / nrow(all_significant_phenotype_study_extractions)
+  all_significant_non_molecular_coloc <- nrow(all_phenotype_study_extractions_without_coloc) + nrow(study_extractions_with_phenotype_only_coloc)
 
-#TODO: maybe figure this out, but deduplicate on if the study_extraction_id is from the same region, just finemapped
+  percent_non_molecular_coloc <- (nrow(study_extractions_with_phenotype_only_coloc) + nrow(all_phenotype_study_extractions_without_coloc)) / nrow(all_phenotype_study_extractions_for_tc)
 
+  if (is.na(tc)) tc <- "All"
+  return(data.frame(
+    trait_category = tc,
+    all_study_extractions = nrow(all_phenotype_study_extractions_for_tc),
+    all_study_extractions_without_coloc = nrow(all_phenotype_study_extractions_without_coloc),
+    phenotype_only_coloc = nrow(study_extractions_with_phenotype_only_coloc),
+    all_non_molecular_coloc = all_significant_non_molecular_coloc,
+    percent_no_coloc = scales::percent(nrow(all_phenotype_study_extractions_without_coloc) / nrow(all_phenotype_study_extractions_for_tc), accuracy = 0.01),
+    percent_non_molecular_coloc = scales::percent(percent_non_molecular_coloc, accuracy = 0.01)
+  ))
+}
+
+cat("Breakdown of phenotype info by trait category")
+gwas_hits_and_molecular_traits <- lapply(unique(all_coloc_groups$trait_category), function(tc) {
+  gwas_hits_and_molecular_traits_by_trait_category(tc)
+}) |> dplyr::bind_rows()
+
+gwas_hits_and_molecular_traits <- gwas_hits_and_molecular_traits %>%
+  arrange(trait_category != "All", trait_category)
+
+
+knitr::kable(gwas_hits_and_molecular_traits, caption = "Breakdown of phenotype info by trait category")
+```
+
+
+```{r non_molecular_coloc_vep_annotations, echo=F}
 # Deduplicate all_coloc_groups by snp_id and create histograms for VEP annotations
 all_coloc_groups_dedup <- all_coloc_groups %>%
   group_by(snp_id) %>%
@@ -1135,9 +1285,14 @@ all_significant_non_molecular_coloc_dedup <- all_significant_non_molecular_coloc
   slice(1) %>%  # Keep first occurrence of each snp_id
   ungroup()
 
-cat("Original all_coloc_groups rows:", nrow(all_coloc_groups), "\n")
-cat("Deduplicated rows:", nrow(all_coloc_groups_dedup), "\n")
 
+percent_non_molecular_coloc <- (nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc) + nrow(all_significant_phenotype_study_extractions_without_coloc)) / nrow(all_significant_phenotype_study_extractions)
+
+# cat("All significant phenotype study extractions:", nrow(all_significant_phenotype_study_extractions), "\n")
+# cat("All significant phenotype study extractions without coloc:", nrow(all_significant_phenotype_study_extractions_without_coloc), "\n")
+# cat("Significant phenotype study extractions in a phenotype only coloc:", nrow(significant_phenotype_study_extractions_with_phenotype_only_coloc), "\n")
+# cat("All significant non-molecular coloc:", nrow(all_significant_non_molecular_coloc), "\n")
+# cat("Percentage of all significant phenotype study extractions that are not in a molecular coloc:", percent_non_molecular_coloc, "\n")
 # Create histograms for consequence, impact, and cdna_position
 
 
@@ -1189,7 +1344,6 @@ consequence_hist <- ggplot(consequence_comparison, aes(x = reorder(consequence_s
   ) +
   coord_flip()  # Flip to make consequence names readable
 
-consequence_hist
 
 # 2. Impact comparison
 all_impact_counts <- all_coloc_groups_dedup %>%
@@ -1230,7 +1384,7 @@ impact_hist <- ggplot(impact_comparison, aes(x = reorder(impact, proportion), y 
     axis.text.y = element_text(size = 10)
   ) +
   coord_flip()
-impact_hist
+
 # 3. Feature type comparison
 all_feature_type_counts <- all_coloc_groups_dedup %>%
   filter(!is.na(feature_type)) %>%
@@ -1271,7 +1425,6 @@ feature_type_hist <- ggplot(feature_type_comparison, aes(x = reorder(feature_typ
   ) +
   coord_flip()
 
-feature_type_hist
 
 # 4. cDNA position comparison (histogram since it's continuous)
 all_cdna_positions <- all_coloc_groups_dedup %>%
@@ -1305,7 +1458,6 @@ cdna_hist <- ggplot() +
     axis.text.y = element_text(size = 10)
   )
 
-cdna_hist
 
 # 5. Protein position comparison (histogram since it's continuous)
 all_protein_positions <- all_coloc_groups_dedup %>%
@@ -1340,6 +1492,7 @@ protein_hist <- ggplot() +
   )
 
 
+ensembl_gene_map <- DBI::dbGetQuery(studies_conn, "SELECT gene as gene_name, ensembl_id FROM gene_annotations")
 all_gene_counts <- all_coloc_groups_dedup %>%
   left_join(ensembl_gene_map, by = c("snp_gene" = "ensembl_id")) %>%
   count(gene_name, sort = TRUE)
@@ -1368,7 +1521,7 @@ gene_hist <- ggplot(all_non_molecular_coloc_gene_counts %>% head(50), aes(x = re
   theme(
     plot.title = element_text(hjust = 0.5, size = 12),
     plot.subtitle = element_text(hjust = 0.5, size = 10),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
     axis.text.y = element_text(size = 10)
   ) +
   coord_flip()
@@ -1380,19 +1533,13 @@ print(feature_type_hist)
 print(cdna_hist)
 print(protein_hist)
 print(gene_hist)
-
-
-#Other questions: for the 'credible set' / candidate snp for the non-colocing hits, are there patterns from VEP that we can learn about the type of variants that are not colocing?
-
 ```
 
+# Tissue specificity: can we break down coloc groups by tissue?
 
-
-
+```{r tissue_specificity, echo=F}
+```
 
 # Can we calculate a 'pleiotropy score' for each SNP?
 
 ### Colocalisation proximity to genes: how can we quantify 'artefactual' pleiotropy?
-
-```{r colocalisation_proximity, echo=F}
-```

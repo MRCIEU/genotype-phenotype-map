@@ -27,7 +27,7 @@ main <- function() {
 
     orig_studies_db_file <- file.path(latest_results_dir, 'studies.db')
     orig_ld_db_file <- file.path(latest_results_dir, 'ld.db')
-    orig_associations_db_file <- file.path(latest_results_dir, 'associations_hunmil.db')
+    orig_associations_db_file <- file.path(latest_results_dir, 'associations.db')
     orig_coloc_pairs_db_file <- file.path(latest_results_dir, 'coloc_pairs.db')
 
     studies_db_file <- file.path(latest_results_dir, 'studies_small.db')
@@ -55,6 +55,11 @@ main <- function() {
         query <- sub(",\n.\\s+FOREIGN.*", ")", table$query)
         DBI::dbExecute(studies_con, query)
     })
+    safe_lapply(additional_studies_tables, function(table) {
+        DBI::dbExecute(studies_con, table$query)
+        DBI::dbExecute(studies_con, table$indexes)
+    })
+
     DBI::dbExecute(ld_con, ld_table$query)
     DBI::dbExecute(coloc_pairs_con, coloc_pairs_significant_table$query)
 
@@ -76,8 +81,14 @@ main <- function() {
         paste(coloc_groups$coloc_group_id, collapse=",")
     ))
 
+    coloc_groups_wide <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM coloc_groups_wide WHERE coloc_group_id IN (%s)",
+        paste(coloc_groups$coloc_group_id, collapse=",")
+    ))
+
     study_ids <- unique(c(coloc_groups$study_id, study_ids))
     DBI::dbAppendTable(studies_con, "coloc_groups", coloc_groups)
+    DBI::dbAppendTable(studies_con, "coloc_groups_wide", coloc_groups_wide)
 
     studies <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM studies WHERE id IN (%s)", paste(study_ids, collapse=",")
@@ -100,6 +111,12 @@ main <- function() {
         paste(all_study_ids, collapse=",")
     ))
     DBI::dbAppendTable(studies_con, "rare_results", rare_results)
+
+    rare_results <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM rare_results_wide WHERE study_id IN (%s)",
+        paste(all_study_ids, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "rare_results_wide", rare_results)
 
     snp_ids_to_keep <- unique(c(study_extractions$snp_id, coloc_groups$snp_id, rare_results$snp_id))
 
@@ -125,11 +142,10 @@ main <- function() {
     ))
     DBI::dbAppendTable(coloc_pairs_con, "coloc_pairs", coloc_pairs)
 
-    associations_metadata <- DBI::dbGetQuery(orig_associations_con, "SELECT * FROM associations_metadata")
     DBI::dbExecute(associations_con, associations_db$associations_metadata$query)
-    DBI::dbAppendTable(associations_con, "associations_metadata", associations_metadata)
 
-    lapply(associations_metadata$associations_table_name, function(table_name) {
+    associations_metadata <- DBI::dbGetQuery(orig_associations_con, "SELECT * FROM associations_metadata")
+    all_associations <- lapply(associations_metadata$associations_table_name, function(table_name) {
         create_table_query <- sub("table_name", table_name, associations_db$associations$query)
         DBI::dbExecute(associations_con, create_table_query)
         associations <- DBI::dbGetQuery(orig_associations_con,
@@ -138,8 +154,15 @@ main <- function() {
           paste(snp_ids_to_keep, collapse=","),
           paste(studies$id, collapse=","))
         )
-        DBI::dbAppendTable(associations_con, table_name, associations)
     })
+    all_associations <- do.call(rbind, all_associations)
+    DBI::dbAppendTable(associations_con, 'associations_1', all_associations)
+    associations_metadata <- data.frame(
+      start_snp_id = 1,
+      stop_snp_id = .Machine$integer.max,
+      associations_table_name = 'associations_1'
+    )
+    DBI::dbAppendTable(associations_con, "associations_metadata", associations_metadata)
     
     ld_to_keep <- DBI::dbGetQuery(
         orig_ld_con,

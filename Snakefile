@@ -84,9 +84,9 @@ rule all:
         ld_db_file,
         gwas_upload_db_file,
         create_dbs_done_file,
-        backup_done_file,
-        svg_files_ready_file
-        pipeline_summary_output
+        svg_files_ready_file,
+        pipeline_summary_file
+        # backup_done_file,
         # sync_done_file,
 
 rule extract_regions_from_studies:
@@ -208,7 +208,7 @@ rule coloc_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output}"
+                --completed_output_file {output} --force_clustering true"
         subprocess.run(command, shell=True)
 
 rule compare_rare_rule:

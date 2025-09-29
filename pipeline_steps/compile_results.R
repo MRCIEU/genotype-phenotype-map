@@ -26,8 +26,10 @@ main <- function() {
 
   message('Creating study extractions')
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
+  vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
+  q()
 
-  message('Aggregating pipeline metadata')
+  # message('Aggregating pipeline metadata')
   # results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   message('Writing results')
@@ -77,10 +79,10 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   message('clustered coloc results: ', nrow(coloc_clustered_results))
 
   coloc_clustered_results <- coloc_clustered_results |>
-    dplyr::group_by(ld_block, component, group_threshold) |>
-    dplyr::mutate(coloc_group_id = dplyr::group_indices()) |>
-    dplyr::ungroup()
-  
+    dplyr::group_by(ld_block, component) |>
+    dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
+    dplyr::ungroup() |>
+    dplyr::arrange(coloc_group_id)
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {

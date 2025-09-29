@@ -1,28 +1,70 @@
 source('../pipeline_steps/constants.R')
 options(dplyr.width = Inf)
 
-update_method <- function(file, standardised_file, ld_block) {
-  if (!file.exists(file)) {
-    print(paste('FILE MISSING:', file))
-    return()
-  }
-  standardised_studies <- vroom::vroom(standardised_file, show_col_types = F)
-  rare_results <- vroom::vroom(file, show_col_types = F)
-  if (nrow(rare_results) == 0) return()
+update_trait_names <- function() {
+  traits_processed <- vroom::vroom('/local-scratch/projects/genotype-phenotype-map/results/latest/traits_processed.tsv.gz')
+  studies_processed <- vroom::vroom('/local-scratch/projects/genotype-phenotype-map/results/latest/studies_processed.tsv.gz')
+  traits_processed <- dplyr::left_join(traits_processed, studies_processed[, c('study_name', 'gene')], by='study_name')
 
-  rare_results$ld_block <- sub(ld_block_data_dir, '', ld_block)
-
-  updated_results <- lapply(seq_len(nrow(rare_results)), function(i) {
-    rare_result <- rare_results[i, ]
-    unique_study_names <- strsplit(rare_result[['traits']], ', ')[[1]]
-    study_names <- sapply(strsplit(unique_study_names, '_'), `[`, 1)
-    study_files <- dplyr::filter(standardised_studies, study %in% study_names) |> dplyr::pull(file)
-    rare_result[['files']] <- paste(study_files, collapse = ', ')
-    return(as.data.frame(rare_result))
-  })
+  new_methqtl_trait_names <- paste(
+    traits_processed$gene[grepl('methQTL', traits_processed$trait) & !is.na(traits_processed$gene)],
+    traits_processed$trait[grepl('methQTL', traits_processed$trait) & !is.na(traits_processed$gene)]
+  )
+  traits_processed$trait[grepl('methQTL', traits_processed$trait) & !is.na(traits_processed$gene)] <- new_methqtl_trait_names
   
-  rare_results <- dplyr::bind_rows(updated_results)
-  vroom::vroom_write(rare_results, file)
+  sqtl_study_names <- traits_processed[grepl('sQTL', traits_processed$trait), ]$study_name
+  sqtl_study_names <- sub("^.*[- ](chr.*):clu.*$", "\\1", sqtl_study_names)
+  new_names <- paste(traits_processed$trait[grepl('sQTL', traits_processed$trait)], sqtl_study_names)
+  traits_processed$trait[grepl('sQTL', traits_processed$trait)] <- new_names
+
+  vroom::vroom_write(traits_processed, '/local-scratch/projects/genotype-phenotype-map/results/latest/traits_processed_new.tsv.gz')
+}
+
+populate_godmc_gene_info <- function() {
+  besd_epi <- vroom::vroom('/local-scratch/data/hg38/godmc/methylation.epi', col_names = F)
+  sp <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz'))
+  epic <- vroom::vroom(glue::glue('{variant_annotation_dir}/EPICv2.hg38.manifest.gencode.v41.tsv.gz'))
+  msa <- vroom::vroom(glue::glue('{variant_annotation_dir}/MSA.hg38.manifest.gencode.v41.tsv.gz')) |>
+    dplyr::filter(!probeID %in% epic$probeID)
+  gene_info <- vroom::vroom(glue::glue('{variant_annotation_dir}/gene_info.tsv'), show_col_types = F)
+
+  all_methylation <- dplyr::bind_rows(epic, msa) |>
+    dplyr::filter(!is.na(genesUniq))
+
+  all_methylation$probe <- sub('_.*', '', all_methylation$probeID)
+  all_methylation$gene <- sub(';.*', '', all_methylation$genesUniq)
+
+  all_methylation$ensg <- ifelse(
+    !grepl('ENSG', all_methylation$gene),
+    gene_info$ensembl_id[match(all_methylation$gene, gene_info$gene)],
+    all_methylation$gene
+  )
+
+  all_methylation$ensg <- ifelse(
+    !grepl('ENSG', all_methylation$ensg),
+    NA,
+    all_methylation$ensg
+  )
+
+  all_methylation <- all_methylation |> dplyr::filter(!is.na(ensg))
+
+
+  epic_for_epi <- all_methylation[, c('probe', 'ensg')] |>
+    dplyr::rename(X2=probe, X5=ensg) |>
+    dplyr::distinct(X2, .keep_all = TRUE)
+
+  epic_for_sp <- all_methylation[, c('probe', 'gene', 'ensg')] |>
+    dplyr::distinct(probe, .keep_all = TRUE)
+  
+  sp <- sp |>
+    dplyr::rows_update(epic_for_sp, by = 'probe', unmatched = 'ignore')
+  
+  besd_epi <- besd_epi |>
+    dplyr::rows_update(epic_for_epi, by = 'X2', unmatched = 'ignore')
+  besd_epi$X5[!grepl('ENSG', besd_epi$X5)] <- NA
+  
+  vroom::vroom_write(sp, glue::glue('{latest_results_dir}/studies_processed.tsv.gz'))
+  vroom::vroom_write(besd_epi, '/local-scratch/data/hg38/godmc/methylation.epi', col_names = F)
 }
 
 fix_all_svg_extractions <- function() {

@@ -307,8 +307,7 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   dir.create(glue::glue('{svg_dir}/groups'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/extractions'), showWarnings = F, recursive = T)
 
-  #find out which new studies and extractions have been added
-  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
+  #find out which new studies and extractions are missing from the svg directory
   current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies.db"), read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"

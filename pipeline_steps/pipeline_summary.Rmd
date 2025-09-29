@@ -109,7 +109,7 @@ load_results_data <- function(specific_results_dir) {
   ))
 }
 
-latest_results <- load_results_data(current_results_dir)
+latest_results <- load_results_data(latest_results_dir)
 # last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
 # previous_results <- load_results_data(last_two_pipeline_runs[2])
 ```
@@ -248,34 +248,158 @@ latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_conn, 'S
   WHERE coloc_pairs.h4 > 0.6
 ')
 
-coloc_summary <- lapply(unique_data_types, function(this_data_type) {
-  data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common')
-  coloc_results <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8 & (data_type_a == this_data_type | data_type_b == this_data_type))
+coloc_pair_summary_by_p_val <- function(p_val_threshold) {
+  coloc_summary <- lapply(unique_data_types, function(this_data_type) {
+    data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common' & min_p < p_val_threshold)
+    coloc_results <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8 & (data_type_a == this_data_type | data_type_b == this_data_type))
 
-  unique_coloc_study_extractions <- unique(c(coloc_results$study_extraction_a_id, coloc_results$study_extraction_b_id))
-  num_study_extractions_not_in_coloc <- length(setdiff(data_type_study_extractions$study_extraction_id, unique_coloc_study_extractions))
+    unique_coloc_study_extractions <- unique(c(coloc_results$study_extraction_a_id, coloc_results$study_extraction_b_id))
+    num_study_extractions_not_in_coloc <- length(setdiff(data_type_study_extractions$study_extraction_id, unique_coloc_study_extractions))
 
-  unique_studies <- unique(data_type_study_extractions$study_id)
+    unique_studies <- unique(data_type_study_extractions$study_id)
 
-  unique_coloc_studies <- unique(c(coloc_results$study_id_a, coloc_results$study_id_b))
-  num_studies_not_in_coloc <- length(setdiff(data_type_study_extractions$study_id, unique_coloc_studies))
+    unique_coloc_studies <- unique(c(coloc_results$study_id_a, coloc_results$study_id_b))
+    num_studies_not_in_coloc <- length(setdiff(data_type_study_extractions$study_id, unique_coloc_studies))
 
+    return(data.frame(
+      data_type = this_data_type,
+      num_study_extractions = scales::comma(nrow(data_type_study_extractions)),
+      num_study_extractions_not_in_coloc = scales::comma(num_study_extractions_not_in_coloc),
+      num_study_extractions_in_coloc = scales::comma(nrow(data_type_study_extractions) - num_study_extractions_not_in_coloc),
+      percent_extractions_not_in_colocs = scales::percent(num_study_extractions_not_in_coloc / nrow(data_type_study_extractions)),
+      num_studies = scales::comma(length(unique_studies)),
+      num_studies_not_in_colocs = scales::comma(num_studies_not_in_coloc),
+      num_studies_in_colocs = scales::comma(nrow(data_type_study_extractions) - num_studies_not_in_coloc),
+      percent_studies_not_in_colocs = scales::percent(num_studies_not_in_coloc / length(unique_studies)),
+      num_colocs = scales::comma(nrow(coloc_results))
+    ))
+  }) |> dplyr::bind_rows()
+
+  return(coloc_summary)
+  # knitr::kable(dplyr::select(coloc_summary, data_type, num_studies, num_studies_not_in_colocs, num_studies_in_colocs, percent_studies_not_in_colocs))
+}
+
+# cat("Breakdown for results for 1.5e-4 p-value threshold")
+# full_coloc_summary <- coloc_pair_summary_by_p_val(1.5e-4)
+cat("Breakdown for results for 5e-8 p-value threshold")
+significant_coloc_summary <- coloc_pair_summary_by_p_val(5e-8)
+knitr::kable(dplyr::select(significant_coloc_summary, data_type, num_studies, num_colocs, num_study_extractions, num_study_extractions_in_coloc, percent_extractions_not_in_colocs))
+```
+
+### Breakdown of phenotype coloc rates by trait category
+```{r phenotype_coloc_rates_by_trait_category, echo=F}
+all_phenotype_study_extractions <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_extractions.*,
+  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+  snp_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
+  FROM study_extractions
+  JOIN studies ON study_extractions.study_id = studies.id
+  JOIN traits ON studies.trait_id = traits.id
+  JOIN snp_annotations ON study_extractions.snp_id = snp_annotations.id
+  WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common' and study_extractions.min_p <= 5e-8
+")
+
+all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
+  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
+  FROM coloc_groups
+  JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+  JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
+  JOIN studies ON coloc_groups.study_id = studies.id
+  JOIN traits ON studies.trait_id = traits.id
+  WHERE study_extractions.min_p <= 5e-8
+  AND coloc_groups.coloc_group_id IN (
+    SELECT coloc_group_id 
+    FROM coloc_groups AS cg
+    JOIN study_extractions as se ON cg.study_extraction_id = se.id
+    WHERE se.min_p <= 5e-8
+    GROUP BY coloc_group_id 
+    HAVING COUNT(*) > 1
+  )
+")
+
+gwas_hits_and_molecular_traits_by_trait_category <- function(tc) {
+  all_study_extractions_in_coloc_groups <- unique(all_coloc_groups$study_extraction_id)
+  if (is.na(tc)) {
+    all_phenotype_study_extractions_for_tc <- all_phenotype_study_extractions
+  } else {
+    all_phenotype_study_extractions_for_tc <- dplyr::filter(all_phenotype_study_extractions, trait_category == tc)
+  }
+
+  all_phenotype_study_extractions_without_coloc <- all_phenotype_study_extractions_for_tc |>
+    dplyr::filter(!id %in% all_study_extractions_in_coloc_groups)
+
+  if (is.na(tc)) {
+    num_studies <- length(unique(all_phenotype_study_extractions_for_tc$study_id))
+    study_extractions_with_phenotype_only_coloc <- all_coloc_groups |>
+      dplyr::group_by(coloc_group_id) |>
+      dplyr::filter(all(data_type == "phenotype")) |>
+      dplyr::ungroup()
+    num_study_extractions_with_phenotype_only_coloc  <- length(unique(study_extractions_with_phenotype_only_coloc$study_extraction_id))
+
+    study_extractions_molecular_coloc <- all_coloc_groups |>
+      dplyr::group_by(coloc_group_id) |>
+      dplyr::filter(any(data_type != "phenotype")) |>
+      dplyr::ungroup() |>
+      dplyr::filter(data_type == "phenotype")
+    num_study_extractions_molecular_coloc <- length(unique(study_extractions_molecular_coloc$study_extraction_id))
+  } else {
+    num_studies <- length(unique(all_phenotype_study_extractions_for_tc$study_id))
+    
+    # Get coloc groups that contain this trait category
+    coloc_groups_with_tc <- all_coloc_groups |>
+      dplyr::filter(trait_category == tc) |>
+      dplyr::pull(coloc_group_id) |>
+      unique()
+    
+    # For phenotype-only coloc: groups that contain this trait category AND are all phenotype
+    study_extractions_with_phenotype_only_coloc <- all_coloc_groups |>
+      dplyr::filter(coloc_group_id %in% coloc_groups_with_tc) |>
+      dplyr::group_by(coloc_group_id) |>
+      dplyr::filter(all(data_type == "phenotype")) |>
+      dplyr::ungroup() |>
+      dplyr::filter(trait_category == tc & data_type == "phenotype")
+    num_study_extractions_with_phenotype_only_coloc  <- length(unique(study_extractions_with_phenotype_only_coloc$study_extraction_id))
+
+    # For molecular coloc: groups that contain this trait category AND have any non-phenotype
+    study_extractions_molecular_coloc <- all_coloc_groups |>
+      dplyr::filter(coloc_group_id %in% coloc_groups_with_tc) |>
+      dplyr::group_by(coloc_group_id) |>
+      dplyr::filter(any(data_type != "phenotype")) |>
+      dplyr::ungroup() |>
+      dplyr::filter(data_type == "phenotype" & trait_category == tc)
+    num_study_extractions_molecular_coloc <- length(unique(study_extractions_molecular_coloc$study_extraction_id))
+  }
+
+  all_significant_non_molecular_coloc <- nrow(all_phenotype_study_extractions_without_coloc) + num_study_extractions_with_phenotype_only_coloc
+
+  if (is.na(tc)) tc <- "All"
   return(data.frame(
-    data_type = this_data_type,
-    num_study_extractions = scales::comma(nrow(data_type_study_extractions)),
-    num_study_extractions_not_in_coloc = scales::comma(num_study_extractions_not_in_coloc),
-    num_study_extractions_in_coloc = scales::comma(nrow(data_type_study_extractions) - num_study_extractions_not_in_coloc),
-    percent_extractions_not_in_colocs = scales::percent(num_study_extractions_not_in_coloc / nrow(data_type_study_extractions)),
-    num_studies = scales::comma(length(unique_studies)),
-    num_studies_not_in_colocs = scales::comma(num_studies_not_in_coloc),
-    num_studies_in_colocs = scales::comma(nrow(data_type_study_extractions) - num_studies_not_in_coloc),
-    percent_studies_not_in_colocs = scales::percent(num_studies_not_in_coloc / length(unique_studies)),
-    num_colocs = scales::comma(nrow(coloc_results))
+    trait_category = tc,
+    num_studies = num_studies,
+    num_study_extractions = nrow(all_phenotype_study_extractions_for_tc),
+    # num_without_molecular_coloc = all_significant_non_molecular_coloc,
+    # num_with_molecular_coloc = num_study_extractions_molecular_coloc,
+    percent_without_molecular_coloc = scales::percent(all_significant_non_molecular_coloc / nrow(all_phenotype_study_extractions_for_tc), accuracy = 0.01),
+    percent_with_molecular_coloc = scales::percent(num_study_extractions_molecular_coloc / nrow(all_phenotype_study_extractions_for_tc), accuracy = 0.01)
   ))
+}
+
+gwas_hits_and_molecular_traits <- lapply(unique(all_coloc_groups$trait_category), function(tc) {
+  gwas_hits_and_molecular_traits_by_trait_category(tc)
 }) |> dplyr::bind_rows()
 
-knitr::kable(dplyr::select(coloc_summary, data_type, num_colocs, num_study_extractions, num_study_extractions_not_in_coloc, num_study_extractions_in_coloc, percent_extractions_not_in_colocs))
-knitr::kable(dplyr::select(coloc_summary, data_type, num_studies, num_studies_not_in_colocs, num_studies_in_colocs, percent_studies_not_in_colocs))
+gwas_hits_and_molecular_traits <- gwas_hits_and_molecular_traits |>
+  dplyr::arrange(trait_category != "All", trait_category)
+
+
+knitr::kable(gwas_hits_and_molecular_traits, caption = "Breakdown of phenotype info by trait category")
+sum(gwas_hits_and_molecular_traits$num_study_extractions)
+sum(gwas_hits_and_molecular_traits$num_without_molecular_coloc)
+sum(gwas_hits_and_molecular_traits$num_with_molecular_coloc)
+scales::percent(sum(gwas_hits_and_molecular_traits$num_without_molecular_coloc) / sum(gwas_hits_and_molecular_traits$num_study_extractions), accuracy = 0.01)
+scales::percent(sum(gwas_hits_and_molecular_traits$num_with_molecular_coloc) / sum(gwas_hits_and_molecular_traits$num_study_extractions), accuracy = 0.01)
 ```
 
 ## Matrix of coloc results by data type and by cis-trans:

@@ -10,9 +10,12 @@ TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 lowest_rare_p_value_threshold <- 1.5e-4
+min_p_threshold_for_clustering <- 1e-5
 minimum_extraction_size <- 150
-posterior_prob_threshold <- 0.5
+posterior_prob_h4_threshold <- 0.8
 
+#TODO: look into removing these
+posterior_prob_threshold <- 0.5
 posterior_prob_thresholds <- list(
   strong=0.8,
   moderate=0.6
@@ -45,6 +48,8 @@ data_types <- list(splice_variant='splice_variant',
                            protein='protein',
                            methylation='methylation',
                            metabolome='metabolome',
+                           cell_trait='cell_trait',
+                           plasma_protein='plasma_protein',
                            phenotype='phenotype'
 )
 data_type_names <- list(splice_variant='sQTL',
@@ -53,6 +58,8 @@ data_type_names <- list(splice_variant='sQTL',
                            protein='pQTL',
                            methylation='methQTL',
                            metabolome='metaQTL',
+                           cell_trait='Cell Trait',
+                           plasma_protein='Plasma Protein',
                            phenotype='Phenotype'
 )
 study_categories <- list(continuous='continuous', categorical='categorical')

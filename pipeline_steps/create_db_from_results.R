@@ -51,6 +51,7 @@ main <- function() {
 
   message('Creating ld db...')
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
+  studies_db <- adjust_causal_snps_for_high_ld_results(ld_conn, studies_conn, studies_db)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -398,7 +399,7 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
   })
 }
 
-# Find relevant snps: all coloc SNPs and all finemapped SNPs that colocalise with nothing (at genome wide significance)
+# Find relevant snps: all coloc SNPs, all rare association SNPs and all finemapped SNPs that colocalise with nothing (at genome wide significance)
 find_relevant_snps <- function(studies_db) {
   snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(candidate_snp = snp, snp_id = id)]
   ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
@@ -418,14 +419,23 @@ find_relevant_snps <- function(studies_db) {
   rare_results_snps$variant_type <- variant_types$rare_exome
   rare_results_snps$study_name <- NA
 
-  study_extractions_snps <- data.table::as.data.table(studies_db$study_extractions$data)[, .(snp_id, study_id, ld_block_id)]
+  study_extractions_snps <- data.table::as.data.table(studies_db$study_extractions$data)[, .(id, min_p, snp_id, study_id, ld_block_id)]
   study_extractions_snps <- unique(study_extractions_snps)
+  study_extractions_snps <- study_extractions_snps[
+    !id %in% studies_db$coloc_groups$data$study_extraction_id &
+    min_p <= lowest_p_value_threshold
+  ]
   study_extractions_snps <- snp_annotations_subset[study_extractions_snps, on = "snp_id"]
   study_extractions_snps <- ld_blocks_subset[study_extractions_snps, on = "ld_block_id"]
   study_extractions_snps <- studies_subset[study_extractions_snps, on = "study_id"]
   study_extractions_snps$study_id <- NULL
+  study_extractions_snps$id <- NULL
+  study_extractions_snps$min_p <- NULL
 
-  message("Found ", nrow(colocalising_snps), " colocalising SNPs, ", nrow(rare_results_snps), " rare SNPs, ", nrow(study_extractions_snps), " study specific SNPs")
+  message("Found ", nrow(colocalising_snps), " colocalising SNPs, ",
+    nrow(rare_results_snps), " rare SNPs, ",
+    nrow(study_extractions_snps), " significant non-colocalising SNPs"
+  )
   relevant_snps <- dplyr::bind_rows(colocalising_snps, rare_results_snps, study_extractions_snps)
   vroom::vroom_write(relevant_snps, file.path(current_results_dir, "relevant_snps.tsv"))
   return(relevant_snps)
@@ -479,6 +489,62 @@ generate_ld_obj <- function(ld_block, snps) {
   ld_long[, ld_block := ld_block]
   
   return(ld_long)
+}
+
+adjust_causal_snps_for_high_ld_results <- function(ld_conn, studies_conn, studies_db) {
+  r2_threshold <- 0.99
+  causal_snps <- unique(studies_db$coloc_groups$data$snp_id)
+  if (length(causal_snps) == 0) return(studies_db)
+
+  formatted_snp_ids <- paste0(unique(causal_snps), collapse = ",")
+  snp_pair_ld_scores <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT lead_snp_id, variant_snp_id
+    FROM ld
+    WHERE lead_snp_id IN ({formatted_snp_ids})
+    AND variant_snp_id IN ({formatted_snp_ids})
+    AND r*r > {r2_threshold}"
+  ))
+
+  if (nrow(snp_pair_ld_scores) == 0) return(studies_db)
+
+  # Union-Find to collapse equivalence classes of SNPs connected by high LD
+  snp_ids <- as.integer(unique(c(causal_snps, snp_pair_ld_scores$lead_snp_id, snp_pair_ld_scores$variant_snp_id)))
+  parent <- stats::setNames(snp_ids, snp_ids)
+  find <- function(x) {
+    px <- parent[[as.character(x)]]
+    if (px != x) {
+      parent[[as.character(x)]] <<- find(px)
+    }
+    parent[[as.character(x)]]
+  }
+  unite <- function(a, b) {
+    ra <- find(a); rb <- find(b)
+    if (ra == rb) return(invisible(NULL))
+    if (ra < rb) {
+      parent[[as.character(rb)]] <<- ra
+    } else {
+      parent[[as.character(ra)]] <<- rb
+    }
+  }
+  apply(snp_pair_ld_scores[, c("lead_snp_id","variant_snp_id")], 1, function(row) unite(as.integer(row[[1]]), as.integer(row[[2]])))
+  canonical <- vapply(snp_ids, find, integer(1))
+  comp_map_full <- data.frame(snp_id = snp_ids, new_snp_id = as.integer(canonical))
+  comp_map <- comp_map_full[comp_map_full$snp_id != comp_map_full$new_snp_id, ]
+
+  if (nrow(comp_map) == 0) return(studies_db)
+
+  # Update in-memory studies_db for downstream steps
+  studies_db$coloc_groups$data <- studies_db$coloc_groups$data |>
+    dplyr::left_join(comp_map, by = c("snp_id" = "snp_id")) |>
+    dplyr::mutate(snp_id = ifelse(is.na(new_snp_id), snp_id, new_snp_id)) |>
+    dplyr::select(-new_snp_id)
+
+  # Update the DuckDB coloc_groups table via a temp mapping table
+  DBI::dbExecute(studies_conn, "CREATE TEMP TABLE snp_id_map(old_snp_id INTEGER, new_snp_id INTEGER)")
+  DBI::dbAppendTable(studies_conn, "snp_id_map", comp_map)
+  DBI::dbExecute(studies_conn, "UPDATE coloc_groups SET snp_id = snp_id_map.new_snp_id FROM snp_id_map WHERE coloc_groups.snp_id = snp_id_map.old_snp_id")
+  DBI::dbExecute(studies_conn, "DROP TABLE snp_id_map")
+
+  return(studies_db)
 }
 
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
@@ -590,6 +656,7 @@ extract_associations_for_ld_block <- function(ld_block, general_snps, specific_s
     return(NULL)
   })
 }
+
 
 split_large_dataframe_into_chunks <- function(dataframe, specific_id) {
   chunk_size <- 5000000

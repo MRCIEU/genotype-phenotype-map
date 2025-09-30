@@ -24,7 +24,7 @@ main <- function() {
     dplyr::filter(extracted_location == args$extracted_study_location)
 	if (nrow(study) != 1) stop('Error: cant find study to process')
 
-  p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_rare_p_value_threshold, study$p_value_threshold)
+  p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
 
   dir.create(glue::glue('{study$extracted_location}/svgs'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{study$extracted_location}/extracted'), showWarnings = F, recursive = T)

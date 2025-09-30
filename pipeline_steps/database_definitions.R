@@ -236,7 +236,8 @@ coloc_pairs_full_table <- list(
     h2 REAL CHECK (h2 BETWEEN 0 AND 1) NOT NULL,
     h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
     h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
-    spurious BOOLEAN NOT NULL,
+    false_positive BOOLEAN NOT NULL,
+    false_negative BOOLEAN NOT NULL,
     PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
   )"
 )
@@ -250,7 +251,8 @@ coloc_pairs_significant_table <- list(
     ld_block_id INTEGER NOT NULL,
     h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
     h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
-    spurious BOOLEAN NOT NULL,
+    false_positive BOOLEAN NOT NULL,
+    false_negative BOOLEAN NOT NULL,
     PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
   )",
   indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
@@ -277,7 +279,8 @@ coloc_pairs_significant_db <- list(
     ld_block_id INTEGER NOT NULL,
     h3 REAL CHECK (h3 BETWEEN 0 AND 1) NOT NULL,
     h4 REAL CHECK (h4 BETWEEN 0 AND 1) NOT NULL,
-    spurious BOOLEAN NOT NULL,
+    false_positive BOOLEAN NOT NULL,
+    false_negative BOOLEAN NOT NULL,
     PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
   )",
   indexes = "CREATE INDEX idx_table_name_study_extraction_a_id ON table_name (study_extraction_a_id);

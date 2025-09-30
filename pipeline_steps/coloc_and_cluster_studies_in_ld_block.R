@@ -302,7 +302,9 @@ prune_poor_finemapping_results <- function(finemapped_studies, coloc_results) {
 }
 
 cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time) {
-  coloc_results <- coloc_results |> dplyr::filter(!ignore)
+  unique_studies_to_ignore <- finemapped_studies$unique_study_id[finemapped_studies$ignore]
+  coloc_results <- coloc_results |>
+    dplyr::filter(!ignore & !unique_study_a %in% unique_studies_to_ignore & !unique_study_b %in% unique_studies_to_ignore)
   message(glue::glue('{args$ld_block}: Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
 
   h4_adj_mx <- make_adjacency_matrix(coloc_results)
@@ -347,7 +349,6 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
       if (igraph::vcount(modified_pruned_graph) > 0) {
         clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
         clustered_memberships <- igraph::membership(clustered_graph)
-
 
         # FIrst, remove all edges between communities
         edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
@@ -396,18 +397,28 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
             next
           }
 
+
           study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% current_community_vertices)
           study_counts <- table(study_info$study)
           duplicate_studies <- names(study_counts[study_counts > 1])
 
+          problem_study <- 'GTEx-sQTL-v10-Stomach-chr1:156904998:156905324:clu-5332-+:ENSG00000187800-14_EUR/1/153358890-156424168_5'
+          if (problem_study %in% current_community_vertices) {
+            print(comm_id)
+            print(current_community_vertices)
+            print(study_info, width = Inf)
+            print(study_counts)
+            print(duplicate_studies)
+          }
+
           if (length(duplicate_studies) > 0) {
             for (duplicate_study in duplicate_studies) {
-              study_vertices <- current_community_vertices[study_info$study == duplicate_study]
               duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
+              study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
 
               best_vertex <- duplicate_study_info$unique_study_id[which.min(duplicate_study_info$min_p)]
 
-              vertices_to_remove <- study_vertices[study_vertices != best_vertex]
+              vertices_to_remove <- setdiff(study_vertices, best_vertex)
               pruned_studies <- c(pruned_studies, vertices_to_remove)
               duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
             }

@@ -67,7 +67,7 @@ main <- function() {
   message(glue::glue('Found {nrow(variants)} rare variants in LD region {ld_info$ld_block_data}'))
 
   # Compare rare variant hits across studies at given p-value threshold
-  compare_results <- compare_by_variant(studies = studies_to_compare, variants = variants, P_thresh = lowest_rare_p_value_threshold)
+  compare_results <- compare_by_variant(studies = studies_to_compare, variants = variants, P_thresh = lowest_p_value_threshold)
 
   if(nrow(compare_results) == 0){
     message(glue::glue('No rare variants to compare in LD region {ld_info$ld_block_data}, skipping.'))

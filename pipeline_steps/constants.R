@@ -9,8 +9,6 @@ TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
-lowest_rare_p_value_threshold <- 1.5e-4
-min_p_threshold_for_clustering <- 1e-5
 minimum_extraction_size <- 150
 posterior_prob_h4_threshold <- 0.8
 

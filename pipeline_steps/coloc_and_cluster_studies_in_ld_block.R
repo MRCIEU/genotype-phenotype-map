@@ -319,30 +319,29 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
   message(glue::glue('{args$ld_block}: Pruning graph starting {diff_time_taken(start_time)}'))
 
   h4_graph_components <- igraph::components(h4_graph)
-  recombined_graph <- h4_graph
-  subgraph_to_cluster_and_prune <- NULL
-  modified_pruned_graph <- NULL
+  # recombined_graph <- h4_graph
+  # modified_pruned_graph <- NULL
   pruned_studies <- c()
   pruned_edges <- data.frame(V1 = character(), V2 = character())
 
+  modified_pruned_graph <- h4_graph
   if(h4_graph_components$no == 1) {
     message(glue::glue('Only one component found, assigning all vertices to component 1'))
     igraph::V(h4_graph)$component <- 1
   } else {
     message(glue::glue('{args$ld_block}: Clustering {h4_graph_components$no} components'))
-    subgraphs <- lapply(1:h4_graph_components$no, function(x){
-      igraph::induced_subgraph(h4_graph, vids = igraph::V(h4_graph)[h4_graph_components$membership == x])
-    })
-    subgraph_density <- sapply(subgraphs, function(x){igraph::edge_density(x)})
+    # subgraphs <- lapply(1:h4_graph_components$no, function(x){
+    #   igraph::induced_subgraph(h4_graph, vids = igraph::V(h4_graph)[h4_graph_components$membership == x])
+    # })
+    # subgraph_density <- sapply(subgraphs, function(x){igraph::edge_density(x)})
 
-    if(all(subgraph_density >= subgraph_density_theshold)){
-      # If all components are dense enough, just assign their component IDs
-      igraph::V(h4_graph)$component <- h4_graph_components$membership
-      recombined_graph <- h4_graph
-    } else {
-      subgraph_to_keep <- igraph::disjoint_union(subgraphs[subgraph_density >= subgraph_density_theshold])
-      subgraph_to_cluster_and_prune <- igraph::disjoint_union(subgraphs[subgraph_density < subgraph_density_theshold])
-      modified_pruned_graph <- subgraph_to_cluster_and_prune
+    # if(all(subgraph_density >= subgraph_density_theshold)){
+    #   # If all components are dense enough, just assign their component IDs
+    #   igraph::V(h4_graph)$component <- h4_graph_components$membership
+    #   recombined_graph <- h4_graph
+    # } else {
+      # subgraph_to_keep <- igraph::disjoint_union(subgraphs[subgraph_density >= subgraph_density_theshold])
+      # subgraph_to_cluster_and_prune <- igraph::disjoint_union(subgraphs[subgraph_density < subgraph_density_theshold])
 
       pruned_edge_ids <- c()
       
@@ -379,7 +378,7 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
             next
           }
 
-          community_graph <- igraph::induced_subgraph(subgraph_to_cluster_and_prune, vids = current_community_vertices)
+          community_graph <- igraph::induced_subgraph(modified_pruned_graph, vids = current_community_vertices)
           internal_degrees <- igraph::degree(community_graph)
           max_degree_in_community <- max(internal_degrees)
           threshold_degree <- max_degree_in_community * min_internal_degree_percentage
@@ -438,46 +437,55 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
           )
         }
 
+        # Capture edges involving soon-to-be-removed studies BEFORE deleting vertices
+        if (length(pruned_studies) > 0) {
+          graph_before_vertex_removal <- modified_pruned_graph
+          for (study in pruned_studies) {
+            if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
+            study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)
+            if (length(study_edges) > 0) {
+              for (edge in study_edges) {
+                edge_vertices <- igraph::ends(graph_before_vertex_removal, edge)
+                pruned_edges <- rbind(pruned_edges, 
+                  data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
+              }
+            }
+          }
+        }
+
         message(glue::glue('Removing {length(pruned_studies)} vertices'))
         if (length(pruned_studies) > 0) {
-          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, pruned_studies)
-        }
-      }
-
-      # Adding edges from pruned studies, to mark as false positive later
-      for (study in pruned_studies) {
-        study_edges <- igraph::incident_edges(subgraph_to_cluster_and_prune, study)
-        if (length(study_edges) > 0) {
-          for (edge in study_edges) {
-            edge_vertices <- igraph::ends(subgraph_to_cluster_and_prune, edge)
-            pruned_edges <- rbind(pruned_edges, 
-              data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
+          # Delete the pruned vertices from the working graph
+          existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
+          if (length(existing_vertices_to_remove) > 0) {
+            modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
           }
         }
       }
+
       pruned_edges <- unique(pruned_edges)
 
       # Recombine the 'kept' components and the 'modified pruned' components
-      recombined_graph <- igraph::disjoint_union(subgraph_to_keep, modified_pruned_graph)
-      recombined_graph_components <- igraph::components(recombined_graph)
-      igraph::V(recombined_graph)$component <- recombined_graph_components$membership
-    }
+      # recombined_graph <- igraph::disjoint_union(modified_pruned_graph, modified_pruned_graph)
+      modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
+      igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
+    # }
   }
 
   message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
-  coloc_groups <- data.frame(unique_study_id = igraph::vertex_attr(recombined_graph)$name, component = igraph::V(recombined_graph)$component)
+  coloc_groups <- data.frame(unique_study_id = igraph::vertex_attr(modified_pruned_graph)$name, component = igraph::V(modified_pruned_graph)$component)
 
   message(glue::glue('Summary of pruning:'))
   message(glue::glue('  Initial vertices (after H4 adj matrix): {igraph::vcount(h4_graph)}'))
   message(glue::glue('  Initial edges (after H4 adj matrix): {igraph::ecount(h4_graph)}'))
-  message(glue::glue('  Final vertices after all pruning: {igraph::vcount(recombined_graph)}'))
-  message(glue::glue('  Final edges after all pruning: {igraph::ecount(recombined_graph)}'))
+  message(glue::glue('  Final vertices after all pruning: {igraph::vcount(modified_pruned_graph)}'))
+  message(glue::glue('  Final edges after all pruning: {igraph::ecount(modified_pruned_graph)}'))
   message(glue::glue('  Total vertices removed from clustering: {length(pruned_studies)}'))
   message(glue::glue('  Total edges removed from clustering: {nrow(pruned_edges)}'))
 
   return(list(
     unpruned_graph = h4_graph,
-    pruned_graph = recombined_graph,
+    pruned_graph = modified_pruned_graph,
     groups = coloc_groups,
     pruned_edges = pruned_edges
   ))

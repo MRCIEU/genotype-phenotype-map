@@ -51,7 +51,7 @@ main <- function() {
 
   message('Creating ld db...')
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
-  studies_db <- adjust_causal_snps_for_high_ld_results(ld_conn, studies_conn, studies_db)
+  match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -491,12 +491,11 @@ generate_ld_obj <- function(ld_block, snps) {
   return(ld_long)
 }
 
-adjust_causal_snps_for_high_ld_results <- function(ld_conn, studies_conn, studies_db) {
-  r2_threshold <- 0.99
-  causal_snps <- unique(studies_db$coloc_groups$data$snp_id)
-  if (length(causal_snps) == 0) return(studies_db)
+match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
+  r2_threshold <- 0.98
+  causal_snps <- unique(DBI::dbGetQuery(studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups"))
 
-  formatted_snp_ids <- paste0(unique(causal_snps), collapse = ",")
+  formatted_snp_ids <- paste0(unique(causal_snps$snp_id), collapse = ",")
   snp_pair_ld_scores <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT lead_snp_id, variant_snp_id
     FROM ld
     WHERE lead_snp_id IN ({formatted_snp_ids})
@@ -504,45 +503,32 @@ adjust_causal_snps_for_high_ld_results <- function(ld_conn, studies_conn, studie
     AND r*r > {r2_threshold}"
   ))
 
-  if (nrow(snp_pair_ld_scores) == 0) return(studies_db)
+  # Ensure only unique, non-redundant pairs are used for the undirected graph
+  ld_edges <- snp_pair_ld_scores |>
+    dplyr::rowwise() |>
+    dplyr::mutate(s1 = min(lead_snp_id, variant_snp_id), s2 = max(lead_snp_id, variant_snp_id)) |>
+    dplyr::ungroup() |>
+    dplyr::distinct(s1, s2) |>
+    dplyr::select(s1, s2)
 
-  # Union-Find to collapse equivalence classes of SNPs connected by high LD
-  snp_ids <- as.integer(unique(c(causal_snps, snp_pair_ld_scores$lead_snp_id, snp_pair_ld_scores$variant_snp_id)))
-  parent <- stats::setNames(snp_ids, snp_ids)
-  find <- function(x) {
-    px <- parent[[as.character(x)]]
-    if (px != x) {
-      parent[[as.character(x)]] <<- find(px)
-    }
-    parent[[as.character(x)]]
-  }
-  unite <- function(a, b) {
-    ra <- find(a); rb <- find(b)
-    if (ra == rb) return(invisible(NULL))
-    if (ra < rb) {
-      parent[[as.character(rb)]] <<- ra
-    } else {
-      parent[[as.character(ra)]] <<- rb
-    }
-  }
-  apply(snp_pair_ld_scores[, c("lead_snp_id","variant_snp_id")], 1, function(row) unite(as.integer(row[[1]]), as.integer(row[[2]])))
-  canonical <- vapply(snp_ids, find, integer(1))
-  comp_map_full <- data.frame(snp_id = snp_ids, new_snp_id = as.integer(canonical))
-  comp_map <- comp_map_full[comp_map_full$snp_id != comp_map_full$new_snp_id, ]
+  snp_graph <- igraph::graph_from_data_frame(ld_edges, directed = FALSE)
+  clusters <- igraph::components(snp_graph)
+  snp_mapping_intermediate <- tibble::tibble(snp_id = as.integer(names(clusters$membership)), cluster_id = clusters$membership)
 
-  if (nrow(comp_map) == 0) return(studies_db)
+  snp_mapping <- snp_mapping_intermediate |>
+    dplyr::group_by(cluster_id) |>
+    dplyr::mutate(representative_snp_id = min(snp_id)) |>
+    dplyr::ungroup() |>
+    dplyr::select(snp_id, representative_snp_id)
 
-  # Update in-memory studies_db for downstream steps
   studies_db$coloc_groups$data <- studies_db$coloc_groups$data |>
-    dplyr::left_join(comp_map, by = c("snp_id" = "snp_id")) |>
-    dplyr::mutate(snp_id = ifelse(is.na(new_snp_id), snp_id, new_snp_id)) |>
-    dplyr::select(-new_snp_id)
+    dplyr::left_join(snp_mapping, by = "snp_id") |>
+    dplyr::mutate(snp_id = coalesce(representative_snp_id, snp_id)) |>
+    dplyr::select(-representative_snp_id)
 
-  # Update the DuckDB coloc_groups table via a temp mapping table
-  DBI::dbExecute(studies_conn, "CREATE TEMP TABLE snp_id_map(old_snp_id INTEGER, new_snp_id INTEGER)")
-  DBI::dbAppendTable(studies_conn, "snp_id_map", comp_map)
-  DBI::dbExecute(studies_conn, "UPDATE coloc_groups SET snp_id = snp_id_map.new_snp_id FROM snp_id_map WHERE coloc_groups.snp_id = snp_id_map.old_snp_id")
-  DBI::dbExecute(studies_conn, "DROP TABLE snp_id_map")
+  # Update the DuckDB coloc_groups table
+  DBI::dbExecute(studies_conn, "DROP TABLE coloc_groups")
+  DBI::dbAppendTable(studies_conn, "coloc_groups", studies_db$coloc_groups$data)
 
   return(studies_db)
 }

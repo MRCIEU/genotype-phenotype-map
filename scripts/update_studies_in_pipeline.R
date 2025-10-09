@@ -10,6 +10,41 @@ main <- function() {
   # update_studies_processed()
 }
 
+update_snp_in_finemapped_studies <- function(snp_annotations, studies_file, imputed_studies_file) {
+  finemapped_studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    dplyr::distinct(unique_study_id, .keep_all = T)
+  missing_snps <- finemapped_studies[is.na(finemapped_studies$snp), ]
+  existing_snps <- finemapped_studies[!is.na(finemapped_studies$snp), ]
+  print(paste('missing', nrow(missing_snps), 'snps in finemapped studies'))
+
+  updated_studies <- lapply(seq_len(nrow(missing_snps)), function(i) {
+    study <- missing_snps[i, ]
+    if (!is.na(study['snp'])) {
+      return(study)
+    }
+    snp_entry <- snp_annotations |>
+      dplyr::filter(chr == as.numeric(study[['chr']]) & bp == as.numeric(study['bp']))
+    if (nrow(snp_entry) == 0) {
+      study_name <- study$study
+      gwas_file <- dplyr::filter(missing_snps, study == study_name)$file
+      gwas <- vroom::vroom(gwas_file, col_select = c('SNP', 'LBF'), show_col_types = F)
+      study$snp <- gwas[which.max(gwas$LBF), ]$SNP
+    } else if (nrow(snp_entry) == 1) {
+      study$snp <- snp_entry |>
+        dplyr::pull(snp)
+    } else {
+      study$snp <- snp_entry |>
+        dplyr::slice_head(n = 1) |>
+        dplyr::pull(snp)
+    }
+    return(study)
+  }) |>
+    dplyr::bind_rows()
+  updated_studies <- dplyr::bind_rows(existing_snps, updated_studies)
+  # print(tail(dplyr::select(updated_studies, study, chr, bp, snp), 10))
+  vroom::vroom_write(updated_studies, studies_file)
+}
+
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
 update_method <- function(studies_file, imputed_studies_file, ld_block, type) {
 
@@ -90,9 +125,12 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
+  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    dplyr::select(chr, bp, snp)
   blocks <- ld_info$ld_block_data
+  # blocks <- blocks[1:1]
 
-  cores_to_use <- 10
+  cores_to_use <- 15
   update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
   # update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
@@ -107,7 +145,7 @@ update_ld_blocks <- function() {
     # update_method(imputed_studies_file, type='imputed')
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
-    update_method(finemapped_studies_file, imputed_studies_file, ld_block, type='finemapped')
+    update_snp_in_finemapped_studies(snp_annotations, finemapped_studies_file, imputed_studies_file)
 
     # coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
     # update_method(coloc_pairwise_results_file, type='coloc_pairwise')

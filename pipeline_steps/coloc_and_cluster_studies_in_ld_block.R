@@ -134,10 +134,6 @@ main <- function() {
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
-    #TODO: remove this spurious once it's been run once
-    if ('spurious' %in% colnames(coloc_results)) {
-      coloc_results <- dplyr::select(coloc_results, -spurious)
-    }
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
@@ -327,149 +323,128 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
   modified_pruned_graph <- h4_graph
   if(h4_graph_components$no == 1) {
     message(glue::glue('Only one component found, assigning all vertices to component 1'))
-    igraph::V(h4_graph)$component <- 1
+    igraph::V(modified_pruned_graph)$component <- 1
   } else {
     message(glue::glue('{args$ld_block}: Clustering {h4_graph_components$no} components'))
-    # subgraphs <- lapply(1:h4_graph_components$no, function(x){
-    #   igraph::induced_subgraph(h4_graph, vids = igraph::V(h4_graph)[h4_graph_components$membership == x])
-    # })
-    # subgraph_density <- sapply(subgraphs, function(x){igraph::edge_density(x)})
 
-    # if(all(subgraph_density >= subgraph_density_theshold)){
-    #   # If all components are dense enough, just assign their component IDs
-    #   igraph::V(h4_graph)$component <- h4_graph_components$membership
-    #   recombined_graph <- h4_graph
-    # } else {
-      # subgraph_to_keep <- igraph::disjoint_union(subgraphs[subgraph_density >= subgraph_density_theshold])
-      # subgraph_to_cluster_and_prune <- igraph::disjoint_union(subgraphs[subgraph_density < subgraph_density_theshold])
+    pruned_edge_ids <- c()
+    
+    if (igraph::vcount(modified_pruned_graph) > 0) {
+      clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
+      clustered_memberships <- igraph::membership(clustered_graph)
 
-      pruned_edge_ids <- c()
-      
-      if (igraph::vcount(modified_pruned_graph) > 0) {
-        clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
-        clustered_memberships <- igraph::membership(clustered_graph)
+      # FIrst, remove all edges between communities
+      edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
+      if (nrow(edge_list_names) > 0) {
+        for (i in 1:nrow(edge_list_names)) {
+          v1_name <- edge_list_names[i, 1]
+          v2_name <- edge_list_names[i, 2]
+          comm_v1 <- clustered_memberships[v1_name]
+          comm_v2 <- clustered_memberships[v2_name]
 
-        # FIrst, remove all edges between communities
-        edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
-        if (nrow(edge_list_names) > 0) {
-          for (i in 1:nrow(edge_list_names)) {
-            v1_name <- edge_list_names[i, 1]
-            v2_name <- edge_list_names[i, 2]
-            comm_v1 <- clustered_memberships[v1_name]
-            comm_v2 <- clustered_memberships[v2_name]
-
-            if (comm_v1 != comm_v2) {
-              pruned_edges <- rbind(pruned_edges, 
-                data.frame(V1 = edge_list_names[i, 1], V2 = edge_list_names[i, 2]))
-              pruned_edge_ids <- c(pruned_edge_ids, i)
-            }
-          }
-        }
-
-        # Second, remove orphaned vertices after edge pruning
-        current_degrees <- igraph::degree(modified_pruned_graph)
-        pruned_studies <- c(pruned_studies, names(current_degrees[current_degrees == 0]))
-
-        # Third, remove all studies with degree less than the threshold
-        for (comm_id in unique(clustered_memberships)) {
-          current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
-
-          if (length(current_community_vertices) == 0) {
-            next
-          }
-
-          community_graph <- igraph::induced_subgraph(modified_pruned_graph, vids = current_community_vertices)
-          internal_degrees <- igraph::degree(community_graph)
-          max_degree_in_community <- max(internal_degrees)
-          threshold_degree <- max_degree_in_community * min_internal_degree_percentage
-
-          pruned_studies <- c(pruned_studies, names(internal_degrees[internal_degrees < threshold_degree]))
-        }
-        pruned_studies <- unique(pruned_studies)
-
-        # Fourth, remove all studies in a community that come from the same study, and keep the one with the lowest min_p
-        duplicate_removal_count <- 0
-        for (comm_id in unique(clustered_memberships)) {
-          current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
-
-          if (length(current_community_vertices) <= 1) {
-            next
-          }
-
-
-          study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% current_community_vertices)
-          study_counts <- table(study_info$study)
-          duplicate_studies <- names(study_counts[study_counts > 1])
-
-          problem_study <- 'GTEx-sQTL-v10-Stomach-chr1:156904998:156905324:clu-5332-+:ENSG00000187800-14_EUR/1/153358890-156424168_5'
-          if (problem_study %in% current_community_vertices) {
-            print(comm_id)
-            print(current_community_vertices)
-            print(study_info, width = Inf)
-            print(study_counts)
-            print(duplicate_studies)
-          }
-
-          if (length(duplicate_studies) > 0) {
-            for (duplicate_study in duplicate_studies) {
-              duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
-              study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
-
-              best_vertex <- duplicate_study_info$unique_study_id[which.min(duplicate_study_info$min_p)]
-
-              vertices_to_remove <- setdiff(study_vertices, best_vertex)
-              pruned_studies <- c(pruned_studies, vertices_to_remove)
-              duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
-            }
-          }
-        }
-        pruned_studies <- unique(pruned_studies)
-
-        if (duplicate_removal_count > 0) {
-          message(glue::glue('Removing {duplicate_removal_count} duplicate studies from same study within communities'))
-        }
-
-        message(glue::glue('Removing {nrow(pruned_edges)} edges'))
-        if (nrow(pruned_edges) > 0) {
-          modified_pruned_graph <- igraph::delete_edges(
-            modified_pruned_graph,
-            edges = pruned_edge_ids
-          )
-        }
-
-        # Capture edges involving soon-to-be-removed studies BEFORE deleting vertices
-        if (length(pruned_studies) > 0) {
-          graph_before_vertex_removal <- modified_pruned_graph
-          for (study in pruned_studies) {
-            if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
-            study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)
-            if (length(study_edges) > 0) {
-              for (edge in study_edges) {
-                edge_vertices <- igraph::ends(graph_before_vertex_removal, edge)
-                pruned_edges <- rbind(pruned_edges, 
-                  data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
-              }
-            }
-          }
-        }
-
-        message(glue::glue('Removing {length(pruned_studies)} vertices'))
-        if (length(pruned_studies) > 0) {
-          # Delete the pruned vertices from the working graph
-          existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
-          if (length(existing_vertices_to_remove) > 0) {
-            modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
+          if (comm_v1 != comm_v2) {
+            pruned_edges <- rbind(pruned_edges, 
+              data.frame(V1 = edge_list_names[i, 1], V2 = edge_list_names[i, 2]))
+            pruned_edge_ids <- c(pruned_edge_ids, i)
           }
         }
       }
 
-      pruned_edges <- unique(pruned_edges)
+      # Second, remove orphaned vertices after edge pruning
+      current_degrees <- igraph::degree(modified_pruned_graph)
+      pruned_studies <- c(pruned_studies, names(current_degrees[current_degrees == 0]))
 
-      # Recombine the 'kept' components and the 'modified pruned' components
-      # recombined_graph <- igraph::disjoint_union(modified_pruned_graph, modified_pruned_graph)
-      modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
-      igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
-    # }
+      # Third, remove all studies with degree less than the threshold
+      for (comm_id in unique(clustered_memberships)) {
+        current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
+
+        if (length(current_community_vertices) == 0) {
+          next
+        }
+
+        community_graph <- igraph::induced_subgraph(modified_pruned_graph, vids = current_community_vertices)
+        internal_degrees <- igraph::degree(community_graph)
+        max_degree_in_community <- max(internal_degrees)
+        threshold_degree <- max_degree_in_community * min_internal_degree_percentage
+
+        pruned_studies <- c(pruned_studies, names(internal_degrees[internal_degrees < threshold_degree]))
+      }
+      pruned_studies <- unique(pruned_studies)
+
+      # Fourth, remove all studies in a community that come from the same study, and keep the one with the lowest min_p
+      duplicate_removal_count <- 0
+      for (comm_id in unique(clustered_memberships)) {
+        current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
+
+        if (length(current_community_vertices) <= 1) {
+          next
+        }
+
+        study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% current_community_vertices)
+        study_counts <- table(study_info$study)
+        duplicate_studies <- names(study_counts[study_counts > 1])
+
+        if (length(duplicate_studies) > 0) {
+          for (duplicate_study in duplicate_studies) {
+            duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
+            study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
+
+            best_vertex <- duplicate_study_info$unique_study_id[which.min(duplicate_study_info$min_p)]
+
+            vertices_to_remove <- setdiff(study_vertices, best_vertex)
+            pruned_studies <- c(pruned_studies, vertices_to_remove)
+            duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
+          }
+        }
+      }
+      pruned_studies <- unique(pruned_studies)
+
+      if (duplicate_removal_count > 0) {
+        message(glue::glue('Removing {duplicate_removal_count} duplicate studies from same study within communities'))
+      }
+
+      message(glue::glue('Removing {nrow(pruned_edges)} edges'))
+      if (nrow(pruned_edges) > 0) {
+        modified_pruned_graph <- igraph::delete_edges(
+          modified_pruned_graph,
+          edges = pruned_edge_ids
+        )
+      }
+
+      # Capture edges involving soon-to-be-removed studies BEFORE deleting vertices
+      if (length(pruned_studies) > 0) {
+        graph_before_vertex_removal <- modified_pruned_graph
+        for (study in pruned_studies) {
+          if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
+          study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)
+          if (length(study_edges) > 0) {
+            for (edge in study_edges) {
+              edge_vertices <- igraph::ends(graph_before_vertex_removal, edge)
+              pruned_edges <- rbind(pruned_edges, 
+                data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
+            }
+          }
+        }
+      }
+
+      message(glue::glue('Removing {length(pruned_studies)} vertices'))
+      if (length(pruned_studies) > 0) {
+        # Delete the pruned vertices from the working graph
+        existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
+        if (length(existing_vertices_to_remove) > 0) {
+          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
+        }
+      }
+    }
+
+    pruned_edges <- unique(pruned_edges)
+
+    #final pruning of singleton studies and naming the components
+    graph_components <- igraph::components(modified_pruned_graph)
+    vert_out_initial <- igraph::V(modified_pruned_graph)[graph_components$membership %in% which(graph_components$csize == 1)]
+    modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, vert_out_initial)
+    modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
+    igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
   }
 
   message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
@@ -492,8 +467,6 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
 }
 
 mark_false_positives_and_negatives <- function(coloc_results, clustered_results) {
-  #TODO: remove this spurious once it's been run once
-  coloc_results$spurious <- NULL
   coloc_results$false_positive <- F
   coloc_results$false_negative <- F
 

@@ -1,0 +1,42 @@
+---
+title: "Pleiotropy Investigation"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=F} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+source('../../pipeline_steps/constants.R')
+
+studies_db_file <- file.path(latest_results_dir, 'studies.db')
+associations_db_file <- file.path(latest_results_dir, 'associations.db')
+coloc_pairs_full_db_file <- file.path(latest_results_dir, 'coloc_pairs_full.db')
+ld_db_file <- file.path(latest_results_dir, 'ld.db')
+
+studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
+associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file, read_only = TRUE)
+coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file, read_only = TRUE)
+ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
+
+dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+```
+
+## Questions to attempt to answer:
+
+Can we compare pertub seq data with our gene-gene coloc data to see if they agree?
+
+
+
+
+```{r perturb_seq_data, echo=F}
+perturb_seq_data <- readxl::read_xlsx("41588_2025_2169_MOESM4_ESM(1).xlsx", sheet=2) |> suppressWarnings()
+perturb_seq_data$outlier <- perturb_seq_data$transcriptome_wide_impact < perturb_seq_data$pi_deg * 0.1/10000 - 0.04
+
+ggplot(perturb_seq_data, aes(x = pi_deg, y = transcriptome_wide_impact, color = outlier)) +
+  geom_point() +
+  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "black")) +
+  labs(title = "Perturb-seq data")
+```

@@ -26,8 +26,6 @@ main <- function() {
 
   message('Creating study extractions')
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
-  vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
-  q()
 
   # message('Aggregating pipeline metadata')
   # results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
@@ -70,7 +68,7 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
     delim='\t',
     show_col_types = F,
-    col_select = c('unique_study_a', 'unique_study_b', 'PP.H0.abf', 'PP.H1.abf', 'PP.H2.abf', 'PP.H3.abf', 'PP.H4.abf', 'ld_block', 'spurious', 'ignore')
+    col_select = c('unique_study_a', 'unique_study_b', 'PP.H0.abf', 'PP.H1.abf', 'PP.H2.abf', 'PP.H3.abf', 'PP.H4.abf', 'ld_block', 'false_positive', 'false_negative', 'ignore')
   )
   message('pairwise coloc results: ', nrow(coloc_pairwise_results))
 

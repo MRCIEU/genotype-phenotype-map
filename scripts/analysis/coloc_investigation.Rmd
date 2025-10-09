@@ -1,0 +1,217 @@
+---
+title: "Pleiotropy Investigation"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=F} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+source('../../pipeline_steps/constants.R')
+
+studies_db_file <- file.path(latest_results_dir, 'studies.db')
+associations_db_file <- file.path(latest_results_dir, 'associations.db')
+coloc_pairs_full_db_file <- file.path(latest_results_dir, 'coloc_pairs_full.db')
+ld_db_file <- file.path(latest_results_dir, 'ld.db')
+
+studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
+associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file, read_only = TRUE)
+coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file, read_only = TRUE)
+ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
+
+dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+```
+
+## Questions to attempt to answer:
+
+1. Breakdown of coloc results by trait category / biological category
+2. Difference between results in coloc groups vs. coloc pairs
+
+```{r load-data, echo=F}
+joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
+  coloc_pairs.*,
+  -- Study extraction A details
+  study_extraction_a.unique_study_id AS study_extraction_a_unique_study_id,
+  study_extraction_a.min_p AS min_p_a,
+  study_extraction_a.cis_trans AS cis_trans_a,
+  -- Study A details
+  study_a.study_name AS study_name_a,
+  study_a.gene AS gene_a,
+  study_a.tissue AS tissue_a,
+  study_a.sample_size AS sample_size_a,
+  study_a.data_type AS data_type_a,
+  trait_a.trait_category AS trait_category_a,
+  trait_a.trait_name AS trait_name_a,
+  -- Study extraction B details
+  study_extraction_b.unique_study_id AS study_extraction_b_unique_study_id,
+  study_extraction_b.min_p AS min_p_b,
+  study_extraction_b.cis_trans AS cis_trans_b,
+  -- Study B details
+  study_b.study_name AS study_name_b,
+  study_b.gene AS gene_b,
+  study_b.tissue AS tissue_b,
+  study_b.sample_size AS sample_size_b,
+  study_b.data_type AS data_type_b,
+  trait_b.trait_category AS trait_category_b,
+  trait_b.trait_name AS trait_name_b
+  FROM coloc_pairs
+  -- Join for study extraction A
+  JOIN studies.study_extractions AS study_extraction_a ON coloc_pairs.study_extraction_a_id = study_extraction_a.id
+  JOIN studies.studies AS study_a ON study_extraction_a.study_id = study_a.id
+  JOIN studies.traits AS trait_a ON study_a.trait_id = trait_a.id
+  -- Join for study extraction B
+  JOIN studies.study_extractions AS study_extraction_b ON coloc_pairs.study_extraction_b_id = study_extraction_b.id
+  JOIN studies.studies AS study_b ON study_extraction_b.study_id = study_b.id
+  JOIN studies.traits AS trait_b ON study_b.trait_id = trait_b.id
+')
+unique_data_types <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT data_type FROM studies")$data_type
+```
+
+```{r compare_coloc_groups_vs_coloc_pairs, echo=F}
+total_phenotype_study_extractions <- DBI::dbGetQuery(studies_conn, "SELECT 
+  study_extractions.id AS study_extraction_id,
+  study_extractions.study_id,
+  study_extractions.unique_study_id,
+  study_extractions.min_p,
+  study_extractions.cis_trans,
+  studies.id AS study_id_actual,
+  studies.study_name,
+  studies.gene,
+  studies.tissue,
+  studies.sample_size,
+  studies.data_type,
+  studies.variant_type,
+  studies.trait_id,
+  traits.id AS trait_id_actual,
+  traits.trait_category,
+  traits.trait_name
+  FROM study_extractions
+  JOIN studies ON study_extractions.study_id = studies.id
+  JOIN traits ON studies.trait_id = traits.id
+  WHERE studies.data_type = 'phenotype' AND studies.variant_type = 'common' AND study_extractions.min_p < 1e-8")
+
+phenotype_with_coloc_associations <- joined_coloc_results %>%
+  filter(
+    (data_type_a == 'phenotype' & data_type_b != 'phenotype' & min_p_a < 1e-8) |
+    (data_type_a != 'phenotype' & data_type_b == 'phenotype' & min_p_b < 1e-8)
+  ) |>
+  filter(h4 > 0.8) |>
+  # Ensure phenotype study extractions are also in our filtered set
+  filter(
+    (data_type_a == 'phenotype' & study_extraction_a_id %in% total_phenotype_study_extractions$study_extraction_id) |
+    (data_type_b == 'phenotype' & study_extraction_b_id %in% total_phenotype_study_extractions$study_extraction_id)
+  )
+
+trait_categories <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT trait_category FROM traits")$trait_category
+
+for (tc in trait_categories) {
+  print(tc)
+  trait_category_study_extractions <- total_phenotype_study_extractions %>%
+    filter(trait_category == tc) |>
+    pull(study_extraction_id) |>
+    unique()
+
+  trait_category_coloc_associations <- phenotype_with_coloc_associations %>%
+    filter(dplyr::case_when(data_type_a == 'phenotype' ~ trait_category_a == tc, TRUE ~ trait_category_b == tc)) %>%
+    pull(dplyr::case_when(data_type_a == 'phenotype' ~ study_extraction_a_id, TRUE ~ study_extraction_b_id)) %>%
+    unique()
+
+  print(length(trait_category_study_extractions))
+  print(length(trait_category_coloc_associations))
+  print(length(trait_category_coloc_associations) / length(trait_category_study_extractions))
+}
+
+
+unique_phenotype_with_coloc_associations <- phenotype_with_coloc_associations %>%
+  pull(dplyr::case_when(data_type_a == 'phenotype' ~ trait_name_a, TRUE ~ trait_name_b)) %>%
+  unique()
+
+
+
+```
+
+
+### What about the connectedness of the coloc groups?
+
+```{r connectedness_of_coloc_groups, echo=F}
+h4_breakdown <- function(snp_id) {
+  coloc_groups <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
+    snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+    snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+    snp_annotations.gene as snp_gene
+    FROM coloc_groups
+    JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+    JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
+    JOIN studies ON coloc_groups.study_id = studies.id
+    WHERE coloc_groups.snp_id = {snp_id}
+    AND coloc_groups.group_threshold = 'strong'
+  "))
+
+  study_extractions_in_coloc_group <- coloc_groups %>%
+    pull(study_extraction_id) %>%
+    unique() |>
+    paste(collapse = ',')
+
+  all_pairs_in_coloc_group <- DBI::dbGetQuery(coloc_pairs_conn, glue::glue('SELECT coloc_pairs.*, study_extractions_a.min_p as min_p_a, study_extractions_b.min_p as min_p_b
+    FROM coloc_pairs
+    JOIN studies.study_extractions AS study_extractions_a ON coloc_pairs.study_extraction_a_id = study_extractions_a.id
+    JOIN studies.study_extractions AS study_extractions_b ON coloc_pairs.study_extraction_b_id = study_extractions_b.id
+    WHERE coloc_pairs.study_extraction_a_id IN ({study_extractions_in_coloc_group})
+    AND coloc_pairs.study_extraction_b_id IN ({study_extractions_in_coloc_group})
+  '))
+
+  # Break down by h4 thresholds
+  h4_breakdown_all <- all_pairs_in_coloc_group %>%
+    summarise(
+      threshold = "All pairs",
+      total_pairs = n(),
+      h4_above_0_8_pct = round(100 * sum(h4 > 0.8) / total_pairs, 1),
+      h4_above_0_5_pct = round(100 * sum(h4 > 0.5) / total_pairs, 1),
+      h3_above_0_5_pct = round(100 * sum(h3 > 0.5) / total_pairs, 1),
+      h2_above_0_5_pct = round(100 * sum(h2 > 0.5) / total_pairs, 1),
+      h1_above_0_5_pct = round(100 * sum(h1 > 0.5) / total_pairs, 1),
+      h0_above_0_5_pct = round(100 * sum(h0 > 0.5) / total_pairs, 1)
+    )
+  h4_breakdown_above_5e5 <- all_pairs_in_coloc_group %>%
+    summarise(
+      threshold = "Only below 5e-5",
+      total_pairs = sum(min_p_a < 5e-5 & min_p_b < 5e-5, na.rm = TRUE),
+      h4_above_0_8_pct = round(100 * sum(h4 > 0.8 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1),
+      h4_above_0_5_pct = round(100 * sum(h4 > 0.5 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1),
+      h3_above_0_5_pct = round(100 * sum(h3 > 0.5 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1),
+      h2_above_0_5_pct = round(100 * sum(h2 > 0.5 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1),
+      h1_above_0_5_pct = round(100 * sum(h1 > 0.5 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1),
+      h0_above_0_5_pct = round(100 * sum(h0 > 0.5 & min_p_a < 5e-5 & min_p_b < 5e-5) / total_pairs, 1)
+    )
+  h4_breakdown_above_5e8 <- all_pairs_in_coloc_group %>%
+    summarise(
+      threshold = "Only below 5e-8",
+      total_pairs = sum(min_p_a < 5e-8 & min_p_b < 5e-8, na.rm = TRUE),
+      h4_above_0_8_pct = round(100 * sum(h4 > 0.8 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1),
+      h4_above_0_5_pct = round(100 * sum(h4 > 0.5 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1),
+      h3_above_0_5_pct = round(100 * sum(h3 > 0.5 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1),
+      h2_above_0_5_pct = round(100 * sum(h2 > 0.5 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1),
+      h1_above_0_5_pct = round(100 * sum(h1 > 0.5 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1),
+      h0_above_0_5_pct = round(100 * sum(h0 > 0.5 & min_p_a < 5e-8 & min_p_b < 5e-8) / total_pairs, 1)
+    )
+
+  cat("H4 Threshold Breakdown:\n")
+  print(rbind(h4_breakdown_above_5e8, h4_breakdown_above_5e5, h4_breakdown_all))
+}
+
+
+cat("Random SNP:\n")
+h4_breakdown(5302661)
+cat("Random SNP:\n")
+h4_breakdown(7005885)
+cat("Regular SNP:\n")
+h4_breakdown(1178379)
+cat("QTL Heavy SNP:\n")
+h4_breakdown(3141122)
+cat("Phenotype Heavy SNP:\n")
+h4_breakdown(4365293)
+
+
+```

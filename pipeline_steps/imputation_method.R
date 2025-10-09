@@ -1,3 +1,5 @@
+p_value_filter_correlation_threshold <- 0.6
+
 #' Basic imputation function
 #' 
 #' @param gwas A data frame with columns BETA = vector of effect estimates in the same order as ld_matrix and with NAs for variants that need to be imputed;
@@ -257,6 +259,9 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)
     }
+    else if (length(gwas_correlations$P) == 0 && snp$P * 0.1 < min_p_gwas) {
+      snps_to_remove <- c(snps_to_remove, snp_location)
+    }
   }
 
   removed_gwas <- NA 
@@ -264,7 +269,8 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     gwas <- gwas[-snps_to_remove, ]
     removed_gwas <- gwas[snps_to_remove, ]
   }
-  return(list(gwas = gwas, removed_gwas = removed_gwas,
+
+  return(list(gwas = removed_gwas,
     significant_rows_imputed = length(snps_to_investigate),
     significant_rows_filtered = length(snps_to_remove))
   )

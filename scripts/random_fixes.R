@@ -13,9 +13,9 @@ cleanup_bad_imputation_snps <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
   blocks <- ld_info$block
-  blocks <- blocks[blocks == 'EUR/1/153358890-156424168']
-  # parallel::mclapply(blocks, mc.cores = 20, function(block) {
-  lapply(blocks, function(block) {
+  # blocks <- blocks[blocks == 'EUR/1/153358890-156424168']
+  # lapply(blocks, function(block) {
+  parallel::mclapply(blocks, mc.cores = 40, function(block) {
     print(block)
     if (!file.exists(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv'))) return()
     to_remove <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv'), show_col_types = F) |>
@@ -44,7 +44,7 @@ cleanup_bad_imputation_snps <- function() {
       gwas <- vroom::vroom(study$file, show_col_types = F)
       updated_gwas <- dplyr::filter(gwas, !gwas$BP %in% specific_to_remove$bps_to_remove)
       rows_to_remove <- nrow(gwas) - nrow(updated_gwas)
-      print(glue::glue('Removed {rows_to_remove} SNPs in {study$study}'))
+      # print(glue::glue('Removed {rows_to_remove} SNPs in {study$study}'))
       if (rows_to_remove == 0) return()
 
       vroom::vroom_write(updated_gwas, study$file)
@@ -73,7 +73,7 @@ cleanup_bad_imputation_snps <- function() {
       if (nrow(specific_to_remove) == 0) return(study)
       updated_gwas <- dplyr::filter(gwas, !gwas$BP %in% specific_to_remove$bps_to_remove)
       rows_to_remove <- nrow(gwas) - nrow(updated_gwas)
-      print(glue::glue('Removed {rows_to_remove} SNPs in {study$unique_study_id}'))
+      # print(glue::glue('Removed {rows_to_remove} SNPs in {study$unique_study_id}'))
       if (rows_to_remove == 0) return(study)
 
       vroom::vroom_write(updated_gwas, study$file)
@@ -93,7 +93,7 @@ cleanup_bad_imputation_snps <- function() {
 
     coloc_pairwise_results <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz'), show_col_types = F)
     new_coloc_pairwise_results <- coloc_pairwise_results |>
-      dplyr::filter(PP.H4.abf < 0.5 | (!study_a %in% to_remove$study & !study_b %in% to_remove$study))
+      dplyr::filter(PP.H4.abf < 0.5 | PP.H3.abf < 0.5 | (!study_a %in% to_remove$study & !study_b %in% to_remove$study))
     
     print(glue::glue('Removing {nrow(coloc_pairwise_results) - nrow(new_coloc_pairwise_results)} coloc pairwise results'))
 

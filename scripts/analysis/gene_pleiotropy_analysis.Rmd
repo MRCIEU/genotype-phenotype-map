@@ -30,13 +30,149 @@ Can we compare pertub seq data with our gene-gene coloc data to see if they agre
 
 
 
+```{r load-data, echo=F}
+joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
+  coloc_pairs.*,
+  -- Study extraction A details
+  study_extraction_a.unique_study_id AS study_extraction_a_unique_study_id,
+  study_extraction_a.min_p AS min_p_a,
+  study_extraction_a.cis_trans AS cis_trans_a,
+  -- Study A details
+  study_a.study_name AS study_name_a,
+  study_a.gene AS gene_a,
+  study_a.tissue AS tissue_a,
+  study_a.sample_size AS sample_size_a,
+  study_a.data_type AS data_type_a,
+  trait_a.trait_category AS trait_category_a,
+  trait_a.trait_name AS trait_name_a,
+  -- Study extraction B details
+  study_extraction_b.unique_study_id AS study_extraction_b_unique_study_id,
+  study_extraction_b.min_p AS min_p_b,
+  study_extraction_b.cis_trans AS cis_trans_b,
+  -- Study B details
+  study_b.study_name AS study_name_b,
+  study_b.gene AS gene_b,
+  study_b.tissue AS tissue_b,
+  study_b.sample_size AS sample_size_b,
+  study_b.data_type AS data_type_b,
+  trait_b.trait_category AS trait_category_b,
+  trait_b.trait_name AS trait_name_b
+  FROM coloc_pairs
+  -- Join for study extraction A
+  JOIN studies.study_extractions AS study_extraction_a ON coloc_pairs.study_extraction_a_id = study_extraction_a.id
+  JOIN studies.studies AS study_a ON study_extraction_a.study_id = study_a.id
+  JOIN studies.traits AS trait_a ON study_a.trait_id = trait_a.id
+  -- Join for study extraction B
+  JOIN studies.study_extractions AS study_extraction_b ON coloc_pairs.study_extraction_b_id = study_extraction_b.id
+  JOIN studies.studies AS study_b ON study_extraction_b.study_id = study_b.id
+  JOIN studies.traits AS trait_b ON study_b.trait_id = trait_b.id
+  WHERE coloc_pairs.h4 > 0.6 OR coloc_pairs.h3 > 0.6
+')
+unique_data_types <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT data_type FROM studies")$data_type
+```
 
 ```{r perturb_seq_data, echo=F}
-perturb_seq_data <- readxl::read_xlsx("41588_2025_2169_MOESM4_ESM(1).xlsx", sheet=2) |> suppressWarnings()
+perturb_seq_data <- readxl::read_xlsx("41588_2025_2169_MOESM4_ESM.xlsx", sheet=2) |> janitor::clean_names() |> suppressWarnings()
 perturb_seq_data$outlier <- perturb_seq_data$transcriptome_wide_impact < perturb_seq_data$pi_deg * 0.1/10000 - 0.04
 
-ggplot(perturb_seq_data, aes(x = pi_deg, y = transcriptome_wide_impact, color = outlier)) +
-  geom_point() +
-  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "black")) +
-  labs(title = "Perturb-seq data")
+ensembl_ids <- paste0("'", paste(unique(perturb_seq_data$perturbed_gene_id), collapse = "', '"), "'")
+gene_string <- paste0("'", paste(unique(perturb_seq_data$perturbed_gene), collapse = "', '"), "'")
+genes_in_gpmap <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT * FROM gene_annotations WHERE ensembl_id IN ({ensembl_ids})"))
+
+print(paste0("Number of genes in perturb-seq data: ", nrow(genes_in_gpmap)))
+print(paste0("Number of genes in perturb-seq data not in our data: ", nrow(perturb_seq_data) - nrow(genes_in_gpmap)))
+
+pqtl_genes <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT DISTINCT study_extractions.gene_id FROM study_extractions
+  JOIN studies ON study_extractions.study_id = studies.id
+  JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id
+  WHERE studies.data_type = 'protein' AND studies.source_id = 4
+  AND gene_annotations.ensembl_id IN ({ensembl_ids})"))
+
+
+colocalising_with_gene <- lapply(pqtl_genes$gene_id, function(specific_gene_id) {
+  colocs_for_gene <- DBI::dbGetQuery(studies_conn, glue::glue('SELECT * FROM coloc_groups_wide
+    WHERE coloc_group_id IN (
+        SELECT DISTINCT coloc_group_id
+        FROM coloc_groups_wide
+        WHERE gene_id = {specific_gene_id}
+    )'))
+
+  genes_colocalising_with_gene <- colocs_for_gene |>
+    dplyr::filter(!is.na(gene_id)) |>
+    dplyr::pull(gene_id) |>
+    unique()
+  
+  traits_categories_colocalising_with_gene <- colocs_for_gene |>
+    dplyr::filter(!is.na(gene_id)) |>
+    dplyr::pull(trait_category) |>
+    unique()
+  
+  return(
+    list(
+      trait_category_data = data.frame(gene_id = specific_gene_id, traits_categories_colocalising_with_gene = traits_categories_colocalising_with_gene),
+      gene_data = data.frame(gene_id = specific_gene_id, genes_colocalising_with_gene = genes_colocalising_with_gene)
+    )
+  )
+})
+
+all_genes_colocalising_with_gene <- lapply(colocalising_with_gene, function(x) x$gene_data) |>
+  dplyr::bind_rows() |>
+  dplyr::distinct()
+all_genes_colocalising_with_gene_counts <- all_genes_colocalising_with_gene |>
+  dplyr::count(gene_id, name = "genes_colocalising_with_gene_count") |>
+  dplyr::left_join(dplyr::select(genes_in_gpmap, id, ensembl_id, gene), by = c("gene_id" = "id"))
+
+all_traits_categories_colocalising_with_gene <- lapply(colocalising_with_gene, function(x) x$trait_category_data) |>
+  dplyr::bind_rows() |>
+  dplyr::distinct()
+
+all_traits_categories_colocalising_with_gene_counts <- all_traits_categories_colocalising_with_gene |>
+  dplyr::count(traits_categories_colocalising_with_gene, name = "traits_categories_colocalising_with_gene_count") |>
+  dplyr::left_join(dplyr::select(traits_in_gpmap, id, trait_category), by = c("gene_id" = "id"))
+
+
+perturb_seq_data <- perturb_seq_data |>
+  dplyr::filter(perturbed_gene_id %in% all_genes_colocalising_with_gene_counts$ensembl_id & !outlier) |>
+  dplyr::mutate(pi_deg_log10 = log10(pi_deg))
+
+gene_pqtl_specific_perturb_seq_data <- perturb_seq_data |>
+  dplyr::left_join(all_genes_colocalising_with_gene_counts, by = c("perturbed_gene_id" = "ensembl_id"))
+
+trait_category_pqtl_specific_perturb_seq_data <- perturb_seq_data |>
+  dplyr::left_join(all_traits_categories_colocalising_with_gene_counts, by = c("perturbed_gene_id" = "gene_id"))
+
+perturb_seq_pqtl_plot <- ggplot(gene_pqtl_specific_perturb_seq_data, aes(x = pi_deg, y = genes_colocalising_with_gene_count)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(
+    title = "Relationship between Gene Pleiotropy Metrics",
+    subtitle = "Comparing Perturb-seq pi_deg with Number of Colocalising Genes",
+    x = "pi_deg (Perturb-seq)",
+    y = "Number of Genes Colocalising with Gene"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    axis.title = element_text(size = 11)
+  )
+ggsave(perturb_seq_plot, filename = "gene_perturb_seq_plot.png", width = 8, height = 6)
+
+perturb_seq_pqtl_plot <- ggplot(trait_category_pqtl_specific_perturb_seq_data, aes(x = pi_deg, y = traits_categories_colocalising_with_gene_count)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(
+    title = "Relationship between Gene Pleiotropy Metrics",
+    subtitle = "Comparing Perturb-seq pi_deg with Number of Colocalising Genes",
+    x = "pi_deg (Perturb-seq)",
+    y = "Number of Genes Colocalising with Gene"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    axis.title = element_text(size = 11)
+  )
+ggsave(perturb_seq_plot, filename = "trait_category_perturb_seq_plot.png", width = 8, height = 6)
+print(perturb_seq_plot)
 ```

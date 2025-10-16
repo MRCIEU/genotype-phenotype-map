@@ -128,7 +128,7 @@ all_traits_categories_colocalising_with_gene <- lapply(colocalising_with_gene, f
 
 all_traits_categories_colocalising_with_gene_counts <- all_traits_categories_colocalising_with_gene |>
   dplyr::count(traits_categories_colocalising_with_gene, name = "traits_categories_colocalising_with_gene_count") |>
-  dplyr::left_join(dplyr::select(traits_in_gpmap, id, trait_category), by = c("gene_id" = "id"))
+  dplyr::left_join(dplyr::select(genes_in_gpmap, id, trait_category), by = c("gene_id" = "id"))
 
 
 perturb_seq_data <- perturb_seq_data |>

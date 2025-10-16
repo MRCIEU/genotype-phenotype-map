@@ -77,6 +77,11 @@ convert_lbf_to_abs_z <- function(lbf, se, prior_v = 50) {
   return(z)
 }
 
+convert_lbf_to_p_value <- function(lbf, se, prior_v = 50) {
+  p <- 2 * pnorm(-abs(convert_lbf_to_abs_z(lbf, se, prior_v)))
+  return(p)
+}
+
 #' Convert log Bayes Factor to summary stats
 #'
 #' @param gwas of summary statistics, with EAF as a mandatory column (allele frequencies for each SNP)

@@ -275,7 +275,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   vroom::vroom_write(finemap_gwas, failed_finemap_file)
 
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
-  write_lbf_gwas(gwas, NULL, file_with_lbfs)
+  write_gwas_with_lbfs(gwas, NULL, file_with_lbfs)
 
   block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
   svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
@@ -313,12 +313,11 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
   min_ps <- c()
   unique_ids <- c()
   svg_files <- c()
-  lbf_columns <- list()
-
-  original_min_p <- min(gwas$P, na.rm = T)
+  lbf_columns <- dplyr::select(gwas, SNP)
 
   for (i in susie_result$sets$cs_index) {
     finemap_num <- which(i == susie_result$sets$cs_index)
+    finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
     
     # Create conditioned GWAS with LBF values
     conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
@@ -326,12 +325,14 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE))
 
     # Remove problematic snps, where the LBF seems to be inflated, compared to the original p-value
-    lowest_lbf_p_value_threshold <- 1e-6  # Define the threshold
-    bad_snp_rows_numbers <- which(conditioned_gwas$LBF_P < lowest_lbf_p_value_threshold & conditioned_gwas$P > minimum_lbf_p_value_threshold)
+    bad_snp_rows_numbers <- which(conditioned_gwas$LBF_P < lowest_p_value_threshold & conditioned_gwas$P > minimum_lbf_p_value_threshold)
     if (length(bad_snp_rows_numbers) > 0) {
-      problematic_snps_file <- glue::glue('{finemap_file_prefix}_{finemap_num}_problematic_snps.tsv.gz')
+      problematic_snps_file <- glue::glue('{ld_block_data_dir}/{args$ld_block}/problematic_finemapped_snps.tsv')
+      problematic_snps <- vroom::vroom(problematic_snps_file, show_col_types = F)
+
       removed_rows <- conditioned_gwas[bad_snp_rows_numbers, ]
-      vroom::vroom_write(removed_rows, problematic_snps_file)
+      problematic_snps <- dplyr::bind_rows(problematic_snps, removed_rows)
+      vroom::vroom_write(problematic_snps, problematic_snps_file)
 
       conditioned_gwas <- conditioned_gwas[-bad_snp_rows_numbers, ]
     }
@@ -341,32 +342,24 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     credible_set_rows <- susie_result$sets$cs[paste0('L', i)][[1]]
     available_rows <- credible_set_rows[!credible_set_rows %in% bad_snp_rows_numbers]
     
+    # If no rows from credible set are available, choose based on min LBF_P
     if (length(available_rows) > 0) {
-      # Use the first available row from the credible set
       important_row <- available_rows[1]
     } else {
-      # If no rows from credible set are available, choose based on min LBF_P
       important_row <- which.min(conditioned_gwas$LBF_P)
     }
 
-    new_min_p <- min(conditioned_gwas$P, na.rm = T)
-    # This finds the lead SNP in new credible set
+    new_min_p <- min(conditioned_gwas$LBF_P, na.rm = T)
     new_snps <- c(new_snps, conditioned_gwas[important_row, ]$SNP)
     new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
     new_bps <- c(new_bps, new_bp)
     new_files <- c(new_files, finemap_file)
 
-    if (new_min_p < original_min_p) {
-      new_min_p <- original_min_p
-    }
-
     min_ps <- c(min_ps, new_min_p)
 
-    lbf_columns[[glue::glue('LBF_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
-    finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
-
-
-
+    lbf_col_name <- paste0('LBF_', finemap_num)
+    lbf_columns <- dplyr::left_join(lbf_columns, dplyr::select(conditioned_gwas, SNP, LBF), by = 'SNP') |>
+      dplyr::rename(!!lbf_col_name := LBF)
 
     unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
     unique_ids <- c(unique_ids, unique_id)
@@ -385,13 +378,12 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       }
     }
 
-    conditioned_gwas <- dplyr::select(conditioned_gwas, -P)
+    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_P)
     vroom::vroom_write(conditioned_gwas, finemap_file)
   }
 
-  lbf_columns <- as.data.frame(lbf_columns)
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
-  write_lbf_gwas(gwas, lbf_columns, file_with_lbfs)
+  write_gwas_with_lbfs(gwas, lbf_columns, file_with_lbfs)
   time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
 
   num_credible_sets <- length(unique_ids)
@@ -424,13 +416,13 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
   return(succeeded_finemap_info)
 }
 
-write_lbf_gwas <- function(gwas, lbf_columns, lbf_file) {
+write_gwas_with_lbfs <- function(gwas, lbf_columns, lbf_file) {
   lbf_gwas <- dplyr::select(gwas,
     dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'P', 'IMPUTED', 'LBF'))
   )
 
   if (!is.null(lbf_columns) && nrow(lbf_columns) > 0) {
-    lbf_gwas <- dplyr::bind_cols(lbf_gwas, lbf_columns)
+    lbf_gwas <- dplyr::left_join(lbf_gwas, lbf_columns, by = 'SNP')
   } else {
     lbf_gwas <- dplyr::rename(lbf_gwas, LBF_1 = LBF)
   }

@@ -1,10 +1,22 @@
-create_svg_for_ld_block <- function(gwas, study_name, file_name) {
-  if (file.exists(file_name)) {
-    return(file_name)
+source("gwas_calculations.R")
+
+create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
+  # if (file.exists(file_name)) return()
+  if (is_sparse) {
+    bin_size <- 1000
+  } else {
+    bin_size <- 20000
   }
 
   plot_height <- 200
   plot_width <- 1000
+
+  #TODO: change this to just data/ld_blocks.tsv after backfill
+  ld_blocks <- vroom::vroom(glue::glue('data/ld_blocks.tsv'), show_col_types = F)
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  specific_ld_info <- ld_info[ld_info$block == ld_block, ]
+  start_bp <- specific_ld_info$start
+  end_bp <- specific_ld_info$stop
   
   ld_block <- gwas |>
     dplyr::mutate(CHR = as.numeric(CHR)) |>
@@ -15,10 +27,11 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
     ld_block <- dplyr::mutate(ld_block, Z = convert_lbf_to_abs_z(LBF, SE))
   }
   ld_block$Z <- abs(ld_block$Z)
+  ld_block <- dplyr::mutate(ld_block, Z = ifelse(Z == 0, 0.001, Z))
 
   ld_data <- ld_block |>
     dplyr::filter(!is.na(Z)) |>
-    dplyr::mutate(bin = floor(BP/10000)) |>
+    dplyr::mutate(bin = floor(BP/bin_size)) |>
     dplyr::group_by(CHR, bin) |>
     dplyr::summarise(
       BP = mean(BP),
@@ -27,7 +40,7 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
     )
   
   ld_area <- ld_data |>
-    dplyr::mutate(bin = floor(BP/10000)) |>
+    dplyr::mutate(bin = floor(BP/bin_size)) |>
     dplyr::group_by(CHR, bin) |>
     dplyr::summarise(
       BP = mean(BP),
@@ -44,9 +57,11 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name) {
       max_bp <- max(.x$BP)
       
       dplyr::bind_rows(
-        dplyr::tibble(CHR = .x$CHR[1], BP = min_bp, Z = 0),
+        dplyr::tibble(CHR = .x$CHR[1], BP = start_bp, Z = 0),
+        dplyr::tibble(CHR = .x$CHR[1], BP = min_bp, Z = 0.001),
         .x,
-        dplyr::tibble(CHR = .x$CHR[1], BP = max_bp, Z = 0)
+        dplyr::tibble(CHR = .x$CHR[1], BP = max_bp, Z = 0.001),
+        dplyr::tibble(CHR = .x$CHR[1], BP = end_bp, Z = 0)
       )
     }) |>
     dplyr::ungroup()
@@ -94,8 +109,6 @@ create_svgs_from_gwas <- function(study, gwas) {
   padded_chrs$CHR <- 1:22
   padded_chrs$BP <- 1
   padded_chrs$LP <- 0
-  print(head(padded_chrs))
-  print(head(gwas))
 
   gwas <- rbind(padded_chrs, gwas)
 
@@ -295,14 +308,14 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   dir.create(glue::glue('{svg_dir}/groups'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/extractions'), showWarnings = F, recursive = T)
 
-  #first, find out which new studies and extractions have been added
-  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
+  #find out which new studies and extractions are missing from the svg directory
   current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies.db"), read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"
-  latest_studies <- DBI::dbGetQuery(latest_studies_conn, studies_query)
   current_studies <- DBI::dbGetQuery(current_studies_conn, studies_query)
-  new_studies <- dplyr::anti_join(latest_studies, current_studies, by = "trait_id")
+  existing_full_svgs <- list.files(glue::glue('{svg_dir}/traits'), full.names = TRUE)
+  current_studies$new_full_svgs <- glue::glue('{svg_dir}/traits/{current_studies$id}_svgs.zip')
+  new_studies <- current_studies[!current_studies$new_full_svgs %in% existing_full_svgs, ]
 
   if (do_all) {
     new_studies <- current_studies
@@ -335,7 +348,6 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
     file.link(glue::glue('{data_dir}{extraction$svg_file}'), extraction$new_svg_file)
   })
 
-  #second, find out which new coloc groups have been added
   coloc_groups_query <- "SELECT * FROM coloc_groups"
   coloc_groups <- DBI::dbGetQuery(current_studies_conn, coloc_groups_query)
   unique_coloc_group_ids <- unique(coloc_groups$coloc_group_id)
@@ -344,11 +356,11 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
   setwd(glue::glue('{svg_dir}/groups'))
   file.remove(Sys.glob('*.zip'))
 
-  #third, zip the svg extractions by coloc group
+  #zip the svg extractions by coloc group
   completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 10, function(group_id) {
     tryCatch({
       zip_file <- glue::glue('coloc_group_{group_id}_svgs.zip')
-      if (file.exists(zip_file)) return()
+      # if (file.exists(zip_file)) return()
 
       specific_coloc_group <- coloc_groups |>
         dplyr::filter(coloc_group_id == group_id)

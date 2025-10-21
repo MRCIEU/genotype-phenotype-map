@@ -1,4 +1,5 @@
 source('constants.R')
+library(dplyr)
 dplyr.summarise.inform = FALSE
 bp_range <- 50000
 subgraph_density_theshold <- 0.6
@@ -32,7 +33,6 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
-      dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold & !ignore) |>
       dplyr::arrange(unique_study_id)
   }
 
@@ -40,7 +40,6 @@ main <- function() {
     existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
     finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-      dplyr::filter(variant_type == variant_types$common & min_p <= p_value_threshold & !ignore) |>
       dplyr::mutate(file = sub('/local-scratch/projects/genotype-phenotype-map/data/', data_dir, file)) |>
       dplyr::arrange(unique_study_id)
   }
@@ -59,7 +58,7 @@ main <- function() {
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue('{args$ld_block}: No study pairs to coloc, skipping.'))
-    if (args$force_clustering) {
+    if (args$force_clustering == FALSE) {
       vroom::vroom_write(data.frame(), args$completed_output_file)
       return()
     }
@@ -67,7 +66,8 @@ main <- function() {
 
   if (!is.na(args$worker_guid)) {
     finemapped_subset <- dplyr::filter(finemapped_studies,
-      unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b
+      min_p <= lowest_p_value_threshold & 
+      (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
     )
   } else {
     finemapped_subset <- finemapped_studies
@@ -108,7 +108,8 @@ main <- function() {
         unique_study_b = pair$unique_study_b,
         study_b = NA,
         ignore = T,
-        spurious = F,
+        false_positive = F,
+        false_negative = F,
         bp_distance = NA,
         nsnps = NA,
         hit1 = NA,
@@ -132,60 +133,50 @@ main <- function() {
   new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
-  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering) {
+  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
     coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
       dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
       dplyr::mutate(ld_block = args$ld_block)
+    
+    results <- prune_poor_finemapping_results(finemapped_studies, coloc_results)
+    finemapped_studies <- results$finemapped_studies
+    coloc_results <- results$coloc_results
 
-    # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
-    poor_finemapping <- nrow(coloc_results |> dplyr::filter(study_a == study_b & h4 >= posterior_prob_threshold)) != 0
+    filtered_coloc_results <- coloc_results |>
+      dplyr::filter(!ignore) |>
+      dplyr::mutate(
+        min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+        min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
+      )
 
-    if (poor_finemapping) {
-      ignore_regions <- prune_finemapped(finemapped_studies, coloc_results)
-      # Remove dodgy finemapped regions from coloc_results and mark as ignored in finemapped_studies
-      coloc_results <- coloc_results |>
-        dplyr::mutate(ignore = ignore | unique_study_a %in% ignore_regions | unique_study_b %in% ignore_regions)
+    clustered_results <- cluster_coloc_results(filtered_coloc_results, finemapped_studies, start_time)
+    coloc_results <- mark_false_positives_and_negatives(coloc_results, clustered_results)
+    
+    message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$false_positive, na.rm = TRUE)} false positives and {sum(coloc_results$false_negative, na.rm = TRUE)} false negatives'))
 
-      finemapped_studies <- finemapped_studies |>
-        dplyr::mutate(ignore = ignore | unique_study_id %in% ignore_regions)
+    additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
 
-      message(glue::glue('{args$ld_block}: Number of studies to ignore: {sum(finemapped_studies$ignore)}'))
-      message(glue::glue('{args$ld_block}: Number of coloc results to ignore: {sum(coloc_results$ignore)}'))
-      vroom::vroom_write(finemapped_studies, finemapped_file)
-    } 
+    clustered_results$groups <- clustered_results$groups |>
+      dplyr::mutate(ld_block = args$ld_block) |>
+      dplyr::left_join(additional_data_per_cluster, by = "component") |>
+      dplyr::arrange(component)
+
+    if (nrow(clustered_results$groups) == 0) {
+      clustered_results$groups <- data.frame(
+        unique_study_id = character(),
+        component = integer(),
+        ld_block = character(),
+        snp = character(),
+        h4_connectedness = numeric(),
+        h3_connectedness = numeric()
+      )
+    }
+
+    clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
+    saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/igraph_clustered_results.rds'))
+    vroom::vroom_write(finemapped_studies, finemapped_file)
     vroom::vroom_write(coloc_results, coloc_results_file)
-
-    clustered_results <- lapply(names(posterior_prob_thresholds), function(threshold) {
-      h4_threshold <- posterior_prob_thresholds[[threshold]]
-
-      clustered_results <- cluster_coloc_results(coloc_results, h4_threshold, start_time)
-      if (h4_threshold == posterior_prob_thresholds$strong) {
-        coloc_results <- mark_spurious_colocs(coloc_results, clustered_results$pruned_edges)
-        message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$spurious)} spurious colocs'))
-        vroom::vroom_write(coloc_results, coloc_results_file)
-      }
-      snp_per_cluster <- find_snp_per_cluster(clustered_results$groups, studies_to_colocalise)
-
-      clustered_results$groups <- clustered_results$groups |>
-        dplyr::mutate(ld_block = args$ld_block, group_threshold = threshold) |>
-        dplyr::left_join(snp_per_cluster, by = "component") |>
-        dplyr::arrange(component)
-
-      if (nrow(clustered_results$groups) == 0) {
-        clustered_results$groups <- data.frame(
-          unique_study_id = character(),
-          component = integer(),
-          ld_block = character(),
-          snp = character(),
-          group_threshold = threshold
-        )
-      }
-
-      return(clustered_results$groups)
-    })
-
-    clustered_results <- dplyr::bind_rows(clustered_results)
-    vroom::vroom_write(clustered_results, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
+    vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -200,7 +191,8 @@ main <- function() {
 #' @import data.table
 #' @export
 get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
-  studies <- dplyr::mutate(studies, id = dplyr::row_number())
+  studies <- dplyr::mutate(studies, id = dplyr::row_number()) |>
+    dplyr::filter(min_p <= lowest_p_value_threshold | !ignore)
   studies <- data.table::as.data.table(studies)
 
   pairs_filtered <- studies[ studies, on = .(id < id), allow.cartesian = TRUE ][
@@ -212,8 +204,9 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
       unique_study_b = i.unique_study_id,
       study_b = i.study,
       bp_distance = bp_distance,
-      ignore = F,
-      spurious = F
+      ignore = ignore,
+      false_positive = F,
+      false_negative = F
     )
   ] |>
     tibble::as_tibble()
@@ -276,80 +269,42 @@ harmonise_gwases <- function(...) {
   return(gwases)
 }
 
-prune_finemapped <- function(finemapped_studies, coloc_results){
-  # Split colocalising finemapped region by study
-  finemapped_colocs <- coloc_results |> 
-    dplyr::filter(study_a == study_b & h4 >= posterior_prob_threshold) |>
-    dplyr::mutate(
-      min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
-      min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
-    ) |>
-    dplyr::group_by(study_a) |>
-    dplyr::group_split()
+# Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
+prune_poor_finemapping_results <- function(finemapped_studies, coloc_results) {
+  #TODO: remove this ignore once it's been run once
+  finemapped_studies$ignore <- F
+  coloc_results$ignore <- FALSE
+  coloc_results <- coloc_results |>
+    dplyr::mutate(ignore = ignore | study_a == study_b & h4 >= posterior_prob_h4_threshold)
+
+  bad_unique_studies <- coloc_results |>
+    dplyr::filter(ignore) |>
+      dplyr::mutate(
+        min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+        min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p,
+        bad_unique_study = ifelse(min_p_study_a > min_p_study_b, unique_study_a, unique_study_b)
+      ) |>
+      dplyr::pull(bad_unique_study)
   
-  remove_regions <- lapply(finemapped_colocs, function(study_regions){
-    # Store minimum p-value per finemapped region
-    pvals <- data.frame(
-      study = c(study_regions$unique_study_a, study_regions$unique_study_b),
-      min_p = c(study_regions$min_p_study_a, study_regions$min_p_study_b)) |> unique()
-    
-    regions <- pvals$study
-    n_regions <- length(regions)
-    n_links <- nrow(study_regions)
-    n_max_links <- n_regions*(n_regions - 1)/2
-    all_linked <- n_links == n_max_links
-    
-    # If all problematic finemapped regions colocalise with each other (maximum connectivity) then retain the region with the smallest min_p
-    # Else, if several groups of colocalsing finemapped regions exist for a study, or regions show different connectivity with each other,
-    # retain the region with the smalled min_p in each group by ittertively pruning regions that are most connected (splitting ties by min_p)
-    
-    if(all_linked == TRUE){
-      keep <- pvals$study[which.min(pvals$min_p)]
-    } else {
-      links <- data.frame(
-        table(study = c(study_regions$unique_study_a, study_regions$unique_study_b))) |>
-        dplyr::left_join(pvals, by = "study") |>
-        dplyr::arrange(desc(Freq), desc(min_p)) |> unique()
-      
-      study_regions_pruned <- study_regions
-      
-      while(any(links$Freq > 1)){
-        study_regions_pruned <- study_regions_pruned |> 
-          dplyr::filter(!(unique_study_a %in% links$study[1]) & !(unique_study_b %in% links$study[1]))
-        
-        if(nrow(study_regions_pruned) == 0){
-          keep <- links$study[-1]
-          break
-        }
-        
-        links <- data.frame(
-          table(study = c(study_regions_pruned$unique_study_a, study_regions_pruned$unique_study_b))) |>
-          dplyr::left_join(pvals, by = "study") |>
-          dplyr::arrange(desc(Freq), desc(min_p)) |> unique()
-      }
-      
-      if(nrow(study_regions_pruned) != 0){
-        keep <- apply(study_regions_pruned, 1, function(region_pair){
-          min_ps <- region_pair[c("min_p_study_a","min_p_study_b")]
-          regions <- region_pair[c("unique_study_a","unique_study_b")]
-          regions[which.min(min_ps)]
-        })
-      }
-    }
-    
-    remove <- regions[!(regions %in% keep)]
-    return(remove)
-  })
+  if (length(bad_unique_studies) == 0) {
+    return(list(finemapped_studies = finemapped_studies, coloc_results = coloc_results))
+  }
+
+  finemapped_studies <- finemapped_studies |>
+    dplyr::mutate(ignore = ignore | unique_study_id %in% bad_unique_studies | min_p > lowest_p_value_threshold)
   
-  remove_regions <- unlist(remove_regions)
-  return(remove_regions)
+  message(glue::glue('{args$ld_block}: New number of studies to ignore: {length(bad_unique_studies)}'))
+  return(list(finemapped_studies = finemapped_studies, coloc_results = coloc_results))
 }
 
-cluster_coloc_results <- function(coloc_results, h4_threshold, start_time) {
-  coloc_results <- coloc_results |> dplyr::filter(!ignore)
+cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time) {
+  unique_studies_to_ignore <- finemapped_studies$unique_study_id[finemapped_studies$ignore]
+  coloc_results <- coloc_results |>
+    dplyr::filter(!ignore & !unique_study_a %in% unique_studies_to_ignore & !unique_study_b %in% unique_studies_to_ignore)
   message(glue::glue('{args$ld_block}: Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}'))
 
-  h4_adj_mx <- make_adjacency_matrix(coloc_results, h4_threshold)
+  h4_adj_mx <- make_adjacency_matrix(coloc_results)
+
   h4_graph <- igraph::graph_from_adjacency_matrix(h4_adj_mx, mode="undirected", weighted=TRUE, diag=FALSE)
 
   # Initial pruning of singleton studies (vertices) with no connections from the overall graph
@@ -360,174 +315,255 @@ cluster_coloc_results <- function(coloc_results, h4_threshold, start_time) {
   message(glue::glue('{args$ld_block}: Pruning graph starting {diff_time_taken(start_time)}'))
 
   h4_graph_components <- igraph::components(h4_graph)
-  recombined_graph <- h4_graph
-  subgraph_to_cluster_and_prune <- NULL
-  modified_pruned_graph <- NULL
+  # recombined_graph <- h4_graph
+  # modified_pruned_graph <- NULL
   pruned_studies <- c()
   pruned_edges <- data.frame(V1 = character(), V2 = character())
 
+  modified_pruned_graph <- h4_graph
   if(h4_graph_components$no == 1) {
     message(glue::glue('Only one component found, assigning all vertices to component 1'))
-    igraph::V(h4_graph)$component <- 1
+    igraph::V(modified_pruned_graph)$component <- 1
   } else {
     message(glue::glue('{args$ld_block}: Clustering {h4_graph_components$no} components'))
-    subgraphs <- lapply(1:h4_graph_components$no, function(x){
-      igraph::induced_subgraph(h4_graph, vids = igraph::V(h4_graph)[h4_graph_components$membership == x])
-    })
-    subgraph_density <- sapply(subgraphs, function(x){igraph::edge_density(x)})
 
-    if(all(subgraph_density >= subgraph_density_theshold)){
-      # If all components are dense enough, just assign their component IDs
-      igraph::V(h4_graph)$component <- h4_graph_components$membership
-      recombined_graph <- h4_graph
-    } else {
-      subgraph_to_keep <- igraph::disjoint_union(subgraphs[subgraph_density >= subgraph_density_theshold])
-      subgraph_to_cluster_and_prune <- igraph::disjoint_union(subgraphs[subgraph_density < subgraph_density_theshold])
-      modified_pruned_graph <- subgraph_to_cluster_and_prune
+    pruned_edge_ids <- c()
+    
+    if (igraph::vcount(modified_pruned_graph) > 0) {
+      clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
+      clustered_memberships <- igraph::membership(clustered_graph)
 
-      pruned_edge_ids <- c()
-      
-      if (igraph::vcount(modified_pruned_graph) > 0) {
-        clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
-        clustered_memberships <- igraph::membership(clustered_graph)
+      # FIrst, remove all edges between communities
+      edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
+      if (nrow(edge_list_names) > 0) {
+        for (i in 1:nrow(edge_list_names)) {
+          v1_name <- edge_list_names[i, 1]
+          v2_name <- edge_list_names[i, 2]
+          comm_v1 <- clustered_memberships[v1_name]
+          comm_v2 <- clustered_memberships[v2_name]
 
+          if (comm_v1 != comm_v2) {
+            pruned_edges <- rbind(pruned_edges, 
+              data.frame(V1 = edge_list_names[i, 1], V2 = edge_list_names[i, 2]))
+            pruned_edge_ids <- c(pruned_edge_ids, i)
+          }
+        }
+      }
 
-        # FIrst, remove all edges between communities
-        edge_list_names <- igraph::as_edgelist(modified_pruned_graph)
-        if (nrow(edge_list_names) > 0) {
-          for (i in 1:nrow(edge_list_names)) {
-            v1_name <- edge_list_names[i, 1]
-            v2_name <- edge_list_names[i, 2]
-            comm_v1 <- clustered_memberships[v1_name]
-            comm_v2 <- clustered_memberships[v2_name]
+      # Second, remove orphaned vertices after edge pruning
+      current_degrees <- igraph::degree(modified_pruned_graph)
+      pruned_studies <- c(pruned_studies, names(current_degrees[current_degrees == 0]))
 
-            if (comm_v1 != comm_v2) {
+      # Third, remove all studies with degree less than the threshold
+      for (comm_id in unique(clustered_memberships)) {
+        current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
+
+        if (length(current_community_vertices) == 0) {
+          next
+        }
+
+        community_graph <- igraph::induced_subgraph(modified_pruned_graph, vids = current_community_vertices)
+        internal_degrees <- igraph::degree(community_graph)
+        max_degree_in_community <- max(internal_degrees)
+        threshold_degree <- max_degree_in_community * min_internal_degree_percentage
+
+        pruned_studies <- c(pruned_studies, names(internal_degrees[internal_degrees < threshold_degree]))
+      }
+      pruned_studies <- unique(pruned_studies)
+
+      # Fourth, remove all studies in a community that come from the same study, and keep the one with the lowest min_p
+      duplicate_removal_count <- 0
+      for (comm_id in unique(clustered_memberships)) {
+        current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
+
+        if (length(current_community_vertices) <= 1) {
+          next
+        }
+
+        study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% current_community_vertices)
+        study_counts <- table(study_info$study)
+        duplicate_studies <- names(study_counts[study_counts > 1])
+
+        if (length(duplicate_studies) > 0) {
+          for (duplicate_study in duplicate_studies) {
+            duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
+            study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
+
+            best_vertex <- duplicate_study_info$unique_study_id[which.min(duplicate_study_info$min_p)]
+
+            vertices_to_remove <- setdiff(study_vertices, best_vertex)
+            pruned_studies <- c(pruned_studies, vertices_to_remove)
+            duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
+          }
+        }
+      }
+      pruned_studies <- unique(pruned_studies)
+
+      if (duplicate_removal_count > 0) {
+        message(glue::glue('Removing {duplicate_removal_count} duplicate studies from same study within communities'))
+      }
+
+      message(glue::glue('Removing {nrow(pruned_edges)} edges'))
+      if (nrow(pruned_edges) > 0) {
+        modified_pruned_graph <- igraph::delete_edges(
+          modified_pruned_graph,
+          edges = pruned_edge_ids
+        )
+      }
+
+      # Capture edges involving soon-to-be-removed studies BEFORE deleting vertices
+      if (length(pruned_studies) > 0) {
+        graph_before_vertex_removal <- modified_pruned_graph
+        for (study in pruned_studies) {
+          if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
+          study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)
+          if (length(study_edges) > 0) {
+            for (edge in study_edges) {
+              edge_vertices <- igraph::ends(graph_before_vertex_removal, edge)
               pruned_edges <- rbind(pruned_edges, 
-                data.frame(V1 = edge_list_names[i, 1], V2 = edge_list_names[i, 2]))
-              pruned_edge_ids <- c(pruned_edge_ids, i)
+                data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
             }
           }
         }
-
-        # Second, remove orphaned vertices after edge pruning
-        current_degrees <- igraph::degree(modified_pruned_graph)
-        pruned_studies <- c(pruned_studies, names(current_degrees[current_degrees == 0]))
-
-        # Then, remove all studies with degree less than the threshold
-        for (comm_id in unique(clustered_memberships)) {
-          current_community_vertices <- names(clustered_memberships[clustered_memberships == comm_id])
-
-          if (length(current_community_vertices) == 0) {
-            next
-          }
-
-          community_graph <- igraph::induced_subgraph(subgraph_to_cluster_and_prune, vids = current_community_vertices)
-          internal_degrees <- igraph::degree(community_graph)
-          max_degree_in_community <- max(internal_degrees)
-          threshold_degree <- max_degree_in_community * min_internal_degree_percentage
-
-          pruned_studies <- c(pruned_studies, names(internal_degrees[internal_degrees < threshold_degree]))
-        }
-
-        pruned_studies <- unique(pruned_studies)
-
-        message(glue::glue('Removing {nrow(pruned_edges)} edges'))
-        if (nrow(pruned_edges) > 0) {
-          modified_pruned_graph <- igraph::delete_edges(
-            modified_pruned_graph,
-            edges = pruned_edge_ids
-          )
-        }
-
-        message(glue::glue('Removing {length(pruned_studies)} vertices'))
-        if (length(pruned_studies) > 0) {
-          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, pruned_studies)
-        }
       }
 
-      # Adding edges from pruned studies, to mark as spurious later
-      for (study in pruned_studies) {
-        study_edges <- igraph::incident_edges(subgraph_to_cluster_and_prune, study)
-        if (length(study_edges) > 0) {
-          for (edge in study_edges) {
-            edge_vertices <- igraph::ends(subgraph_to_cluster_and_prune, edge)
-            pruned_edges <- rbind(pruned_edges, 
-              data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2]))
-          }
+      message(glue::glue('Removing {length(pruned_studies)} vertices'))
+      if (length(pruned_studies) > 0) {
+        # Delete the pruned vertices from the working graph
+        existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
+        if (length(existing_vertices_to_remove) > 0) {
+          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
         }
       }
-      pruned_edges <- unique(pruned_edges)
-
-      # Recombine the 'kept' components and the 'modified pruned' components
-      recombined_graph <- igraph::disjoint_union(subgraph_to_keep, modified_pruned_graph)
-      recombined_graph_components <- igraph::components(recombined_graph)
-      igraph::V(recombined_graph)$component <- recombined_graph_components$membership
     }
+
+    pruned_edges <- unique(pruned_edges)
+
+    #final pruning of singleton studies and naming the components
+    graph_components <- igraph::components(modified_pruned_graph)
+    vert_out_initial <- igraph::V(modified_pruned_graph)[graph_components$membership %in% which(graph_components$csize == 1)]
+    modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, vert_out_initial)
+    modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
+    igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
   }
 
   message(glue::glue('Outputting results in {diff_time_taken(start_time)}'))
-  coloc_groups <- data.frame(unique_study_id = igraph::vertex_attr(recombined_graph)$name, component = igraph::V(recombined_graph)$component)
+  coloc_groups <- data.frame(unique_study_id = igraph::vertex_attr(modified_pruned_graph)$name, component = igraph::V(modified_pruned_graph)$component)
 
   message(glue::glue('Summary of pruning:'))
   message(glue::glue('  Initial vertices (after H4 adj matrix): {igraph::vcount(h4_graph)}'))
   message(glue::glue('  Initial edges (after H4 adj matrix): {igraph::ecount(h4_graph)}'))
-  message(glue::glue('  Final vertices after all pruning: {igraph::vcount(recombined_graph)}'))
-  message(glue::glue('  Final edges after all pruning: {igraph::ecount(recombined_graph)}'))
+  message(glue::glue('  Final vertices after all pruning: {igraph::vcount(modified_pruned_graph)}'))
+  message(glue::glue('  Final edges after all pruning: {igraph::ecount(modified_pruned_graph)}'))
   message(glue::glue('  Total vertices removed from clustering: {length(pruned_studies)}'))
   message(glue::glue('  Total edges removed from clustering: {nrow(pruned_edges)}'))
 
   return(list(
-    pruned_graph = recombined_graph,
+    unpruned_graph = h4_graph,
+    pruned_graph = modified_pruned_graph,
     groups = coloc_groups,
     pruned_edges = pruned_edges
   ))
 }
 
-mark_spurious_colocs <- function(coloc_results, pruned_edges) {
-  coloc_results$spurious <- FALSE
+mark_false_positives_and_negatives <- function(coloc_results, clustered_results) {
+  coloc_results$false_positive <- F
+  coloc_results$false_negative <- F
 
-  # Only mark specific edge pairs as spurious
-  for (i in seq_len(nrow(pruned_edges))) {
-    v1 <- pruned_edges$V1[i]
-    v2 <- pruned_edges$V2[i]
+  pruned_edges <- clustered_results$pruned_edges
+  cluster_groups <- clustered_results$groups
+  
+  # Mark false positives for pruned edges
+  if (nrow(pruned_edges) > 0) {
+    pruned_pairs <- data.frame(
+      study_a = c(pruned_edges$V1, pruned_edges$V2),
+      study_b = c(pruned_edges$V2, pruned_edges$V1)
+    )
     
-    coloc_results$spurious[
-      (coloc_results$unique_study_a == v1 & coloc_results$unique_study_b == v2) |
-      (coloc_results$unique_study_a == v2 & coloc_results$unique_study_b == v1)
-    ] <- TRUE
+    matches <- merge(coloc_results, pruned_pairs, 
+                     by.x = c("unique_study_a", "unique_study_b"),
+                     by.y = c("study_a", "study_b"),
+                     all.x = FALSE)
+    
+    if (nrow(matches) > 0) {
+      coloc_results$pair_id <- paste(coloc_results$unique_study_a, coloc_results$unique_study_b, sep = "_")
+      matches$pair_id <- paste(matches$unique_study_a, matches$unique_study_b, sep = "_")
+      
+      coloc_results$false_positive[coloc_results$pair_id %in% matches$pair_id] <- TRUE
+      coloc_results$pair_id <- NULL
+    }
   }
   
+  # Mark false negatives for coloc_pairs in the same cluster_group
+  if (nrow(cluster_groups) > 0) {
+    study_to_component <- setNames(cluster_groups$component, cluster_groups$unique_study_id)
+
+    coloc_results$component_a <- study_to_component[coloc_results$unique_study_a]
+    coloc_results$component_b <- study_to_component[coloc_results$unique_study_b]
+    
+    same_component_mask <- !is.na(coloc_results$component_a) & 
+                          !is.na(coloc_results$component_b) & 
+                          coloc_results$component_a == coloc_results$component_b
+    
+    coloc_results$false_negative[same_component_mask] <- TRUE
+    
+    coloc_results$component_a <- NULL
+    coloc_results$component_b <- NULL
+  }
+
   return(coloc_results)
 }
 
-make_adjacency_matrix <- function(coloc_results, h4_threshold) {
-  # Make symmetrical adjacency matrix
+#' make_adjacency_matrix takes a dataframe of coloc results and returns a symmetrical adjacency matrix
+#' @param coloc_results: dataframe of coloc results
+#' @returns symmetrical adjacency matrix
+make_adjacency_matrix <- function(coloc_results) {
+  pvals <- pmax(coloc_results$min_p_study_a, coloc_results$min_p_study_b)
+  weights <- weights_from_pvals(pvals) * ifelse(coloc_results$h4 >= posterior_prob_h4_threshold, 1, 0)
+  coloc_results <- coloc_results |> dplyr::mutate(weight = weights)
+
   h4_adj_mx <- rbind(
     coloc_results |> 
-      dplyr::select(a = unique_study_a, b = unique_study_b, h4 = h4) |>
+      dplyr::select(a = unique_study_a, b = unique_study_b, weight = weight) |>
       dplyr::group_by(a, b) |>
-      dplyr::summarise(h4 = max(h4), .groups = 'keep'),
+      dplyr::summarise(weight = max(weight), .groups = 'keep'),
     coloc_results |> 
-      dplyr::select(a = unique_study_b, b = unique_study_a, h4 = h4) |>
+      dplyr::select(a = unique_study_b, b = unique_study_a, weight = weight) |>
       dplyr::group_by(a, b) |>
-      dplyr::summarise(h4 = max(h4), .groups = 'keep')
+      dplyr::summarise(weight = max(weight), .groups = 'keep')
   ) |>
     dplyr::distinct() |>
-    tidyr::pivot_wider(names_from = a, values_from = h4) |>
+    tidyr::pivot_wider(names_from = a, values_from = weight) |>
     tibble::column_to_rownames("b") |>
     as.matrix()
   
   h4_adj_mx <- h4_adj_mx[,rownames(h4_adj_mx)]
   diag(h4_adj_mx) <- 0
   h4_adj_mx[is.na(h4_adj_mx)] <- 0
-  h4_adj_mx[h4_adj_mx < h4_threshold] <- 0
+  h4_adj_mx[h4_adj_mx < posterior_prob_h4_threshold] <- 0
 
   return(h4_adj_mx)
 }
 
-find_snp_per_cluster <- function(coloc_groups, studies_to_colocalise) {
+
+# Generate weights from p-values
+# More significant than threshold2 gets weight 1
+# Less significant than threshold1 gets weight 0
+# Attenuation parameter is how rapidly weight drops between the two thresholds
+# The lowest_weight parameter scales the weights so that everything <= threshold1 has that lowest_weight
+weights_from_pvals <- function(pvals, threshold1=1e-4, threshold2=5e-8, attenuation=4, lowest_weight=0.5) {
+  w <- -log10(pvals) %>%
+    pmax(., -log10(threshold1)) %>%
+    pmin(., -log10(threshold2)) %>%
+    {. - (-log10(threshold1))} %>%
+    {./(-log10(threshold2) - (-log10(threshold1)))}
+  w <- w^attenuation * (1-lowest_weight) + (lowest_weight)
+  return(w)
+}
+
+find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colocalise, coloc_results) {
   components <- unique(coloc_groups$component)
-  snp_per_cluster <- sapply(components, function(component) {
+  snp_and_connectedness_per_cluster <- lapply(components, function(component) {
     group_studies <- coloc_groups$unique_study_id[coloc_groups$component == component]
     
     all_group_data <- lapply(group_studies, function(study_id) {
@@ -541,10 +577,21 @@ find_snp_per_cluster <- function(coloc_groups, studies_to_colocalise) {
       dplyr::slice(which.max(cumulative_lbf)) |>
       dplyr::pull(SNP)
 
-    return(snp)
-  })
+    coloc_results_per_cluster <- coloc_results[
+      coloc_results$unique_study_a %in% group_studies &
+      coloc_results$unique_study_b %in% group_studies,
+    ]
 
-  return(data.frame(component = components, snp = snp_per_cluster))
+    total_pairs <- nrow(coloc_results_per_cluster)
+    total_pairs_with_h4 <- sum(coloc_results_per_cluster$PP.H4.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
+    total_pairs_with_h3 <- sum(coloc_results_per_cluster$PP.H3.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
+    h4_connectedness <- total_pairs_with_h4 / total_pairs
+    h3_connectedness <- total_pairs_with_h3 / total_pairs
+
+    return(data.frame(component = component, snp = snp, h4_connectedness = h4_connectedness, h3_connectedness = h3_connectedness))
+  }) |> dplyr::bind_rows()
+
+  return(snp_and_connectedness_per_cluster)
 }
 
 main()

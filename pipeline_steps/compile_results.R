@@ -27,7 +27,7 @@ main <- function() {
   message('Creating study extractions')
   pipeline_data$study_extractions <- create_study_extractions(pipeline_data)
 
-  message('Aggregating pipeline metadata')
+  # message('Aggregating pipeline metadata')
   # results_metadata <- aggregate_pipeline_metadata(pipeline_data, ld_info)
 
   message('Writing results')
@@ -65,7 +65,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
 
   pairwise_coloc_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz'))
-  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files, delim='\t', show_col_types = F, col_select = c('unique_study_a', 'unique_study_b', 'PP.H3.abf', 'h4', 'ld_block', 'spurious', 'ignore'))
+  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
+    delim='\t',
+    show_col_types = F,
+    col_select = c('unique_study_a', 'unique_study_b', 'PP.H0.abf', 'PP.H1.abf', 'PP.H2.abf', 'PP.H3.abf', 'PP.H4.abf', 'ld_block', 'false_positive', 'false_negative', 'ignore')
+  )
   message('pairwise coloc results: ', nrow(coloc_pairwise_results))
 
   coloc_clustered_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
@@ -73,9 +77,10 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
   message('clustered coloc results: ', nrow(coloc_clustered_results))
 
   coloc_clustered_results <- coloc_clustered_results |>
-    dplyr::group_by(ld_block, component, group_threshold) |>
+    dplyr::group_by(ld_block, component) |>
     dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
-    dplyr::ungroup()
+    dplyr::ungroup() |>
+    dplyr::arrange(coloc_group_id)
 
   compare_rare_input_files <- Filter(function(file) file.exists(file), glue::glue('{ld_info$ld_block_data}/compare_rare_results.tsv'))
   if (length(compare_rare_input_files) == 0) {

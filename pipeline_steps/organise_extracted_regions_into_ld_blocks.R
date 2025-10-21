@@ -47,7 +47,8 @@ main <- function() {
                                     cis_trans = merged_data$cis_trans,
                                     reference_build = reference_builds$GRCh38,
                                     ld_block = ld_info$block,
-                                    variant_type = merged_data$variant_type
+                                    variant_type = merged_data$variant_type,
+                                    coverage = merged_data$coverage
     )
 
     if (!dir.exists(ld_info$ld_block_data)) dir.create(ld_info$ld_block_data, recursive = T)

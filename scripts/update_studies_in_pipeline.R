@@ -6,19 +6,23 @@ ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   # update_study_dirs()
-  # update_ld_blocks()
+  update_ld_blocks()
   # update_studies_processed()
 }
 
-
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
-update_method <- function(studies_file, ld_block, type) {
+update_method <- function(studies_file, type) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
 
-  #...
+  studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    dplyr::mutate(coverage = dplyr::case_when(
+      grepl('godmc', study) ~ 'sparse',
+      TRUE ~ 'dense'
+    ))
+  vroom::vroom_write(studies, studies_file)
 }
 
 update_study_dirs <- function() {
@@ -40,11 +44,13 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
+  # snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    # dplyr::select(chr, bp, snp)
   blocks <- ld_info$ld_block_data
 
-  # cores_to_use <- 20
-  # update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
-  update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
+  cores_to_use <- 15
+  update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
+  # update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
     extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
     update_method(extracted_studies_file, type='extracted')
@@ -58,14 +64,14 @@ update_ld_blocks <- function() {
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
     update_method(finemapped_studies_file, type='finemapped')
 
-    coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
-    update_method(coloc_pairwise_results_file, type='coloc_pairwise')
+    # coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
+    # update_method(coloc_pairwise_results_file, type='coloc_pairwise')
 
-    coloc_clustered_results_file <- glue::glue('{ld_block}/coloc_clustered_results.tsv.gz')
-    update_method(coloc_clustered_results_file, type='coloc_clustered')
+    # coloc_clustered_results_file <- glue::glue('{ld_block}/coloc_clustered_results.tsv.gz')
+    # update_method(coloc_clustered_results_file, type='coloc_clustered')
 
-    compare_rare_results_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
-    update_method(compare_rare_results_file, type='compare_rare')
+    # compare_rare_results_file <- glue::glue('{ld_block}/compare_rare_results.tsv')
+    # update_method(compare_rare_results_file, type='compare_rare')
   })
 }
 

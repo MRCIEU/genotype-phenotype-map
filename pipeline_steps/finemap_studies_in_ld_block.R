@@ -1,5 +1,6 @@
 source("constants.R")
 source("svg_helpers.R")
+source("gwas_calculations.R")
 
 parser <- argparser::arg_parser('Finemap studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -37,7 +38,6 @@ main <- function() {
   ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
-
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 
@@ -65,8 +65,8 @@ main <- function() {
           return(NULL)
         }
 
-        # GodMC methylation studies are sparsley populated, so finemapping is not useful
-        if (grepl('godmc-methylation', study['study'])) {
+        # Finemapping is not useful or effective for sparsely populated studies
+        if (study[['coverage']] == coverage_types$sparse) {
           unfinemapped_results <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, message='sparse_population')
           unfinemapped_results <- dplyr::bind_cols(unfinemapped_results, data.frame(
             first_finemap_num_results = NA,
@@ -275,11 +275,12 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   vroom::vroom_write(finemap_gwas, failed_finemap_file)
 
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
-  write_lbf_gwas(gwas, NULL, file_with_lbfs)
+  write_gwas_with_lbfs(gwas, NULL, file_with_lbfs)
 
   block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
   svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
-  create_svg_for_ld_block(finemap_gwas, study$study, svg_file)
+  is_sparse <- study[['coverage']] == coverage_types$sparse
+  create_svg_for_ld_block(finemap_gwas, study$study, svg_file, is_sparse)
 
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -306,49 +307,74 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
 }
 
 split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study, sample_size, finemap_file_prefix, start_time) {
+  minimum_lbf_p_value_threshold <- 1e-3
   new_snps <- c()
   new_bps <- c()
   new_files <- c()
   min_ps <- c()
   unique_ids <- c()
   svg_files <- c()
-  lbf_columns <- list()
-
-  original_min_p <- min(gwas$P, na.rm = T)
+  lbf_columns <- dplyr::select(gwas, SNP)
 
   for (i in susie_result$sets$cs_index) {
     finemap_num <- which(i == susie_result$sets$cs_index)
-    #occasionally, the new min p is smaller than the original min p, which is wrong, so we set it to the original min p
-    p_value_gwas <- update_gwas_with_log_bayes_factor(gwas, susie_result$lbf_variable[i, ], sample_size)
-    new_min_p <- min(p_value_gwas$P, na.rm = T)
+    finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
+    unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
+    
+    # Create conditioned GWAS with LBF values
+    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
+      dplyr::mutate(LBF = susie_result$lbf_variable[i, ]) |>
+      dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE))
 
-    if (new_min_p < original_min_p) {
-      new_min_p <- original_min_p
+    # Remove problematic snps, where the LBF seems to be inflated, compared to the original p-value
+    bad_snp_rows_numbers <- which(conditioned_gwas$LBF_P < lowest_p_value_threshold & conditioned_gwas$P > minimum_lbf_p_value_threshold)
+    if (length(bad_snp_rows_numbers) > 0) {
+      problematic_snps_file <- glue::glue('{ld_block_data_dir}/{args$ld_block}/problematic_finemapped_snps.tsv')
+      if (!file.exists(problematic_snps_file)) {
+        problematic_snps <- data.frame()
+      } else {
+        problematic_snps <- vroom::vroom(problematic_snps_file, show_col_types = F)
+      }
+
+      removed_rows <- conditioned_gwas[bad_snp_rows_numbers, ]
+      removed_rows$unique_study_id <- unique_id
+      problematic_snps <- dplyr::bind_rows(problematic_snps, removed_rows)
+      vroom::vroom_write(problematic_snps, problematic_snps_file)
+
+      conditioned_gwas <- conditioned_gwas[-bad_snp_rows_numbers, ]
     }
+
+    # Find the first row in susie_result$sets$cs that isn't in bad_snp_rows_numbers
+    # If there are none, then choose the important row based on min LBF_P
+    credible_set_rows <- susie_result$sets$cs[paste0('L', i)][[1]]
+    available_rows <- credible_set_rows[!credible_set_rows %in% bad_snp_rows_numbers]
+    
+    # If no rows from credible set are available, choose based on min LBF_P
+    if (length(available_rows) > 0) {
+      important_row <- available_rows[1]
+    } else {
+      important_row <- which.min(conditioned_gwas$LBF_P)
+    }
+
+    new_min_p <- min(conditioned_gwas$LBF_P, na.rm = T)
+    new_snps <- c(new_snps, conditioned_gwas[important_row, ]$SNP)
+    new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
+    new_bps <- c(new_bps, new_bp)
+    new_files <- c(new_files, finemap_file)
+    unique_ids <- c(unique_ids, unique_id)
 
     min_ps <- c(min_ps, new_min_p)
 
-    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
-      dplyr::mutate(LBF = susie_result$lbf_variable[i, ])
+    lbf_col_name <- paste0('LBF_', finemap_num)
+    lbf_columns <- dplyr::left_join(lbf_columns, dplyr::select(conditioned_gwas, SNP, LBF), by = 'SNP') |>
+      dplyr::rename(!!lbf_col_name := LBF)
 
-    lbf_columns[[glue::glue('LBF_{finemap_num}')]] <- susie_result$lbf_variable[i, ]
-    finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
-
-    #this finds the lead SNP in new credible set
-    important_row <- susie_result$sets$cs[paste0('L', i)][[1]][[1]]
-    new_snps <- c(new_snps, gwas[important_row, ]$SNP)
-    new_bp <- as.numeric(gwas[important_row, ]$BP)
-    new_bps <- c(new_bps, new_bp)
-    new_files <- c(new_files, finemap_file)
-
-
-    unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
-    unique_ids <- c(unique_ids, unique_id)
 
     block_name <- basename(finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
     svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
     svg_files <- c(svg_files, svg_file)
-    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file)
+    is_sparse <- study[['coverage']] == coverage_types$sparse
+    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
@@ -359,13 +385,12 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       }
     }
 
-    conditioned_gwas <- dplyr::select(conditioned_gwas, -P)
+    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_P)
     vroom::vroom_write(conditioned_gwas, finemap_file)
   }
 
-  lbf_columns <- as.data.frame(lbf_columns)
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
-  write_lbf_gwas(gwas, lbf_columns, file_with_lbfs)
+  write_gwas_with_lbfs(gwas, lbf_columns, file_with_lbfs)
   time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
 
   num_credible_sets <- length(unique_ids)
@@ -398,13 +423,13 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
   return(succeeded_finemap_info)
 }
 
-write_lbf_gwas <- function(gwas, lbf_columns, lbf_file) {
+write_gwas_with_lbfs <- function(gwas, lbf_columns, lbf_file) {
   lbf_gwas <- dplyr::select(gwas,
     dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'P', 'IMPUTED', 'LBF'))
   )
 
   if (!is.null(lbf_columns) && nrow(lbf_columns) > 0) {
-    lbf_gwas <- dplyr::bind_cols(lbf_gwas, lbf_columns)
+    lbf_gwas <- dplyr::left_join(lbf_gwas, lbf_columns, by = 'SNP')
   } else {
     lbf_gwas <- dplyr::rename(lbf_gwas, LBF_1 = LBF)
   }

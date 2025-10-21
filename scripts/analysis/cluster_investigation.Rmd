@@ -1,0 +1,223 @@
+---
+title: "Cluster Investigation"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=F} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+source('../../pipeline_steps/constants.R')
+
+# studies_db_file <- file.path(latest_results_dir, 'studies.db')
+# associations_db_file <- file.path(latest_results_dir, 'associations.db')
+# coloc_pairs_full_db_file <- file.path(latest_results_dir, 'coloc_pairs_full.db')
+# ld_db_file <- file.path(latest_results_dir, 'ld.db')
+
+# studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
+# associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file, read_only = TRUE)
+# coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file, read_only = TRUE)
+# ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
+
+# dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+```
+
+Investigation specifically into LD Block `EUR/1/153358890-156424168`
+
+Number of edges to begin with
+Number of edges added after clustering
+Number of edges removed after clustering
+
+
+```{r load-data, echo=F}
+finemapped_studies <- vroom::vroom(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'finemapped_studies.tsv'))
+imputed_studies <- vroom::vroom(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'imputed_studies.tsv'))
+cluster_5e8_weighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_TRUE_5e-08.rds'))
+cluster_5e8_unweighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_FALSE_5e-08.rds'))
+cluster_1e6_weighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_TRUE_1e-06.rds'))
+cluster_1e6_unweighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_FALSE_1e-06.rds'))
+cluster_1e5_weighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_TRUE_1e-05.rds'))
+cluster_1e5_unweighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_FALSE_1e-05.rds'))
+cluster_1e4_weighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_TRUE_0.00015.rds'))
+cluster_1e4_unweighted <- readRDS(file.path(ld_block_data_dir, 'EUR/1/153358890-156424168', 'clustered_results_weighted_FALSE_0.00015.rds'))
+
+mean_connectedness <- c(
+  mean(cluster_5e8_weighted$groups$connectedness),
+  mean(cluster_5e8_unweighted$groups$connectedness),
+  mean(cluster_1e6_weighted$groups$connectedness),
+  mean(cluster_1e6_unweighted$groups$connectedness),
+  mean(cluster_1e5_weighted$groups$connectedness),
+  mean(cluster_1e5_unweighted$groups$connectedness),
+  mean(cluster_1e4_weighted$groups$connectedness),
+  mean(cluster_1e4_unweighted$groups$connectedness)
+)
+
+mean_h3_connectedness <- c(
+  mean(cluster_5e8_weighted$groups$h3_connectedness),
+  mean(cluster_5e8_unweighted$groups$h3_connectedness),
+  mean(cluster_1e6_weighted$groups$h3_connectedness),
+  mean(cluster_1e6_unweighted$groups$h3_connectedness),
+  mean(cluster_1e5_weighted$groups$h3_connectedness),
+  mean(cluster_1e5_unweighted$groups$h3_connectedness),
+  mean(cluster_1e4_weighted$groups$h3_connectedness),
+  mean(cluster_1e4_unweighted$groups$h3_connectedness)
+)
+
+num_traits_at_p_value_threshold <- c(
+  nrow(dplyr::filter(finemapped_studies, min_p < 5e-8)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 5e-8)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1e-6)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1e-6)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1e-5)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1e-5)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1.5e-4)),
+  nrow(dplyr::filter(finemapped_studies, min_p < 1.5e-4))
+)
+
+num_traits_in_all_clusters <- c(
+  length(unique(cluster_5e8_weighted$groups$unique_study_id)),
+  length(unique(cluster_5e8_unweighted$groups$unique_study_id)),
+  length(unique(cluster_1e6_weighted$groups$unique_study_id)),
+  length(unique(cluster_1e6_unweighted$groups$unique_study_id)),
+  length(unique(cluster_1e5_weighted$groups$unique_study_id)),
+  length(unique(cluster_1e5_unweighted$groups$unique_study_id)),
+  length(unique(cluster_1e4_weighted$groups$unique_study_id)),
+  length(unique(cluster_1e4_unweighted$groups$unique_study_id))
+)
+
+num_groups <- c(
+  length(unique(cluster_5e8_weighted$groups$component)),
+  length(unique(cluster_5e8_unweighted$groups$component)),
+  length(unique(cluster_1e6_weighted$groups$component)),
+  length(unique(cluster_1e6_unweighted$groups$component)),
+  length(unique(cluster_1e5_weighted$groups$component)),
+  length(unique(cluster_1e5_unweighted$groups$component)),
+  length(unique(cluster_1e4_weighted$groups$component)),
+  length(unique(cluster_1e4_unweighted$groups$component))
+)
+
+mean_group_size <- c(
+  mean(table(cluster_5e8_weighted$groups$component)),
+  mean(table(cluster_5e8_unweighted$groups$component)),
+  mean(table(cluster_1e6_weighted$groups$component)),
+  mean(table(cluster_1e6_unweighted$groups$component)),
+  mean(table(cluster_1e5_weighted$groups$component)),
+  mean(table(cluster_1e5_unweighted$groups$component)),
+  mean(table(cluster_1e4_weighted$groups$component)),
+  mean(table(cluster_1e4_unweighted$groups$component))
+)
+
+num_edges_pruned <- c(
+  nrow(cluster_5e8_weighted$pruned_edges),
+  nrow(cluster_5e8_unweighted$pruned_edges),
+  nrow(cluster_1e6_weighted$pruned_edges),
+  nrow(cluster_1e6_unweighted$pruned_edges),
+  nrow(cluster_1e5_weighted$pruned_edges),
+  nrow(cluster_1e5_unweighted$pruned_edges),
+  nrow(cluster_1e4_weighted$pruned_edges),
+  nrow(cluster_1e4_unweighted$pruned_edges)
+)
+
+low_connectedness_count <- c(
+  length(unique(dplyr::filter(cluster_5e8_weighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_5e8_unweighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e6_weighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e6_unweighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e5_weighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e5_unweighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e4_weighted$groups, connectedness < 0.4)$component)),
+  length(unique(dplyr::filter(cluster_1e4_unweighted$groups, connectedness < 0.4)$component))
+)
+
+knitr::kable(data.frame(
+  clustering_method = c("5e-8 Weighted", "5e-8 Unweighted", "1e-6 Weighted", "1e-6 Unweighted", "1e-5 Weighted", "1e-5 Unweighted", "1.5e-4 Weighted", "1.5e-4 Unweighted"),
+  num_traits_at_p_value_threshold = num_traits_at_p_value_threshold,
+  num_traits_in_all_clusters = num_traits_in_all_clusters,
+  num_groups = num_groups,
+  mean_group_size = mean_group_size,
+  num_edges_pruned = num_edges_pruned,
+  mean_connectedness = mean_connectedness,
+  mean_h3_connectedness = mean_h3_connectedness,
+  low_connectedness_count = low_connectedness_count
+))
+
+```
+
+```{r low_connectedness_group, echo=F}
+# low h4 connectedness groups
+#402, 398, 325, 362
+
+poor_clusters <- dplyr::filter(cluster_1e5_weighted$groups, connectedness < 0.4) |>
+  dplyr::pull(component) |>
+  unique()
+
+
+
+plot_low_connectedness_group <- function(component_id, specific_cluster, cluster_name) {
+  low_connectedness_group <- dplyr::filter(specific_cluster$groups, component == component_id)$unique_study_id
+
+  files_for_group <- dplyr::filter(finemapped_studies, unique_study_id %in% low_connectedness_group) |>
+    dplyr::left_join(imputed_studies, by = "study") |>
+    dplyr::select(unique_study_id, file.y)
+
+  gwases <- lapply(files_for_group$file.y, function(file) {
+    gwas <- vroom::vroom(file, show_col_types = FALSE)
+    return(gwas)
+  })
+
+  # Prepare data for Manhattan plot
+  # Combine all GWAS results with study identifiers
+  combined_gwas <- data.frame()
+
+  for(i in 1:length(gwases)) {
+    study_id <- files_for_group$unique_study_id[i]
+    gwas_data <- gwases[[i]]
+    
+    # Add study identifier
+    gwas_data$unique_study_id <- study_id
+    
+    # Combine with other studies
+    combined_gwas <- rbind(combined_gwas, gwas_data)
+  }
+  print(unique(combined_gwas$unique_study_id))
+
+  # Create Manhattan plot with better layout
+  manhattan_plot <- ggplot(combined_gwas, aes(x = BP, y = -log10(P))) +
+    geom_point(aes(color = as.factor(unique_study_id)), alpha = 0.7, size = 0.8) +
+    scale_color_viridis_d(name = "Study ID", option = "plasma") +
+    labs(
+      title = "Manhattan Plot Overlay",
+      subtitle = glue::glue("Low Connectedness Group {component_id} for {cluster_name} threshold"),
+      x = "Genomic Position (bp)",
+      y = "-log10(p-value)"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 11),
+      legend.title = element_text(size = 9),
+      legend.text = element_text(size = 8),
+      legend.position = "bottom",  # Move legend to bottom
+      legend.key.size = unit(0.5, "cm"),  # Make legend keys smaller
+      legend.margin = margin(t = 5, r = 0, b = 0, l = 0),  # Reduce legend margin
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      plot.margin = margin(10, 10, 10, 10)  # Add some margin around plot
+    ) +
+    # Add significance threshold lines
+    geom_hline(yintercept = -log10(5e-8), color = "red", linetype = "dashed", alpha = 0.7) +
+    geom_hline(yintercept = -log10(1e-6), color = "orange", linetype = "dashed", alpha = 0.7) +
+    geom_hline(yintercept = -log10(1e-5), color = "yellow", linetype = "dashed", alpha = 0.7) +
+    # Format x-axis to show positions in millions
+    scale_x_continuous(labels = function(x) paste0(x/1e6, "M"))
+
+  print(manhattan_plot)
+  ggsave(glue::glue("manhattan_plot_{component_id}_{cluster_name}.png"), manhattan_plot, width = 12, height = 8, dpi = 300)
+}
+
+
+plot_low_connectedness_group(424, cluster_1e5_weighted, "1e-5 Weighted")
+```

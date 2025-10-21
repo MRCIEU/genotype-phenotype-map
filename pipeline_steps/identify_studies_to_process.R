@@ -55,6 +55,7 @@ validate_study_list <- function(study_list) {
   if (!all(study_list$data_format %in% data_formats)) stop('Error: some data_format values in study_list are not valid')
   if (!all(study_list$variant_type %in% variant_types)) stop('Error: some variant_type values in study_list are not valid')
   if (!all(study_list$reference_build %in% reference_builds)) stop('Error: some reference_build values in study_list are not valid')
+  if (!all(study_list$coverage %in% coverage_types)) stop('Error: some coverage values in study_list are not valid')
 }
 
 #' calculate_besd_studies_to_process
@@ -83,7 +84,8 @@ calculate_besd_studies_to_process <- function(entries) {
       directory = entry[['data_location']],
       p_value_threshold = entry[['p_value_threshold']],
       ancestry = entry[['ancestry']],
-      variant_type = entry[['variant_type']]
+      variant_type = entry[['variant_type']],
+      coverage = entry[['coverage']]
     ))
   })|> dplyr::bind_rows()
 
@@ -145,7 +147,8 @@ calculate_besd_studies_to_process <- function(entries) {
       probe = probes,
       gene = genes,
       ensg = ensgs,
-      tissue = metadata$tissue
+      tissue = metadata$tissue,
+      coverage = besd_study[['coverage']]
     ))
   }) |> dplyr::bind_rows()
 }
@@ -163,7 +166,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       ancestry = entry[['ancestry']],
       p_value_threshold = entry[['p_value_threshold']],
       data_format = entry[['data_format']],
-      variant_type = entry[['variant_type']]
+      variant_type = entry[['variant_type']],
+      coverage = entry[['coverage']]
     ))
   }) |> dplyr::bind_rows()
 
@@ -203,7 +207,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
       variant_type = opengwas_study[['variant_type']],
       gene = NA,
       probe = NA,
-      tissue = NA
+      tissue = NA,
+      coverage = opengwas_study[['coverage']]
     ))
   }) |> dplyr::bind_rows()
 }
@@ -240,7 +245,8 @@ calculate_tsv_studies_to_process <- function(entries) {
       variant_type = entry[['variant_type']],
       gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
-      tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA)
+      tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA),
+      coverage = entry[['coverage']]
     ))
   }) |> dplyr::bind_rows()
 

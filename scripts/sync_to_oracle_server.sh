@@ -16,9 +16,19 @@ cd $STUDY_DIR
 #Sync the finemapped GWAS results to the oracle server
 # rsync -aRv --prune-empty-dirs --include='*/' --include='*finemapped/*_with_lbfs.tsv.gz' --exclude='*' . $ORACLE_SERVER:$REMOTE_SERVER_STUDY_DIR
 
+echo "copying db files to oracle server"
+rsync -av $RESULTS_DIR/latest/studies.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/studies_new.db
+rsync -av $RESULTS_DIR/latest/coloc_pairs.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/coloc_pairs_new.db
+rsync -av $RESULTS_DIR/latest/associations.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/associations_new.db
+rsync -av $RESULTS_DIR/latest/ld.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/ld_new.db
+exit 0
+
 #Sync the traits and groups svg files to the oracle server
+echo "copying svg files to oracle server"
 rsync -av $SVG_DIR/traits/ $ORACLE_SERVER:$REMOTE_SERVER_SVG_DIR/traits
 rsync -av $SVG_DIR/groups/ $ORACLE_SERVER:$REMOTE_SERVER_SVG_DIR/groups
+
+#Copy over the recently created db files to the oracle server.  Note: not automatically copying the gwas_upload.db file
 
 #Alter the ld block information accordingly and rsync
 echo "preparing ld_blocks directory"
@@ -34,9 +44,3 @@ cd $RSYNC_DIR/ld_blocks
 echo "rsyncing ld_blocks to oracle server"
 rsync -aRv . $ORACLE_SERVER:$REMOTE_SERVER_DATA_DIR/ld_blocks_new/
 
-#Copy over the recently created db files to the oracle server.  Note: not automatically copying the gwas_upload.db file
-echo "copying db files to oracle server"
-rsync -av $RESULTS_DIR/latest/studies.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/studies_new.db
-rsync -av $RESULTS_DIR/latest/coloc_pairs.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/coloc_pairs_new.db
-rsync -av $RESULTS_DIR/latest/associations.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/associations_new.db
-rsync -av $RESULTS_DIR/latest/ld.db $ORACLE_SERVER:$REMOTE_SERVER_DB_DIR/ld_new.db

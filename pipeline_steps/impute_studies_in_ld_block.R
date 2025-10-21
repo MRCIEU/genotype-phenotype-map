@@ -2,7 +2,7 @@ source('constants.R')
 source('imputation_method.R')
 
 imputation_correlation_threshold <- 0.7
-p_value_filter_correlation_threshold <- 0.6
+imputation_significant_rows_overinflated_threshold <- 100
 
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -57,8 +57,8 @@ main <- function() {
       rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
-      # GodMC methylation studies are sparsley populated, so imputation is not useful
-      if (grepl('godmc-methylation', study['study'])) {
+      # Imputation is not useful or effective for sparsely populated studies, instead pad missing values
+      if (study[['coverage']] == coverage_types$sparse) {
         filtered_results <- list(
           significant_rows_imputed = NA,
           significant_rows_filtered = NA
@@ -70,7 +70,7 @@ main <- function() {
         verify_imputation_results(result$gwas, imputed_file)
         filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
-        if( !is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) {
+        if((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) || filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold) {
           vroom::vroom_write(filtered_results$gwas, imputed_file)
         } else {
           vroom::vroom_write(gwas, imputed_file)
@@ -98,7 +98,8 @@ main <- function() {
         significant_rows_imputed=filtered_results$significant_rows_imputed,
         significant_rows_filtered=filtered_results$significant_rows_filtered,
         ld_block=ld_info$block,
-        variant_type=study['variant_type']
+        variant_type=study['variant_type'],
+        coverage=study['coverage']
       )
 
       return(imputation_info)
@@ -133,7 +134,8 @@ empty_imputed_studies <- function() {
       se_adj = numeric(),
       time_taken = character(),
       ld_block = character(),
-      variant_type = character()
+      variant_type = character(),
+      coverage = character()
     )
   )
 }
@@ -157,13 +159,13 @@ pad_missing_values <- function(gwas) {
 
 verify_imputation_results <- function(gwas, imputed_file) {
   if (any(is.na(gwas$BETA))) {
-    message(glue::glue('BETA: NA in imputed study {imputed_file}'))
+    stop(glue::glue('BETA: NA in imputed study {imputed_file}'))
   }
   if (any(is.na(gwas$SE) | gwas$SE <= 0)) {
-    message(glue::glue('SE: NA or <= 0 in imputed study {imputed_file}'))
+    stop(glue::glue('SE: NA or <= 0 in imputed study {imputed_file}'))
   }
   if (any(is.na(gwas$P) | gwas$P < 0 | gwas$P > 1)) {
-    message(glue::glue('P: NA or < 0 or > 1 in imputed study {imputed_file}'))
+    stop(glue::glue('P: NA or < 0 or > 1 in imputed study {imputed_file}'))
   }
 }
 main()

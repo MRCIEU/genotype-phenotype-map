@@ -279,7 +279,8 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
 
   block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
   svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
-  create_svg_for_ld_block(finemap_gwas, study$study, svg_file)
+  is_sparse <- study[['coverage']] == coverage_types$sparse
+  create_svg_for_ld_block(finemap_gwas, study$study, svg_file, is_sparse)
 
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -372,7 +373,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     block_name <- basename(finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
     svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
     svg_files <- c(svg_files, svg_file)
-    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file)
+    is_sparse <- study[['coverage']] == coverage_types$sparse
+    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {

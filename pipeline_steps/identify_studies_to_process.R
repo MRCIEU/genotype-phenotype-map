@@ -84,7 +84,7 @@ calculate_besd_studies_to_process <- function(entries) {
       directory = entry[['data_location']],
       p_value_threshold = entry[['p_value_threshold']],
       ancestry = entry[['ancestry']],
-      variant_type = entry[['variant_type']]
+      variant_type = entry[['variant_type']],
       coverage = entry[['coverage']]
     ))
   })|> dplyr::bind_rows()

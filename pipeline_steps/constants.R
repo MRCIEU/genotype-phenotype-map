@@ -74,6 +74,7 @@ available_liftover_conversions <- list(
   'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
 )
 extraction_file_types <- list(vcf='vcf', csv='csv')
+coverage_types <- list(dense='dense', sparse='sparse')
 
 standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z','GENE')
 required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")

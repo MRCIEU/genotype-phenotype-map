@@ -57,8 +57,8 @@ main <- function() {
       rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
       gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
 
-      # GodMC methylation studies are sparsley populated, so imputation is not useful
-      if (grepl('godmc-methylation', study['study'])) {
+      # Imputation is not useful or effective for sparsely populated studies, instead pad missing values
+      if (study[['coverage']] == coverage_types$sparse) {
         filtered_results <- list(
           significant_rows_imputed = NA,
           significant_rows_filtered = NA
@@ -98,7 +98,8 @@ main <- function() {
         significant_rows_imputed=filtered_results$significant_rows_imputed,
         significant_rows_filtered=filtered_results$significant_rows_filtered,
         ld_block=ld_info$block,
-        variant_type=study['variant_type']
+        variant_type=study['variant_type'],
+        coverage=study['coverage']
       )
 
       return(imputation_info)
@@ -133,7 +134,8 @@ empty_imputed_studies <- function() {
       se_adj = numeric(),
       time_taken = character(),
       ld_block = character(),
-      variant_type = character()
+      variant_type = character(),
+      coverage = character()
     )
   )
 }

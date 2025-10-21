@@ -41,7 +41,7 @@ main <- function() {
 
       if (nrow(result$gwas) < minimum_extraction_size &&
           study[['variant_type']] == variant_types$common &&
-          !grepl('godmc-methylation', study[['study']])
+          study[['coverage']] == coverage_types$dense
         ) {
         return()
       }
@@ -104,7 +104,8 @@ empty_standardised_studies <- function() {
                     eaf_from_reference_panel=logical(),
                     snps_removed_by_reference_panel=numeric(),
                     time_taken=character(),
-                    variant_type=character()
+                    variant_type=character(),
+                    coverage=character()
   ))
 }
 

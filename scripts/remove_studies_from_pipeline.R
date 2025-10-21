@@ -1,9 +1,9 @@
 source('../pipeline_steps/constants.R')
 
-# studies_to_remove <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz')) |> 
-studies_to_remove <- vroom::vroom('../pipeline_steps/data/ignore_studies_rare.tsv', delim = '\t') |> 
-  dplyr::pull(study)
-length(studies_to_remove)
+studies_to_remove <- vroom::vroom(glue::glue('{latest_results_dir}/studies_processed.tsv.gz')) |> 
+  dplyr::filter(source == 'ukb_ppp') |>
+  dplyr::pull(study_name)
+message(paste('Removing', length(studies_to_remove), 'studies from pipeline'))
 
 ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -66,13 +66,28 @@ main <- function() {
       print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
       vroom::vroom_write(finemapped_studies, finemapped_studies_file)
     }
+
+    coloc_results_file <- paste0(ld_block, '/coloc_pairwise_results.tsv.gz')
+    if (!file.exists(coloc_results_file) || file.size(coloc_results_file) == 0) {
+      print(paste('COLOC PAIRWISE RESULTS FILE MISSING:', coloc_results_file))
+      return()
+    }
+    coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
+    entries <- nrow(coloc_results)
+    coloc_results <- dplyr::filter(coloc_results, !study_a %in% studies_to_remove & !study_b %in% studies_to_remove)
+    if (!entries - nrow(coloc_results) == 0) {
+      print(paste('removed', entries - nrow(coloc_results), 'rows from coloc_pairwise_results'))
+      vroom::vroom_write(coloc_results, coloc_results_file)
+    }
+
+    #No need to remove from coloc_clustered_results.tsv.gz as gets recreated every time
   })
 
-  delete_study_directories <- lapply(studies_to_remove, function(study) {
-    extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
-    print(paste('deleting:', study))
-    unlink(extracted_study_dir, recursive = T)
-  })
+  # delete_study_directories <- lapply(studies_to_remove, function(study) {
+  #   extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
+  #   print(paste('deleting:', study))
+  #   unlink(extracted_study_dir, recursive = T)
+  # })
 
   #and then delete them from the results
   studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
@@ -82,14 +97,14 @@ main <- function() {
   print(paste('removed', entries - nrow(studies_processed), 'rows from studies_processed file'))
   vroom::vroom_write(studies_processed, studies_processed_file)
 
-  studies_processed_file <- glue::glue('{results_dir}/latest/studies_processed.tsv.gz')
-  studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
-  entries <- nrow(studies_processed)
-  studies_processed <- dplyr::filter(studies_processed, !study_name %in% studies_to_remove)
-  print(paste('removed', entries - nrow(studies_processed), 'rows from studies_processed file'))
-  vroom::vroom_write(studies_processed, studies_processed_file)
+  study_extractions_file <- glue::glue('{latest_results_dir}/study_extractions.tsv.gz')
+  study_extractions <- vroom::vroom(study_extractions_file, show_col_types=F)
+  entries <- nrow(study_extractions)
+  study_extractions <- dplyr::filter(study_extractions, !study %in% studies_to_remove)
+  print(paste('removed', entries - nrow(study_extractions), 'rows from study_extractions file'))
+  vroom::vroom_write(study_extractions, study_extractions_file)
 
-  traits_processed_file <- glue::glue('{results_dir}/latest/traits_processed.tsv.gz')
+  traits_processed_file <- glue::glue('{latest_results_dir}/traits_processed.tsv.gz')
   traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
   entries <- nrow(traits_processed)
   traits_processed <- dplyr::filter(traits_processed, !study_name %in% studies_to_remove)

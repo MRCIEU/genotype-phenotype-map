@@ -65,8 +65,8 @@ main <- function() {
           return(NULL)
         }
 
-        # GodMC methylation studies are sparsley populated, so finemapping is not useful
-        if (grepl('godmc-methylation', study['study'])) {
+        # Finemapping is not useful or effective for sparsely populated studies
+        if (study[['coverage']] == coverage_types$sparse) {
           unfinemapped_results <- process_unfinemapped_gwas(gwas, study, finemap_file_prefix, start_time, message='sparse_population')
           unfinemapped_results <- dplyr::bind_cols(unfinemapped_results, data.frame(
             first_finemap_num_results = NA,
@@ -318,6 +318,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
   for (i in susie_result$sets$cs_index) {
     finemap_num <- which(i == susie_result$sets$cs_index)
     finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
+    unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
     
     # Create conditioned GWAS with LBF values
     conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
@@ -328,9 +329,14 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     bad_snp_rows_numbers <- which(conditioned_gwas$LBF_P < lowest_p_value_threshold & conditioned_gwas$P > minimum_lbf_p_value_threshold)
     if (length(bad_snp_rows_numbers) > 0) {
       problematic_snps_file <- glue::glue('{ld_block_data_dir}/{args$ld_block}/problematic_finemapped_snps.tsv')
-      problematic_snps <- vroom::vroom(problematic_snps_file, show_col_types = F)
+      if (!file.exists(problematic_snps_file)) {
+        problematic_snps <- data.frame()
+      } else {
+        problematic_snps <- vroom::vroom(problematic_snps_file, show_col_types = F)
+      }
 
       removed_rows <- conditioned_gwas[bad_snp_rows_numbers, ]
+      removed_rows$unique_study_id <- unique_id
       problematic_snps <- dplyr::bind_rows(problematic_snps, removed_rows)
       vroom::vroom_write(problematic_snps, problematic_snps_file)
 
@@ -354,6 +360,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
     new_bps <- c(new_bps, new_bp)
     new_files <- c(new_files, finemap_file)
+    unique_ids <- c(unique_ids, unique_id)
 
     min_ps <- c(min_ps, new_min_p)
 
@@ -361,8 +368,6 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     lbf_columns <- dplyr::left_join(lbf_columns, dplyr::select(conditioned_gwas, SNP, LBF), by = 'SNP') |>
       dplyr::rename(!!lbf_col_name := LBF)
 
-    unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
-    unique_ids <- c(unique_ids, unique_id)
 
     block_name <- basename(finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
     svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")

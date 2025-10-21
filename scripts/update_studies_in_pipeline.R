@@ -10,100 +10,19 @@ main <- function() {
   # update_studies_processed()
 }
 
-update_snp_in_finemapped_studies <- function(snp_annotations, studies_file, imputed_studies_file) {
-  finemapped_studies <- vroom::vroom(studies_file, show_col_types = F) |>
-    dplyr::distinct(unique_study_id, .keep_all = T)
-  missing_snps <- finemapped_studies[is.na(finemapped_studies$snp), ]
-  existing_snps <- finemapped_studies[!is.na(finemapped_studies$snp), ]
-  print(paste('missing', nrow(missing_snps), 'snps in finemapped studies'))
-
-  updated_studies <- lapply(seq_len(nrow(missing_snps)), function(i) {
-    study <- missing_snps[i, ]
-    if (!is.na(study['snp'])) {
-      return(study)
-    }
-    snp_entry <- snp_annotations |>
-      dplyr::filter(chr == as.numeric(study[['chr']]) & bp == as.numeric(study['bp']))
-    if (nrow(snp_entry) == 0) {
-      study_name <- study$study
-      gwas_file <- dplyr::filter(missing_snps, study == study_name)$file
-      gwas <- vroom::vroom(gwas_file, col_select = c('SNP', 'LBF'), show_col_types = F)
-      study$snp <- gwas[which.max(gwas$LBF), ]$SNP
-    } else if (nrow(snp_entry) == 1) {
-      study$snp <- snp_entry |>
-        dplyr::pull(snp)
-    } else {
-      study$snp <- snp_entry |>
-        dplyr::slice_head(n = 1) |>
-        dplyr::pull(snp)
-    }
-    return(study)
-  }) |>
-    dplyr::bind_rows()
-  updated_studies <- dplyr::bind_rows(existing_snps, updated_studies)
-  # print(tail(dplyr::select(updated_studies, study, chr, bp, snp), 10))
-  vroom::vroom_write(updated_studies, studies_file)
-}
-
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
-update_method <- function(studies_file, imputed_studies_file, ld_block, type) {
-
+update_method <- function(studies_file, type) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
 
-  ld_block <- sub('.*EUR', 'EUR', ld_block)
-  flattened_ld_block <- gsub('[-/]', '_', ld_block)
-  print(paste('flattened_ld_block:', flattened_ld_block))
-  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F)
-  studies <- vroom::vroom(studies_file, show_col_types = F)
-  all_finemapped_files <- lapply(imputed_studies$study, function(study) {
-    files <- Sys.glob(glue::glue('{extracted_study_dir}{study}/finemapped/{flattened_ld_block}_*.tsv.gz'))
-    return(data.frame(study=study, file=files))
-  })
-  all_finemapped_files <- dplyr::bind_rows(all_finemapped_files)
-  all_finemapped_files <- all_finemapped_files[!grepl('_with_lbf.tsv.gz$', all_finemapped_files$file), ]
-
-  only_missing_files <- dplyr::filter(all_finemapped_files, !file %in% studies$file)
-  print(paste('populating', nrow(only_missing_files), 'finemapped files'))
-
-  missing_finemapped_entries <- lapply(seq_len(nrow(only_missing_files)), function(i) {
-    missing_entry <- only_missing_files[i, ]
-    imputed_info <- dplyr::filter(imputed_studies, study == missing_entry$study) |>
-      dplyr::select(study, ancestry, chr, bp, p_value_threshold, sample_size, cis_trans, ld_block, variant_type, category)
-
-    missing_gwas <- vroom::vroom(missing_entry$file, show_col_types = F)
-    missing_gwas$Z <- convert_lbf_to_abs_z(missing_gwas$LBF, missing_gwas$SE)
-    missing_gwas$P <- 2 * pnorm(-abs(missing_gwas$Z))
-    min_p <- min(missing_gwas$P, na.rm = T)
-    snp <- missing_gwas$SNP[which.min(missing_gwas$P)]
-
-    svg_file_name <- sub('finemapped', 'svgs/extractions', missing_entry$file)
-    svg_file_name <- sub('tsv.gz', 'svg', svg_file_name)
-    create_svg_for_ld_block(missing_gwas, missing_entry$study, svg_file_name, ld_block, is_sparse = FALSE)
-
-    imputed_info$svg_file <- svg_file_name
-    imputed_info$file <- missing_entry$file
-    specific_id <- sub('.*_(\\d+).tsv.gz', '\\1', imputed_info$file)
-    imputed_info$unique_study_id <- glue::glue('{imputed_info$study}_{ld_block}_{specific_id}')
-    imputed_info$min_p <- min_p
-    imputed_info$finemap_message <- NA
-    imputed_info$first_finemap_num_results <- NA
-    imputed_info$second_finemap_num_results <- NA
-    imputed_info$qc_step_run <- NA
-    imputed_info$snps_removed_by_qc <- NA
-    imputed_info$time_taken <- NA
-    imputed_info$ignore <- FALSE
-    imputed_info$file_with_lbfs <- glue::glue('{extracted_study_dir}{missing_entry$study}/finemapped/{flattened_ld_block}_with_lbf.tsv.gz')
-    return(imputed_info)
-  }) |>
-    dplyr::bind_rows()
-
-  print(paste('writing', nrow(missing_finemapped_entries), 'finemapped files'))
-  studies <- dplyr::bind_rows(studies, missing_finemapped_entries)
-  print(paste('now there are', nrow(studies), 'finemapped files'))
-  vroom::vroom_write(studies, glue::glue('{studies_file}'))
+  studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    dplyr::mutate(coverage = dplyr::case_when(
+      grepl('godmc', study) ~ 'sparse',
+      TRUE ~ 'dense'
+    ))
+  vroom::vroom_write(studies, studies_file)
 }
 
 update_study_dirs <- function() {
@@ -125,27 +44,25 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
-  snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-    dplyr::select(chr, bp, snp)
+  # snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
+    # dplyr::select(chr, bp, snp)
   blocks <- ld_info$ld_block_data
-  # blocks <- blocks[1:1]
 
   cores_to_use <- 15
   update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
   # update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
-    # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    # update_method(extracted_studies_file, type='extracted')
+    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    update_method(extracted_studies_file, type='extracted')
 
-
-    # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    # update_method(standardised_studies_file, type='standardised')
+    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    update_method(standardised_studies_file, type='standardised')
 
     imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
-    # update_method(imputed_studies_file, type='imputed')
+    update_method(imputed_studies_file, type='imputed')
 
     finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
-    update_snp_in_finemapped_studies(snp_annotations, finemapped_studies_file, imputed_studies_file)
+    update_method(finemapped_studies_file, type='finemapped')
 
     # coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
     # update_method(coloc_pairwise_results_file, type='coloc_pairwise')

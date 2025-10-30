@@ -116,7 +116,7 @@ process_message <- function(gwas_info) {
         standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
         imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
         finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
-        coloc = glue::glue('{ld_info$ld_block_data}/colocalisation_complete')
+        coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
       )
 
       flog.info(paste('Standardising regions for block:', gwas_info$metadata$guid, block))
@@ -144,7 +144,7 @@ process_message <- function(gwas_info) {
       check_step_complete(output_files$finemapped, block, output)
 
       flog.info(paste('Colocalising regions for block:', gwas_info$metadata$guid, block))
-      coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
+      coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {gwas_info$metadata$guid}")

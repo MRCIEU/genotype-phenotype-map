@@ -118,7 +118,7 @@ studies_db <- list(
       id INTEGER PRIMARY KEY,
       study_id INTEGER,
       snp_id INTEGER,
-      snp TEXT NOT NULL,
+      display_snp TEXT NOT NULL,
       ld_block_id INTEGER,
       unique_study_id TEXT NOT NULL,
       study TEXT NOT NULL,
@@ -180,7 +180,7 @@ additional_studies_tables <- list(
     query = "CREATE TABLE coloc_groups_wide AS 
       SELECT coloc_groups.*, 
         study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
-        study_extractions.ld_block, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
+        study_extractions.ld_block, snp_annotations.display_snp, snp_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
         traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM coloc_groups 
@@ -197,7 +197,7 @@ additional_studies_tables <- list(
     name = "rare_results_wide",
     query = "CREATE TABLE rare_results_wide AS 
       SELECT rare_results.*,
-        study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp,
+        study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp, snp_annotations.rsid,
         gene_annotations.gene, gene_annotations.id as gene_id,
         traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
         ld_blocks.ld_block, study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url

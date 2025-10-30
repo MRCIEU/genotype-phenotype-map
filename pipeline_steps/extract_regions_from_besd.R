@@ -104,7 +104,7 @@ extract_cis_region <- function(study, p_value_threshold) {
 #' 1: get all hits above p-value threshold
 #' 2: clump results, filter out cis region (if any)
 #' 3: loop through clumped results to get all regions, then extract and store
-extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
+extract_trans_regions <- function(extracted_cis_snps, study, p_value_threshold) {
   tmp_trans_snps <- withr::local_tempfile()
 
   extract_top_snps <- glue::glue('smr --beqtl-summary {study$study_location} ',
@@ -146,9 +146,9 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
 
   # removing duplicate entries per region, and the original cis region so we only grab the correct retions once.
   clumped_trans_snps <- clumped_trans_snps[!duplicated(clumped_trans_snps$ld_block_string), ]
-  if (is.data.frame(extracted_cis_snp) && nrow(extracted_cis_snp) == 1) {
+  if (is.data.frame(extracted_cis_snps) && nrow(extracted_cis_snps) == 1) {
     clumped_trans_snps <- dplyr::filter(clumped_trans_snps, 
-      !is.na(ld_block_string) & ld_block_string != extracted_cis_snp$ld_block
+      !is.na(ld_block_string) & ld_block_string != extracted_cis_snps$ld_block
     )
   }
 
@@ -160,26 +160,24 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
     trans_p <- as.numeric(clumped_snp['P'])
     ld_block <- dplyr::filter(ld_blocks, chr == trans_chr & start <= trans_bp & stop > trans_bp & ancestry == study$ancestry)
 
+    tmp_trans_region <- withr::local_tempfile()
+    extract_region <- glue::glue('smr --beqtl-summary {study$study_location} ',
+                            '--query 1 ',
+                            '--snp {clumped_snp["SNP"]} ',
+                            '--snp-wind 3000 ', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
+                            '--probe {study$probe} ',
+                            '--out {tmp_trans_region}'
+    )
+    system(extract_region, wait=T, ignore.stdout = T)
+    if (!file.exists(glue::glue('{tmp_trans_region}.txt'))) return()
+
+    trans_region <- vroom::vroom(glue::glue('{tmp_trans_region}.txt'), show_col_types = F)
+    trans_region <- format_gwas(trans_region) |>
+      dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 
+
     extracted_file <- glue::glue('{study$extracted_location}extracted/{study$ancestry}_{trans_chr}_{trans_bp}.tsv.gz')
-    if (!file.exists(extracted_file)) {
-      tmp_trans_region <- withr::local_tempfile()
-      extract_region <- glue::glue('smr --beqtl-summary {study$study_location} ',
-                              '--query 1 ',
-                              '--snp {clumped_snp["SNP"]} ',
-                              '--snp-wind 3000 ', # smr doesn't accept BP ranges, and errors if specific RSID isn't present
-                              '--probe {study$probe} ',
-                              '--out {tmp_trans_region}'
-      )
-      system(extract_region, wait=T, ignore.stdout = T)
-      if (!file.exists(glue::glue('{tmp_trans_region}.txt'))) return()
+    vroom::vroom_write(trans_region, extracted_file)
 
-      trans_region <- vroom::vroom(glue::glue('{tmp_trans_region}.txt'), show_col_types = F)
-      trans_region <- format_gwas(trans_region) |>
-        dplyr::filter(BP >= ld_block$start & BP <= ld_block$stop) 
-
-      vroom::vroom_write(trans_region, extracted_file)
-      unlink(glue::glue('{tmp_trans_region}.txt'))
-    }
     # ld_block_string <- ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)
 
     # if (nrow(ld_block) == 0) {
@@ -188,6 +186,8 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
       # message('Missing LD block for ', clumped_snp['SNP'])
       # return()
     # }
+
+    unlink(glue::glue('{tmp_trans_region}.txt'))
 
     extracted_trans_hit <- data.frame(chr = as.character(trans_chr),
                                     bp = trans_bp,
@@ -205,8 +205,13 @@ extract_trans_regions <- function(extracted_cis_snp, study, p_value_threshold) {
 }
 
 format_gwas <- function(gwas) {
-  gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', BETA='b', P='p') |>
-    dplyr::select(-Probe, -Probe_Chr, -Probe_bp, -Gene, -Orientation)
+  gwas <- dplyr::rename(gwas, RSID='SNP', CHR='Chr', EA='A1', OA='A2', EAF='Freq', BETA='b', P='p')
+  
+  cols_to_remove <- c('Probe', 'Probe_Chr', 'Probe_bp', 'Gene', 'Orientation')
+  existing_cols <- cols_to_remove[cols_to_remove %in% names(gwas)]
+  if (length(existing_cols) > 0) {
+    gwas <- dplyr::select(gwas, -dplyr::all_of(existing_cols))
+  }
 
   return(gwas)
 }

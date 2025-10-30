@@ -43,6 +43,7 @@ main <- function() {
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
+  print(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 
   vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 }

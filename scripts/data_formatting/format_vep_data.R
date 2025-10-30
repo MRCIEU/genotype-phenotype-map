@@ -44,6 +44,12 @@ main <- function() {
 
   all_new_vep <- rbind(common_vep, genebass_vep, backman_vep, azphewas_vep)
 
+  duplicates <- all_new_vep[duplicated(all_new_vep$snp) | duplicated(all_new_vep$display_snp), ]
+  if (nrow(duplicates) > 0) {
+    message(dplyr::select(duplicates, snp, display_snp))
+    stop("ERROR: Found ", nrow(duplicates), " rows with duplicate snp or display_snp values.")
+  }
+
   all_new_vep <- all_new_vep |>
     dplyr::distinct(Uploaded_variation, .keep_all = T) |>
     extract_columns()

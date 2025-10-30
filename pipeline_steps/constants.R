@@ -123,6 +123,7 @@ ld_block_dirs <- function(block) {
                         ld_block_data = glue::glue('{ld_block_data_dir}{block}'),
                         ld_reference_panel_prefix=glue::glue('{ld_reference_panel_dir}{block}')
   )
+  # ld_info <- dplyr::bind_cols(ld_info, ld_block_components(block))
   return(ld_info)
 }
 
@@ -135,6 +136,16 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+}
+
+ld_block_components <- function(ld_block) {
+  components <- strsplit(ld_block, '[/-]')[[1]]
+  return(data.frame(
+    ancestry = components[1], 
+    chr = components[2], 
+    start = as.numeric(components[3]), 
+    stop = as.numeric(components[4])
+  ))
 }
 
 flattened_ld_block_name <- function(ld_block_string) {

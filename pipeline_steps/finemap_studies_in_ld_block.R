@@ -20,6 +20,7 @@ main <- function() {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
+  # ld_info$is_small <- ld_info$start - ld_info$stop < 1000000
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {
@@ -187,7 +188,8 @@ empty_finemapped_info <- function() {
                     time_taken=character(),
                     svg_file=character(),
                     file_with_lbfs=character(),
-                    ignore=logical()
+                    ignore=logical(),
+                    coverage=character()
     )
   )
 }
@@ -271,7 +273,7 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   failed_finemap_file <- glue::glue('{finemap_file_prefix}_1.tsv.gz')
   unique_id <- glue::glue('{study["study"]}_{args$ld_block}_1')
 
-  finemap_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, Z, IMPUTED, LBF)
+  finemap_gwas <- dplyr::select(gwas, dplyr::any_of(c('SNP', 'CHR', 'BP', 'SE', 'EAF', 'Z', 'IMPUTED', 'LBF')))
   vroom::vroom_write(finemap_gwas, failed_finemap_file)
 
   file_with_lbfs <- glue::glue('{finemap_file_prefix}_with_lbf.tsv.gz')
@@ -300,7 +302,8 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
                                     time_taken=as.character(hms::as_hms(difftime(Sys.time(), start_time))),
                                     svg_file=svg_file,
                                     file_with_lbfs=file_with_lbfs,
-                                    ignore=F
+                                    ignore=F,
+                                    coverage=study['coverage']
   )
 
   return(failed_finemap_info)
@@ -320,11 +323,13 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     finemap_num <- which(i == susie_result$sets$cs_index)
     finemap_file <- glue::glue('{finemap_file_prefix}_{finemap_num}.tsv.gz')
     unique_id <- glue::glue('{study["study"]}_{args$ld_block}_{finemap_num}')
-    
-    # Create conditioned GWAS with LBF values
+    credible_set_rows <- susie_result$sets$cs[paste0('L', i)][[1]]
+    credible_set_snps <- gwas$SNP[credible_set_rows]
+
     conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
       dplyr::mutate(LBF = susie_result$lbf_variable[i, ]) |>
-      dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE))
+      dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE)) |>
+      dplyr::mutate(in_credible_set = SNP %in% credible_set_snps)
 
     # Remove problematic snps, where the LBF seems to be inflated, compared to the original p-value
     bad_snp_rows_numbers <- which(conditioned_gwas$LBF_P < lowest_p_value_threshold & conditioned_gwas$P > minimum_lbf_p_value_threshold)
@@ -344,22 +349,14 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
       conditioned_gwas <- conditioned_gwas[-bad_snp_rows_numbers, ]
     }
 
-    # Find the first row in susie_result$sets$cs that isn't in bad_snp_rows_numbers
-    # If there are none, then choose the important row based on min LBF_P
-    credible_set_rows <- susie_result$sets$cs[paste0('L', i)][[1]]
-    available_rows <- credible_set_rows[!credible_set_rows %in% bad_snp_rows_numbers]
-    
-    # If no rows from credible set are available, choose based on min LBF_P
-    if (length(available_rows) > 0) {
-      important_row <- available_rows[1]
-    } else {
-      important_row <- which.min(conditioned_gwas$LBF_P)
-    }
+    important_row <- which.min(conditioned_gwas$LBF_P)
 
     new_min_p <- min(conditioned_gwas$LBF_P, na.rm = T)
-    new_snps <- c(new_snps, conditioned_gwas[important_row, ]$SNP)
     new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
+    new_snp <- conditioned_gwas[important_row, ]$SNP
+
     new_bps <- c(new_bps, new_bp)
+    new_snps <- c(new_snps, new_snp)
     new_files <- c(new_files, finemap_file)
     unique_ids <- c(unique_ids, unique_id)
 
@@ -378,6 +375,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
+      print(study)
+      print(new_bp)
       if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
         study['cis_trans'] <- cis_trans$cis_only
       } else {
@@ -418,7 +417,8 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     time_taken = rep(time_taken, num_credible_sets),
     svg_file = svg_files,
     file_with_lbfs = rep(file_with_lbfs, num_credible_sets),
-    ignore = rep(FALSE, num_credible_sets)
+    ignore = rep(FALSE, num_credible_sets),
+    coverage = rep(study[['coverage']], num_credible_sets)
   )
   return(succeeded_finemap_info)
 }

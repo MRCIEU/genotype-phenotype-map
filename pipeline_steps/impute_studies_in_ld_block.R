@@ -2,7 +2,7 @@ source('constants.R')
 source('imputation_method.R')
 
 imputation_correlation_threshold <- 0.7
-imputation_significant_rows_overinflated_threshold <- 100
+imputation_significant_rows_overinflated_threshold <- 150
 
 parser <- argparser::arg_parser('Impute GWASes for pipeline')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the ', type = 'character')
@@ -73,6 +73,7 @@ main <- function() {
         if((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) || filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold) {
           vroom::vroom_write(filtered_results$gwas, imputed_file)
         } else {
+          gwas$IMPUTED <- FALSE
           vroom::vroom_write(gwas, imputed_file)
         }
       }

@@ -22,7 +22,10 @@ if len(studies_to_process) == 0:
     print('No studies to process, exiting.')
     sys.exit()
 
-ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
+if TEST_RUN:
+    ld_blocks = pd.read_csv('../tests/data/ld_blocks.tsv', sep='\t')
+else:
+    ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
 
 relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestry'].unique())
 ld_blocks = ld_blocks[relevant_ancestries]

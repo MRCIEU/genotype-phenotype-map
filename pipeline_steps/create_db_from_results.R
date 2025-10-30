@@ -42,7 +42,6 @@ main <- function() {
   message('Creating studies db')
   studies_db <- populate_existing_row_ids(latest_studies_conn, studies_db)
   studies_db <- load_data_for_studies_db(studies_db, studies_conn)
-  q()
 
   all_relevant_snps <- find_relevant_snps(studies_db)
 
@@ -188,7 +187,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::rename(gene_id=id)
 
   snp_annotations_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, id) |>
+    dplyr::select(snp, display_snp, id) |>
     dplyr::rename(snp_id=id)
   
   studies_subset <- studies_db$studies$data |>
@@ -204,7 +203,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
   duplicate_snps <- studies_db$snp_annotations$data[duplicated(studies_db$snp_annotations$data$snp), ]
   if (nrow(duplicate_snps) > 0) {
     vroom::vroom_write(duplicate_snps, file.path(current_results_dir, "duplicate_snps.tsv"))
-    stop("ERROR: Found ", nrow(duplicate_snps), " rows with duplicate snp values.  Saving to current results dir")
+    stop("ERROR: Found ", nrow(duplicate_snps), " rows with duplicate display_snp values.  Saving to current results dir")
   }
 
   duplicate_genes <- studies_db$gene_annotations$data[duplicated(studies_db$gene_annotations$data$gene), ]

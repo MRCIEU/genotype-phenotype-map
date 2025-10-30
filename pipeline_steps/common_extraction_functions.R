@@ -2,8 +2,7 @@ format_unique_snp_string <- function(chr, bp, ea, oa) {
   # Was going to use compress_alleles but the reference panel doesn't have compressed alleles
   compressed_ea <- trimws(as.character(ea))
   compressed_oa <- trimws(as.character(oa))
-  formatted_bp <- trimws(as.character(bp))
-
+  formatted_bp <- format(as.numeric(bp), scientific = FALSE, trim = TRUE)
   snp_string <- glue::glue('{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
   return(snp_string)
 }

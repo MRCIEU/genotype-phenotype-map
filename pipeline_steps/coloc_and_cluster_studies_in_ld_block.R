@@ -33,6 +33,7 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
+      dplyr::filter(min_p <= lowest_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
   }
 
@@ -41,6 +42,7 @@ main <- function() {
     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
     finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
       dplyr::mutate(file = sub('/local-scratch/projects/genotype-phenotype-map/data/', data_dir, file)) |>
+      dplyr::filter(min_p <= lowest_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
   }
 
@@ -65,10 +67,11 @@ main <- function() {
   }
 
   if (!is.na(args$worker_guid)) {
-    finemapped_subset <- dplyr::filter(finemapped_studies,
-      min_p <= lowest_p_value_threshold & 
-      (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
-    )
+    finemapped_subset <- finemapped_studies |>
+      dplyr::filter(
+        min_p <= lowest_p_value_threshold & 
+        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
+      )
   } else {
     finemapped_subset <- finemapped_studies
   }
@@ -89,48 +92,56 @@ main <- function() {
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
-  new_coloc_results <- lapply(seq_len(nrow(study_pairs)), function(i) {
-    pair <- study_pairs[i,]
-    first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
-    second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
+  num_cores <- 200
+  chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
+  chunked_study_pairs <- split(study_pairs, chunk_factor)
 
-    tryCatch({
-      result <- pairwise_coloc_analysis(first_gwas, second_gwas)
-    }, error = function(e) {
-      message(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
-      stop(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
-    })
-    if (is.null(result)) {
-      result <- data.frame(
-        ld_block = args$ld_block,
-        unique_study_a = pair$unique_study_a,
-        study_a = NA,
-        unique_study_b = pair$unique_study_b,
-        study_b = NA,
-        ignore = T,
-        false_positive = F,
-        false_negative = F,
-        bp_distance = NA,
-        nsnps = NA,
-        hit1 = NA,
-        hit2 = NA,
-        idx1 = NA,
-        idx2 = NA,
-        PP.H0.abf = NA,
-        PP.H1.abf = NA,
-        PP.H2.abf = NA,
-        PP.H3.abf = NA,
-        PP.H4.abf = NA,
-        h4 = NA
-      )
+  new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
+    results <- lapply(seq_len(nrow(chunk)), function(i) {
+      pair <- chunk[i,]
+      first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
+      second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
+
+      tryCatch({
+        result <- pairwise_coloc_analysis(first_gwas, second_gwas)
+      }, error = function(e) {
+        message(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
+        stop(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
+      })
+      if (is.null(result)) {
+        result <- data.frame(
+          ld_block = args$ld_block,
+          unique_study_a = pair$unique_study_a,
+          study_a = NA,
+          unique_study_b = pair$unique_study_b,
+          study_b = NA,
+          ignore = T,
+          false_positive = F,
+          false_negative = F,
+          bp_distance = NA,
+          nsnps = NA,
+          hit1 = NA,
+          hit2 = NA,
+          idx1 = NA,
+          idx2 = NA,
+          PP.H0.abf = NA,
+          PP.H1.abf = NA,
+          PP.H2.abf = NA,
+          PP.H3.abf = NA,
+          PP.H4.abf = NA,
+          h4 = NA
+        )
+        return(result)
+      }
+
+      result <- dplyr::bind_cols(pair, result)
       return(result)
-    }
-
-    result <- dplyr::bind_cols(pair, result)
-    return(result)
+    })
+    all_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
+    return(all_results)
   })
 
-  new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
+  new_coloc_results <- dplyr::bind_rows(new_coloc_results)
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
@@ -156,11 +167,6 @@ main <- function() {
 
     additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
 
-    clustered_results$groups <- clustered_results$groups |>
-      dplyr::mutate(ld_block = args$ld_block) |>
-      dplyr::left_join(additional_data_per_cluster, by = "component") |>
-      dplyr::arrange(component)
-
     if (nrow(clustered_results$groups) == 0) {
       clustered_results$groups <- data.frame(
         unique_study_id = character(),
@@ -170,6 +176,11 @@ main <- function() {
         h4_connectedness = numeric(),
         h3_connectedness = numeric()
       )
+    } else {
+      clustered_results$groups <- clustered_results$groups |>
+        dplyr::mutate(ld_block = args$ld_block) |>
+        dplyr::left_join(additional_data_per_cluster, by = "component") |>
+        dplyr::arrange(component)
     }
 
     clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)

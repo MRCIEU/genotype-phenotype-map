@@ -246,7 +246,9 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
   gwas <- gwas[only_keep_inside_gwas_range, ]
 
   snps_to_remove <- which(gwas$SE <= 0)
-  message(glue::glue("Removing {length(snps_to_remove)} SNPs with SE <= 0"))
+  if (length(snps_to_remove) > 0) {
+    message(glue::glue("Removing {length(snps_to_remove)} SNPs with SE <= 0"))
+  }
 
   snps_to_investigate <- which(gwas$IMPUTED == T & gwas$P < lowest_p_value_threshold)
   for (snp_location in snps_to_investigate) {
@@ -256,10 +258,10 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
 
     snp <- gwas[snp_location, ]
 
-    if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P * 0.1) > snp$P) {
+    if (length(gwas_correlations$P) > 0 && min(gwas_correlations$P, na.rm = T) * 0.1 > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)
     }
-    else if (length(gwas_correlations$P) == 0 && snp$P * 0.1 < min_p_gwas) {
+    else if (length(gwas_correlations$P) == 0 && min(gwas$P, na.rm = T) > snp$P) {
       snps_to_remove <- c(snps_to_remove, snp_location)
     }
   }
@@ -270,7 +272,9 @@ filter_imputation_results <- function(gwas, ld_matrix, min_bp, max_bp) {
     removed_gwas <- gwas[snps_to_remove, ]
   }
 
-  return(list(gwas = removed_gwas,
+  return(list(
+    gwas = gwas,
+    removed_gwas = removed_gwas,
     significant_rows_imputed = length(snps_to_investigate),
     significant_rows_filtered = length(snps_to_remove))
   )

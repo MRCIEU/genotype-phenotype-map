@@ -11,18 +11,33 @@ main <- function() {
 }
 
 # TODO: update this method accordingly with how you want to change the data in already ingested studies
-update_method <- function(studies_file, type) {
+update_method <- function(studies_file, type, unique_study_ids_to_update = NULL) {
   if (!file.exists(studies_file)) {
     print(paste('FILE MISSING:', studies_file))
     return()
   }
 
-  studies <- vroom::vroom(studies_file, show_col_types = F) |>
-    dplyr::mutate(coverage = dplyr::case_when(
-      grepl('godmc', study) ~ 'sparse',
-      TRUE ~ 'dense'
-    ))
-  vroom::vroom_write(studies, studies_file)
+  file.remove()
+
+  #TODO: delete and recreate svg files for finemapped studies.  Also look into changing logic for smaller ld blocks.
+
+
+
+    # problematic_imputed_snps_file <- glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv')
+    # if (!file.exists(problematic_imputed_snps_file)) {
+    #   problematic_imputed_snps <- data.frame()
+    # } else {
+    #   problematic_imputed_snps <- vroom::vroom(problematic_imputed_snps_file, show_col_types = F)
+    # }
+    # problematic_finemapped_snps_file <- glue::glue('{ld_block_data_dir}/{block}/problematic_finemapped_snps.tsv')
+    # if (!file.exists(problematic_finemapped_snps_file)) {
+    #   problematic_finemapped_snps <- data.frame()
+    # } else {
+    #   problematic_finemapped_snps <- vroom::vroom(problematic_finemapped_snps_file, show_col_types = F)
+    # }
+    # finemapped_studies <- vroom::vroom(studies_file, show_col_types = F) |>
+    #   dplyr::filter(!unique_study_id %in% problematic_finemapped_snps$unique_study_id | study %in% problematic_imputed_snps$study)
+  # }
 }
 
 update_study_dirs <- function() {
@@ -44,6 +59,7 @@ update_study_dirs <- function() {
 }
 
 update_ld_blocks <- function() {
+  source('../pipeline_steps/gwas_calculations.R')
   # snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
     # dplyr::select(chr, bp, snp)
   blocks <- ld_info$ld_block_data
@@ -52,20 +68,20 @@ update_ld_blocks <- function() {
   update_data_in_ld_blocks <- parallel::mclapply(X=blocks, mc.cores=cores_to_use, FUN=function(ld_block) {
   # update_data_in_ld_blocks <- lapply(blocks, function(ld_block) {
     print(glue::glue('block: {ld_block}\n'))
-    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
-    update_method(extracted_studies_file, type='extracted')
+    # extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    # update_method(extracted_studies_file, type='extracted')
 
-    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
-    update_method(standardised_studies_file, type='standardised')
+    # standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    # update_method(standardised_studies_file, type='standardised')
 
-    imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
-    update_method(imputed_studies_file, type='imputed')
+    # imputed_studies_file <- glue::glue('{ld_block}/imputed_studies.tsv')
+    # update_method(imputed_studies_file, type='imputed')
 
-    finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
-    update_method(finemapped_studies_file, type='finemapped')
+    # finemapped_studies_file <- glue::glue('{ld_block}/finemapped_studies.tsv')
+    # update_method(finemapped_studies_file, type='finemapped')
 
     # coloc_pairwise_results_file <- glue::glue('{ld_block}/coloc_pairwise_results.tsv.gz')
-    # update_method(coloc_pairwise_results_file, type='coloc_pairwise')
+    # update_method(coloc_pairwise_results_file, type='coloc_pairwise', unique_study_ids_to_update = unique_study_ids_to_update)
 
     # coloc_clustered_results_file <- glue::glue('{ld_block}/coloc_clustered_results.tsv.gz')
     # update_method(coloc_clustered_results_file, type='coloc_clustered')

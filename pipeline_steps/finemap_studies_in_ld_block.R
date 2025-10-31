@@ -20,7 +20,6 @@ main <- function() {
     update_directories_for_worker(args$worker_guid)
   }
   ld_info <- ld_block_dirs(args$ld_block)
-  # ld_info$is_small <- ld_info$start - ld_info$stop < 1000000
 
   imputed_studies_file <- glue::glue('{ld_info$ld_block_data}/imputed_studies.tsv')
   if (!file.exists(imputed_studies_file)) {

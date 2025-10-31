@@ -152,8 +152,6 @@ remove_additional_unneeded_colocs_pairs <- function() {
     print(glue::glue('Removing {nrow(coloc_pairwise_results) - nrow(coloc_pairwise_results_filtered)} coloc pairwise results out of {nrow(coloc_pairwise_results)}'))
     # vroom::vroom_write(coloc_pairwise_results, glue::glue('{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz'))
   })
-  
-  
 }
 
 remove_bad_studies_fix <- function() {

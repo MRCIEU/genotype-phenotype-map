@@ -154,7 +154,7 @@ studies_db <- list(
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )")
   ),
   rare_results = list(

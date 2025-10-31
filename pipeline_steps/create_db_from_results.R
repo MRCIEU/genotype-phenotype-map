@@ -51,6 +51,7 @@ main <- function() {
   message('Creating ld db...')
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
+  create_wide_tables(studies_conn)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -176,7 +177,6 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     format_rare_results(studies_db)
   
   lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
-  create_wide_tables(studies_conn)
 
   return(studies_db)
 }
@@ -372,30 +372,30 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
     dplyr::select(get_table_column_names(coloc_pairs_significant_table)) |>
     dplyr::arrange(snp_id, study_extraction_a_id, study_extraction_b_id)
 
-  # DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
+  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
 
-  significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "snp_id")
-  DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)
+  # significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "snp_id")
+  # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)
 
-  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$name,
-    data.frame(
-      start_snp_id = significant_colocs_chunk_info$dataframe_metadata$start_snp_id,
-      stop_snp_id = significant_colocs_chunk_info$dataframe_metadata$end_snp_id,
-      coloc_pairs_table_name = glue::glue("coloc_pairs_{1:nrow(significant_colocs_chunk_info$dataframe_metadata)}")
-    )
-  )
+  # DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$name,
+  #   data.frame(
+  #     start_snp_id = significant_colocs_chunk_info$dataframe_metadata$start_snp_id,
+  #     stop_snp_id = significant_colocs_chunk_info$dataframe_metadata$end_snp_id,
+  #     coloc_pairs_table_name = glue::glue("coloc_pairs_{1:nrow(significant_colocs_chunk_info$dataframe_metadata)}")
+  #   )
+  # )
 
-  lapply(seq_along(significant_colocs_chunk_info$dataframe_chunks), function(i) {
-    table_chunk_name <- glue::glue("coloc_pairs_{i}")
-    create_table_query <- sub("table_name", table_chunk_name, coloc_pairs_significant_db$coloc_pairs$query)
-    DBI::dbExecute(coloc_pairs_significant_conn, create_table_query)
+  # lapply(seq_along(significant_colocs_chunk_info$dataframe_chunks), function(i) {
+  #   table_chunk_name <- glue::glue("coloc_pairs_{i}")
+  #   create_table_query <- sub("table_name", table_chunk_name, coloc_pairs_significant_db$coloc_pairs$query)
+  #   DBI::dbExecute(coloc_pairs_significant_conn, create_table_query)
 
-    indexes_query <- gsub("table_name", table_chunk_name, coloc_pairs_significant_db$coloc_pairs$indexes)
-    DBI::dbExecute(coloc_pairs_significant_conn, indexes_query)
+  #   indexes_query <- gsub("table_name", table_chunk_name, coloc_pairs_significant_db$coloc_pairs$indexes)
+  #   DBI::dbExecute(coloc_pairs_significant_conn, indexes_query)
 
-    DBI::dbAppendTable(coloc_pairs_significant_conn, table_chunk_name, significant_colocs_chunk_info$dataframe_chunks[[i]])
-    message('Added ', nrow(significant_colocs_chunk_info$dataframe_chunks[[i]]), ' rows to ', table_chunk_name)
-  })
+  #   DBI::dbAppendTable(coloc_pairs_significant_conn, table_chunk_name, significant_colocs_chunk_info$dataframe_chunks[[i]])
+  #   message('Added ', nrow(significant_colocs_chunk_info$dataframe_chunks[[i]]), ' rows to ', table_chunk_name)
+  # })
 }
 
 # Find relevant snps: all coloc SNPs, all rare association SNPs and all finemapped SNPs that colocalise with nothing (at genome wide significance)
@@ -433,7 +433,7 @@ find_relevant_snps <- function(studies_db) {
 
   message("Found ", nrow(colocalising_snps), " colocalising SNPs, ",
     nrow(rare_results_snps), " rare SNPs, ",
-    nrow(study_extractions_snps), " significant non-colocalising SNPs"
+    nrow(study_extractions_snps), " non-colocalising SNPs"
   )
   relevant_snps <- dplyr::bind_rows(colocalising_snps, rare_results_snps, study_extractions_snps)
   vroom::vroom_write(relevant_snps, file.path(current_results_dir, "relevant_snps.tsv"))
@@ -522,11 +522,12 @@ match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
 
   studies_db$coloc_groups$data <- studies_db$coloc_groups$data |>
     dplyr::left_join(snp_mapping, by = "snp_id") |>
-    dplyr::mutate(snp_id = coalesce(representative_snp_id, snp_id)) |>
+    dplyr::mutate(snp_id = dplyr::coalesce(representative_snp_id, snp_id)) |>
     dplyr::select(-representative_snp_id)
 
   # Update the DuckDB coloc_groups table
   DBI::dbExecute(studies_conn, "DROP TABLE coloc_groups")
+  DBI::dbExecute(studies_conn, studies_db$coloc_groups$query)
   DBI::dbAppendTable(studies_conn, "coloc_groups", studies_db$coloc_groups$data)
 
   return(studies_db)
@@ -613,7 +614,6 @@ extract_associations_for_ld_block <- function(ld_block, general_snps, specific_s
 
         specific_extractions <- data.table::data.table()
         if (study[['study']] %in% specific_snps$study_name) {
-          message('Processing study specific SNPs for ', study[['study']])
           specific_extractions <- specific_snps[study_name == study[['study']]]
           specific_extractions <- extractions[SNP %in% specific_extractions$candidate_snp]
           specific_extractions[, study_name := study[['study']]]

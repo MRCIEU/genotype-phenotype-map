@@ -1,6 +1,59 @@
 source('../pipeline_steps/constants.R')
 options(dplyr.width = Inf)
 
+update_files_with_lbfs <- function() {
+  ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  blocks <- ld_info$block
+
+  parallel::mclapply(blocks, mc.cores = 30, function(block) {
+    tryCatch({
+      finemapped_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/finemapped_studies.tsv'), show_col_types = F) |>
+        dplyr::filter(file.info(file_with_lbfs)$mtime < '2025-11-03')
+      imputed_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputed_studies.tsv'), show_col_types = F)
+      studies_to_update <- unique(finemapped_studies$study)
+      safe_lapply(studies_to_update, function(imputed_study) {
+        this_imputed_study <- dplyr::filter(imputed_studies, study == imputed_study)
+        if (nrow(this_imputed_study) != 1) stop(glue::glue('Imputed study not found: {imputed_study} in {block}'))
+        print(glue::glue('Updating {this_imputed_study$file}'))
+        if (file.info(this_imputed_study$file)$size == 0) return()
+        imputed_gwas_with_lbfs <- vroom::vroom(this_imputed_study$file, show_col_types = F,
+          col_select = c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'Z', 'BETA', 'SE', 'P')
+        )
+        if (!'IMPUTED' %in% colnames(imputed_gwas_with_lbfs)) {
+          imputed_gwas_with_lbfs$IMPUTED <- FALSE
+        }
+        original_nrow <- nrow(imputed_gwas_with_lbfs)
+
+        finemapped_for_study <- dplyr::filter(finemapped_studies, study == imputed_study)
+        file_with_lbf_name <- finemapped_for_study$file_with_lbfs[1]
+        for (i in seq_len(nrow(finemapped_for_study))) {
+          this_finemap_study <- finemapped_for_study[i, ]
+          finemap_number <- as.numeric(stringr::str_extract(this_finemap_study$unique_study_id, "(?<=_)\\d+$"))
+          lbf_column_name <- glue::glue('LBF_{finemap_number}')
+          finemapped_gwas <- vroom::vroom(this_finemap_study$file, show_col_types = F) |>
+            dplyr::select(SNP, LBF)
+          imputed_gwas_with_lbfs <- dplyr::left_join(imputed_gwas_with_lbfs, finemapped_gwas, by = 'SNP') |>
+            dplyr::rename(!!lbf_column_name := LBF)
+        }
+        if (any(is.na(imputed_gwas_with_lbfs$SNP) |
+          is.na(imputed_gwas_with_lbfs$BETA) |
+          is.na(imputed_gwas_with_lbfs$SE)) | 
+          nrow(imputed_gwas_with_lbfs) != original_nrow
+        ) {
+          stop(glue::glue('Missing SNP, BETA, or SE in {file_with_lbf_name} for {imputed_study} in {block}'))
+        }
+        vroom::vroom_write(imputed_gwas_with_lbfs, file_with_lbf_name)
+      })
+    }, error = function(e) {
+      print(glue::glue('Error in {block}: {e}'))
+      stop(glue::glue('Error in {block}: {e}'))
+    })
+  }) 
+  return()
+}
+
 fix_missing_bp_values <- function() {
   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -390,7 +443,7 @@ do_the_fix <- function() {
 
 investigate_bad_imputation <- function(ld_block, imputed_file) {
   imputed_studies <- vroom::vroom(imputed_file, show_col_types = F)
-  ld_matrix <- vroom::vroom(glue::glue('{ld_reference_panel_dir}/{ld_block}.unphased.vcor1'), col_names = F, show_col_types = F)
+  ld_matrix <- vroom::vroom(glue::glue('{ld_reference_panel_dir}/{ld_block}.unphased.vcor1.gz'), col_names = F, show_col_types = F)
   to_remove_file <- glue::glue('{ld_block_data_dir}/{ld_block}/imputation_snps_to_remove.tsv')
   if (file.exists(to_remove_file)) return()
 
@@ -1560,4 +1613,4 @@ print_alleles_to_flip <- function() {
 
 # cleanup_all_problematic_snps(dodgy_blocks)
 
-recreate_svg_files()
+update_files_with_lbfs()

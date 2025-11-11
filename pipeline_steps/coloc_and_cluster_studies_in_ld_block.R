@@ -31,19 +31,27 @@ main <- function() {
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
+  message(glue::glue('{args$ld_block}: {finemapped_file}'))
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
       dplyr::filter(min_p <= lowest_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
+  } else {
+    finemapped_studies <- data.frame()
   }
 
   if (!is.na(args$worker_guid)) {
-    existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
-    existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
-    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-      dplyr::mutate(file = sub('/local-scratch/projects/genotype-phenotype-map/data/', data_dir, file)) |>
-      dplyr::filter(min_p <= lowest_p_value_threshold) |>
-      dplyr::arrange(unique_study_id)
+     existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
+     message(glue::glue('{args$ld_block}: {existing_finemapped_studies_file}'))
+
+    if (file.exists(existing_finemapped_studies_file)) {
+     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
+     finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
+       dplyr::filter(min_p <= lowest_p_value_threshold) |>
+       dplyr::arrange(unique_study_id)
+    } else {
+      existing_finemapped_studies <- data.frame()
+    }
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
@@ -92,56 +100,54 @@ main <- function() {
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
-  num_cores <- 200
-  chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
-  chunked_study_pairs <- split(study_pairs, chunk_factor)
+  # num_cores <- 200
+  # chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
+  # chunked_study_pairs <- split(study_pairs, chunk_factor)
 
-  new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
-    results <- lapply(seq_len(nrow(chunk)), function(i) {
-      pair <- chunk[i,]
-      first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
-      second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
+  # new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
 
-      tryCatch({
-        result <- pairwise_coloc_analysis(first_gwas, second_gwas)
-      }, error = function(e) {
-        message(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
-        stop(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
-      })
-      if (is.null(result)) {
-        result <- data.frame(
-          ld_block = args$ld_block,
-          unique_study_a = pair$unique_study_a,
-          study_a = NA,
-          unique_study_b = pair$unique_study_b,
-          study_b = NA,
-          ignore = T,
-          false_positive = F,
-          false_negative = F,
-          bp_distance = NA,
-          nsnps = NA,
-          hit1 = NA,
-          hit2 = NA,
-          idx1 = NA,
-          idx2 = NA,
-          PP.H0.abf = NA,
-          PP.H1.abf = NA,
-          PP.H2.abf = NA,
-          PP.H3.abf = NA,
-          PP.H4.abf = NA,
-          h4 = NA
-        )
-        return(result)
-      }
+  results <- lapply(seq_len(nrow(study_pairs)), function(i) {
+    pair <- study_pairs[i,]
+    first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
+    second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
 
-      result <- dplyr::bind_cols(pair, result)
-      return(result)
+    tryCatch({
+      result <- pairwise_coloc_analysis(first_gwas, second_gwas)
+    }, error = function(e) {
+      message(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
+      stop(glue::glue('Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}'))
     })
-    all_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
-    return(all_results)
-  })
+    if (is.null(result)) {
+      result <- data.frame(
+        ld_block = args$ld_block,
+        unique_study_a = pair$unique_study_a,
+        study_a = NA,
+        unique_study_b = pair$unique_study_b,
+        study_b = NA,
+        ignore = T,
+        false_positive = F,
+        false_negative = F,
+        bp_distance = NA,
+        nsnps = NA,
+        hit1 = NA,
+        hit2 = NA,
+        idx1 = NA,
+        idx2 = NA,
+        PP.H0.abf = NA,
+        PP.H1.abf = NA,
+        PP.H2.abf = NA,
+        PP.H3.abf = NA,
+        PP.H4.abf = NA,
+        h4 = NA
+      )
+      return(result)
+    }
 
-  new_coloc_results <- dplyr::bind_rows(new_coloc_results)
+    result <- dplyr::bind_cols(pair, result)
+    return(result)
+  })
+  new_coloc_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
+
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
@@ -531,6 +537,7 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
 make_adjacency_matrix <- function(coloc_results) {
   pvals <- pmax(coloc_results$min_p_study_a, coloc_results$min_p_study_b)
   weights <- weights_from_pvals(pvals) * ifelse(coloc_results$h4 >= posterior_prob_h4_threshold, 1, 0)
+  # weights <- ifelse(coloc_results$h4 >= posterior_prob_h4_threshold, 1, 0)
   coloc_results <- coloc_results |> dplyr::mutate(weight = weights)
 
   h4_adj_mx <- rbind(

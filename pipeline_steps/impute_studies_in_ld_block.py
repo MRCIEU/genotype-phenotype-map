@@ -28,7 +28,7 @@ def main(ld_block, completed_output_file):
     ld_reference_panel_prefix = LD_BLOCK_MATRICES_DIR + ld_block
     ld_block_dir = LD_BLOCK_DATA_DIR + ld_block
 
-    ld_matrix = pd.read_csv(ld_reference_panel_prefix + '.unphased.vcor1', header=None, delimiter='\t')
+    ld_matrix = pd.read_csv(ld_reference_panel_prefix + '.unphased.vcor1.gz', header=None, delimiter='\t')
     ld_matrix = np.array(ld_matrix)
     ld_region_from_reference_panel = pd.read_csv(ld_reference_panel_prefix + '.tsv', delimiter='\t')
 

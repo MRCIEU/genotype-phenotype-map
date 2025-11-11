@@ -4,7 +4,8 @@ Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
-oracle_server <- Sys.getenv('ORACLE_SERVER')
+oracle_api_server <- Sys.getenv('ORACLE_SERVER')
+oracle_pipeline_server <- Sys.getenv('ORACLE_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
@@ -27,6 +28,7 @@ gpm_website_data <- list(
 
 latest_results_dir <- glue::glue('{results_dir}latest/')
 current_results_dir <- glue::glue('{results_dir}current/')
+results_analysis_dir <- glue::glue('{latest_results_dir}analysis/')
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')

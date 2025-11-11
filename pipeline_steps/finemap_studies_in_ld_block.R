@@ -29,12 +29,7 @@ main <- function() {
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
 
-  #TODO: gzip all unphased.vcor1 files on ieup1, then remove this
-  if (!is.na(args$worker_guid)) {
-    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
-  } else {
-    ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1')
-  }
+  ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
   ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
@@ -51,7 +46,11 @@ main <- function() {
         start_time <- Sys.time()
         sample_size <- as.numeric(study['sample_size'])
         flattened_block_name <- flattened_ld_block_name(args$ld_block)
-        finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
+        if (!is.na(args$worker_guid)) {
+          finemap_file_prefix <- glue::glue('{extracted_study_dir}finemapped/{flattened_block_name}')
+        } else {
+          finemap_file_prefix <- glue::glue('{extracted_study_dir}/{study$study}/finemapped/{flattened_block_name}')
+        }
 
         study_already_finemapped <- any(study[['study']] == existing_finemapped_results$study, na.rm = TRUE)
         if (!is.na(study_already_finemapped) && study_already_finemapped) {
@@ -279,9 +278,12 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   write_gwas_with_lbfs(gwas, NULL, file_with_lbfs)
 
   block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
-  svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
-  is_sparse <- study[['coverage']] == coverage_types$sparse
-  create_svg_for_ld_block(finemap_gwas, study$study, svg_file, is_sparse)
+  svg_file <- NA
+  if (is.na(args$worker_guid)) {
+    svg_file <- glue::glue("{extracted_study_dir}svgs/extractions/{block_name}.svg")
+    is_sparse <- study[['coverage']] == coverage_types$sparse
+    create_svg_for_ld_block(finemap_gwas, study$study, svg_file, is_sparse)
+  }
 
   failed_finemap_info <- data.frame(study=study[['study']],
                                     unique_study_id=unique_id,
@@ -367,10 +369,13 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
 
     block_name <- basename(finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
-    svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+    svg_file <- NA
+    if (is.na(args$worker_guid)) {
+      svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
+      is_sparse <- study[['coverage']] == coverage_types$sparse
+      create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
+    }
     svg_files <- c(svg_files, svg_file)
-    is_sparse <- study[['coverage']] == coverage_types$sparse
-    create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
@@ -433,6 +438,9 @@ write_gwas_with_lbfs <- function(gwas, lbf_columns, lbf_file) {
     lbf_gwas <- dplyr::rename(lbf_gwas, LBF_1 = LBF)
   }
   lbf_gwas <- dplyr::filter(lbf_gwas, !is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(EAF))
+  if (any(is.na(lbf_gwas$SNP) | is.na(lbf_gwas$BETA) | is.na(lbf_gwas$SE))) {
+    stop(glue::glue('Missing SNP, BETA, or SE in {lbf_file}'))
+  }
   vroom::vroom_write(lbf_gwas, lbf_file)
 }
 

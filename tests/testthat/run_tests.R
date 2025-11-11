@@ -14,18 +14,16 @@ Sys.setenv("GWAS_UPLOAD_DIR" = "/local-scratch/projects/genotype-phenotype-map/t
 
 source('pipeline_steps/constants.R')
 
-
 #Cleanup previous test run
 system(glue::glue('rm -r {data_dir}pipeline_metadata/studies_to_process.tsv'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 system(glue::glue('rm -r {data_dir}study/*'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 system(glue::glue('rm -r {data_dir}ld_blocks/*/*'), ignore.stdout = TRUE, ignore.stderr = TRUE)
+# system(glue::glue('rm -r {gwas_upload_dir}*'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 system(glue::glue('rm -r {data_dir}pipeline_metadata/updated_ld_blocks_to_colocalise.tsv'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 system(glue::glue('rm -r {results_dir}latest/studies_processed.tsv.gz'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 system(glue::glue('rm -r {results_dir}/*'), ignore.stdout = TRUE, ignore.stderr = TRUE)
 
-#Run tests and collect results
 message(paste("Starting tests in:", normalizePath(TEST_DIR)))
-# Use no reporter to get the cleanest data structure
 tryCatch({
   testthat::test_dir(TEST_DIR, reporter = "progress")
 

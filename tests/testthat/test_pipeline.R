@@ -11,6 +11,7 @@ test_that("Identify studies to process", {
     ignore.stderr = FALSE
   )
   has_errors <- grepl("error", output, ignore.case = TRUE)
+  print(has_errors)
   expect_false(any(has_errors), info = "Identify studies to process should not contain errors")
 
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')

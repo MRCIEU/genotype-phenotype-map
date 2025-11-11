@@ -119,6 +119,7 @@ studies_db <- list(
       study_id INTEGER,
       snp_id INTEGER,
       display_snp TEXT NOT NULL,
+      rsid TEXT NOT NULL,
       ld_block_id INTEGER,
       unique_study_id TEXT NOT NULL,
       study TEXT NOT NULL,

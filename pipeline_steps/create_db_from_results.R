@@ -52,6 +52,7 @@ main <- function() {
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
+  q()
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
@@ -187,7 +188,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::rename(gene_id=id)
 
   snp_annotations_subset <- studies_db$snp_annotations$data |>
-    dplyr::select(snp, display_snp, id) |>
+    dplyr::select(snp, display_snp, rsid, id) |>
     dplyr::rename(snp_id=id)
   
   studies_subset <- studies_db$studies$data |>
@@ -431,9 +432,10 @@ find_relevant_snps <- function(studies_db) {
   study_extractions_snps$id <- NULL
   study_extractions_snps$min_p <- NULL
 
-  message("Found ", nrow(colocalising_snps), " colocalising SNPs, ",
+  message("Found ",
+    nrow(colocalising_snps), " colocalising SNPs, ",
     nrow(rare_results_snps), " rare SNPs, ",
-    nrow(study_extractions_snps), " non-colocalising SNPs"
+    nrow(study_extractions_snps), " non-colocalising SNPs "
   )
   relevant_snps <- dplyr::bind_rows(colocalising_snps, rare_results_snps, study_extractions_snps)
   vroom::vroom_write(relevant_snps, file.path(current_results_dir, "relevant_snps.tsv"))
@@ -473,7 +475,7 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 
 generate_ld_obj <- function(ld_block, snps) {
   message("Generating LD object for ", ld_block)
-  ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1"))
+  ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1.gz"))
   ld <- data.table::fread(ld_file, header = FALSE, showProgress = FALSE)
   ldvars <- data.table::fread(glue::glue("{ld_file}.vars"), sep = " ", header = FALSE, showProgress = FALSE)
 
@@ -536,7 +538,7 @@ match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
 load_data_into_associations_db <- function(conn, studies_db, all_relevant_snps) {
   relevant_snps_per_ld_block <- split(all_relevant_snps, all_relevant_snps$ld_block)
 
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=30, \(ld_block) {
+  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores=20, \(ld_block) {
     gc()
     relevant_snps <- relevant_snps_per_ld_block[[ld_block]]
     specific_snps <- relevant_snps[!is.na(study_name)]

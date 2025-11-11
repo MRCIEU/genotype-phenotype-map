@@ -1,19 +1,19 @@
 weak_signal_example <- list(
-    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.unphased.vcor1',
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.unphased.vcor1.gz',
     ld_matrix_eig = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.ldeig.rds',
     ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/12/103736758-105970320.tsv',
     gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_12_104476236.tsv.gz'
 )
 
 strong_signal_example <- list(
-    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.unphased.vcor1',
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.unphased.vcor1.gz',
     ld_matrix_eig = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.ldeig.rds',
     ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/2/45817500-46829710.tsv',
     gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_2_46126027.tsv.gz'
 )
 
 complex_ld_region_example <- list(
-    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.unphased.vcor1',
+    ld_matrix_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.unphased.vcor1.gz',
     ld_matrix_eig = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.ldeig.rds',
     ld_matrix_info_file = '/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/6/31282730-32518958.tsv',
     gwas_file = '/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_6_31344761.tsv.gz'

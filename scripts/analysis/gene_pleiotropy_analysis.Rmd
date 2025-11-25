@@ -21,7 +21,7 @@ associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file, r
 coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file, read_only = TRUE)
 ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
 
-dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+# dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
 ```
 
 ## Questions to attempt to answer:
@@ -30,7 +30,7 @@ Can we compare pertub seq data with our gene-gene coloc data to see if they agre
 
 
 
-```{r load-data, echo=F}
+```{r load-data, echo=F, eval=FALSE}
 joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   coloc_pairs.*,
   -- Study extraction A details
@@ -82,73 +82,18 @@ genes_in_gpmap <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT * FROM gene_a
 print(paste0("Number of genes in perturb-seq data: ", nrow(genes_in_gpmap)))
 print(paste0("Number of genes in perturb-seq data not in our data: ", nrow(perturb_seq_data) - nrow(genes_in_gpmap)))
 
-pqtl_genes <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT DISTINCT study_extractions.gene_id FROM study_extractions
-  JOIN studies ON study_extractions.study_id = studies.id
-  JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id
-  WHERE studies.data_type = 'protein' AND studies.source_id = 4
-  AND gene_annotations.ensembl_id IN ({ensembl_ids})"))
+gene_pleiotropy_scores <- vroom::vroom(file.path(results_analysis_dir, "gene_pleiotropy_scores.tsv")) |>
+  dplyr::inner_join(dplyr::select(genes_in_gpmap, id, ensembl_id), by = c("gene_id" = "id")) |>
+  dplyr::inner_join(dplyr::select(perturb_seq_data, perturbed_gene_id, pi_deg), by = c("ensembl_id" = "perturbed_gene_id"))
 
-
-colocalising_with_gene <- lapply(pqtl_genes$gene_id, function(specific_gene_id) {
-  colocs_for_gene <- DBI::dbGetQuery(studies_conn, glue::glue('SELECT * FROM coloc_groups_wide
-    WHERE coloc_group_id IN (
-        SELECT DISTINCT coloc_group_id
-        FROM coloc_groups_wide
-        WHERE gene_id = {specific_gene_id}
-    )'))
-
-  genes_colocalising_with_gene <- colocs_for_gene |>
-    dplyr::filter(!is.na(gene_id)) |>
-    dplyr::pull(gene_id) |>
-    unique()
-  
-  traits_categories_colocalising_with_gene <- colocs_for_gene |>
-    dplyr::filter(!is.na(gene_id)) |>
-    dplyr::pull(trait_category) |>
-    unique()
-  
-  return(
-    list(
-      trait_category_data = data.frame(gene_id = specific_gene_id, traits_categories_colocalising_with_gene = traits_categories_colocalising_with_gene),
-      gene_data = data.frame(gene_id = specific_gene_id, genes_colocalising_with_gene = genes_colocalising_with_gene)
-    )
-  )
-})
-
-all_genes_colocalising_with_gene <- lapply(colocalising_with_gene, function(x) x$gene_data) |>
-  dplyr::bind_rows() |>
-  dplyr::distinct()
-all_genes_colocalising_with_gene_counts <- all_genes_colocalising_with_gene |>
-  dplyr::count(gene_id, name = "genes_colocalising_with_gene_count") |>
-  dplyr::left_join(dplyr::select(genes_in_gpmap, id, ensembl_id, gene), by = c("gene_id" = "id"))
-
-all_traits_categories_colocalising_with_gene <- lapply(colocalising_with_gene, function(x) x$trait_category_data) |>
-  dplyr::bind_rows() |>
-  dplyr::distinct()
-
-all_traits_categories_colocalising_with_gene_counts <- all_traits_categories_colocalising_with_gene |>
-  dplyr::count(traits_categories_colocalising_with_gene, name = "traits_categories_colocalising_with_gene_count") |>
-  dplyr::left_join(dplyr::select(genes_in_gpmap, id, trait_category), by = c("gene_id" = "id"))
-
-
-perturb_seq_data <- perturb_seq_data |>
-  dplyr::filter(perturbed_gene_id %in% all_genes_colocalising_with_gene_counts$ensembl_id & !outlier) |>
-  dplyr::mutate(pi_deg_log10 = log10(pi_deg))
-
-gene_pqtl_specific_perturb_seq_data <- perturb_seq_data |>
-  dplyr::left_join(all_genes_colocalising_with_gene_counts, by = c("perturbed_gene_id" = "ensembl_id"))
-
-trait_category_pqtl_specific_perturb_seq_data <- perturb_seq_data |>
-  dplyr::left_join(all_traits_categories_colocalising_with_gene_counts, by = c("perturbed_gene_id" = "gene_id"))
-
-perturb_seq_pqtl_plot <- ggplot(gene_pqtl_specific_perturb_seq_data, aes(x = pi_deg, y = genes_colocalising_with_gene_count)) +
+gene_perturb_seq_plot <- ggplot(gene_pleiotropy_scores, aes(x = pi_deg, y = distinct_protein_coding_genes)) +
   geom_point(alpha = 0.6, size = 2) +
   geom_smooth(method = "lm", se = TRUE, color = "blue") +
   labs(
     title = "Relationship between Gene Pleiotropy Metrics",
-    subtitle = "Comparing Perturb-seq pi_deg with Number of Colocalising Genes",
+    subtitle = "Comparing Perturb-seq pi_deg with Number Protein Coding Gene Colocalisations",
     x = "pi_deg (Perturb-seq)",
-    y = "Number of Genes Colocalising with Gene"
+    y = "Number of Protein Coding Genes Colocalising with Gene"
   ) +
   theme_minimal() +
   theme(
@@ -156,16 +101,17 @@ perturb_seq_pqtl_plot <- ggplot(gene_pqtl_specific_perturb_seq_data, aes(x = pi_
     plot.subtitle = element_text(size = 11),
     axis.title = element_text(size = 11)
   )
-ggsave(perturb_seq_plot, filename = "gene_perturb_seq_plot.png", width = 8, height = 6)
+gene_plot_file <- file.path(results_analysis_dir, "gene_perturb_seq_plot.png")
+ggsave(gene_perturb_seq_plot, filename = gene_plot_file, width = 8, height = 6)
 
-perturb_seq_pqtl_plot <- ggplot(trait_category_pqtl_specific_perturb_seq_data, aes(x = pi_deg, y = traits_categories_colocalising_with_gene_count)) +
+trait_category_perturb_seq_plot <- ggplot(gene_pleiotropy_scores, aes(x = pi_deg, y = distinct_trait_categories)) +
   geom_point(alpha = 0.6, size = 2) +
   geom_smooth(method = "lm", se = TRUE, color = "blue") +
   labs(
     title = "Relationship between Gene Pleiotropy Metrics",
-    subtitle = "Comparing Perturb-seq pi_deg with Number of Colocalising Genes",
+    subtitle = "Comparing Perturb-seq pi_deg with Number of Trait Categories Colocalising with Gene",
     x = "pi_deg (Perturb-seq)",
-    y = "Number of Genes Colocalising with Gene"
+    y = "Number of Trait Categories Colocalising with Gene"
   ) +
   theme_minimal() +
   theme(
@@ -173,6 +119,28 @@ perturb_seq_pqtl_plot <- ggplot(trait_category_pqtl_specific_perturb_seq_data, a
     plot.subtitle = element_text(size = 11),
     axis.title = element_text(size = 11)
   )
-ggsave(perturb_seq_plot, filename = "trait_category_perturb_seq_plot.png", width = 8, height = 6)
-print(perturb_seq_plot)
+trait_category_plot_file <- file.path(results_analysis_dir, "trait_category_perturb_seq_plot.png")
+ggsave(trait_category_perturb_seq_plot, filename = trait_category_plot_file, width = 8, height = 6)
+print(gene_perturb_seq_plot)
+print(trait_category_perturb_seq_plot)
+
+
+
+gene_trait_category_plot <- ggplot(gene_pleiotropy_scores, aes(x = distinct_protein_coding_genes, y = distinct_trait_categories)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(
+    title = "Relationship between Gene Pleiotropy Metrics",
+    subtitle = "Comparing Number of Protein Coding Genes Colocalising with Gene with Number of Trait Categories Colocalising with Gene",
+    x = "Number of Protein Coding Genes Colocalising with Gene",
+    y = "Number of Trait Categories Colocalising with Gene"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    axis.title = element_text(size = 11)
+  )
+gene_trait_category_plot_file <- file.path(results_analysis_dir, "gene_trait_category_perturb_seq_plot.png")
+ggsave(gene_trait_category_plot, filename = gene_trait_category_plot_file, width = 8, height = 6)
 ```

@@ -21,7 +21,6 @@ main <- function() {
   if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
   if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
-  latest_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{latest_results_dir}/studies.db"), read_only = TRUE)
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
   associations_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_db_file)
   coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_full_db_file)
@@ -40,13 +39,10 @@ main <- function() {
   DBI::dbExecute(ld_conn, ld_table$query)
 
   message('Creating studies db')
-  studies_db <- populate_existing_row_ids(latest_studies_conn, studies_db)
+  studies_db <- populate_existing_row_ids(studies_db)
   studies_db <- load_data_for_studies_db(studies_db, studies_conn)
 
   all_relevant_snps <- find_relevant_snps(studies_db)
-
-  message('Creating coloc pairs db...')
-  load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
   message('Creating ld db...')
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
@@ -54,10 +50,12 @@ main <- function() {
   create_wide_tables(studies_conn)
   q()
 
+  message('Creating coloc pairs db...')
+  load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
+
   message('Creating associations db...')
   load_data_into_associations_db(associations_conn, studies_db, all_relevant_snps)
 
-  DBI::dbDisconnect(latest_studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(associations_conn, shutdown=TRUE)
   DBI::dbDisconnect(coloc_pairs_full_conn, shutdown=TRUE)
@@ -68,14 +66,28 @@ main <- function() {
   vroom::vroom_write(data.frame(), args$completed_output_file)
 }
 
-populate_existing_row_ids <- function(conn, tables) {
+populate_existing_row_ids <- function(tables) {
+  latest_studies_db_file <- file.path(latest_results_dir, "studies.db")
+  if (!file.exists(latest_studies_db_file)) {
+    conn <- NULL
+  } else {
+    conn <- duckdb::dbConnect(duckdb::duckdb(), latest_studies_db_file, read_only = TRUE)
+  }
+
   for (table_name in names(tables)) {
     table <- tables[[table_name]]
+
     if (!is.na(table$persist_id_from)) {
-      existing_ids <- DBI::dbGetQuery(conn, glue::glue("SELECT id, {table$persist_id_from} FROM {table_name}"))
-      tables[[table_name]]$existing_ids <- existing_ids
+      if (is.null(conn)) {
+        tables[[table_name]]$existing_ids <- tibble::tibble(id = integer(0), !!rlang::sym(table$persist_id_from) := character(0))
+      } else {
+        existing_ids <- DBI::dbGetQuery(conn, glue::glue("SELECT id, {table$persist_id_from} FROM {table_name}"))
+        tables[[table_name]]$existing_ids <- existing_ids
+      }
     }
   }
+
+  if (!is.null(conn)) DBI::dbDisconnect(conn, shutdown=TRUE)
   return(tables)
 }
 
@@ -177,10 +189,13 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::rename_with(tolower) |>
     format_rare_results(studies_db)
   
+  studies_db <- format_pleiotropy_scores(studies_db)
+  
   lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
   return(studies_db)
 }
+
 
 format_study_extractions <- function(study_extractions, studies_db) {
   gene_subset <- studies_db$gene_annotations$data |>
@@ -218,7 +233,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::rename(ld_block_id=id)
 
   study_extractions <- study_extractions |>
-    dplyr::filter(ignore == F) |>
+    dplyr::filter(is.na(ignore) | ignore == F) |>
     resolve_ids_for_table(studies_db$study_extractions$existing_ids, studies_db$study_extractions$persist_id_from) |>
     dplyr::mutate(
       file=sub(ld_block_data_dir, "", file),
@@ -242,12 +257,12 @@ format_study_extractions <- function(study_extractions, studies_db) {
   }
 
   missing_snps <- study_extractions |>
-    dplyr::filter(is.na(snp_id) | is.null(snp_id))
+    dplyr::filter(is.na(snp_id) | is.null(snp_id) | is.na(study_id) | is.null(study_id))
   
   if (nrow(missing_snps) > 0) {
     message("WARNING: Found ", nrow(missing_snps), " rows with missing snp_id values.  Removing study extractions with missing snp_id values")
     vroom::vroom_write(missing_snps, file.path(current_results_dir, "missing_snps_in_study_extractions.tsv"))
-    study_extractions <- study_extractions[!is.na(study_extractions$snp_id) & !is.null(study_extractions$snp_id), ]
+    study_extractions <- study_extractions[!is.na(study_extractions$snp_id) & !is.null(study_extractions$snp_id) & !is.na(study_extractions$study_id) & !is.null(study_extractions$study_id), ]
   }
 
   return(study_extractions)
@@ -295,7 +310,7 @@ format_rare_results <- function(rare_results, studies_db) {
   gene_annotations_subset <- studies_db$gene_annotations$data |>
     dplyr::select(gene, id) |>
     dplyr::rename(gene_id=id)
-  
+
   rare_results <- rare_results |>
     dplyr::mutate(rare_result_group_id=1:dplyr::n()) |>
     tidyr::separate_rows(traits, genes, files, sep=", ") |>
@@ -305,11 +320,11 @@ format_rare_results <- function(rare_results, studies_db) {
     dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-many") |>
     dplyr::left_join(gene_annotations_subset, by="gene", relationship="many-to-one")
 
-  missing_study_extractions <- dplyr::filter(rare_results, is.na(study_extraction_id) | is.na(snp_id))
+  missing_study_extractions <- dplyr::filter(rare_results, is.na(study_extraction_id) | is.na(snp_id) | is.na(study_id))
   if (nrow(missing_study_extractions) > 0) {
     message("WARNING: Found ", nrow(missing_study_extractions), " rows with missing study extractions.  Saving to current results dir")
     vroom::vroom_write(missing_study_extractions, file.path(current_results_dir, "missing_study_extractions_in_rare_results.tsv"))
-    rare_results <- rare_results[!is.na(rare_results$study_extraction_id) & !is.na(rare_results$snp_id), ]
+    rare_results <- rare_results[!is.na(rare_results$study_extraction_id) & !is.na(rare_results$snp_id) & !is.na(rare_results$study_id), ]
   }
 
   rare_results <- rare_results |>
@@ -324,6 +339,64 @@ create_wide_tables <- function(studies_conn) {
     DBI::dbExecute(studies_conn, table$query)
     DBI::dbExecute(studies_conn, table$indexes)
   })
+}
+
+format_pleiotropy_scores <- function(studies_db) {
+  studies_subset <- studies_db$studies$data |>
+    dplyr::select(id, study_name, trait_id, gene_id) |>
+    dplyr::rename(study_id=id)
+
+  traits_subset <- studies_db$traits$data |>
+    dplyr::select(id, trait_category) |>
+    dplyr::rename(trait_id=id)
+  
+  gene_annotations_subset <- studies_db$gene_annotations$data |>
+    dplyr::select(id, gene_biotype) |>
+    dplyr::rename(gene_id=id)
+
+  pleiotropy_data <- studies_db$coloc_groups$data |>
+    dplyr::left_join(studies_subset, by ="study_id") |>
+    dplyr::left_join(traits_subset, by ="trait_id") |>
+    dplyr::left_join(gene_annotations_subset, by="gene_id") |>
+    dplyr::filter(gene_biotype == "protein_coding" | is.na(gene_biotype))
+  
+  studies_db$snp_pleiotropy$data <- pleiotropy_data |>
+    dplyr::group_by(snp_id) |>
+    dplyr::summarise(
+      distinct_trait_categories = dplyr::n_distinct(trait_category, na.rm = TRUE),
+      distinct_protein_coding_genes = dplyr::n_distinct(gene_id, na.rm = TRUE)
+    ) |>
+    dplyr::select(get_table_column_names(studies_db$snp_pleiotropy))
+  
+  gene_coloc_groups <- pleiotropy_data |>
+    dplyr::filter(!is.na(gene_id)) |>
+    dplyr::select(gene_id, coloc_group_id) |>
+    dplyr::distinct()
+  
+  gene_pleiotropy_joined <- gene_coloc_groups |>
+    dplyr::left_join(pleiotropy_data, by = "coloc_group_id", suffix = c("", "_other"))
+  
+  studies_db$gene_pleiotropy$data <- gene_pleiotropy_joined |>
+    dplyr::filter(!is.na(gene_id)) |>
+    dplyr::group_by(gene_id) |>
+    dplyr::summarise(
+      distinct_trait_categories = dplyr::n_distinct(trait_category, na.rm = TRUE),
+      .groups = 'drop'
+    ) |>
+    dplyr::left_join(
+      gene_pleiotropy_joined |>
+        dplyr::filter((gene_biotype == "protein_coding" | is.na(gene_biotype)), gene_id_other != gene_id) |>
+        dplyr::group_by(gene_id) |>
+        dplyr::summarise(
+          distinct_protein_coding_genes = dplyr::n_distinct(gene_id_other, na.rm = TRUE),
+          .groups = 'drop'
+        ),
+      by = "gene_id"
+    ) |>
+    dplyr::mutate(distinct_protein_coding_genes = dplyr::coalesce(distinct_protein_coding_genes, 0L)) |>
+    dplyr::select(get_table_column_names(studies_db$gene_pleiotropy))
+
+  return(studies_db)
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {
@@ -476,8 +549,10 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 generate_ld_obj <- function(ld_block, snps) {
   message("Generating LD object for ", ld_block)
   ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1.gz"))
+  ld_vars_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1.vars"))
+
   ld <- data.table::fread(ld_file, header = FALSE, showProgress = FALSE)
-  ldvars <- data.table::fread(glue::glue("{ld_file}.vars"), sep = " ", header = FALSE, showProgress = FALSE)
+  ldvars <- data.table::fread(ld_vars_file, sep = " ", header = FALSE, showProgress = FALSE)
 
   data.table::setnames(ld, ldvars$V1)
   ld[, lead := ldvars$V1]

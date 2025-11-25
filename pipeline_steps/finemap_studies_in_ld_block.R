@@ -280,9 +280,9 @@ process_unfinemapped_gwas <- function(gwas, study, finemap_file_prefix, start_ti
   block_name <- basename(failed_finemap_file) |> stringr::str_replace("\\.tsv\\.gz$", "")
   svg_file <- NA
   if (is.na(args$worker_guid)) {
-    svg_file <- glue::glue("{extracted_study_dir}svgs/extractions/{block_name}.svg")
+    svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
     is_sparse <- study[['coverage']] == coverage_types$sparse
-    create_svg_for_ld_block(finemap_gwas, study$study, svg_file, is_sparse)
+    create_svg_for_ld_block(finemap_gwas, svg_file, args$ld_block, is_sparse)
   }
 
   failed_finemap_info <- data.frame(study=study[['study']],

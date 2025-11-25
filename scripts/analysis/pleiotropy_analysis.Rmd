@@ -84,110 +84,74 @@ joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
 unique_data_types <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT data_type FROM studies")$data_type
 ```
 
+## Gene pleiotropy scores
+
 ```{r pleiotropy_scores, echo=F}
-gwas_threshold <- 5e-8
+gene_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM gene_pleiotropy")
 
-protein_coding_genes <- DBI::dbGetQuery(
-  studies_conn,
-  "SELECT DISTINCT studies.gene
-   FROM studies
-   JOIN gene_annotations ON studies.gene_id = gene_annotations.id
-   WHERE gene_annotations.gene_biotype = 'protein_coding'"
-)$gene %>%
-  stats::na.omit() %>%
-  unique()
+# Fit linear model for gene pleiotropy
+lm_gene <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = gene_pleiotropy_scores)
+lm_gene_summary <- summary(lm_gene)
+gene_r2 <- lm_gene_summary$r.squared
+gene_p <- pf(lm_gene_summary$fstatistic[1], lm_gene_summary$fstatistic[2], lm_gene_summary$fstatistic[3], lower.tail = FALSE)
+gene_slope <- coef(lm_gene)[2]
 
-protein_coding_gene_list <- tibble::tibble(gene = sort(protein_coding_genes))
+# Create annotation text
+gene_stats_text <- paste0(
+  "Slope = ", round(gene_slope, 3), "\n",
+  "R² = ", round(gene_r2, 3), "\n",
+  "p = ", formatC(gene_p, format = "e", digits = 2)
+)
 
-get_gene_partners <- function(gwas_threshold = 5e-8) {
-  filtered_pairs <- joined_coloc_results %>%
-    filter(
-      h4 > 0.8,
-      !is.na(gene_a), !is.na(gene_b),
-      gene_a %in% protein_coding_gene_list$gene,
-      gene_b %in% protein_coding_gene_list$gene,
-      !is.na(min_p_a) & min_p_a < gwas_threshold,
-      !is.na(min_p_b) & min_p_b < gwas_threshold
-    ) %>%
-    dplyr::transmute(
-      gene1 = pmin(gene_a, gene_b),
-      gene2 = pmax(gene_a, gene_b)
-    ) %>%
-    dplyr::distinct()
+p_gene_pleiotropy <- ggplot(gene_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  annotate("label", x = Inf, y = Inf, label = gene_stats_text, 
+           hjust = 1.1, vjust = 1.5, size = 3.5, family = "mono",
+           fill = "white", alpha = 0.8) +
+  labs(
+    title = "Relationship between Gene Pleiotropy Metrics",
+    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalising with Gene",
+    x = "Number of Trait Categories",
+    y = "Number of Protein Coding Genes Colocalising with Gene"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
-  bind_rows(
-    filtered_pairs %>% transmute(gene = gene1, partner = gene2),
-    filtered_pairs %>% transmute(gene = gene2, partner = gene1)
-  ) %>%
-    group_by(gene) %>%
-    summarise(num_gene_partners = n_distinct(partner), .groups = "drop")
-}
+ggsave(p_gene_pleiotropy, filename = file.path(results_analysis_dir, "gene_pleiotropy_plot.png"), width = 8, height = 6)
 
-get_trait_category_counts <- function(gwas_threshold = 5e-8) {
-  phenotype_a <- joined_coloc_results %>%
-    filter(
-      h4 > 0.8,
-      data_type_a == 'phenotype',
-      !is.na(trait_category_a),
-      !is.na(gene_b),
-      gene_b %in% protein_coding_gene_list$gene,
-      !is.na(min_p_a) & min_p_a < gwas_threshold,
-      !is.na(min_p_b) & min_p_b < gwas_threshold
-    ) %>%
-    transmute(gene = gene_b, trait_category = trait_category_a)
+snp_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM snp_pleiotropy")
 
-  phenotype_b <- joined_coloc_results %>%
-    filter(
-      h4 > 0.8,
-      data_type_b == 'phenotype',
-      !is.na(trait_category_b),
-      !is.na(gene_a),
-      gene_a %in% protein_coding_gene_list$gene,
-      !is.na(min_p_a) & min_p_a < gwas_threshold,
-      !is.na(min_p_b) & min_p_b < gwas_threshold
-    ) %>%
-    transmute(gene = gene_a, trait_category = trait_category_b)
+# Fit linear model for SNP pleiotropy
+lm_snp <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = snp_pleiotropy_scores)
+lm_snp_summary <- summary(lm_snp)
+snp_r2 <- lm_snp_summary$r.squared
+snp_p <- pf(lm_snp_summary$fstatistic[1], lm_snp_summary$fstatistic[2], lm_snp_summary$fstatistic[3], lower.tail = FALSE)
+snp_slope <- coef(lm_snp)[2]
 
-  bind_rows(phenotype_a, phenotype_b) %>%
-    dplyr::distinct() %>%
-    group_by(gene) %>%
-    summarise(num_trait_categories = n_distinct(trait_category), .groups = "drop")
-}
+# Create annotation text
+snp_stats_text <- paste0(
+  "Slope = ", round(snp_slope, 3), "\n",
+  "R² = ", round(snp_r2, 3), "\n",
+  "p = ", formatC(snp_p, format = "e", digits = 2)
+)
 
-gene_partners_all <- get_gene_partners() %>%
-  dplyr::rename(num_gene_partners_all = num_gene_partners)
-gene_partners_gwas <- get_gene_partners(gwas_threshold = gwas_threshold) %>%
-  dplyr::rename(num_gene_partners_gwas = num_gene_partners)
+p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
+  geom_point(alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  annotate("label", x = Inf, y = Inf, label = snp_stats_text, 
+           hjust = 1.1, vjust = 1.5, size = 3.5, family = "mono",
+           fill = "white", alpha = 0.8) +
+  labs(
+    title = "Relationship between SNP Pleiotropy Metrics",
+    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalising with SNP",
+    x = "Number of Trait Categories",
+    y = "Number of Protein Coding Genes Colocalising with SNP"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
-gene_trait_categories_all <- get_trait_category_counts() %>%
-  dplyr::rename(num_trait_categories_all = num_trait_categories)
-gene_trait_categories_gwas <- get_trait_category_counts(gwas_threshold = gwas_threshold) %>%
-  dplyr::rename(num_trait_categories_gwas = num_trait_categories)
-
-pleiotropy_scores <- protein_coding_gene_list %>%
-  left_join(gene_partners_all, by = "gene") %>%
-  left_join(gene_partners_gwas, by = "gene") %>%
-  left_join(gene_trait_categories_all, by = "gene") %>%
-  left_join(gene_trait_categories_gwas, by = "gene") %>%
-  mutate(
-    num_gene_partners_all = dplyr::coalesce(num_gene_partners_all, 0L),
-    num_gene_partners_gwas = dplyr::coalesce(num_gene_partners_gwas, 0L),
-    num_trait_categories_all = dplyr::coalesce(num_trait_categories_all, 0L),
-    num_trait_categories_gwas = dplyr::coalesce(num_trait_categories_gwas, 0L)
-  ) %>%
-  arrange(
-    desc(num_trait_categories_gwas),
-    desc(num_trait_categories_all),
-    desc(num_gene_partners_gwas),
-    desc(num_gene_partners_all)
-  )
-
-vroom::vroom_write(pleiotropy_scores, file.path(results_analysis_dir, "pleiotropy_scores_per_gene.tsv"))
-
-pleiotropy_scores_preview <- pleiotropy_scores %>%
-  slice_head(n = 25)
-
-knitr::kable(pleiotropy_scores_preview, caption = "Top protein-coding genes ranked by pleiotropy scores")
+ggsave(p_snp_pleiotropy, filename = file.path(results_analysis_dir, "snp_pleiotropy_plot.png"), width = 8, height = 6)
 ```
 
 ```{r l_shaped_pleiotropy, echo=F}
@@ -798,8 +762,6 @@ gene_pleiotropy_scores <- lapply(seq_along(all_genes$gene_id), function(i) {
 })
 joined_gene_pleiotropy_scores <- dplyr::bind_rows(gene_pleiotropy_scores)
 vroom::vroom_write(joined_gene_pleiotropy_scores, file.path(results_analysis_dir, "gene_pleiotropy_scores.tsv"))
-
-knitr::kable(joined_gene_pleiotropy_scores, caption = "Gene pleiotropy scores")
 ```
 
 ### Distinct phenotype categories in the same coloc group

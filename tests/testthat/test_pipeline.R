@@ -3,6 +3,16 @@ library(testthat)
 setwd('../../')
 source('pipeline_steps/constants.R')
 
+#If you want to add more data to this test pipeline
+#smr --beqtl-summary /some/besd_file  --extract-probe probe.list  --query 1 --make-besd --out subset_of_besd_file
+#where probe.list has the format:
+
+total_studies <- 8
+ld_blocks <- vroom::vroom('tests/data/ld_blocks.tsv', show_col_types = FALSE)
+ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+coloc_block <- 'EUR/1/1170341-1730405'
+rare_result_block <- 'EUR/1/1730405-3355587'
+
 test_that("Identify studies to process", {
   output <- system(glue::glue("Rscript pipeline_steps/identify_studies_to_process.R"),
     wait = TRUE,
@@ -17,279 +27,201 @@ test_that("Identify studies to process", {
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')
   expect_true(file.exists(studies_to_process_file), info = "Studies to process file should exist")
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = FALSE)
-  expect_equal(nrow(studies_to_process), 11, info = "Studies to process file should have 11 studies")
+  expect_equal(nrow(studies_to_process), total_studies, info = "Studies to process file should have {total_studies} studies")
 })
 
-# test_that("Pipeline execution and file validation", {
-#   output <- system(glue::glue("snakemake --profile ./"),
-#     wait = TRUE,
-#     intern = TRUE,
-#     ignore.stdout = FALSE,
-#     ignore.stderr = FALSE
-#   )
-#   has_errors <- grepl("error", output, ignore.case = TRUE)
-#   expect_false(any(has_errors), info = "Pipeline execution should not contain errors")
+test_that("Pipeline execution and file validation", {
+  skip()
+  snakemake_log <- glue::glue('{data_dir}pipeline_metadata/logs/snakemake.log')
+  # system(glue::glue("snakemake --profile ./ > {snakemake_log} 2>&1"), wait = TRUE)
+  output <- readLines(snakemake_log)
+  has_errors <- grepl("error", output, ignore.case = TRUE)
+  expect_false(any(has_errors), info = "Pipeline execution should not contain errors")
+
+  expected_tsv_files <- list(
+    studies_file=file.path(current_results_dir, "studies_processed.tsv.gz"),
+    traits_file=file.path(current_results_dir, "traits_processed.tsv.gz"),
+    study_extractions_file=file.path(current_results_dir, "study_extractions.tsv.gz"),
+    coloc_clustered_results_file=file.path(current_results_dir, "coloc_clustered_results.tsv.gz"),
+    coloc_pairwise_results_file=file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"),
+    rare_results_file=file.path(current_results_dir, "rare_results.tsv.gz"),
+    pipeline_summary_file=file.path(current_results_dir, "pipeline_summary.html")
+  )
+
+  expected_db_files <- list(
+    studies_db_file=file.path(current_results_dir, "studies.db"),
+    associations_db_file=file.path(current_results_dir, "associations.db"),
+    coloc_pairs_full_db_file=file.path(current_results_dir, "coloc_pairs_full.db"),
+    coloc_pairs_significant_db_file=file.path(current_results_dir, "coloc_pairs.db"),
+    ld_db_file=file.path(current_results_dir, "ld.db"),
+    gwas_upload_db_file=file.path(current_results_dir, "gwas_upload.db")
+  )
   
-#   test_that("Main result files are created", {
-#     expected_tsv_files <- c(
-#       file.path(results_dir, "current/studies_processed.tsv.gz"),
-#       file.path(results_dir, "current/traits_processed.tsv.gz"),
-#       file.path(results_dir, "current/study_extractions.tsv.gz"),
-#       file.path(results_dir, "current/coloc_clustered_results.tsv.gz"),
-#       file.path(results_dir, "current/coloc_pairwise_results.tsv.gz"),
-#       file.path(results_dir, "current/rare_results.tsv.gz")
-#     )
-
-#     expected_db_files <- c(
-#       file.path(results_dir, "current/studies.db"),
-#       file.path(results_dir, "current/associations.db"),
-#       file.path(results_dir, "current/coloc_pairs_full.db"),
-#       file.path(results_dir, "current/coloc_pairs.db"),
-#       file.path(results_dir, "current/ld.db"),
-#       file.path(results_dir, "current/gwas_upload.db")
-#     )
-
-#     for (file_path in expected_tsv_files) {
-#       expect_true(file.exists(file_path), info = glue("File should exist: {file_path}"))
+  test_that("Main result files are created", {
+    for (file_path in expected_tsv_files) {
+      expect_true(file.exists(file_path), info = glue::glue("File should exist: {file_path}"))
       
-#       file_size <- file.size(file_path)
-#       expect_gt(file_size, 0, info = glue("File should not be empty: {file_path}"))
-#     }
-#   })
+      file_size <- file.size(file_path)
+      expect_true(file_size > 0, info = glue::glue("File should not be empty: {file_path}"))
+    }
+  })
 
-#   # test_that("traits_processed and studies_processed are valid", {
-#   #   traits_file <- file.path(results_dir, "current/traits_processed.tsv.gz")
-#   #   expect_true(file.exists(traits_file), info = glue("File should exist: {traits_file}"))
-#   #   expect_gt(file.size(traits_file), 0, info = glue("File should not be empty: {traits_file}"))
+  test_that("traits_processed and studies_processed are valid", {
+    expect_true(file.exists(expected_tsv_files$traits_file), info = glue::glue("File should exist: {expected_tsv_files$traits_file}"))
+    expect_true(file.size(expected_tsv_files$traits_file) > 0, info = glue::glue("File should not be empty: {expected_tsv_files$traits_file}"))
 
-#   #   studies_file <- file.path(results_dir, "current/studies_processed.tsv.gz")
-#   #   expect_true(file.exists(studies_file), info = glue("File should exist: {studies_file}"))
-#   #   expect_gt(file.size(studies_file), 0, info = glue("File should not be empty: {studies_file}"))
+    expect_true(file.exists(expected_tsv_files$studies_file), info = glue::glue("File should exist: {expected_tsv_files$studies_file}"))
+    expect_true(file.size(expected_tsv_files$studies_file) > 0, info = glue::glue("File should not be empty: {expected_tsv_files$studies_file}"))
     
-#   #   studies <- vroom::vroom(studies_file, show_col_types = FALSE)
-#   #   traits <- vroom::vroom(traits_file, show_col_types = FALSE)
+    studies <- vroom::vroom(expected_tsv_files$studies_file, show_col_types = FALSE)
+    traits <- vroom::vroom(expected_tsv_files$traits_file, show_col_types = FALSE)
 
-#   #   expect_true(nrow(studies) == nrow(traits) && nrow(studies) > 0, info = "Number of studies and traits should be equal")
-#   #   expect_true(all(studies$study_name %in% traits$study_name), info = "All studies should be in traits_processed")
+    expect_equal(nrow(studies), nrow(traits), info = "Number of studies and traits should be equal")
+    expect_true(nrow(studies) > 0, info = "Should have at least one study")
+    expect_true(all(studies$study_name %in% traits$study_name), info = "All studies should be in traits_processed")
+    expect_equal(nrow(studies), total_studies, info = "Should have {total_studies} studies")
+    expect_equal(nrow(traits), total_studies, info = "Should have {total_studies} traits")
 
-#   #   joined_studies_traits <- dplyr::inner_join(studies, traits, by = "study_name")
-#   #   expect_true(nrow(joined_studies_traits) == nrow(studies) && nrow(joined_studies_traits) > 0, info = "All studies should have an associated trait")
+    joined_studies_traits <- dplyr::inner_join(studies, traits, by = "study_name")
+    expect_true(nrow(joined_studies_traits) == nrow(studies) && nrow(joined_studies_traits) > 0, info = "All studies should have an associated trait")
 
-#   #   sapply(joined_studies_traits$extracted_location, function(extracted_location) {
-#   #     expect_true(dir.exists(extracted_location), info = glue("Extracted location should exist: {extracted_location}"))
-#   #     extracted_dirs <- list.dirs(extracted_location, full.names = TRUE)
-#   #   })
+    sapply(joined_studies_traits$extracted_location, function(extracted_location) {
+      expect_true(dir.exists(extracted_location), info = glue::glue("Extracted location should exist: {extracted_location}"))
+      extracted_dirs <- list.dirs(extracted_location, full.names = TRUE)
+    })
     
-#   #   required_cols <- c("study_name", "data_type", "variant_type", "ancestry", 
-#   #                     "sample_size", "category", "cis_trans")
-#   #   for (col in required_cols) {
-#   #     expect_true(col %in% colnames(studies), info = glue("Column {col} should exist in studies_processed"))
-#   #   }
     
-#   #   # Check data types are valid
-#   #   expect_true(all(studies$data_type %in% c("phenotype", "gene_expression", "protein", 
-#   #                                           "methylation", "metabolome", "cell_trait", 
-#   #                                           "plasma_protein", "splice_variant", "transcript")),
-#   #               info = "All data_type values should be valid")
-    
-#   #   expect_true(all(studies$variant_type %in% c("common", "rare_exome", "rare_wgs")),
-#   #               info = "All variant_type values should be valid")
-    
-#   #   expect_true(all(studies$ancestry %in% c("EUR", "EAS", "AFR", "SAS")),
-#   #               info = "All ancestry values should be valid")
-    
-#   #   # Check sample sizes are reasonable
-#   #   expect_true(all(studies$sample_size > 0, na.rm = TRUE),
-#   #               info = "All sample sizes should be positive")
-    
-#   #   expect_true(nrow(studies) > 0, info = "Should have at least one study")
-#   # })
+    expect_true(all(studies$data_type %in% names(data_types)), info = "All data_type values should be valid")
+    expect_true(all(studies$variant_type %in% names(variant_types)), info = "All variant_type values should be valid")
+    expect_true(all(studies$ancestry %in% names(ancestry_map)), info = "All ancestry values should be valid")
+    expect_true(all(studies$sample_size > 0, na.rm = TRUE), info = "All sample sizes should be positive")
+    expect_true(nrow(studies) > 0, info = "Should have at least one study")
+  })
 
-#   # test_that("study_extractions are valid", {
-#   #   extractions_file <- file.path(results_dir, "current/study_extractions.tsv.gz")
-#   #   expect_true(file.exists(extractions_file), info = glue("File should exist: {extractions_file}"))
-#   #   expect_gt(file.size(extractions_file), 0, info = glue("File should not be empty: {extractions_file}"))
+  test_that("study_extractions are valid", {
+    expect_true(file.exists(expected_tsv_files$study_extractions_file), info = glue::glue("File should exist: {expected_tsv_files$study_extractions_file}"))
+    expect_true(file.size(expected_tsv_files$study_extractions_file) > 0, info = glue::glue("File should not be empty: {expected_tsv_files$study_extractions_file}"))
 
-#   #   studies <- vroom::vroom(file.path(results_dir, "current/studies_processed.tsv.gz"), show_col_types = FALSE)
-#   #   extractions <- vroom::vroom(extractions_file, show_col_types = FALSE)
-#   #   expect_true(nrow(extractions) == nrow(studies), info = "Number of study extractions should be equal to number of studies")
-#   #   expect_true(all(extractions$study %in% studies$study_name), info = "All studies should be in study_extractions")
+    studies <- vroom::vroom(expected_tsv_files$studies_file, show_col_types = FALSE)
+    extractions <- vroom::vroom(expected_tsv_files$study_extractions_file, show_col_types = FALSE)
+    expect_true(all(extractions$study %in% studies$study_name), info = "All studies should be in study_extractions")
 
-#   #   sapply(extractions$file, function(file_path) {
-#   #     expect_true(file.exists(file_path), info = glue("Extracted file should exist: {file_path}"))
-#   #   })
+    common_extractions <- dplyr::left_join(extractions, studies, by = c("study"="study_name")) |>
+      dplyr::filter(variant_type == variant_types$common)
+    lapply(seq_len(nrow(common_extractions)), function(i) {
+      extraction <- common_extractions[i, ]
+      error_msg <- glue::glue("Min p value should be less than {lowest_p_value_threshold}: {extraction$min_p}")
+      expect_true(file.exists(extraction$file), info = glue::glue("Extracted file should exist: {extraction$file}"))
+      expect_true(file.size(extraction$file) > 0, info = glue::glue("Extracted file should not be empty: {extraction$file}"))
+      expect_true(file.exists(extraction$svg_file), info = glue::glue("Extracted file should exist: {extraction$svg_file}"))
+      expect_true(file.size(extraction$svg_file) > 0, info = glue::glue("Extracted file should not be empty: {extraction$svg_file}"))
+      expect_true(file.exists(extraction$file_with_lbfs), info = glue::glue("Extracted file should exist: {extraction$file_with_lbfs}"))
+      expect_true(file.size(extraction$file_with_lbfs) > 0, info = glue::glue("Extracted file should not be empty: {extraction$file_with_lbfs}"))
+    })
     
-#   #   required_cols <- c("study_name", "data_type", "variant_type", "ancestry", 
-#   #                     "sample_size", "category", "cis_trans")
-#   # })
+  })
   
-#   # test_that("Study directories contain expected files", {
-#   #   study_dirs <- list.dirs(file.path(data_dir, "study"), recursive = FALSE)
-#   #   expect_true(length(study_dirs) > 0, info = "Should have at least one study directory")
-#   #   for (study_dir in study_dirs) {
-#   #     expected_files <- c("extracted_snps.tsv", "standardised_snps.tsv", "imputed_snps.tsv", "finemapped_snps.tsv")
-#   #     for (file_name in expected_files) {
-#   #       file_path <- file.path(study_dir, file_name)
-#   #       expect_true(file.exists(file_path), info = glue("File should exist: {file_path}"))
-#   #     }
-#   #   }
-#   # })
-  
-#   # test_that("LD block data is properly structured", {
-#   #   ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
-#   #   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
-#   #   ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
+  test_that("LD Block directories contain expected files", {
+    coloc_block_dir <- glue::glue('{ld_block_data_dir}{coloc_block}')
+    expect_true(dir.exists(coloc_block_dir), info = glue::glue("LD block directory should exist: {coloc_block_dir}"))
+    expected_common_files <- c("extracted_studies.tsv", "standardised_studies.tsv", "imputed_studies.tsv", "finemapped_studies.tsv", "coloc_pairwise_results.tsv.gz", "coloc_clustered_results.tsv.gz")
 
-#   #   for (ld_block in ld_info$ld_block) {
-#   #     ld_block_dir <- ld_info$ld_block_data[ld_info$ld_block == ld_block]
-#   #     expected_files <- c("extracted_studies.tsv",
-#   #       "standardised_studies.tsv",
-#   #       "imputed_studies.tsv",
-#   #       "finemapped_studies.tsv",
-#   #       "coloc_pairwise_results.tsv.gz",
-#   #       "coloc_clustered_results.tsv.gz",
-#   #       "rare_results.tsv.gz"
-#   #     )
-#   #     for (file_name in expected_files) {
-#   #       file_path <- file.path(ld_block_dir, file_name)
-#   #       expect_true(file.exists(file_path), info = glue("File should exist: {file_path}"))
-#   #       results <- vroom::vroom(file_path, show_col_types = FALSE)
-#   #       expect_true(nrow(results) > 0, info = glue("File should have rows: {file_path}"))
-#   #     }
-#   #   }
-#   # })
+    for (file_name in expected_common_files) {
+      file_path <- file.path(coloc_block_dir, file_name)
+      expect_true(file.exists(file_path), info = glue::glue("File should exist: {file_path}"))
+      expect_true(file.size(file_path) > 0, info = glue::glue("File should not be empty: {file_path}"))
+    }
+
+    rare_block_dir <- glue::glue('{ld_block_data_dir}{rare_result_block}')
+    expect_true(dir.exists(rare_block_dir), info = glue::glue("LD block directory should exist: {rare_block_dir}"))
+    expected_rare_files <- c("extracted_studies.tsv", "standardised_studies.tsv", "compare_rare_results.tsv", "compare_rare_cached_studies.tsv")
+    for (file_name in expected_rare_files) {
+      file_path <- file.path(rare_block_dir, file_name)
+      expect_true(file.exists(file_path), info = glue::glue("File should exist: {file_path}"))
+      expect_true(file.size(file_path) > 0, info = glue::glue("File should not be empty: {file_path}"))
+    }
+  })
   
-#   # # Test 5: Check that study extractions exist
+  test_that("Study directory data is properly structured", {
+    studies <- vroom::vroom(expected_tsv_files$studies_file, show_col_types = FALSE)
+    for (i in seq_len(nrow(studies))) {
+      study <- studies[i, ]
+      study_dir <- study$extracted_location
+      expected_dirs <- c("extracted",
+        "standardised",
+        "imputed",
+        "finemapped"
+      )
+      if (study$data_type == data_types$phenotype) {
+        expected_dirs <- c(expected_dirs, "svgs")
+      }
+      for (dir_name in expected_dirs) {
+        dir_path <- file.path(study_dir, dir_name)
+        expect_true(dir.exists(dir_path), info = glue::glue("Directory should exist"))
+      }
+      extracted_snps <- vroom::vroom(file.path(study_dir, "extracted_snps.tsv"), show_col_types = FALSE)
+      for (j in seq_len(nrow(extracted_snps))) {
+        file <- extracted_snps$file[j]
+        expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))
+        expect_true(file.size(file) > 0, info = glue::glue("File should not be empty: {file}"))
+      }
+      files_in_extracted_dir <- list.files(file.path(study_dir, "extracted"), full.names = TRUE)
+      expect_true(nrow(extracted_snps) == length(files_in_extracted_dir), info = glue::glue("Extracted SNPs file should not be empty"))
+    }
+  })
   
-#   # # Test 6: Check coloc results structure
-#   # test_that("Coloc results are valid", {
-#   #   coloc_file <- file.path(results_dir, "latest/coloc_results.tsv.gz")
+  test_that("Coloc results are valid", {
+    clustered_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_clustered_results.tsv.gz")
+    pairwise_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_pairwise_results.tsv.gz")
+    expect_true(file.exists(clustered_results_file), info = glue::glue("File should exist: {clustered_results_file}"))
+    expect_true(file.exists(pairwise_results_file), info = glue::glue("File should exist: {pairwise_results_file}"))
     
-#   #   if (file.exists(coloc_file)) {
-#   #     coloc <- vroom::vroom(coloc_file, show_col_types = FALSE)
-      
-#   #     # Check required columns for coloc results
-#   #     expected_cols <- c("unique_study_a", "unique_study_b", "ld_block", "h4", "h3", "h2", "h1", "h0")
-#   #     for (col in expected_cols) {
-#   #       if (col %in% colnames(coloc)) {
-#   #         # Check that probability values are between 0 and 1
-#   #         if (col %in% c("h4", "h3", "h2", "h1", "h0")) {
-#   #           expect_true(all(coloc[[col]] >= 0 & coloc[[col]] <= 1, na.rm = TRUE),
-#   #                       info = glue("Column {col} should contain probabilities between 0 and 1"))
-#   #         }
-#   #       }
-#   #     }
-      
-#   #     if (nrow(coloc) > 0) {
-#   #       # Check that probabilities sum to approximately 1
-#   #       prob_cols <- intersect(c("h4", "h3", "h2", "h1", "h0"), colnames(coloc))
-#   #       if (length(prob_cols) > 0) {
-#   #         prob_sums <- rowSums(coloc[, prob_cols], na.rm = TRUE)
-#   #         expect_true(all(abs(prob_sums - 1) < 0.01, na.rm = TRUE),
-#   #                     info = "Coloc probabilities should sum to approximately 1")
-#   #       }
-#   #     }
-#   #   }
-#   # })
-  
-#   # # Test 7: Check that LD block directories contain expected files
-#   # test_that("LD block directories contain expected files", {
-#   #   ld_block_dirs <- list.dirs(file.path(data_dir, "ld_blocks"), recursive = FALSE)
+    clustered_results <- vroom::vroom(clustered_results_file, show_col_types = FALSE)
+    pairwise_results <- vroom::vroom(pairwise_results_file, show_col_types = FALSE)
     
-#   #   if (length(ld_block_dirs) > 0) {
-#   #     # Check a sample of LD block directories
-#   #     sample_dirs <- head(ld_block_dirs, 3)
-      
-#   #     for (ld_dir in sample_dirs) {
-#   #       expected_files <- c(
-#   #         "imputed_studies.tsv",
-#   #         "finemapped_studies.tsv"
-#   #       )
-        
-#   #       for (file_name in expected_files) {
-#   #         file_path <- file.path(ld_dir, file_name)
-#   #         if (file.exists(file_path)) {
-#   #           # Check file is not empty
-#   #           file_size <- file.size(file_path)
-#   #           expect_gt(file_size, 0, 
-#   #                     info = glue("LD block file should not be empty: {file_path}"))
-#   #         }
-#   #       }
-#   #     }
-#   #   }
-#   # })
-  
-#   # # Test 8: Check data quality metrics
-#   # test_that("Data quality metrics are reasonable", {
-#   #   studies_file <- file.path(results_dir, "latest/studies_processed.tsv.gz")
-    
-#   #   if (file.exists(studies_file)) {
-#   #     studies <- vroom::vroom(studies_file, show_col_types = FALSE)
-      
-#   #     # Check sample size distribution
-#   #     if ("sample_size" %in% colnames(studies)) {
-#   #       sample_sizes <- studies$sample_size[!is.na(studies$sample_size)]
-#   #       if (length(sample_sizes) > 0) {
-#   #         expect_true(median(sample_sizes) > 100, 
-#   #                     info = "Median sample size should be reasonable (>100)")
-#   #         expect_true(max(sample_sizes) < 10000000, 
-#   #                     info = "Maximum sample size should be reasonable (<10M)")
-#   #       }
-#   #     }
-      
-#   #     # Check data type distribution
-#   #     if ("data_type" %in% colnames(studies)) {
-#   #       data_type_counts <- table(studies$data_type)
-#   #       expect_true(length(data_type_counts) > 0, 
-#   #                   info = "Should have studies from multiple data types")
-#   #     }
-#   #   }
-#   # })
-  
-#   # # Test 9: Check file timestamps are recent
-#   # test_that("Result files have recent timestamps", {
-#   #   result_files <- c(
-#   #     file.path(results_dir, "latest/studies_processed.tsv.gz"),
-#   #     file.path(results_dir, "latest/traits_processed.tsv.gz"),
-#   #     file.path(results_dir, "latest/study_extractions.tsv.gz")
-#   #   )
-    
-#   #   for (file_path in result_files) {
-#   #     if (file.exists(file_path)) {
-#   #       file_time <- file.info(file_path)$mtime
-#   #       time_diff <- as.numeric(Sys.time() - file_time, units = "hours")
-#   #       expect_lt(time_diff, 2, 
-#   #                 info = glue("File {file_path} should be recently created (<2 hours old)"))
-#   #     }
-#   #   }
-#   # })
-  
-#   # # Test 10: Check pipeline logs for errors
-#   # test_that("Pipeline logs do not contain critical errors", {
-#   #   log_file <- file.path(data_dir, "pipeline_metadata/logs/snakemake.log")
-    
-#   #   if (file.exists(log_file)) {
-#   #     log_content <- readLines(log_file, warn = FALSE)
-      
-#   #     error_pattern <- "rror"
-      
-#   #     matches <- grep(error_pattern, log_content, ignore.case = TRUE)
-#   #     if (length(matches) > 0) {
-#   #       critical_errors <- log_content[matches]
-#   #     }
-      
-#   #     # Allow some expected errors but flag unexpected ones
-#   #     if (length(critical_errors) > 0) {
-#   #       cat("Found potential errors in pipeline log:\n")
-#   #       for (error in head(critical_errors, 5)) {
-#   #         cat(glue("  {error}\n"))
-#   #       }
-#   #       # Don't fail the test for now, just warn
-#   #       cat("Warning: Critical errors found in pipeline log\n")
-#   #     }
-#   #   }
-#   # })
-  
-#   cat(glue("Pipeline execution time: {round(execution_time, 2)} seconds\n"))
-#   cat(glue("Test results directory: {results_dir}\n"))
-# })
+    expect_true(nrow(clustered_results) > 0, info = "Clustered results should not be empty")
+  })
+
+  test_that("Rare results are valid", {
+    expect_true(file.exists(expected_tsv_files$rare_results_file), info = glue::glue("File should exist: {expected_tsv_files$rare_results_file}"))
+    rare_results <- vroom::vroom(expected_tsv_files$rare_results_file, show_col_types = FALSE)
+    expect_true(nrow(rare_results) > 0, info = "Rare results should not be empty")
+  })
+
+  test_that("Pipeline Summary is valid", {
+    expect_true(file.exists(expected_tsv_files$pipeline_summary_file), info = glue::glue("File should exist: {expected_tsv_files$pipeline_summary_file}"))
+    expect_true(file.size(expected_tsv_files$pipeline_summary_file) > 0, info = glue::glue("File should not be empty: {expected_tsv_files$pipeline_summary_file}"))
+  })
+
+  test_that("DB files are valid", {
+    source('pipeline_steps/database_definitions.R')
+    expect_true(file.exists(expected_db_files$studies_db_file), info = glue::glue("File should exist: {expected_db_files$studies_db_file}"))
+    expect_true(file.size(expected_db_files$studies_db_file) > 0, info = glue::glue("File should not be empty: {expected_db_files$studies_db_file}"))
+    studies_conn <- duckdb::dbConnect(duckdb::duckdb(), expected_db_files$studies_db_file)
+    for (table in studies_db) {
+      table_data <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT count(*) as count FROM {table$name}"))
+      expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {table$name}"))
+    }
+    for (table in additional_studies_tables) {
+      table_data <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT count(*) as count FROM {table$name}"))
+      expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {table$name}"))
+    }
+    ld_conn <- duckdb::dbConnect(duckdb::duckdb(), expected_db_files$ld_db_file)
+    table_data <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT count(*) as count FROM {ld_table$name}"))
+    expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {ld_table$name}"))
+
+    coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(), expected_db_files$coloc_pairs_full_db_file)
+    table_data <- DBI::dbGetQuery(coloc_pairs_full_conn, glue::glue("SELECT count(*) as count FROM {coloc_pairs_full_table$name}"))
+    expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {coloc_pairs_full_table$name}"))
+
+    coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), expected_db_files$coloc_pairs_significant_db_file)
+    table_data <- DBI::dbGetQuery(coloc_pairs_significant_conn, glue::glue("SELECT count(*) as count FROM {coloc_pairs_significant_table$name}"))
+    expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {coloc_pairs_significant_table$name}"))
+
+    gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), expected_db_files$gwas_upload_db_file)
+    for (table in gwas_upload_db) {
+      table_data <- DBI::dbGetQuery(gwas_upload_conn, glue::glue("SELECT count(*) as count FROM {table$name}"))
+      expect_true(table_data$count == 0, info = glue::glue("Table should be empty"))
+    }
+  })
+})

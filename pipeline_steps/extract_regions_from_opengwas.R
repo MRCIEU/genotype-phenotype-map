@@ -31,7 +31,7 @@ main <- function() {
   vroom::vroom_write(clumped_snps, clumped_hits_file)
 
   extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
-  create_svgs_from_gwas(study)
+  create_svgs(study, vcf_file)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
 }
@@ -189,6 +189,19 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
 
   message(glue::glue('{study["extracted_location"]}: Extracted {nrow(extracted_snp_info)} regions'))
   return(extracted_snp_info)
+}
+
+create_svgs <- function(study, vcf_file) {
+  bcf_query <- glue::glue('/home/bcftools/bcftools query ',
+    '--format "[%ID]\t[%CHROM]\t[%POS]\t[%LP]" ',
+    '{vcf_file}'
+  )
+  gwas <- system(bcf_query, wait = T, intern = T)
+  gwas <- data.table::fread(text = gwas)
+
+  colnames(gwas) <- c('RSID', 'CHR', 'BP', 'LP')
+  gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
+  create_svgs_from_gwas(study, gwas)
 }
 
 main()

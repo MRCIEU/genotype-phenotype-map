@@ -9,7 +9,7 @@ rare_studies_to_ignore <- vroom::vroom('data/ignore_studies_rare.tsv', delim='\t
 studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
 
 if (!is.na(TEST_RUN)) {
-  study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
+  study_list <- vroom::vroom('../tests/data/study_list.csv', show_col_types=F)
 }
 if (file.exists(studies_processed_file)) {
   studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
@@ -38,7 +38,7 @@ main <- function() {
   }
 
   studies_to_process <- studies_to_process |>
-    dplyr::filter(!study_name %in% studies_processed$study_name) |>
+    # dplyr::filter(!study_name %in% studies_processed$study_name) |>
     dplyr::filter(!study_name %in% studies_to_ignore$study) |>
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
@@ -149,7 +149,9 @@ calculate_besd_studies_to_process <- function(entries) {
       gene = genes,
       ensg = ensgs,
       tissue = metadata$tissue,
-      coverage = besd_study[['coverage']]
+      coverage = besd_study[['coverage']],
+      heritability = NA,
+      heritability_se = NA
     ))
   }) |> dplyr::bind_rows()
 }
@@ -177,6 +179,24 @@ calculate_opengwas_studies_to_process <- function(entries) {
     study <- basename(directory)
     new_study_name <- gsub('_', '-', study)
     data_study_dir <- glue::glue('{data_dir}study/{new_study_name}/')
+
+    ldsc_observed_h2 <- NA_real_
+    ldsc_observed_h2_se <- NA_real_
+    ldsc_file <- glue::glue('{directory}/ldsc.txt.log')
+    if (file.exists(ldsc_file)) {
+      ldsc_result <- readLines(ldsc_file)
+      ldsc_observed_line <- ldsc_result[grepl('Total Observed scale h2', ldsc_result)]
+      if (length(ldsc_observed_line) > 0) {
+        ldsc_capture <- regmatches(
+          ldsc_observed_line,
+          regexec('Total Observed scale h2:\\s*([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \\(([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\\)', ldsc_observed_line)
+        )[[1]]
+        if (length(ldsc_capture) == 3) {
+          ldsc_observed_h2 <- suppressWarnings(as.numeric(ldsc_capture[2]))
+          ldsc_observed_h2_se <- suppressWarnings(as.numeric(ldsc_capture[3]))
+        }
+      }
+    }
 
     study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
     ancestry <- study_metadata$population
@@ -209,7 +229,9 @@ calculate_opengwas_studies_to_process <- function(entries) {
       gene = NA,
       probe = NA,
       tissue = NA,
-      coverage = opengwas_study[['coverage']]
+      coverage = opengwas_study[['coverage']],
+      heritability = ldsc_observed_h2,
+      heritability_se = ldsc_observed_h2_se
     ))
   }) |> dplyr::bind_rows()
 }
@@ -247,7 +269,9 @@ calculate_tsv_studies_to_process <- function(entries) {
       gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
       tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA),
-      coverage = entry[['coverage']]
+      coverage = entry[['coverage']],
+      heritability = NA,
+      heritability_se = NA
     ))
   }) |> dplyr::bind_rows()
 

@@ -1,6 +1,6 @@
 source("../pipeline_steps/gwas_calculations.R")
 
-create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sparse = FALSE) {
+create_svg_for_ld_block <- function(gwas, file_name, ld_block, is_sparse = FALSE) {
   # if (file.exists(file_name)) return()
   if (is_sparse | nrow(gwas) < 1000) {
     bin_size <- 2000
@@ -89,7 +89,7 @@ create_svg_for_ld_block <- function(gwas, study_name, file_name, ld_block, is_sp
     ) +
     ggplot2::coord_cartesian(clip = "off")
   
-  dir.create(glue::glue('{extracted_study_dir}{study_name}/svgs/extractions'), showWarnings = F, recursive = T)
+  dir.create(dirname(file_name), showWarnings = F, recursive = T)
   ggplot2::ggsave(
     file_name,
     p,

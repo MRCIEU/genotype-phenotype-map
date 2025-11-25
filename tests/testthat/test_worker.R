@@ -4,7 +4,6 @@ library(testthat)
 setwd('../../')
 source('pipeline_steps/constants.R')
 ld_block_of_interest <- 'EUR/1/101384499-103762931'
-print(glue::glue('{ld_block_data_dir}/{ld_block_of_interest}'))
 
 setup({
   real_ld_block_data_dir <- sub('/test/', '/', ld_block_data_dir)
@@ -50,7 +49,7 @@ test_that("Pipeline worker runs for TSV file", {
     glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv'),
     glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv'),
     glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz'),
+    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz')
   )
   for (file in ld_block_files) {
     expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))
@@ -61,7 +60,7 @@ test_that("Pipeline worker runs for TSV file", {
   compiled_files <- c(
     glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv'),
     glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv'),
-    glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv'),
+    glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
   )
   for (file in compiled_files) {
     expect_true(file.exists(file), info = glue::glue("Compiled file should exist: {file}"))

@@ -114,6 +114,30 @@ finemapped_column_types <- vroom::cols(
   ignore = vroom::col_logical()
 )
 
+studies_processed_column_types <- vroom::cols(
+  data_type = vroom::col_character(),
+  data_format = vroom::col_character(),
+  study_name = vroom::col_character(),
+  trait = vroom::col_character(),
+  ancestry = vroom::col_character(),
+  sample_size = vroom::col_number(),
+  category = vroom::col_character(),
+  study_location = vroom::col_character(),
+  extracted_location = vroom::col_character(),
+  reference_build = vroom::col_character(),
+  p_value_threshold = vroom::col_number(),
+  gene = vroom::col_character(),
+  probe = vroom::col_character(),
+  tissue = vroom::col_character(),
+  source = vroom::col_character(),
+  variant_type = vroom::col_character(),
+  trait_name = vroom::col_character(),
+  ensg = vroom::col_character(),
+  coverage = vroom::col_character(),
+  heritability = vroom::col_double(),
+  heritability_se = vroom::col_double()
+)
+
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
   file_prefix <- sub('\\..*', '', file_name)

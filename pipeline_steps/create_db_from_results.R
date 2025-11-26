@@ -145,11 +145,16 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::rename(gene_id=id)
   
   # Remove the studies that don't have any study extractions
-  studies_db$studies$data <- vroom::vroom(file.path(current_results_dir, "studies_processed.tsv.gz"), show_col_types = F) |>
+  studies_db$studies$data <- vroom::vroom(
+    file.path(current_results_dir, "studies_processed.tsv.gz"),
+    show_col_types = F,
+    col_types = studies_processed_column_types
+  ) |>
     dplyr::left_join(sources_subset, by=c("source"="source")) |>
     dplyr::left_join(gene_subset, by=c("ensg"="ensembl_id")) |>
     dplyr::filter(study_name %in% studies_db$study_extractions$data$study & trait %in% studies_db$study_extractions$data$study) |>
     resolve_ids_for_table(studies_db$studies$existing_ids, studies_db$studies$persist_id_from)
+
 
   # Remove the traits that don't have any study extractions
   studies_db$traits$data <- vroom::vroom(file.path(current_results_dir, "traits_processed.tsv.gz"), show_col_types = F) |>
@@ -244,6 +249,8 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::rename(gene=known_gene) |>
     dplyr::left_join(studies_subset, by=c("study"="study_name")) |>
     dplyr::left_join(ld_blocks_subset, by="ld_block") |>
+    dplyr::left_join(gene_subset, by=c("situated_gene"="gene")) |>
+    dplyr::rename(situated_gene_id=gene_id) |>
     dplyr::left_join(gene_subset, by="gene") |>
     dplyr::left_join(snp_annotations_subset, by="snp") |>
     populate_missing_row_ids("id") |>
@@ -300,7 +307,7 @@ format_clustered_colocs <- function(clustered_colocs, studies_db) {
 
 format_rare_results <- function(rare_results, studies_db) {
   study_extractions_subset <- studies_db$study_extractions$data |>
-    dplyr::select(id, unique_study_id, ld_block_id, study_id) |>
+    dplyr::select(id, unique_study_id, ld_block_id, study_id, gene_id, situated_gene_id) |>
     dplyr::rename(study_extraction_id=id)
 
   snp_annotations_subset <- studies_db$snp_annotations$data |>
@@ -309,7 +316,7 @@ format_rare_results <- function(rare_results, studies_db) {
 
   gene_annotations_subset <- studies_db$gene_annotations$data |>
     dplyr::select(gene, id) |>
-    dplyr::rename(gene_id=id)
+    dplyr::rename(situated_gene_id=id)
 
   rare_results <- rare_results |>
     dplyr::mutate(rare_result_group_id=1:dplyr::n()) |>
@@ -317,8 +324,7 @@ format_rare_results <- function(rare_results, studies_db) {
     dplyr::rename(unique_study_id=traits, gene=genes) |>
     dplyr::mutate(candidate_snp=trimws(candidate_snp), unique_study_id=trimws(unique_study_id), gene=trimws(gene), files=trimws(files)) |>
     dplyr::left_join(study_extractions_subset, by="unique_study_id") |>
-    dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-many") |>
-    dplyr::left_join(gene_annotations_subset, by="gene", relationship="many-to-one")
+    dplyr::left_join(snp_annotations_subset, by=c("candidate_snp"="snp"), relationship="many-to-many")
 
   missing_study_extractions <- dplyr::filter(rare_results, is.na(study_extraction_id) | is.na(snp_id) | is.na(study_id))
   if (nrow(missing_study_extractions) > 0) {
@@ -568,7 +574,7 @@ generate_ld_obj <- function(ld_block, snps) {
 }
 
 match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
-  r2_threshold <- 0.98
+  r2_threshold <- 0.99
   causal_snps <- unique(DBI::dbGetQuery(studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups"))
 
   formatted_snp_ids <- paste0(unique(causal_snps$snp_id), collapse = ",")
@@ -576,7 +582,7 @@ match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
     FROM ld
     WHERE lead_snp_id IN ({formatted_snp_ids})
     AND variant_snp_id IN ({formatted_snp_ids})
-    AND r*r > {r2_threshold}"
+    AND r*r >= {r2_threshold}"
   ))
 
   # Ensure only unique, non-redundant pairs are used for the undirected graph

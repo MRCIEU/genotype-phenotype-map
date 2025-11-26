@@ -130,27 +130,27 @@ create_study_extractions <- function(pipeline_data) {
 
   rare_genes_study_map <- pipeline_data$studies_processed |>
     dplyr::filter(variant_type != variant_types$common & !is.na(gene)) |>
-    dplyr::select(study_name, gene)
+    dplyr::select(study_name, gene) |>
+    dplyr::rename(known_gene=gene)
 
   if (nrow(pipeline_data$rare_results) > 0) {
     rare_studies <- pipeline_data$rare_results |>
       dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
       tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
-      dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files, snp=candidate_snp) |>
+      dplyr::rename(unique_study_id=traits, min_p=min_ps, situated_gene=genes, file=files, snp=candidate_snp) |>
       dplyr::mutate(min_p = as.numeric(min_p)) |>
       tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
-      dplyr::mutate(bp = sub('-.*', '', bp)) |>
-      dplyr::mutate(bp = as.numeric(bp)) |>
+      dplyr::mutate(bp = as.numeric(sub('-.*', '', bp))) |>
       dplyr::mutate(file_with_lbfs = NA, svg_file = NA, ignore = F) |>
-      dplyr::left_join(rare_genes_study_map, by = c("study" = "study_name")) |>
       dplyr::mutate(
+        known_gene = rare_genes_study_map$known_gene[match(study, rare_genes_study_map$study_name)],
         cis_trans = dplyr::case_when(
-          is.na(gene) ~ NA_character_,
-          known_gene == gene ~ "cis",
+          is.na(known_gene) | is.na(situated_gene) ~ NA_character_,
+          known_gene == situated_gene ~ "cis",
           TRUE ~ "trans"
         )
       ) |>
-      dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, file_with_lbfs, svg_file, ignore, known_gene)
+      dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, file_with_lbfs, svg_file, ignore, known_gene, situated_gene)
   } else {
     rare_studies <- data.frame()
   }

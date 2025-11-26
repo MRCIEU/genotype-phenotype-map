@@ -104,7 +104,7 @@ load_results_data <- function(specific_results_dir) {
   studies_db_file <- file.path(specific_results_dir, 'studies.db')
 
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
-  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'coloc_pairs.db'), read_only = TRUE)
+  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'coloc_pairs_full.db'), read_only = TRUE)
   associations_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'associations.db'), read_only = TRUE)
   ld_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'ld.db'), read_only = TRUE)
 
@@ -161,7 +161,7 @@ latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_conn, 'S
   JOIN studies.study_extractions AS study_extraction_b ON coloc_pairs.study_extraction_b_id = study_extraction_b.id
   JOIN studies.studies AS study_b ON study_extraction_b.study_id = study_b.id
   JOIN studies.traits AS trait_b ON study_b.trait_id = trait_b.id
-  WHERE coloc_pairs.h4 > 0.6
+  WHERE coloc_pairs.h4 > 0.6 OR coloc_pairs.h3 > 0.8
 ')
 
 latest_sources <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_sources.name, COUNT(studies.*) as num_studies
@@ -448,6 +448,89 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
 
 ggsave(file.path(results_analysis_dir, 'study_extractions_p_value_threshold.png'), p3b, width = 10, height = 6, dpi = 300)
 
+# Prepare data for p-value threshold visualization by trait category (phenotype only)
+phenotype_pval_variant_viz <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT 
+  study_extractions.min_p as min_p,
+  studies.variant_type as variant_type,
+  traits.trait_category as trait_category
+  FROM study_extractions
+  JOIN studies ON study_extractions.study_id = studies.id
+  JOIN traits ON studies.trait_id = traits.id
+  WHERE studies.data_type = 'phenotype'
+") |>
+  dplyr::mutate(
+    variant_group = dplyr::if_else(variant_type == "common", "Common", "Rare"),
+    pval_bucket = dplyr::case_when(
+      min_p <= 5e-8 ~ "P ≤ 5e-8",
+      min_p > 5e-8 & min_p < 1.5e-4 ~ "1.5e-4 < P < 5e-8",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  dplyr::filter(!is.na(pval_bucket) & !is.na(trait_category)) |>
+  dplyr::mutate(
+    pval_variant_category = paste(variant_group, pval_bucket, sep = ": ")
+  ) |>
+  dplyr::group_by(trait_category, pval_variant_category) |>
+  dplyr::summarise(count = dplyr::n(), .groups = "drop")
+
+phenotype_pval_variant_totals <- phenotype_pval_variant_viz |>
+  dplyr::group_by(trait_category) |>
+  dplyr::summarise(total = sum(count), .groups = "drop")
+
+# Get count for "Common: P ≤ 5e-8" for ordering
+phenotype_common_5e8_counts <- phenotype_pval_variant_viz |>
+  dplyr::filter(pval_variant_category == "Common: P ≤ 5e-8") |>
+  dplyr::select(trait_category, common_5e8_count = count)
+
+# Create shared trait category ordering based on Common: P ≤ 5e-8 count
+# This ordering will be used across all trait category graphs for consistency
+# Include all trait categories: those with Common: P ≤ 5e-8 data ordered first,
+# others ordered by total count as fallback
+shared_trait_category_order <- phenotype_pval_variant_totals |>
+  dplyr::left_join(phenotype_common_5e8_counts, by = "trait_category") |>
+  dplyr::mutate(common_5e8_count = tidyr::replace_na(common_5e8_count, 0)) |>
+  dplyr::arrange(dplyr::desc(common_5e8_count), dplyr::desc(total)) |>
+  dplyr::pull(trait_category) |>
+  unique()
+
+phenotype_pval_variant_viz <- phenotype_pval_variant_viz |>
+  dplyr::left_join(phenotype_pval_variant_totals, by = "trait_category") |>
+  dplyr::left_join(phenotype_common_5e8_counts, by = "trait_category") |>
+  dplyr::mutate(
+    pval_variant_category = factor(
+      pval_variant_category,
+      levels = pval_variant_levels
+    ),
+    common_5e8_count = tidyr::replace_na(common_5e8_count, 0),
+    trait_category = factor(trait_category, levels = rev(shared_trait_category_order))
+  )
+
+# Create p-value threshold bar chart by trait category
+p3b_trait <- ggplot(phenotype_pval_variant_viz, aes(x = trait_category, y = count, fill = pval_variant_category)) +
+  geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
+  coord_flip() +
+  labs(x = "Trait Category", y = "Count", fill = "",
+       title = "Number of Ingested Loci by Trait Category") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        legend.position = "bottom",
+        axis.text = element_text(color = "black"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank()) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(
+    values = c(
+      "Common: P ≤ 5e-8" = "#006400",
+      "Common: 1.5e-4 < P < 5e-8" = "#66A36C",
+      "Rare: P ≤ 5e-8" = "#2C3E50",
+      "Rare: 1.5e-4 < P < 5e-8" = "#95A5A6"
+    ),
+    breaks = pval_variant_levels,
+    guide = guide_legend(reverse = TRUE)
+  )
+
+ggsave(file.path(results_analysis_dir, 'phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
+
 # Finemap ratio visualization
 finemap_viz <- study_extractions_summary |>
   dplyr::filter(!is.na(finemap_ratio) & data_type != "summary") |>
@@ -659,6 +742,26 @@ all_phenotype_study_extractions <- DBI::dbGetQuery(latest_results$studies_conn, 
   WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common' and study_extractions.min_p <= 5e-8
 ")
 
+all_coloc_groups_relaxed <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
+  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
+  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
+  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
+  FROM coloc_groups
+  JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+  JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
+  JOIN studies ON coloc_groups.study_id = studies.id
+  JOIN traits ON studies.trait_id = traits.id
+  WHERE (studies.data_type != 'phenotype' OR studies.data_type = 'phenotype' and study_extractions.min_p <= 5e-8)
+  AND coloc_groups.coloc_group_id IN (
+    SELECT coloc_group_id 
+    FROM coloc_groups AS cg
+    JOIN study_extractions as se ON cg.study_extraction_id = se.id
+    WHERE se.min_p <= 5e-8
+    GROUP BY coloc_group_id 
+    HAVING COUNT(*) > 1
+  )
+")
+
 
 gwas_hits_and_molecular_traits_by_trait_category <- function(tc) {
   all_study_extractions_in_coloc_groups <- unique(all_coloc_groups$study_extraction_id)
@@ -780,10 +883,14 @@ gwas_hits_numeric <- lapply(trait_categories_list, function(tc) {
 }) |> dplyr::bind_rows() |>
   dplyr::filter(!is.na(trait_category), trait_category != "All")
 
-trait_order <- gwas_hits_numeric |>
-  dplyr::arrange(dplyr::desc(percent_with_molecular_coloc)) |>
-  dplyr::pull(trait_category) |>
-  unique()
+# Use shared trait category ordering for consistency across all graphs
+trait_order <- shared_trait_category_order[shared_trait_category_order %in% gwas_hits_numeric$trait_category]
+if (length(trait_order) == 0) {
+  trait_order <- gwas_hits_numeric |>
+    dplyr::arrange(dplyr::desc(percent_with_molecular_coloc)) |>
+    dplyr::pull(trait_category) |>
+    unique()
+}
 
 # Create visualization
 gwas_viz <- gwas_hits_numeric |>
@@ -804,10 +911,10 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
   geom_bar(stat = "identity", position = "stack", alpha = 0.8) +
   geom_text(aes(label = scales::percent(percentage, accuracy = 0.1)),
             position = position_stack(vjust = 0.5),
-            size = 3, color = "white", fontface = "bold") +
+            size = 3, color = "white") +
   coord_flip() +
   labs(x = "", y = "Percentage", fill = "Colocalization Type",
-       title = "Molecular Colocalization Rates by Trait Category") +
+       title = "Clustered Molecular Colocalization Rates") +
   theme_minimal(base_size = 12) +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold"),
@@ -819,14 +926,12 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
     legend.title = element_text(hjust = 0.5, size = 10),
     legend.text = element_text(hjust = 0.5, size = 8),
     axis.text = element_text(color = "black"),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
     plot.title.position = "plot",
     plot.margin = margin(t = 15, r = 30, b = 30, l = 15)
   ) +
-  scale_y_continuous(labels = NULL, breaks = NULL) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c(
     "With Molecular Coloc" = "#006400",
     "Without Molecular Coloc" = "#666666",
@@ -838,9 +943,161 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
 ggsave(file.path(results_analysis_dir, 'phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
 ```
 
+### Genome-wide phenotype hits with strong H3/H4 support
+
+```{r phenotype_h3_h4_rates_by_trait_category, echo=F}
+phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
+  dplyr::filter(
+    data_type_a == "phenotype" & min_p_a <= 5e-8 & data_type_b != "phenotype"
+  ) |>
+  dplyr::mutate(
+    phenotype_study_extraction_id = study_extraction_a_id,
+    phenotype_trait_category = trait_category_a
+  )
+
+phenotype_molecular_coloc_pairs_b <- latest_coloc_pair_results |>
+  dplyr::filter(
+    data_type_b == "phenotype" & min_p_b <= 5e-8 & data_type_a != "phenotype"
+  ) |>
+  dplyr::mutate(
+    phenotype_study_extraction_id = study_extraction_b_id,
+    phenotype_trait_category = trait_category_b
+  )
+
+h3_h4_by_hit <- dplyr::bind_rows(phenotype_molecular_coloc_pairs_a, phenotype_molecular_coloc_pairs_b) |>
+  dplyr::group_by(phenotype_study_extraction_id, phenotype_trait_category) |>
+  dplyr::summarise(
+    has_h3 = any(h3 > 0.8, na.rm = TRUE),
+    has_h4 = any(h4 > 0.8, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+phenotype_hits_with_probs <- all_phenotype_study_extractions |>
+  dplyr::select(id, trait_category, study_id, trait_name) |>
+  dplyr::left_join(h3_h4_by_hit, by = c("id" = "phenotype_study_extraction_id", "trait_category" = "phenotype_trait_category")) |>
+  dplyr::mutate(
+    has_h3 = tidyr::replace_na(has_h3, FALSE),
+    has_h4 = tidyr::replace_na(has_h4, FALSE),
+    h4_support= dplyr::case_when(
+      has_h4 ~ "H4 > 0.8",
+      TRUE ~ "No H4 > 0.8"
+    ),
+    h3_support= dplyr::case_when(
+      has_h3 ~ "H3 > 0.8",
+      TRUE ~ "No H3 > 0.8"
+    )
+  ) |>
+  dplyr::filter(!is.na(trait_category))
+
+h3_h4_support_numeric <- phenotype_hits_with_probs |>
+  dplyr::group_by(trait_category) |>
+  dplyr::summarise(
+    total_hits = dplyr::n(),
+    hits_h4 = sum(has_h4),
+    hits_h3 = sum(has_h3),
+    .groups = "drop"
+  )
+
+h3_h4_table_main <- h3_h4_support_numeric |>
+  dplyr::arrange(dplyr::desc(hits_h4)) |>
+  dplyr::mutate(
+    pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
+    pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    total_hits = scales::comma(total_hits),
+    hits_h4 = scales::comma(hits_h4),
+    hits_h3 = scales::comma(hits_h3)
+  )
+
+h3_h4_totals_row <- h3_h4_support_numeric |>
+  dplyr::summarise(
+    trait_category = "Total",
+    total_hits = sum(total_hits),
+    hits_h4 = sum(hits_h4),
+    hits_h3 = sum(hits_h3),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
+    pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    total_hits = scales::comma(total_hits),
+    hits_h4 = scales::comma(hits_h4),
+    hits_h3 = scales::comma(hits_h3)
+  )
+
+h3_h4_table <- dplyr::bind_rows(h3_h4_table_main, h3_h4_totals_row)
+
+knitr::kable(h3_h4_table, caption = "Genome-wide phenotype hits with strong colocalization support by trait category")
+
+h3_h4_plot_data <- h3_h4_support_numeric |>
+  dplyr::mutate(
+    pct_h4 = hits_h4 / total_hits,
+    pct_h3 = hits_h3 / total_hits
+  ) |>
+  dplyr::filter(!is.na(trait_category))
+
+# Use shared trait category ordering for consistency across all graphs
+shared_trait_order <- shared_trait_category_order[shared_trait_category_order %in% h3_h4_plot_data$trait_category]
+if (length(shared_trait_order) == 0) {
+  shared_trait_order <- sort(unique(h3_h4_plot_data$trait_category))
+}
+
+h3_h4_viz <- h3_h4_plot_data |>
+  dplyr::mutate(trait_category = factor(trait_category, levels = rev(shared_trait_order))) |>
+  tidyr::pivot_longer(
+    cols = c(pct_h4, pct_h3),
+    names_to = "support_type",
+    values_to = "percentage"
+  ) |>
+  dplyr::mutate(
+    support_type = dplyr::recode(
+      support_type,
+      pct_h4 = "H4 > 0.8",
+      pct_h3 = "H3 > 0.8"
+    ),
+    support_type = factor(support_type, levels = c("H4 > 0.8", "H3 > 0.8"))
+  )
+
+p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = support_type)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7, alpha = 0.8) +
+  geom_text(aes(label = scales::percent(percentage, accuracy = 0.1)),
+            position = position_dodge(width = 0.75),
+            hjust = -0.1, size = 2, color = "black") +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Percentage",
+    fill = "Colocalization Type",
+    title = "Pairwise Molecular Colocalization Rates"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.justification = "center",
+    legend.box.just = "center",
+    legend.box.margin = margin(t = 5, r = 0, b = 5, l = 0),
+    legend.title = element_text(hjust = 0.5, size = 10),
+    legend.text = element_text(hjust = 0.5, size = 8),
+    axis.text = element_text(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title.position = "plot",
+    plot.margin = margin(t = 15, r = 30, b = 30, l = 15)
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
+  scale_fill_manual(values = c(
+    "H4 > 0.8" = darkblue,
+    "H3 > 0.8" = darkgreen
+  )) +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
+
+ggsave(file.path(results_analysis_dir, 'phenotype_h3_h4_rates_by_trait_category.png'), p_h3h4, width = 10, height = 6, dpi = 300)
+```
+
 ## Matrix of coloc results by data type and by cis-trans:
 
-```{r matrix_of_coloc_results, echo=F}
+```{r matrix_of_coloc_results, echo=F, eval=F}
 coloc_matrix <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8)
 
 coloc_matrix_by_type <- matrix(0, nrow = length(unique_data_types), ncol = length(unique_data_types))
@@ -886,7 +1143,7 @@ knitr::kable(as.data.frame(coloc_matrix_by_cis_trans), caption = "Number of colo
 ```
 
 ## Number of coloc pairs by h4 threshold (across all studies)
-```{r coloc_pairs_by_h4_threshold, echo=F}
+```{r coloc_pairs_by_h4_threshold, echo=F, eval=F}
 
 coloc_pairs <- function(results) {
   more_than_60 <- dplyr::filter(results, h4 > 0.60)
@@ -916,11 +1173,8 @@ latest_coloc_pairs_table <- latest_coloc_pairs
 latest_coloc_pairs_table$num_results <- scales::comma(latest_coloc_pairs_table$num_results)
 knitr::kable(latest_coloc_pairs_table)
 
-# Get numeric version before formatting
-latest_coloc_pairs_numeric <- coloc_pairs(latest_coloc_pair_results)
-
 # Create bar chart
-p7 <- ggplot(latest_coloc_pairs_numeric, aes(x = reorder(coloc_threshold, num_results), y = num_results)) +
+p7 <- ggplot(latest_coloc_pairs, aes(x = reorder(coloc_threshold, num_results), y = num_results)) +
   geom_bar(stat = "identity", fill = "steelblue", alpha = 0.7) +
   geom_text(aes(label = scales::comma(num_results)), hjust = -0.1, size = 3.5) +
   coord_flip() +

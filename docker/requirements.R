@@ -1,3 +1,10 @@
+install.packages('BiocManager', repos = 'http://cran.us.r-project.org')
+
+# 1b. Check if the package is available (Good practice in Dockerfiles)
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  stop("FATAL ERROR: BiocManager failed to install.")
+}
+
 cran_install <- c('testthat', 'susieR', 'Rfast', 'BiocManager', 'duckdb', 'validate', 'redux', 'sendmailR', 'igraph', 'svglite', 'readxl', 'janitor')
 install.packages(cran_install, repos = 'http://cran.us.r-project.org')
 

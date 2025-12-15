@@ -118,8 +118,8 @@ main <- function() {
     DBI::dbAppendTable(studies_con, "rare_results", rare_results_groups)
 
     rare_results <- DBI::dbGetQuery(orig_studies_con,
-        sprintf("SELECT * FROM rare_results_wide WHERE study_id IN (%s)",
-        paste(all_study_ids, collapse=",")
+        sprintf("SELECT * FROM rare_results_wide WHERE rare_result_group_id IN (%s)",
+        paste(rare_results_groups$rare_result_group_id, collapse=",")
     ))
     DBI::dbAppendTable(studies_con, "rare_results_wide", rare_results)
 

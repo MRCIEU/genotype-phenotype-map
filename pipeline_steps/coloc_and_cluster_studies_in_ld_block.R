@@ -506,7 +506,7 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
       coloc_results$pair_id <- paste(coloc_results$unique_study_a, coloc_results$unique_study_b, sep = "_")
       matches$pair_id <- paste(matches$unique_study_a, matches$unique_study_b, sep = "_")
       
-      coloc_results$false_positive[coloc_results$pair_id %in% matches$pair_id] <- TRUE
+      coloc_results$false_positive[coloc_results$pair_id %in% matches$pair_id & coloc_results$h4 > posterior_prob_h4_threshold] <- TRUE
       coloc_results$pair_id <- NULL
     }
   }
@@ -520,7 +520,8 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
     
     same_component_mask <- !is.na(coloc_results$component_a) & 
                           !is.na(coloc_results$component_b) & 
-                          coloc_results$component_a == coloc_results$component_b
+                          coloc_results$component_a == coloc_results$component_b &
+                          coloc_results$h4 < posterior_prob_h4_threshold
     
     coloc_results$false_negative[same_component_mask] <- TRUE
     

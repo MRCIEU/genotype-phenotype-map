@@ -270,6 +270,7 @@ rule compile_results:
 #     shell:
 #         """
 #         rsync -Lavzh --exclude='*cached*' $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+#         rsync -Lavzh $DATA_DIR/ld_reference_panel_hg38 $BACKUP_DIR/data/
 #         rsync -Lavzh --ignore-missing-args $DATA_DIR/study $BACKUP_DIR/data/
 #         touch {output}
 #         """

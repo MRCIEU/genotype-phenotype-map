@@ -89,7 +89,7 @@ main <- function() {
         study['first_finemap_num_results'] <- length(results$susie_result$sets$cs_index)
 
         #if there are a lot of susie results, run DENTIST, to see if there are any bad SNPs, then rerun susie if any SNPs are removed
-        if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold) {
+        if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold && is.na(args$worker_guid)) {
           message('performing qc')
           qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
           study <- qc_results$study

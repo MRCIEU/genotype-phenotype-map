@@ -140,9 +140,13 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(source, id) |>
     dplyr::rename(source_id=id)
 
-  gene_subset <- studies_db$gene_annotations$data |>
+  gene_subset_ensembl_id <- studies_db$gene_annotations$data |>
     dplyr::select(ensembl_id, id) |>
-    dplyr::rename(gene_id=id)
+    dplyr::rename(gene_id_from_ensembl_id=id)
+  
+  gene_subset_gene_name <- studies_db$gene_annotations$data |>
+    dplyr::select(gene, id) |>
+    dplyr::rename(gene_id_from_name=id)
   
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- vroom::vroom(
@@ -151,7 +155,15 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     col_types = studies_processed_column_types
   ) |>
     dplyr::left_join(sources_subset, by=c("source"="source")) |>
-    dplyr::left_join(gene_subset, by=c("ensg"="ensembl_id")) |>
+    dplyr::left_join(gene_subset_ensembl_id, by=c("ensg"="ensembl_id")) |>
+    dplyr::left_join(gene_subset_gene_name, by=c("gene"="gene")) |>
+    dplyr::mutate(
+      gene_id = dplyr::case_when(
+        !is.na(gene_id_from_ensembl_id) ~ gene_id_from_ensembl_id,
+        is.na(gene_id_from_ensembl_id) & !is.na(gene_id_from_name) ~ gene_id_from_name,
+        TRUE ~ NA_integer_
+      )
+    ) |>
     dplyr::filter(study_name %in% studies_db$study_extractions$data$study & trait %in% studies_db$study_extractions$data$study) |>
     resolve_ids_for_table(studies_db$studies$existing_ids, studies_db$studies$persist_id_from)
 

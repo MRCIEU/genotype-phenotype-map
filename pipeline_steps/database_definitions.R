@@ -62,7 +62,8 @@ studies_db <- list(
       category TEXT NOT NULL,
       probe TEXT,
       tissue TEXT,
-      source_id INTEGER ,
+      cell_type TEXT,
+      source_id INTEGER,
       variant_type TEXT,
       p_value_threshold DOUBLE,
       gene_id INTEGER,
@@ -204,9 +205,9 @@ additional_studies_tables <- list(
     name = "coloc_groups_wide",
     query = "CREATE TABLE coloc_groups_wide AS 
       SELECT coloc_groups.*, 
-        study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
+        snp_annotations.chr, snp_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
         study_extractions.ld_block, snp_annotations.display_snp, snp_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
-        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM coloc_groups 
       JOIN studies ON coloc_groups.study_id = studies.id
@@ -223,7 +224,7 @@ additional_studies_tables <- list(
     query = "CREATE TABLE rare_results_wide AS 
       SELECT rare_results.*,
         study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans, snp_annotations.display_snp, snp_annotations.rsid,
-        gene_annotation.gene AS gene, situated_gene_annotation.gene AS situated_gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+        gene_annotation.gene AS gene, situated_gene_annotation.gene AS situated_gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         ld_blocks.ld_block, study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM rare_results
       JOIN studies ON rare_results.study_id = studies.id

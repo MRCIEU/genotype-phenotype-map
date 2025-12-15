@@ -38,7 +38,7 @@ main <- function() {
   }
 
   studies_to_process <- studies_to_process |>
-    # dplyr::filter(!study_name %in% studies_processed$study_name) |>
+    dplyr::filter(!study_name %in% studies_processed$study_name) |>
     dplyr::filter(!study_name %in% studies_to_ignore$study) |>
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
@@ -129,6 +129,11 @@ calculate_besd_studies_to_process <- function(entries) {
 
     category <- ifelse(is.null(metadata$category), study_categories$continuous, tolower(metadata$category))
     tissue <- ifelse(is.null(metadata$tissue), NA, metadata$tissue)
+    cell_type <- ifelse(is.null(metadata$cell_type) || length(metadata$cell_type) == 0, NA, metadata$cell_type)
+
+    if (!is.na(cell_type) && !cell_type %in% cell_types) {
+      stop(glue::glue('Error: cell_type is not valid: {cell_type}'))
+    }
 
     return(data.frame(
       data_type = besd_study[['data_type']],
@@ -148,7 +153,8 @@ calculate_besd_studies_to_process <- function(entries) {
       probe = probes,
       gene = genes,
       ensg = ensgs,
-      tissue = metadata$tissue,
+      tissue = tissue,
+      cell_type = cell_type,
       coverage = besd_study[['coverage']],
       heritability = NA,
       heritability_se = NA
@@ -229,6 +235,7 @@ calculate_opengwas_studies_to_process <- function(entries) {
       gene = NA,
       probe = NA,
       tissue = NA,
+      cell_type = NA,
       coverage = opengwas_study[['coverage']],
       heritability = ldsc_observed_h2,
       heritability_se = ldsc_observed_h2_se
@@ -269,6 +276,7 @@ calculate_tsv_studies_to_process <- function(entries) {
       gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
       tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA),
+      cell_type = NA,
       coverage = entry[['coverage']],
       heritability = NA,
       heritability_se = NA

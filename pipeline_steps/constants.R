@@ -62,6 +62,22 @@ data_type_names <- list(splice_variant='sQTL',
                            plasma_protein='Plasma Protein',
                            phenotype='Phenotype'
 )
+cell_types <- c(
+  "B IN",
+  "B Mem",
+  "CD4 ET",
+  "CD4 NC",
+  "CD4 SOX4",
+  "CD8 ET",
+  "CD8 NC",
+  "CD8 S100B",
+  "DC",
+  "Mono C",
+  "Mono NC",
+  "NK",
+  "NKR",
+  "Plasma"
+)
 study_categories <- list(continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
 cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')

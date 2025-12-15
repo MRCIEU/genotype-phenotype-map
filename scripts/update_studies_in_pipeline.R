@@ -16,28 +16,8 @@ update_method <- function(studies_file, type, unique_study_ids_to_update = NULL)
     print(paste('FILE MISSING:', studies_file))
     return()
   }
+  #...
 
-  file.remove()
-
-  #TODO: delete and recreate svg files for finemapped studies.  Also look into changing logic for smaller ld blocks.
-
-
-
-    # problematic_imputed_snps_file <- glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv')
-    # if (!file.exists(problematic_imputed_snps_file)) {
-    #   problematic_imputed_snps <- data.frame()
-    # } else {
-    #   problematic_imputed_snps <- vroom::vroom(problematic_imputed_snps_file, show_col_types = F)
-    # }
-    # problematic_finemapped_snps_file <- glue::glue('{ld_block_data_dir}/{block}/problematic_finemapped_snps.tsv')
-    # if (!file.exists(problematic_finemapped_snps_file)) {
-    #   problematic_finemapped_snps <- data.frame()
-    # } else {
-    #   problematic_finemapped_snps <- vroom::vroom(problematic_finemapped_snps_file, show_col_types = F)
-    # }
-    # finemapped_studies <- vroom::vroom(studies_file, show_col_types = F) |>
-    #   dplyr::filter(!unique_study_id %in% problematic_finemapped_snps$unique_study_id | study %in% problematic_imputed_snps$study)
-  # }
 }
 
 update_study_dirs <- function() {

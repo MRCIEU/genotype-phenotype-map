@@ -155,6 +155,76 @@ p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categor
 ggsave(p_snp_pleiotropy, filename = file.path(results_analysis_dir, "snp_pleiotropy_plot.png"), width = 8, height = 6)
 ```
 
+```{r gene_pleiotropy_vs_methQTL, echo=F}
+# Get coloc group data with data_type and gene information
+coloc_group_meth_analysis <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*,
+  studies.gene, studies.data_type, studies.tissue, studies.study_name,
+  gene_annotations.gene_biotype,
+  study_extractions.cis_trans
+  FROM coloc_groups
+  JOIN studies ON coloc_groups.study_id = studies.id
+  JOIN study_extractions ON coloc_groups.study_extraction_id = studies.study_extractions.id
+  LEFT JOIN gene_annotations ON studies.gene_id = gene_annotations.id
+  WHERE study_extractions.min_p < 5e-8
+")
+
+# For each coloc group, calculate:
+# 1. Whether it contains methylation data_type
+# 2. Number of protein-coding genes that are NOT from methylation data_type
+coloc_group_meth_summary <- coloc_group_meth_analysis |>
+  group_by(coloc_group_id) |>
+  summarise(
+    has_methylation = any(data_type == "methylation", na.rm = TRUE),
+    num_protein_coding_non_meth = sum(
+      gene_biotype == "protein_coding" & 
+      data_type != "methylation" & 
+      !is.na(gene), 
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  ) |>
+  # Convert to binary for logistic regression
+  mutate(has_methylation = as.integer(has_methylation))
+
+# Fit logistic regression model
+glm_meth <- glm(has_methylation ~ num_protein_coding_non_meth, 
+                data = coloc_group_meth_summary, 
+                family = binomial(link = "logit"))
+glm_summary <- summary(glm_meth)
+glm_p <- coef(glm_summary)[2, "Pr(>|z|)"]
+glm_coef <- coef(glm_meth)[2]
+
+# Create annotation text
+meth_stats_text <- paste0(
+  "Coefficient = ", round(glm_coef, 3), "\n",
+  "p = ", formatC(glm_p, format = "e", digits = 2)
+)
+
+# Create plot with logistic regression curve
+meth_plot <- ggplot(coloc_group_meth_summary, 
+  aes(x = num_protein_coding_non_meth, y = has_methylation)) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.3, color = "#006400", size = 0.8) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), 
+              se = TRUE, color = "black", linewidth = 0.8) +
+  annotate("label", x = -Inf, y = Inf, label = meth_stats_text, 
+           hjust = -0.1, vjust = 1.5, size = 3.5, family = "mono",
+           fill = "white", alpha = 0.8) +
+  labs(
+    title = "Relationship between Methylation Presence and Protein-Coding Genes",
+    subtitle = "Logistic regression: Probability of methylation in coloc group vs. number of non-methylation protein-coding genes",
+    x = "Number of protein-coding genes (excluding methylation)",
+    y = "Has methylation in coloc group"
+  ) +
+  scale_y_continuous(breaks = c(0, 1), labels = c("No", "Yes")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 9))
+
+meth_plot_file <- file.path(results_analysis_dir, "pleiotropy_gene_vs_methQTL.png")
+ggsave(meth_plot, filename = meth_plot_file, width = 10, height = 6)
+print(meth_plot)
+```
+
 ```{r l_shaped_pleiotropy, echo=F}
 num_coloc_groups <- DBI::dbGetQuery(studies_conn, "SELECT COUNT(DISTINCT coloc_group_id) FROM coloc_groups")
 coloc_group_data <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*,
@@ -235,7 +305,7 @@ multiple_genes_in_coloc_group <- function(only_protein_coding = FALSE, include_t
     geom_text(aes(label = count), vjust = -0.5, size = 3) +
     scale_x_discrete(limits = c(as.character(1:20), ">20")) +
     labs(
-      title = glue::glue("(B) No Methylation: Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per coloc group{if (include_trans) ', including trans' else ''}"),
+      title = glue::glue("(B) Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per coloc group{if (include_trans) ', including trans' else ''}"),
       x = "Number of unique genes per coloc group",
       y = "Frequency",
       caption = paste("Total groups (with genes):", nrow(coloc_group_analysis_filtered),
@@ -342,22 +412,22 @@ significant_cis_coloc_pairs <- joined_coloc_results %>%
   filter(h4 > 0.8 & (is.na(cis_trans_a) | cis_trans_a == 'cis') & (is.na(cis_trans_b) | cis_trans_b == 'cis') & min_p_a < 5e-8 & min_p_b < 5e-8)
 
 most_gene_a_colocalising <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_a) & data_type_b == 'phenotype') %>%
+  filter(!is.na(gene_a) & data_type_b == 'phenotype' & data_type_a != 'methylation') %>%
   group_by(gene_a) %>%
   rename(gene = gene_a, trait = trait_name_b)
 
 most_gene_b_colocalising <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_b) & data_type_a == 'phenotype') %>%
+  filter(!is.na(gene_b) & data_type_a == 'phenotype' & data_type_b != 'methylation') %>%
   group_by(gene_b) %>%
   rename(gene = gene_b, trait = trait_name_a)
 
 most_gene_a_colocalising_trait_category <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_a) & data_type_b == 'phenotype') %>%
+  filter(!is.na(gene_a) & data_type_b == 'phenotype' & data_type_a != 'methylation') %>%
   group_by(gene_a) %>%
   rename(gene = gene_a, trait_category = trait_category_b)
 
 most_gene_b_colocalising_trait_category <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_b) & data_type_a == 'phenotype') %>%
+  filter(!is.na(gene_b) & data_type_a == 'phenotype' & data_type_b != 'methylation') %>%
   group_by(gene_b) %>%
   rename(gene = gene_b, trait_category = trait_category_a)
 
@@ -404,6 +474,7 @@ number_of_genes <- lapply(seq_along(all_phenotype_studies$id), function(i) {
     JOIN studies ON coloc_groups.study_id = studies.id
     JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
     WHERE study_extractions.min_p < 5e-8
+    AND studies.data_type != 'methylation'
     AND coloc_groups.coloc_group_id IN (SELECT DISTINCT coloc_group_id
       FROM coloc_groups
       JOIN studies on coloc_groups.study_id = studies.id
@@ -460,16 +531,16 @@ count_gene_pairs <- valid_colocs %>%
   arrange(desc(count))
 
 ld_block_id <- 60
-all_coloc_groups_in_ld_block <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT coloc_group_id, gene FROM coloc_groups_wide
+all_coloc_groups_in_ld_block <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT coloc_group_id, gene, data_type FROM coloc_groups_wide
   WHERE ld_block_id = {ld_block_id}
-  AND min_p < 5e-8
+  AND min_p <= 5e-8
 "))
 
 ld_block_info <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT * FROM ld_blocks WHERE id = {ld_block_id}"))
 
 # Create gene pairs within each coloc group
 gene_pairs <- all_coloc_groups_in_ld_block %>%
-  filter(!is.na(gene)) %>%  # Filter out NA genes
+  filter(!is.na(gene) & data_type != 'methylation') %>%  # Filter out NA genes
   group_by(coloc_group_id) %>%
   do({
     genes_in_group <- unique(.$gene)
@@ -547,7 +618,7 @@ network_plot <- ggraph(gene_tidy_graph, layout = "fr", niter = 1000) +
   geom_node_text(aes(label = name), size = 2.2, colour = "grey40", repel = TRUE) +
   scale_edge_alpha_continuous(range = c(0.1, 0.8)) +
   scale_size_continuous(range = c(2, 8)) +
-  scale_fill_gradient(low = "#c7e9c0", high = "#006400", name = "Number of genes in ±1Mb window") +
+  scale_fill_gradient(low = "#c7e9c0", high = "#006400", name = "# of genes ±1Mb") +
   labs(
     title = "(C) Gene-Gene Colocalization Network within an LD Block",
     subtitle = paste("LD Block", ld_block_info$ld_block),
@@ -559,8 +630,12 @@ network_plot <- ggraph(gene_tidy_graph, layout = "fr", niter = 1000) +
     )
   ) +
   theme_void() +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
-        plot.subtitle = element_text(hjust = 0.5))
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(size = 8)
+  )
 
 p_gene_gene_network_file <- file.path(results_analysis_dir, "pleiotropy_c_gene_gene_network.png")
 ggsave(network_plot, filename = p_gene_gene_network_file, width = 8, height = 6)
@@ -758,22 +833,22 @@ significant_cis_coloc_pairs <- joined_coloc_results %>%
   filter(h4 > 0.8 & (is.na(cis_trans_a) | cis_trans_a == 'cis') & (is.na(cis_trans_b) | cis_trans_b == 'cis') & min_p_a < 5e-8 & min_p_b < 5e-8)
 
 most_gene_a_colocalising <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_a) & data_type_b == 'phenotype') %>%
+  filter(!is.na(gene_a) & data_type_b == 'phenotype' & data_type_a != 'methylation') %>%
   group_by(gene_a) %>%
   rename(gene = gene_a, trait = trait_name_b)
 
 most_gene_b_colocalising <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_b) & data_type_a == 'phenotype') %>%
+  filter(!is.na(gene_b) & data_type_a == 'phenotype' & data_type_b != 'methylation') %>%
   group_by(gene_b) %>%
   rename(gene = gene_b, trait = trait_name_a)
 
 most_gene_a_colocalising_trait_category <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_a) & data_type_b == 'phenotype') %>%
+  filter(!is.na(gene_a) & data_type_b == 'phenotype' & data_type_a != 'methylation') %>%
   group_by(gene_a) %>%
   rename(gene = gene_a, trait_category = trait_category_b)
 
 most_gene_b_colocalising_trait_category <- significant_cis_coloc_pairs %>%
-  filter(!is.na(gene_b) & data_type_a == 'phenotype') %>%
+  filter(!is.na(gene_b) & data_type_a == 'phenotype' & data_type_b != 'methylation') %>%
   group_by(gene_b) %>%
   rename(gene = gene_b, trait_category = trait_category_a)
 

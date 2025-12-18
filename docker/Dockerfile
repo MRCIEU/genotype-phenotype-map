@@ -55,11 +55,11 @@ ENV BCFTOOLS_PLUGINS=/home/bcftools
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/latest/lib/libmkl_rt.so
 
 COPY docker/requirements.* docker/
+RUN pip install --no-cache-dir -r docker/requirements.txt && \
+    rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 RUN Rscript docker/requirements.R && \
     rm -rf /tmp/Rtmp* /tmp/downloaded_packages /root/.cache /var/cache/* && \
     find /usr/local/lib/R -name "*.tar.gz" -delete && \
     find /usr/local/lib/R -name "*.zip" -delete
-RUN pip install --no-cache-dir -r docker/requirements.txt && \
-    rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 COPY . /home/pipeline

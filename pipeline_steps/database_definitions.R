@@ -374,8 +374,7 @@ gwas_upload_db <- list(
       bp INTEGER NOT NULL,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
-      ld_block TEXT,
-      gene TEXT
+      ld_block TEXT
     )"
   ),
   coloc_pairs = list(

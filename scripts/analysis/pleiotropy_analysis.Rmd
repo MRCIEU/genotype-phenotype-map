@@ -387,27 +387,6 @@ gene_coloc_density <- gene_coloc_partners |>
     density_decile = factor(density_decile, levels = 1:10, labels = paste0("Decile ", 1:10))
   )
 
-# Correlation summary
-corr_pearson <- cor(gene_coloc_density$num_coloc_partner_genes, gene_coloc_density$neighborhood_genes, method = "pearson")
-
-gene_density_hist <- ggplot(gene_coloc_density, aes(x = num_coloc_partner_genes)) +
-  geom_histogram(binwidth = 1, fill = "#006400", alpha = 0.8, color = "black") +
-  facet_wrap(~ density_decile, scales = "free_y") +
-  labs(
-    title = "(B a) Colocalising genes vs regional protein-coding gene density",
-    subtitle = "Histogram of protein-coding partners per gene, faceted by ±1Mb density deciles",
-    x = "Number of protein-coding genes colocalising with gene",
-    y = "Count",
-    caption = paste0("Pearson r = ", round(corr_pearson, 3),
-                     "; window = ±1Mb; density = protein-coding genes in window (excluding self)")
-  ) +
-  theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-
-gene_density_file <- file.path(results_analysis_dir, "pleiotropy_b_gene_density_hist.png")
-ggsave(gene_density_hist, filename = gene_density_file, width = 10, height = 7)
-print(gene_density_hist)
-
 significant_cis_coloc_pairs <- joined_coloc_results %>%
   filter(h4 > 0.8 & (is.na(cis_trans_a) | cis_trans_a == 'cis') & (is.na(cis_trans_b) | cis_trans_b == 'cis') & min_p_a < 5e-8 & min_p_b < 5e-8)
 
@@ -522,8 +501,6 @@ knitr::kable(number_of_genes_summary, caption = "Top 10 studies by number of gen
 median_sample_size <- median(number_of_genes$sample_size, na.rm = TRUE)
 median_num_genes <- median(number_of_genes$num_genes, na.rm = TRUE)
 
-
-
 valid_colocs <- dplyr::filter(joined_coloc_results, ld_block_id == 60 & h4 >= 0.8 & min_p_a < 5e-8 & min_p_b < 5e-8 & !is.na(gene_a) & !is.na(gene_b) & gene_a != gene_b)
 count_gene_pairs <- valid_colocs %>%
   group_by(gene_a, gene_b) %>%
@@ -580,13 +557,6 @@ block_genes <- protein_coding_genes |>
   pull(gene) |>
   unique()
 
-# Compute block-level density/coloc table including genes with zero coloc partners
-block_coloc_density <- gene_density |>
-  filter(gene %in% block_genes) |>
-  left_join(gene_coloc_partners, by = "gene") |>
-  mutate(num_coloc_partner_genes = tidyr::replace_na(num_coloc_partner_genes, 0))
-corr_block <- cor(block_coloc_density$neighborhood_genes, block_coloc_density$num_coloc_partner_genes, use = "complete.obs")
-
 missing_block_genes <- setdiff(block_genes, V(gene_graph)$name)
 if (length(missing_block_genes) > 0) {
   gene_graph <- add_vertices(gene_graph, nv = length(missing_block_genes), name = missing_block_genes)
@@ -624,9 +594,7 @@ network_plot <- ggraph(gene_tidy_graph, layout = "fr", niter = 1000) +
     subtitle = paste("LD Block", ld_block_info$ld_block),
     caption = paste(
       "Total Genes:", vcount(gene_graph),
-      "| Links in coloc groups:", ecount(gene_graph),
-      "| Pearson r (density vs coloc partners):",
-      round(corr_block, 3)
+      "| Links in coloc groups:", ecount(gene_graph)
     )
   ) +
   theme_void() +
@@ -809,10 +777,10 @@ gene_density_coloc_scatter <- ggplot(ld_block_coloc_density,
            fill = "white", alpha = 0.8) +
   labs(
     title = "(B b) Gene density vs colocalizing partners within LD blocks",
-    subtitle = paste("Overall correlation (cis only, limited to partners within same LD block): r =", round(overall_corr, 3)),
+    subtitle = paste("Overall correlation (limited to partners within same LD block): r =", round(overall_corr, 3)),
     x = "Number of protein-coding genes in ±1Mb window",
     y = "Number of colocalizing protein-coding genes (same LD block only)",
-    caption = paste("Each point is a gene. Coloc partners counted only within the same LD block. Cis-only analysis (no trans).")
+    caption = paste("Each point is a gene. Coloc partners counted only within the same LD block")
   ) +
   theme_minimal() +
   theme(

@@ -3,7 +3,11 @@ source('../../pipeline_steps/common_extraction_functions.R')
 
 main <- function() {
   vep_annotations_file <- glue::glue('{variant_annotation_dir}/vep_annotations_hg38.tsv.gz')
-  existing_vep <- vroom::vroom(vep_annotations_file)
+  if (file.exists(vep_annotations_file)) {
+    existing_vep <- vroom::vroom(vep_annotations_file)
+  } else {
+    existing_vep <- data.frame()
+  }
   genebass_vep <- vroom::vroom(glue::glue('{variant_annotation_dir}/genebass_vep_rare_variantannotations_hg38_altered.txt')) |>
     dplyr::filter(!Uploaded_variation %in% existing_vep$snp)
   backman_vep <- vroom::vroom(glue::glue('{variant_annotation_dir}/backman_vep_rare_variantannotations_hg38_altered.txt')) |>
@@ -30,15 +34,14 @@ main <- function() {
         amr_af = stringr::str_extract(Extra, "(?<=AMR_AF=)[^;]+"),
         afr_af = stringr::str_extract(Extra, "(?<=AFR_AF=)[^;]+"),
         sas_af = stringr::str_extract(Extra, "(?<=SAS_AF=)[^;]+"),
-        snp = format_unique_snp_string(CHR, BP, EA, OA),
+        flipped = EA == ref_allele,
+        EA_new = ifelse(flipped, OA, EA),
+        OA_new = ifelse(flipped, EA, OA),
       ) |>
-      dplyr::rename(rsid = Existing_variation) |>
-      dplyr::mutate(flipped = ifelse(EA == ref_allele, F, T)) |>
-      dplyr::mutate(display_snp = ifelse(flipped,
-        paste0(CHR, ':', BP, ' ', OA, '/', EA),
-        paste0(CHR, ':', BP, ' ', EA, '/', OA))
-      ) |>
-      dplyr::select(-Location, -Allele, -Feature, -Extra, -Uploaded_variation) |>
+      dplyr::rename(rsid = Existing_variation, snp = Uploaded_variation) |>
+      dplyr::mutate(display_snp = paste0(CHR, ':', BP, ' ', OA_new, '/', EA_new)) |>
+      dplyr::select(-Location, -Allele, -Feature, -Extra, -EA, -OA) |>
+      dplyr::rename(EA = EA_new, OA = OA_new) |>
       dplyr::rename_with(tolower)
   }
 
@@ -47,6 +50,12 @@ main <- function() {
   all_new_vep <- all_new_vep |>
     dplyr::distinct(Uploaded_variation, .keep_all = T) |>
     extract_columns()
+
+  duplicates <- all_new_vep[duplicated(all_new_vep$snp) | duplicated(all_new_vep$display_snp), ]
+  if (nrow(duplicates) > 0) {
+    message(dplyr::select(duplicates, snp, display_snp))
+    stop("ERROR: Found ", nrow(duplicates), " rows with duplicate snp or display_snp values.")
+  }
 
   message(glue::glue('Formatting {nrow(all_new_vep)} new VEP annotations'))
   all_vep <- rbind(existing_vep, all_new_vep)

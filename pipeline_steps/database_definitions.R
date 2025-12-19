@@ -46,8 +46,7 @@ studies_db <- list(
       data_type TEXT NOT NULL,
       trait TEXT NOT NULL,
       trait_name TEXT NOT NULL,
-      trait_category TEXT,
-      old_category TEXT
+      trait_category TEXT
     )")
   ),
   studies = list(
@@ -63,12 +62,15 @@ studies_db <- list(
       category TEXT NOT NULL,
       probe TEXT,
       tissue TEXT,
-      source_id INTEGER ,
+      cell_type TEXT,
+      source_id INTEGER,
       variant_type TEXT,
       p_value_threshold DOUBLE,
       gene_id INTEGER,
       gene TEXT,
       ensg TEXT,
+      heritability REAL,
+      heritability_se REAL,
       FOREIGN KEY (trait_id) REFERENCES traits(id),
       FOREIGN KEY (source_id) REFERENCES study_sources(id),
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
@@ -116,10 +118,11 @@ studies_db <- list(
     persist_id_from = "unique_study_id",
     query = "CREATE TABLE study_extractions (
       id INTEGER PRIMARY KEY,
-      study_id INTEGER,
-      snp_id INTEGER,
-      snp TEXT NOT NULL,
-      ld_block_id INTEGER,
+      study_id INTEGER NOT NULL,
+      snp_id INTEGER NOT NULL,
+      display_snp TEXT NOT NULL NOT NULL,
+      rsid TEXT NOT NULL NOT NULL,
+      ld_block_id INTEGER NOT NULL,
       unique_study_id TEXT NOT NULL,
       study TEXT NOT NULL,
       file TEXT NOT NULL,
@@ -130,12 +133,13 @@ studies_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
-      gene TEXT,
       gene_id INTEGER,
+      situated_gene_id INTEGER,
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
-      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id),
+      FOREIGN KEY (situated_gene_id) REFERENCES gene_annotations(id)
     )",
     indexes = "CREATE INDEX idx_study_extractions_study_id ON study_extractions(study_id);"
   ),
@@ -154,7 +158,7 @@ studies_db <- list(
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )")
   ),
   rare_results = list(
@@ -162,14 +166,36 @@ studies_db <- list(
     persist_id_from = NA,
     query = "CREATE TABLE rare_results (
       rare_result_group_id INTEGER,
-      study_id INTEGER,
-      study_extraction_id INTEGER,
-      snp_id INTEGER,
-      ld_block_id INTEGER,
+      study_id INTEGER NOT NULL,
+      study_extraction_id INTEGER NOT NULL,
+      snp_id INTEGER NOT NULL,
+      gene_id INTEGER,
+      situated_gene_id INTEGER,
+      ld_block_id INTEGER NOT NULL,
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id),
+      FOREIGN KEY (situated_gene_id) REFERENCES gene_annotations(id)
+    )"
+  ),
+  snp_pleiotropy = list(
+    name = "snp_pleiotropy",
+    persist_id_from = NA,
+    query = "CREATE TABLE snp_pleiotropy (
+      snp_id INTEGER PRIMARY KEY NOT NULL,
+      distinct_trait_categories INTEGER NOT NULL,
+      distinct_protein_coding_genes INTEGER NOT NULL
+    )"
+  ),
+  gene_pleiotropy = list(
+    name = "gene_pleiotropy",
+    persist_id_from = NA,
+    query = "CREATE TABLE gene_pleiotropy (
+      gene_id INTEGER PRIMARY KEY NOT NULL,
+      distinct_trait_categories INTEGER NOT NULL,
+      distinct_protein_coding_genes INTEGER NOT NULL
     )"
   )
 )
@@ -179,9 +205,9 @@ additional_studies_tables <- list(
     name = "coloc_groups_wide",
     query = "CREATE TABLE coloc_groups_wide AS 
       SELECT coloc_groups.*, 
-        study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans,
-        study_extractions.ld_block, snp_annotations.display_snp, gene_annotations.gene, gene_annotations.id as gene_id,
-        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+        snp_annotations.chr, snp_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
+        study_extractions.ld_block, snp_annotations.display_snp, snp_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
+        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM coloc_groups 
       JOIN studies ON coloc_groups.study_id = studies.id
@@ -197,15 +223,15 @@ additional_studies_tables <- list(
     name = "rare_results_wide",
     query = "CREATE TABLE rare_results_wide AS 
       SELECT rare_results.*,
-        study_extractions.chr, study_extractions.bp, study_extractions.min_p, snp_annotations.display_snp,
-        gene_annotations.gene, gene_annotations.id as gene_id,
-        traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue,
+        study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans, snp_annotations.display_snp, snp_annotations.rsid,
+        gene_annotation.gene AS gene, situated_gene_annotation.gene AS situated_gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         ld_blocks.ld_block, study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM rare_results
       JOIN studies ON rare_results.study_id = studies.id
       JOIN snp_annotations ON rare_results.snp_id = snp_annotations.id
       JOIN study_extractions ON rare_results.study_extraction_id = study_extractions.id
-      LEFT JOIN gene_annotations ON studies.gene_id = gene_annotations.id
+      LEFT JOIN gene_annotations AS gene_annotation ON rare_results.gene_id = gene_annotation.id
+      LEFT JOIN gene_annotations AS situated_gene_annotation ON rare_results.situated_gene_id = situated_gene_annotation.id
       JOIN traits ON studies.trait_id = traits.id
       JOIN study_sources ON studies.source_id = study_sources.id
       JOIN ld_blocks ON rare_results.ld_block_id = ld_blocks.id",
@@ -348,8 +374,7 @@ gwas_upload_db <- list(
       bp INTEGER NOT NULL,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
-      ld_block TEXT,
-      gene TEXT
+      ld_block TEXT
     )"
   ),
   coloc_pairs = list(

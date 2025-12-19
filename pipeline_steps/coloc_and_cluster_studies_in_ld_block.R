@@ -31,17 +31,27 @@ main <- function() {
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
+  message(glue::glue('{args$ld_block}: {finemapped_file}'))
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
+      dplyr::filter(min_p <= lowest_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
+  } else {
+    finemapped_studies <- data.frame()
   }
 
   if (!is.na(args$worker_guid)) {
-    existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
-    existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
-    finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-      dplyr::mutate(file = sub('/local-scratch/projects/genotype-phenotype-map/data/', data_dir, file)) |>
-      dplyr::arrange(unique_study_id)
+     existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
+     message(glue::glue('{args$ld_block}: {existing_finemapped_studies_file}'))
+
+    if (file.exists(existing_finemapped_studies_file)) {
+     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
+     finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
+       dplyr::filter(min_p <= lowest_p_value_threshold) |>
+       dplyr::arrange(unique_study_id)
+    } else {
+      existing_finemapped_studies <- data.frame()
+    }
   }
 
   if (!file.exists(finemapped_file) || nrow(block) == 0 || nrow(finemapped_studies) == 0) {
@@ -65,10 +75,11 @@ main <- function() {
   }
 
   if (!is.na(args$worker_guid)) {
-    finemapped_subset <- dplyr::filter(finemapped_studies,
-      min_p <= lowest_p_value_threshold & 
-      (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
-    )
+    finemapped_subset <- finemapped_studies |>
+      dplyr::filter(
+        min_p <= lowest_p_value_threshold & 
+        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
+      )
   } else {
     finemapped_subset <- finemapped_studies
   }
@@ -89,7 +100,13 @@ main <- function() {
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
-  new_coloc_results <- lapply(seq_len(nrow(study_pairs)), function(i) {
+  # num_cores <- 200
+  # chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
+  # chunked_study_pairs <- split(study_pairs, chunk_factor)
+
+  # new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
+
+  results <- lapply(seq_len(nrow(study_pairs)), function(i) {
     pair <- study_pairs[i,]
     first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
     second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
@@ -129,8 +146,8 @@ main <- function() {
     result <- dplyr::bind_cols(pair, result)
     return(result)
   })
+  new_coloc_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
 
-  new_coloc_results <- dplyr::bind_rows(new_coloc_results[!sapply(new_coloc_results, is.null)])
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
@@ -156,11 +173,6 @@ main <- function() {
 
     additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
 
-    clustered_results$groups <- clustered_results$groups |>
-      dplyr::mutate(ld_block = args$ld_block) |>
-      dplyr::left_join(additional_data_per_cluster, by = "component") |>
-      dplyr::arrange(component)
-
     if (nrow(clustered_results$groups) == 0) {
       clustered_results$groups <- data.frame(
         unique_study_id = character(),
@@ -170,6 +182,11 @@ main <- function() {
         h4_connectedness = numeric(),
         h3_connectedness = numeric()
       )
+    } else {
+      clustered_results$groups <- clustered_results$groups |>
+        dplyr::mutate(ld_block = args$ld_block) |>
+        dplyr::left_join(additional_data_per_cluster, by = "component") |>
+        dplyr::arrange(component)
     }
 
     clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
@@ -489,7 +506,7 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
       coloc_results$pair_id <- paste(coloc_results$unique_study_a, coloc_results$unique_study_b, sep = "_")
       matches$pair_id <- paste(matches$unique_study_a, matches$unique_study_b, sep = "_")
       
-      coloc_results$false_positive[coloc_results$pair_id %in% matches$pair_id] <- TRUE
+      coloc_results$false_positive[coloc_results$pair_id %in% matches$pair_id & coloc_results$h4 > posterior_prob_h4_threshold] <- TRUE
       coloc_results$pair_id <- NULL
     }
   }
@@ -503,7 +520,8 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
     
     same_component_mask <- !is.na(coloc_results$component_a) & 
                           !is.na(coloc_results$component_b) & 
-                          coloc_results$component_a == coloc_results$component_b
+                          coloc_results$component_a == coloc_results$component_b &
+                          coloc_results$h4 < posterior_prob_h4_threshold
     
     coloc_results$false_negative[same_component_mask] <- TRUE
     
@@ -520,6 +538,7 @@ mark_false_positives_and_negatives <- function(coloc_results, clustered_results)
 make_adjacency_matrix <- function(coloc_results) {
   pvals <- pmax(coloc_results$min_p_study_a, coloc_results$min_p_study_b)
   weights <- weights_from_pvals(pvals) * ifelse(coloc_results$h4 >= posterior_prob_h4_threshold, 1, 0)
+  # weights <- ifelse(coloc_results$h4 >= posterior_prob_h4_threshold, 1, 0)
   coloc_results <- coloc_results |> dplyr::mutate(weight = weights)
 
   h4_adj_mx <- rbind(

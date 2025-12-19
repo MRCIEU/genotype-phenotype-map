@@ -4,7 +4,8 @@ Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 data_dir <- Sys.getenv('DATA_DIR')
 gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
-oracle_server <- Sys.getenv('ORACLE_SERVER')
+oracle_api_server <- Sys.getenv('ORACLE_SERVER')
+oracle_pipeline_server <- Sys.getenv('ORACLE_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8
@@ -27,6 +28,7 @@ gpm_website_data <- list(
 
 latest_results_dir <- glue::glue('{results_dir}latest/')
 current_results_dir <- glue::glue('{results_dir}current/')
+results_analysis_dir <- glue::glue('{latest_results_dir}analysis/')
 pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
 ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
 ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
@@ -59,6 +61,22 @@ data_type_names <- list(splice_variant='sQTL',
                            cell_trait='Cell Trait',
                            plasma_protein='Plasma Protein',
                            phenotype='Phenotype'
+)
+cell_types <- c(
+  "B IN",
+  "B Mem",
+  "CD4 ET",
+  "CD4 NC",
+  "CD4 SOX4",
+  "CD8 ET",
+  "CD8 NC",
+  "CD8 S100B",
+  "DC",
+  "Mono C",
+  "Mono NC",
+  "NK",
+  "NKR",
+  "Plasma"
 )
 study_categories <- list(continuous='continuous', categorical='categorical')
 data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
@@ -112,6 +130,30 @@ finemapped_column_types <- vroom::cols(
   ignore = vroom::col_logical()
 )
 
+studies_processed_column_types <- vroom::cols(
+  data_type = vroom::col_character(),
+  data_format = vroom::col_character(),
+  study_name = vroom::col_character(),
+  trait = vroom::col_character(),
+  ancestry = vroom::col_character(),
+  sample_size = vroom::col_number(),
+  category = vroom::col_character(),
+  study_location = vroom::col_character(),
+  extracted_location = vroom::col_character(),
+  reference_build = vroom::col_character(),
+  p_value_threshold = vroom::col_number(),
+  gene = vroom::col_character(),
+  probe = vroom::col_character(),
+  tissue = vroom::col_character(),
+  source = vroom::col_character(),
+  variant_type = vroom::col_character(),
+  trait_name = vroom::col_character(),
+  ensg = vroom::col_character(),
+  coverage = vroom::col_character(),
+  heritability = vroom::col_double(),
+  heritability_se = vroom::col_double()
+)
+
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
   file_prefix <- sub('\\..*', '', file_name)
@@ -123,6 +165,7 @@ ld_block_dirs <- function(block) {
                         ld_block_data = glue::glue('{ld_block_data_dir}{block}'),
                         ld_reference_panel_prefix=glue::glue('{ld_reference_panel_dir}{block}')
   )
+  # ld_info <- dplyr::bind_cols(ld_info, ld_block_components(block))
   return(ld_info)
 }
 
@@ -135,6 +178,16 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 
 ld_block_string <- function(ancestry, chr, start, stop) {
   return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+}
+
+ld_block_components <- function(ld_block) {
+  components <- strsplit(ld_block, '[/-]')[[1]]
+  return(data.frame(
+    ancestry = components[1], 
+    chr = components[2], 
+    start = as.numeric(components[3]), 
+    stop = as.numeric(components[4])
+  ))
 }
 
 flattened_ld_block_name <- function(ld_block_string) {

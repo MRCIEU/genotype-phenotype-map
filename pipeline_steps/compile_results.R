@@ -33,17 +33,11 @@ main <- function() {
   message('Writing results')
   vroom::vroom_write(pipeline_data$studies_processed, args$new_studies_processed_file)
   vroom::vroom_write(pipeline_data$traits_processed, args$new_traits_processed_file)
-  vroom::vroom_write(pipeline_data$rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$study_extractions, args$study_extractions_file)
+  vroom::vroom_write(pipeline_data$rare_results, args$rare_results_file)
   vroom::vroom_write(pipeline_data$coloc_clustered_results, args$coloc_clustered_results_file)
   vroom::vroom_write(pipeline_data$coloc_pairwise_results, args$coloc_pairwise_results_file)
   # vroom::vroom_write(results_metadata, args$compiled_results_metadata_file)
-
-  # if (is.na(TEST_RUN)) {
-  #   rmarkdown::render("pipeline_summary.Rmd", output_file = args$pipeline_summary)
-  # } else {
-  #   vroom::vroom_write(data.frame(), args$pipeline_summary_file)
-  # }
 }
 
 aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file, studies_processed_file, traits_processed_file) {
@@ -110,6 +104,9 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
     dplyr::rename(trait=trait_name)
 
   traits_processed <- dplyr::bind_rows(traits_processed, traits_unprocessed) |> dplyr::distinct()
+  if (!"category" %in% colnames(traits_processed)) {
+    traits_processed <- dplyr::mutate(traits_processed, category = NA) 
+  }
 
   return(list(
     extracted_studies = extracted_studies,
@@ -129,20 +126,36 @@ create_study_extractions <- function(pipeline_data) {
     dplyr::filter(min_p <= p_value_threshold) |>
     dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, svg_file, file_with_lbfs, ignore)
 
-finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
+  finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]
 
-  rare_studies <- pipeline_data$rare_results |>
-    dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
-    tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
-    dplyr::rename(unique_study_id=traits, min_p=min_ps, known_gene=genes, file=files, snp=candidate_snp) |>
-    dplyr::mutate(min_p = as.numeric(min_p), cis_trans = NA) |>
-    tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
-    dplyr::mutate(bp = sub('-.*', '', bp)) |>
-    dplyr::mutate(bp = as.numeric(bp)) |>
-    dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, known_gene) |>
-    dplyr::mutate(file_with_lbfs = NA, svg_file = NA, ignore = F)
+  rare_genes_study_map <- pipeline_data$studies_processed |>
+    dplyr::filter(variant_type != variant_types$common & !is.na(gene)) |>
+    dplyr::select(study_name, gene) |>
+    dplyr::rename(known_gene=gene)
 
-  all_studies <- rbind(finemapped_studies, rare_studies)
+  if (nrow(pipeline_data$rare_results) > 0) {
+    rare_studies <- pipeline_data$rare_results |>
+      dplyr::mutate(candidate_snp=trimws(candidate_snp)) |>
+      tidyr::separate_rows(traits, min_ps, genes, files, sep=", ") |>
+      dplyr::rename(unique_study_id=traits, min_p=min_ps, situated_gene=genes, file=files, snp=candidate_snp) |>
+      dplyr::mutate(min_p = as.numeric(min_p)) |>
+      tidyr::separate(unique_study_id, into = c("study", "ancestry", "chr", "bp"), sep = "_", remove = F) |>
+      dplyr::mutate(bp = as.numeric(sub('-.*', '', bp))) |>
+      dplyr::mutate(file_with_lbfs = NA, svg_file = NA, ignore = F) |>
+      dplyr::mutate(
+        known_gene = rare_genes_study_map$known_gene[match(study, rare_genes_study_map$study_name)],
+        cis_trans = dplyr::case_when(
+          is.na(known_gene) | is.na(situated_gene) ~ NA_character_,
+          known_gene == situated_gene ~ "cis",
+          TRUE ~ "trans"
+        )
+      ) |>
+      dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, file_with_lbfs, svg_file, ignore, known_gene, situated_gene)
+  } else {
+    rare_studies <- data.frame()
+  }
+
+  all_studies <- dplyr::bind_rows(finemapped_studies, rare_studies)
   return(all_studies)
 }
 

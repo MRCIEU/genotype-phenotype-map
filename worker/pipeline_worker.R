@@ -16,10 +16,30 @@ parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess D
 parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
-redis_conn <- redux::hiredis(
-  host = Sys.getenv("REDIS_HOST", "redis"),
-  port = as.numeric(Sys.getenv("REDIS_PORT", 6379))
-)
+
+if (is.na(TEST_RUN)) {
+  redis_conn <- redux::hiredis(
+    host = Sys.getenv("REDIS_HOST", "redis"),
+    port = as.numeric(Sys.getenv("REDIS_PORT", 6379))
+  )
+} else {
+  flog.appender(appender.console())
+  redis_conn <- list(
+    BRPOP = function(queue, timeout = 0) {
+      return(jsonlite::fromJSON(args$custom_message_file))
+    },
+    LPUSH = function(queue, message) {
+      return(1)
+    }
+  )
+}
+
+snp_annotations <- vroom::vroom(
+  file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+  show_col_types = FALSE,
+  col_select = c('snp', 'rsid', 'display_snp')
+) |>
+  dplyr::mutate(snp = trimws(snp))
 
 process_gwas <- 'process_gwas'
 process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
@@ -34,11 +54,7 @@ main <- function() {
   }
 
   while(TRUE) {
-    if (is.na(TEST_RUN)) {
-      redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
-    } else {
-      redis_message <- jsonlite::fromJSON(args$custom_message_file)
-    }
+    redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
     
     if (!is.null(redis_message)) {
       gwas_info <- jsonlite::fromJSON(redis_message[[2]])
@@ -116,7 +132,7 @@ process_message <- function(gwas_info) {
         standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
         imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
         finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
-        coloc = glue::glue('{ld_info$ld_block_data}/colocalisation_complete')
+        coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
       )
 
       flog.info(paste('Standardising regions for block:', gwas_info$metadata$guid, block))
@@ -144,7 +160,7 @@ process_message <- function(gwas_info) {
       check_step_complete(output_files$finemapped, block, output)
 
       flog.info(paste('Colocalising regions for block:', gwas_info$metadata$guid, block))
-      coloc_regions <- glue::glue("Rscript colocalise_studies_in_ld_block.R",
+      coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {gwas_info$metadata$guid}")
@@ -153,19 +169,29 @@ process_message <- function(gwas_info) {
     })
 
     flog.info(paste('Compiling results for:', gwas_info$metadata$guid))
-    results <- compile_results()
+    results <- compile_results(gwas_info)
 
     if (is.na(TEST_RUN)) {
       send_update_gwas_upload(gwas_info, TRUE, NULL, results$coloc_results, results$study_extractions)
     } 
     
   }, error = function(e) {
-    flog.error(paste("Error processing message:", e$message))
+    error_msg <- if (!is.null(e$message) && nchar(e$message) > 0) {
+      e$message
+    } else {
+      paste("Error:", toString(e))
+    }
+    
+    flog.error(paste("Error processing message:", error_msg))
+    flog.error(paste("Error class:", class(e)[1]))
+    if (!is.null(e$call)) {
+      flog.error(paste("Error call:", deparse(e$call)))
+    }
     
     # Create error details
     error_details <- list(
       original_message = gwas_info,
-      error = e$message,
+      error = error_msg,
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     )
     
@@ -174,9 +200,9 @@ process_message <- function(gwas_info) {
       jsonlite::toJSON(error_details, auto_unbox = TRUE)
     )
 
-    send_update_gwas_upload(gwas_info, FALSE, e$message, NULL, NULL)
+    send_update_gwas_upload(gwas_info, FALSE, error_msg, NULL)
 
-    return(e$message)
+    return(error_msg)
   })
 }
 
@@ -238,11 +264,12 @@ create_study_metadata_files <- function(gwas_info) {
     study_location = gwas_info$file_location,
     extracted_location = extracted_study_dir,
     reference_build = gwas_info$metadata$reference_build,
-    p_value_threshold = lowest_p_value_threshold,
+    p_value_threshold = gwas_info$metadata$p_value_threshold,
     variant_type = variant_types$common,
     gene = NA,
     probe = NA,
-    tissue = NA
+    tissue = NA,
+    coverage = coverage_types$dense
   )
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')
   vroom::vroom_write(study_to_process, studies_to_process_file)
@@ -270,16 +297,13 @@ check_step_complete <- function(output_file, ld_block, output) {
   }
 }
 
-compile_results <- function() {
+compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
   
   compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
-  
-  snp_annotations <- vroom::vroom( file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types = FALSE) |>
-    dplyr::mutate(snp = trimws(snp), chr = as.character(chr), bp = as.numeric(bp)) |>
-    dplyr::select(snp, chr, bp)
+  compiled_coloc_clustered_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
   
   finemapped_studies_files <- Filter(
     function(file) file.exists(file), 
@@ -288,78 +312,83 @@ compile_results <- function() {
   
   if (length(finemapped_studies_files) > 0) {
     flog.info(paste("Processing", length(finemapped_studies_files), "finemapped study files for", gwas_info$metadata$guid))
-    study_extractions <- vroom::vroom( finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
-      dplyr::filter(min_p <= p_value_threshold) |>
-      dplyr::left_join(snp_annotations, by = c("chr" = "chr", "bp" = "bp")) |>
-      dplyr::filter(!duplicated(unique_study_id)) |>
-      dplyr::select(study, snp, unique_study_id, file, chr, bp, min_p, cis_trans, ld_block)
+    tryCatch({
+      study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
+        dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
+        dplyr::left_join(snp_annotations, by = "snp") |>
+        dplyr::select(study, chr, bp, snp, rsid, display_snp, unique_study_id, file, min_p, ld_block)
+      flog.info(paste("Successfully processed", nrow(study_extractions), "study extractions"))
+    }, error = function(e) {
+      flog.error(paste("Error processing finemapped studies files:", e$message))
+      flog.error(paste("Files:", paste(finemapped_studies_files, collapse = ", ")))
+      stop(e)
+    })
   } else {
     flog.warn("No finemapped study files found")
     study_extractions <- data.frame()
   }
   
-  coloc_input_files <- Filter(
+  coloc_pairwise_results_files <- Filter(
     function(file) file.exists(file), 
-    glue::glue('{ld_block_dirs}/coloc_results.tsv')
+    glue::glue('{ld_block_dirs}/coloc_pairwise_results.tsv.gz')
   )
-  
-  if (length(coloc_input_files) > 0) {
-    flog.info(paste("Processing", length(coloc_input_files), "coloc result files for", gwas_info$metadata$guid))
-    coloc_results <- vroom::vroom( coloc_input_files, delim = '\t', show_col_types = FALSE) |>
-      dplyr::filter(!is.na(traits) & traits != 'None') |>
-      dplyr::filter(
-        stringr::str_detect( traits, paste(paste0("\\b", study_extractions$unique_study_id, "\\b"), collapse = "|"))
-      )
-    
-    if (nrow(coloc_results) > 0) {
-      coloc_results <- coloc_results |>
-        dplyr::filter(posterior_prob > 0.5) |>
-        dplyr::mutate( coloc_group_id = 1:dplyr::n(), candidate_snp = trimws(candidate_snp)) |>
-        tidyr::separate_longer_delim(cols = traits, delim = ", ") |>
-        dplyr::rename(unique_study_id = traits) |>
-        dplyr::group_by(unique_study_id, candidate_snp) |>
-        dplyr::slice_max(posterior_prob, n = 1, with_ties = FALSE) |>
-        dplyr::ungroup()
-    }
+  flog.info(glue::glue('{ld_block_dirs}'))
+  flog.info(coloc_pairwise_results_files)
+  if (length(coloc_pairwise_results_files) > 0) {
+    flog.info(paste("Processing", length(coloc_pairwise_results_files), "coloc pairwise result files for", gwas_info$metadata$guid))
+    coloc_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
+      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid)
   } else {
-    flog.warn("No coloc result files found")
     coloc_results <- data.frame()
+  }
+
+  coloc_clustered_results_files <- Filter(
+    function(file) file.exists(file), 
+    glue::glue('{ld_block_dirs}/coloc_clustered_results.tsv.gz')
+  )
+  if (length(coloc_clustered_results_files) > 0) {
+    flog.info(paste("Processing", length(coloc_clustered_results_files), "coloc clustered result files for", gwas_info$metadata$guid))
+    coloc_clustered_results <- vroom::vroom(coloc_clustered_results_files, delim = '\t', show_col_types = FALSE)
+  } else {
+    coloc_clustered_results <- data.frame()
   }
   
   flog.info(paste("Writing compiled results to files for", gwas_info$metadata$guid))
   vroom::vroom_write(coloc_results, compiled_coloc_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
+  vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
   
   return(list(
     coloc_results = coloc_results,
-    study_extractions = study_extractions
+    study_extractions = study_extractions,
+    coloc_clustered_results = coloc_clustered_results
   ))
 }
 
 
-send_update_gwas_upload <- function(gwas_info, success, failure_reason, coloc_results, study_extractions) {
+send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
   flog.info(paste("Sending update to API:", api_url))
 
   if (success) {
     put_body <- list(
       success = success,
-      coloc_results = if (is.null(coloc_results) || is.na(coloc_results)) list() else coloc_results,
-      study_extractions = if (is.null(study_extractions) || is.na(study_extractions)) list() else study_extractions
+      results = results
     )
   } else {  
     put_body <- list(
       success = success,
-      failure_reason = failure_reason
+      failure_reason = failure_reason,
+      results = results
     )
   }
-  
+  if (!is.na(TEST_RUN)) return()
+
   response <- httr::PUT(
     url = api_url,
     body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
     httr::add_headers("Content-Type" = "application/json")
   )
-  
   if (httr::status_code(response) != 200) {
     error_msg <- paste("Error updating GWAS:", httr::content(response, "text"))
     flog.error(error_msg)

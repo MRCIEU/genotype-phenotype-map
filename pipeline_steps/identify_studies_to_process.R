@@ -9,7 +9,7 @@ rare_studies_to_ignore <- vroom::vroom('data/ignore_studies_rare.tsv', delim='\t
 studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
 
 if (!is.na(TEST_RUN)) {
-  study_list <- vroom::vroom('data/test_list.csv', show_col_types=F)
+  study_list <- vroom::vroom('../tests/data/study_list.csv', show_col_types=F)
 }
 if (file.exists(studies_processed_file)) {
   studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
@@ -43,6 +43,7 @@ main <- function() {
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
   message(paste('Found', nrow(studies_to_process), 'new studies to process'))
+  print(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 
   vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
 }
@@ -128,6 +129,11 @@ calculate_besd_studies_to_process <- function(entries) {
 
     category <- ifelse(is.null(metadata$category), study_categories$continuous, tolower(metadata$category))
     tissue <- ifelse(is.null(metadata$tissue), NA, metadata$tissue)
+    cell_type <- ifelse(is.null(metadata$cell_type) || length(metadata$cell_type) == 0, NA, metadata$cell_type)
+
+    if (!is.na(cell_type) && !cell_type %in% cell_types) {
+      stop(glue::glue('Error: cell_type is not valid: {cell_type}'))
+    }
 
     return(data.frame(
       data_type = besd_study[['data_type']],
@@ -147,8 +153,11 @@ calculate_besd_studies_to_process <- function(entries) {
       probe = probes,
       gene = genes,
       ensg = ensgs,
-      tissue = metadata$tissue,
-      coverage = besd_study[['coverage']]
+      tissue = tissue,
+      cell_type = cell_type,
+      coverage = besd_study[['coverage']],
+      heritability = NA,
+      heritability_se = NA
     ))
   }) |> dplyr::bind_rows()
 }
@@ -176,6 +185,24 @@ calculate_opengwas_studies_to_process <- function(entries) {
     study <- basename(directory)
     new_study_name <- gsub('_', '-', study)
     data_study_dir <- glue::glue('{data_dir}study/{new_study_name}/')
+
+    ldsc_observed_h2 <- NA_real_
+    ldsc_observed_h2_se <- NA_real_
+    ldsc_file <- glue::glue('{directory}/ldsc.txt.log')
+    if (file.exists(ldsc_file)) {
+      ldsc_result <- readLines(ldsc_file)
+      ldsc_observed_line <- ldsc_result[grepl('Total Observed scale h2', ldsc_result)]
+      if (length(ldsc_observed_line) > 0) {
+        ldsc_capture <- regmatches(
+          ldsc_observed_line,
+          regexec('Total Observed scale h2:\\s*([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \\(([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\\)', ldsc_observed_line)
+        )[[1]]
+        if (length(ldsc_capture) == 3) {
+          ldsc_observed_h2 <- suppressWarnings(as.numeric(ldsc_capture[2]))
+          ldsc_observed_h2_se <- suppressWarnings(as.numeric(ldsc_capture[3]))
+        }
+      }
+    }
 
     study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
     ancestry <- study_metadata$population
@@ -208,7 +235,10 @@ calculate_opengwas_studies_to_process <- function(entries) {
       gene = NA,
       probe = NA,
       tissue = NA,
-      coverage = opengwas_study[['coverage']]
+      cell_type = NA,
+      coverage = opengwas_study[['coverage']],
+      heritability = ldsc_observed_h2,
+      heritability_se = ldsc_observed_h2_se
     ))
   }) |> dplyr::bind_rows()
 }
@@ -246,7 +276,10 @@ calculate_tsv_studies_to_process <- function(entries) {
       gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
       tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA),
-      coverage = entry[['coverage']]
+      cell_type = NA,
+      coverage = entry[['coverage']],
+      heritability = NA,
+      heritability_se = NA
     ))
   }) |> dplyr::bind_rows()
 

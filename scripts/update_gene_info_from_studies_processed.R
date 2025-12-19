@@ -17,7 +17,7 @@ new_ensg_ids <- unique(studies_processed$ensg[!studies_processed$ensg %in% gene_
 #     dplyr::mutate(chromosome_name = as.numeric(chromosome_name))
 
 new_genes <- getBM(filters="ensembl_gene_id",
-    attributes= c("ensembl_gene_id", "external_gene_name", "description","gene_biotype", "chromosome_name", "start_position", "end_position", "strand"), 
+    attributes= c("ensembl_gene_id", "external_gene_name", "description", "gene_biotype", "chromosome_name", "start_position", "end_position", "strand"), 
     values= new_ensg_ids, mart= mart
 )
 

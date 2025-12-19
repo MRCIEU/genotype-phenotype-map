@@ -2,7 +2,8 @@ FROM mrcieu/genehackman:1.0.0
 
 RUN wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list && \
-    apt update && apt install -y --no-install-recommends ssh less libhiredis-dev libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync
+    apt update && apt install -y --no-install-recommends ssh less libhiredis-dev libgmp-dev libmpfr-dev jq csvtool libgsl-dev intel-oneapi-mkl default-jre rsync && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
     # export PERL_MM_USE_DEFAULT=1 && cpan DBI DBD::mysql Archize::Zip
     #uncomment this if you need to start using GPU / cuda again
     # wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb && \
@@ -54,7 +55,11 @@ ENV BCFTOOLS_PLUGINS=/home/bcftools
 ENV LD_PRELOAD=/opt/intel/oneapi/mkl/latest/lib/libmkl_rt.so
 
 COPY docker/requirements.* docker/
-RUN Rscript docker/requirements.R
-RUN pip install -r docker/requirements.txt
+RUN pip install --no-cache-dir -r docker/requirements.txt && \
+    rm -rf /root/.cache/pip /tmp/* /var/tmp/*
+RUN Rscript docker/requirements.R && \
+    rm -rf /tmp/Rtmp* /tmp/downloaded_packages /root/.cache /var/cache/* && \
+    find /usr/local/lib/R -name "*.tar.gz" -delete && \
+    find /usr/local/lib/R -name "*.zip" -delete
 
 COPY . /home/pipeline

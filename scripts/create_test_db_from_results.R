@@ -11,7 +11,7 @@ library(purrr)
 library(furrr)
 library(parallel)
 
-#NOTE: currently run with Rscript create_test_db_from_results.R --study_ids 5020
+#NOTE: currently run with Rscript create_test_db_from_results.R --study_ids 5020 54929
 
 parser <- argparser::arg_parser('Create test DuckDB from pipeline results')
 parser <- argparser::add_argument(parser,
@@ -106,15 +106,20 @@ main <- function() {
 
     all_study_ids <- unique(c(traits$study_id, studies$id))
     DBI::dbAppendTable(studies_con, "study_extractions", study_extractions)
-    rare_results <- DBI::dbGetQuery(orig_studies_con,
-        sprintf("SELECT * FROM rare_results WHERE study_id IN (%s)",
+
+    rare_results_groups <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT rare_result_group_id FROM rare_results WHERE study_id IN (%s)",
         paste(all_study_ids, collapse=",")
     ))
-    DBI::dbAppendTable(studies_con, "rare_results", rare_results)
+    rare_results_groups <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM rare_results WHERE rare_result_group_id IN (%s)",
+        paste(rare_results_groups$rare_result_group_id, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "rare_results", rare_results_groups)
 
     rare_results <- DBI::dbGetQuery(orig_studies_con,
-        sprintf("SELECT * FROM rare_results_wide WHERE study_id IN (%s)",
-        paste(all_study_ids, collapse=",")
+        sprintf("SELECT * FROM rare_results_wide WHERE rare_result_group_id IN (%s)",
+        paste(rare_results_groups$rare_result_group_id, collapse=",")
     ))
     DBI::dbAppendTable(studies_con, "rare_results_wide", rare_results)
 
@@ -134,6 +139,17 @@ main <- function() {
     ))
     DBI::dbAppendTable(studies_con, "gene_annotations", gene_annotations)
 
+    snp_pleiotropy <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM snp_pleiotropy WHERE snp_id IN (%s)",
+        paste(snp_ids_to_keep, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "snp_pleiotropy", snp_pleiotropy)
+
+    gene_pleiotropy <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM gene_pleiotropy WHERE gene_id IN (%s)",
+        paste(genes_to_keep, collapse=",")
+    ))
+    DBI::dbAppendTable(studies_con, "gene_pleiotropy", gene_pleiotropy)
 
     coloc_pairs <- DBI::dbGetQuery(orig_coloc_pairs_con,
         sprintf("SELECT * FROM coloc_pairs WHERE study_extraction_a_id IN (%s) AND study_extraction_b_id IN (%s)",

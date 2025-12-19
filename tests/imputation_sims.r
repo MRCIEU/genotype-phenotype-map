@@ -206,7 +206,7 @@ organise_trait <- function(ssfile, ldvars, af) {
 
 generate_ldmatrix <- function(bfile, out="test") {
     glue("plink2 --bfile {bfile} --r-unphased square ref-based --maf 0.01 --out {out}") %>% system()
-    ld <- fread(paste0(out, ".unphased.vcor1")) %>% as.matrix()
+    ld <- fread(paste0(out, ".unphased.vcor1.gz")) %>% as.matrix()
     af <- fread(glue("{bfile}.afreq"))
     ldvars <- scan(paste0(out, ".unphased.vcor1.vars"), what="character")
     return(list(ld=ld, af=af, ldvars=ldvars))
@@ -219,7 +219,7 @@ get_region <- function(sfile) {
     fn <- list.files(d, full.names=TRUE) %>% grep(".bed$", ., value=TRUE) %>% gsub(".bed", "", .)
     r <- tibble(fn, r=basename(fn)) %>% tidyr::separate(r, into=c("start", "end"), remove=FALSE) %>% mutate(start=as.numeric(start), end=as.numeric(end))
     f <- subset(r, pos >= start & pos <= end)$fn
-    ld <- fread(paste0(f, ".unphased.vcor1")) %>% as.matrix()
+    ld <- fread(paste0(f, ".unphased.vcor1.gz")) %>% as.matrix()
     ldvars <- scan(paste0(f, ".unphased.vcor1.vars"), what="character")
     af <- fread(paste0(f, ".afreq"))
     pc <- readRDS(paste0(f, ".ldeig.rds"))

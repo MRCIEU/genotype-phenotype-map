@@ -5,6 +5,24 @@ on:
   pull_request:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v2
+    - name: Check that tests have been run successfully
+      env:
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      run: |
+        if [ ! -f tests/testing_complete.txt ]; then
+          echo "Tests have not been run successfully,  please run Rscript tests/testthat/run_tests.R and commit the results"
+          exit 1
+        fi
+        if ! grep -q "$BRANCH_NAME" tests/testing_complete.txt; then
+          echo "Tests have not been run successfully for branch: $BRANCH_NAME, please run Rscript tests/testthat/run_tests.R and commit the results"
+          exit 1
+        fi
+
   build:
     runs-on: ubuntu-latest
     # if: github.event_name == 'push' && github.ref == 'refs/heads/main'

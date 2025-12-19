@@ -22,7 +22,10 @@ if len(studies_to_process) == 0:
     print('No studies to process, exiting.')
     sys.exit()
 
-ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
+if TEST_RUN:
+    ld_blocks = pd.read_csv('../tests/data/ld_blocks.tsv', sep='\t')
+else:
+    ld_blocks = pd.read_csv('data/ld_blocks.tsv', sep='\t')
 
 relevant_ancestries = np.isin(ld_blocks['ancestry'], studies_to_process['ancestry'].unique())
 ld_blocks = ld_blocks[relevant_ancestries]
@@ -267,6 +270,7 @@ rule compile_results:
 #     shell:
 #         """
 #         rsync -Lavzh --exclude='*cached*' $DATA_DIR/ld_blocks $BACKUP_DIR/data/
+#         rsync -Lavzh $DATA_DIR/ld_reference_panel_hg38 $BACKUP_DIR/data/
 #         rsync -Lavzh --ignore-missing-args $DATA_DIR/study $BACKUP_DIR/data/
 #         touch {output}
 #         """

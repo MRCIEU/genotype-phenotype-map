@@ -152,8 +152,8 @@ studies_db <- list(
       study_extraction_id INTEGER NOT NULL,
       snp_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
-      h4_connectedness REAL,
-      h3_connectedness REAL,
+      h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
+      h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1),
       PRIMARY KEY (coloc_group_id, study_extraction_id),
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
@@ -343,7 +343,8 @@ associations_db <- list(
 gwas_upload_db <- list(
   gwas_upload = list(
     name = "gwas_upload",
-    query = "CREATE SEQUENCE gwas_upload_id_sequence START 1; CREATE TABLE gwas_upload (
+    query = "CREATE SEQUENCE gwas_upload_id_sequence START 1;
+    CREATE TABLE gwas_upload (
       id INTEGER PRIMARY KEY DEFAULT nextval('gwas_upload_id_sequence'),
       guid TEXT UNIQUE NOT NULL,
       email TEXT NOT NULL,
@@ -356,12 +357,14 @@ gwas_upload_db <- list(
       should_be_added BOOLEAN,
       status TEXT NOT NULL,
       failure_reason TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP
     )"
   ),
   study_extractions = list(
     name = "study_extractions",
-    query = "CREATE SEQUENCE study_extractions_id_sequence START 1; CREATE TABLE study_extractions (
+    query = "CREATE SEQUENCE study_extractions_id_sequence START 1;
+    CREATE TABLE study_extractions (
       id INTEGER PRIMARY KEY DEFAULT nextval('study_extractions_id_sequence'),
       gwas_upload_id INTEGER,
       snp_id INTEGER,
@@ -373,7 +376,6 @@ gwas_upload_db <- list(
       chr INTEGER NOT NULL,
       bp INTEGER NOT NULL,
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
-      cis_trans TEXT,
       ld_block TEXT
     )"
   ),
@@ -381,10 +383,10 @@ gwas_upload_db <- list(
     name = "coloc_pairs",
     query = "CREATE TABLE coloc_pairs (
       gwas_upload_id INTEGER NOT NULL,
-      existing_study_extraction_a BOOLEAN NOT NULL,
-      study_extraction_a_id INTEGER NOT NULL,
-      existing_study_extraction_b BOOLEAN NOT NULL,
-      study_extraction_b_id INTEGER NOT NULL,
+      existing_study_extraction_id_a INTEGER,
+      study_extraction_id_a INTEGER,
+      existing_study_extraction_id_b INTEGER,
+      study_extraction_id_b INTEGER,
       ld_block_id INTEGER NOT NULL,
       h3 REAL CHECK (h3 BETWEEN 0 AND 1),
       h4 REAL CHECK (h4 BETWEEN 0 AND 1)
@@ -395,10 +397,12 @@ gwas_upload_db <- list(
     query = glue::glue("CREATE TABLE coloc_groups (
       gwas_upload_id INTEGER NOT NULL,
       coloc_group_id INTEGER NOT NULL,
-      existing_study_extraction BOOLEAN NOT NULL,
-      study_extraction_id INTEGER NOT NULL,
+      existing_study_extraction_id INTEGER,
+      study_extraction_id INTEGER,
       snp_id INTEGER NOT NULL,
-      ld_block_id INTEGER NOT NULL
-    )")
+      ld_block_id INTEGER NOT NULL,
+      h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
+      h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1)
+    )"
   )
 )

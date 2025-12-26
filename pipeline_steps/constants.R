@@ -5,7 +5,7 @@ data_dir <- Sys.getenv('DATA_DIR')
 gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 oracle_api_server <- Sys.getenv('ORACLE_SERVER')
-oracle_pipeline_server <- Sys.getenv('ORACLE_SERVER')
+oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
 genome_wide_p_value_threshold <- 5e-8

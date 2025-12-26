@@ -16,7 +16,6 @@ parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess D
 parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
-
 if (is.na(TEST_RUN)) {
   redis_conn <- redux::hiredis(
     host = Sys.getenv("REDIS_HOST", "redis"),
@@ -54,31 +53,38 @@ main <- function() {
   }
 
   while(TRUE) {
-    redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
-    
-    if (!is.null(redis_message)) {
-      gwas_info <- jsonlite::fromJSON(redis_message[[2]])
-      flog.info(paste("Received new message from queue with guid:", gwas_info$metadata$guid))
+    tryCatch({
+      redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
+      
+      if (!is.null(redis_message)) {
+        gwas_info <- jsonlite::fromJSON(redis_message[[2]])
+        flog.info(paste("Received new message from queue with guid:", gwas_info$metadata$guid))
 
-      processed <- process_message(gwas_info)
+        processed <- process_message(gwas_info)
 
-      if (!is.null(processed)) {
-        flog.error(paste("Failed to process message with guid:", gwas_info$metadata$guid))
+        if (!is.null(processed)) {
+          flog.error(paste("Failed to process message with guid:", gwas_info$metadata$guid))
 
-        message_and_error <- list(
-          original_message = gwas_info,
-          error = processed,
-          timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-        )
-        redis_conn$LPUSH(process_gwas_dlq, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
-      } else {
-        flog.info(paste("Successfully processed message with guid:", gwas_info$metadata$guid))
+          message_and_error <- list(
+            original_message = gwas_info,
+            error = processed,
+            timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+          )
+          redis_conn$LPUSH(process_gwas_dlq, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
+        } else {
+          flog.info(paste("Successfully processed message with guid:", gwas_info$metadata$guid))
+        }
       }
-    }
-    Sys.sleep(5)
-    if (!is.na(TEST_RUN)) {
-      break
-    }
+      Sys.sleep(5)
+      if (!is.na(TEST_RUN) || !is.null(TEST_RUN)) {
+        break
+      }
+    }, error = function(e) {
+      flog.error(paste("Error processing message:", e$message))
+      if (!is.null(e$call)) {
+        flog.error(paste("Error call:", deparse(e$call)))
+      }
+    })
   }
 }
 

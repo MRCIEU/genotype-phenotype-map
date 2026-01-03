@@ -104,6 +104,8 @@ create_svgs_from_gwas <- function(study, gwas) {
   plot_height <- 500
   plot_width <- 1250
 
+  max_lp_y_axis <- min(300, max(10, max(gwas$LP, na.rm=TRUE)))
+
   # Pad GWAS with BP 1 at the start of each chromosome, so we get consistent CHR sizes
   padded_chrs <- gwas[1,][rep(1, 22),]
   padded_chrs$CHR <- 1:22
@@ -202,7 +204,7 @@ create_svgs_from_gwas <- function(study, gwas) {
     ggplot2::scale_color_manual(values = c("#7F7F7F")) +
     ggplot2::scale_fill_manual(values = c("#7F7F7F")) +
     ggplot2::scale_x_continuous(expand = c(0, 0)) +
-    ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max(10, max(gwas$LP, na.rm=TRUE)))) +
+    ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max_lp_y_axis)) +
     ggplot2::theme_void() +
     ggplot2::theme(
       legend.position = "none",
@@ -246,7 +248,7 @@ create_svgs_from_gwas <- function(study, gwas) {
       ggplot2::scale_color_manual(values = c("#7F7F7F")) +
       ggplot2::scale_fill_manual(values = c("#7F7F7F")) +
       ggplot2::scale_x_continuous(expand = c(0, 0)) +
-      ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max(10, max(gwas$LP, na.rm=TRUE)))) +
+      ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max_lp_y_axis)) +
       ggplot2::theme_void() +
       ggplot2::theme(
         legend.position = "none",

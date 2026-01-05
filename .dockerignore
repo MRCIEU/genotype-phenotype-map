@@ -1,0 +1,63 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+docs/
+
+# Tests
+tests/
+*.test.R
+*.test.r
+
+# Data and formatting directories
+data_formatting/
+pre_steps/
+scripts/analysis/
+scripts/data_extraction/
+
+# Build artifacts
+.snakemake
+scratch
+*.log
+*.html
+
+# Environment files
+.env
+.env.*
+*.Renviron
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# R cache
+.Rhistory
+.RData
+.Ruserdata
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large data files in scripts
+scripts/analysis/*.xlsx
+scripts/analysis/*.html
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+

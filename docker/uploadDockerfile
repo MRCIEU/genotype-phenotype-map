@@ -1,3 +1,4 @@
 FROM mrcieu/genotype-phenotype-map:1.0.0
 
-COPY . /home/pipeline
+COPY pipeline_steps/ /home/pipeline/pipeline_steps/
+COPY worker/ /home/pipeline/worker/

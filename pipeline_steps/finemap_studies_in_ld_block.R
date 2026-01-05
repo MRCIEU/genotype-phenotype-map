@@ -373,7 +373,7 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     if (is.na(args$worker_guid)) {
       svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
       is_sparse <- study[['coverage']] == coverage_types$sparse
-      create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
+      create_svg_for_ld_block(conditioned_gwas, svg_file, args$ld_block, is_sparse)
     }
     svg_files <- c(svg_files, svg_file)
 

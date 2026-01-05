@@ -39,6 +39,9 @@ test_that("Pipeline worker runs for TSV file", {
   gwas_info <- jsonlite::fromJSON(redis_message[[2]])
 
   has_errors <- grepl("error", output, ignore.case = TRUE)
+  if (any(has_errors)) {
+    print(output)
+  }
   expect_false(any(has_errors), info = "Pipeline worker should not contain errors")
 
   update_directories_for_worker(gwas_info$metadata$guid)

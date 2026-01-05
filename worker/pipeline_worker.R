@@ -96,15 +96,12 @@ process_message <- function(gwas_info) {
     dir.create(extracted_study_dir, recursive = T, showWarnings = F)
     dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
-    gwas_info$metadata$file_location <- gwas_info$file_location
-    if (grepl('\\.vcf', gwas_info$file_location)) {
-      gwas_info$metadata$file_type <- 'vcf'
-    } else {
-      gwas_info$metadata$file_type <- 'csv'
-    }
+    gwas_data <- get_gwas_data(gwas_info)
+    gwas_info <- gwas_data$gwas_info
+    gwas <- gwas_data$gwas
 
     flog.info('Verifying GWAS data')
-    verification_result <- verify_gwas_data(gwas_info)
+    verification_result <- verify_gwas_data(gwas_info, gwas)
     if (!verification_result$valid) {
       flog.error(verification_result$error)
       send_update_gwas_upload(gwas_info, FALSE, paste("bad_data:",verification_result$error))
@@ -178,6 +175,7 @@ process_message <- function(gwas_info) {
     results <- compile_results(gwas_info)
 
     if (is.na(TEST_RUN)) {
+      upload_results(results, gwas_info)
       send_update_gwas_upload(gwas_info, TRUE, NULL, results$coloc_results, results$study_extractions)
     } 
     
@@ -212,8 +210,45 @@ process_message <- function(gwas_info) {
   })
 }
 
-verify_gwas_data <- function(gwas_info) {
-  gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+get_gwas_data <- function(gwas_info) {
+  if (!is.na(TEST_RUN)) {
+    gwas_info$metadata$file_location <- gwas_info$file_location
+    gwas_info$metadata$file_type <- extraction_file_types$csv
+    gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+    return(list(gwas_info = gwas_info, gwas = gwas))
+  }
+
+  local_file_path <- file.path(extracted_study_dir, gwas_info$file_location)
+
+  download_cmd <- paste('oci os object get',
+                        '--bucket-name', shQuote(oracle_bucket_name),
+                        '--name', shQuote(gwas_info$file_location),
+                        '--file', shQuote(local_file_path))
+
+  download_status <- system(download_cmd, wait = TRUE)
+
+  if (download_status != 0 || !file.exists(local_file_path)) {
+    error_msg <- paste('Failed to download file from Oracle bucket:', gwas_info$file_location)
+    flog.error(error_msg)
+    send_update_gwas_upload(gwas_info, FALSE, error_msg)
+    return(error_msg)
+  }
+
+  gwas_info$metadata$file_location <- local_file_path
+  gwas_info$file_location <- local_file_path
+
+  if (gwas_info$metadata$file_type == extraction_file_types$vcf) {
+    #TODO: Implement VCF support
+    stop("VCF support not yet implemented")
+  } else {
+    gwas_info$metadata$file_type <- extraction_file_types$csv
+    gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+  }
+
+  return(list(gwas_info = gwas_info, gwas = gwas))
+}
+
+verify_gwas_data <- function(gwas_info, gwas) {
   gwas_info$metadata$column_names <- Filter(\(column) !is.null(column), gwas_info$metadata$column_names)
   gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
   mandatory_columns <- c('CHR', 'BP', 'P', 'EA', 'OA', 'EAF')
@@ -371,6 +406,26 @@ compile_results <- function(gwas_info) {
   ))
 }
 
+upload_results <- function(results, gwas_info) {
+  if (is.na(TEST_RUN)) return()
+
+  bucket_prefix <- glue::glue('gwas_upload/{gwas_info$metadata$guid}/')
+
+  cmd <- paste('oci os object sync',
+               '--bucket-name', shQuote(oracle_bucket_name),
+               '--src-dir', shQuote(extracted_study_dir),
+               '--prefix', shQuote(bucket_prefix))
+
+  status <- system(cmd, wait = TRUE)
+
+  if (status != 0) {
+    error_msg <- paste('Failed to upload results to Oracle bucket for guid:', gwas_info$metadata$guid)
+    flog.error(error_msg)
+    stop(error_msg)
+  }
+
+  flog.info(paste('Successfully uploaded results to Oracle bucket for guid:', gwas_info$metadata$guid))
+}
 
 send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")

@@ -19,7 +19,13 @@ args <- argparser::parse_args(parser)
 
 
 if (is.na(TEST_RUN)) {
-  redis_conn <- connect_to_redis()
+  tryCatch({
+    redis_conn <- connect_to_redis()
+  }, error = function(e) {
+    flog.error(paste("Critical: Failed to establish Redis connection. Exiting. Error:", e$message))
+    # Exit gracefully - this will prevent the script from continuing with undefined redis_conn
+    q(status = 1, save = "no")
+  })
 } else {
   flog.appender(appender.console())
   redis_conn <- list(
@@ -50,6 +56,12 @@ main <- function() {
   }
 
   while(TRUE) {
+    # Safety check: verify redis_conn exists and is valid
+    if (!exists("redis_conn") || is.null(redis_conn)) {
+      flog.error("Critical: redis_conn is not available. Exiting main loop.")
+      break
+    }
+
     tryCatch({
       redis_message <- get_from_queue(redis_conn)
       

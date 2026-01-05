@@ -23,7 +23,6 @@ if (is.na(TEST_RUN)) {
     redis_conn <- connect_to_redis()
   }, error = function(e) {
     flog.error(paste("Critical: Failed to establish Redis connection. Exiting. Error:", e$message))
-    # Exit gracefully - this will prevent the script from continuing with undefined redis_conn
     q(status = 1, save = "no")
   })
 } else {
@@ -225,6 +224,7 @@ get_gwas_data <- function(gwas_info) {
   }
 
   local_file_path <- file.path(extracted_study_dir, gwas_info$file_location)
+  dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
 
   download_cmd <- paste('oci os object get',
                         '--bucket-name', shQuote(oracle_bucket_name),

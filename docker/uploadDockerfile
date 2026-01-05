@@ -1,0 +1,3 @@
+FROM mrcieu/genotype-phenotype-map:1.0.0
+
+COPY . /home/pipeline

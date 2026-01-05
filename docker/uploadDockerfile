@@ -1,4 +1,15 @@
 FROM mrcieu/genotype-phenotype-map:1.0.0
 
+RUN if ! id -u opc > /dev/null 2>&1; then \
+      groupadd -g 1000 opc && \
+      useradd -u 1000 -g opc -m -s /bin/bash opc; \
+    fi
+
 COPY pipeline_steps/ /home/pipeline/pipeline_steps/
 COPY worker/ /home/pipeline/worker/
+
+RUN chown -R opc:opc /home/pipeline
+
+USER opc
+
+WORKDIR /home/pipeline

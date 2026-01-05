@@ -197,7 +197,7 @@ flattened_ld_block_name <- function(ld_block_string) {
 
 update_directories_for_worker <- function(worker_guid) {
   ld_block_data_dir <<- glue::glue('{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/')
-  extracted_study_dir <<- glue::glue('{gwas_upload_dir}study/gwas_upload/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{gwas_upload_dir}gwas_upload/{worker_guid}/')
   pipeline_metadata_dir <<- glue::glue('{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }
 

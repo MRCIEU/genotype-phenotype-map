@@ -223,7 +223,7 @@ get_gwas_data <- function(gwas_info) {
     return(list(gwas_info = gwas_info, gwas = gwas))
   }
 
-  local_file_path <- file.path(extracted_study_dir, gwas_info$file_location)
+  local_file_path <- file.path(extracted_study_dir, basename(gwas_info$file_location))
   dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
 
   download_cmd <- paste('oci os object get',
@@ -243,12 +243,12 @@ get_gwas_data <- function(gwas_info) {
   gwas_info$metadata$file_location <- local_file_path
   gwas_info$file_location <- local_file_path
 
-  if (gwas_info$metadata$file_type == extraction_file_types$vcf) {
+  if (grepl('.vcf', local_file_path, ignore.case = TRUE)) {
     #TODO: Implement VCF support
     stop("VCF support not yet implemented")
   } else {
     gwas_info$metadata$file_type <- extraction_file_types$csv
-    gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+    gwas <- vroom::vroom(local_file_path, show_col_types = F)
   }
 
   return(list(gwas_info = gwas_info, gwas = gwas))

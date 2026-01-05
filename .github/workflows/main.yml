@@ -66,6 +66,7 @@ jobs:
         push: true
         load: false
         no-cache: true
+        provenance: false
         cache-from: ""
         cache-to: ""
         tags: |

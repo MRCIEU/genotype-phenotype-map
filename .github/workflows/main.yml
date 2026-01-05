@@ -65,11 +65,12 @@ jobs:
         context: .
         push: true
         load: false
+        no-cache: true
+        cache-from: ""
+        cache-to: ""
         tags: |
           mrcieu/genotype-phenotype-upload:latest
           mrcieu/genotype-phenotype-upload:${{ github.sha }}
-        cache-from: type=registry,ref=mrcieu/genotype-phenotype-upload:latest
-        cache-to: type=registry,ref=mrcieu/genotype-phenotype-upload:latest,mode=min
         platforms: linux/amd64
     
     - name: Clean up Docker after build

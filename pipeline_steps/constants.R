@@ -2,7 +2,7 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 
 data_dir <- Sys.getenv('DATA_DIR')
-gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
+gwas_upload_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 oracle_api_server <- Sys.getenv('ORACLE_SERVER')
 oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')

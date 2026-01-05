@@ -1,3 +1,5 @@
+source('redis_client.R')
+
 setwd('pipeline_steps')
 source('constants.R')
 source('common_extraction_functions.R')
@@ -16,11 +18,9 @@ parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess D
 parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
+
 if (is.na(TEST_RUN)) {
-  redis_conn <- redux::hiredis(
-    host = Sys.getenv("REDIS_HOST", "redis"),
-    port = as.numeric(Sys.getenv("REDIS_PORT", 6379))
-  )
+  redis_conn <- connect_to_redis()
 } else {
   flog.appender(appender.console())
   redis_conn <- list(
@@ -40,8 +40,6 @@ snp_annotations <- vroom::vroom(
 ) |>
   dplyr::mutate(snp = trimws(snp))
 
-process_gwas <- 'process_gwas'
-process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
 
 main <- function() {
   flog.info("Starting pipeline worker")
@@ -54,7 +52,7 @@ main <- function() {
 
   while(TRUE) {
     tryCatch({
-      redis_message <- redis_conn$BRPOP(process_gwas, timeout = 0)
+      redis_message <- get_from_queue(redis_conn)
       
       if (!is.null(redis_message)) {
         gwas_info <- jsonlite::fromJSON(redis_message[[2]])
@@ -70,7 +68,7 @@ main <- function() {
             error = processed,
             timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
           )
-          redis_conn$LPUSH(process_gwas_dlq, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
+          send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
         } else {
           flog.info(paste("Successfully processed message with guid:", gwas_info$metadata$guid))
         }
@@ -199,10 +197,7 @@ process_message <- function(gwas_info) {
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     )
     
-    redis_conn$LPUSH(
-      process_gwas_dlq, 
-      jsonlite::toJSON(error_details, auto_unbox = TRUE)
-    )
+    send_to_dlq(redis_conn, jsonlite::toJSON(error_details, auto_unbox = TRUE))
 
     send_update_gwas_upload(gwas_info, FALSE, error_msg, NULL)
 

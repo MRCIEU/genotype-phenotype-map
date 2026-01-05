@@ -1,6 +1,5 @@
-source('redis_client.R')
-
 setwd('pipeline_steps')
+source('../worker/redis_client.R')
 source('constants.R')
 source('common_extraction_functions.R')
 

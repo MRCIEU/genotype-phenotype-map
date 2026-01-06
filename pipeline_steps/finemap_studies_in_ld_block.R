@@ -30,7 +30,8 @@ main <- function() {
     dplyr::filter(variant_type == variant_types$common)
 
   ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
-  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
+  print(file.info(ld_matrix_file))
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F, altrep = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')

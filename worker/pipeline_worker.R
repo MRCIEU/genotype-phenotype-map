@@ -416,8 +416,6 @@ compile_results <- function(gwas_info) {
 }
 
 upload_results <- function(results, gwas_info) {
-  if (is.na(TEST_RUN)) return()
-
   bucket_prefix <- glue::glue('gwas_upload/{gwas_info$metadata$guid}/')
 
   cmd <- paste('oci os object sync',

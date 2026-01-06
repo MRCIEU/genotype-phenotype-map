@@ -85,7 +85,8 @@ main <- function() {
         }
       }
       Sys.sleep(5)
-      if (!is.na(TEST_RUN) || !is.null(TEST_RUN)) {
+      stop_processing_file <- file.exists(glue::glue('{data_dir}/stop_processing'))
+      if (!is.na(TEST_RUN) || !is.null(TEST_RUN) || stop_processing_file) {
         break
       }
     }, error = function(e) {
@@ -97,15 +98,15 @@ main <- function() {
   }
 }
 
-process_message <- function(gwas_info) {
+process_message <- function(original_gwas_info) {
   tryCatch({
-    update_directories_for_worker(gwas_info$metadata$guid)
+    update_directories_for_worker(original_gwas_info$metadata$guid)
 
     dir.create(pipeline_metadata_dir, recursive = T, showWarnings = F)
     dir.create(extracted_study_dir, recursive = T, showWarnings = F)
     dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
-    gwas_data <- get_gwas_data(gwas_info)
+    gwas_data <- get_gwas_data(original_gwas_info)
     gwas_info <- gwas_data$gwas_info
     gwas <- gwas_data$gwas
 
@@ -191,9 +192,9 @@ process_message <- function(gwas_info) {
 
     if (is.na(TEST_RUN)) {
       upload_results(results, gwas_info)
-      send_update_gwas_upload(gwas_info, TRUE, NULL, results$coloc_results, results$study_extractions)
+      send_update_gwas_upload(gwas_info, TRUE, NULL, results)
     } 
-    
+
   }, error = function(e) {
     error_msg <- if (!is.null(e$message) && nchar(e$message) > 0) {
       e$message
@@ -209,14 +210,14 @@ process_message <- function(gwas_info) {
     
     # Create error details
     error_details <- list(
-      original_message = gwas_info,
+      original_message = original_gwas_info,
       error = error_msg,
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     )
     
     send_to_dlq(redis_conn, jsonlite::toJSON(error_details, auto_unbox = TRUE))
 
-    send_update_gwas_upload(gwas_info, FALSE, error_msg, NULL)
+    send_update_gwas_upload(original_gwas_info, FALSE, error_msg)
 
     return(error_msg)
   })
@@ -437,6 +438,7 @@ upload_results <- function(results, gwas_info) {
                '--bucket-name', shQuote(oracle_bucket_name),
                '--src-dir', shQuote(extracted_study_dir),
                '--prefix', shQuote(bucket_prefix))
+  flog.info(paste('Running:', cmd))
 
   status <- system(cmd, wait = TRUE)
 

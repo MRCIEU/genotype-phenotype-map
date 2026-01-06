@@ -422,22 +422,21 @@ upload_results <- function(results, gwas_info) {
                '--bucket-name', shQuote(oracle_bucket_name),
                '--src-dir', shQuote(extracted_study_dir),
                '--prefix', shQuote(bucket_prefix))
-  flog.info(paste('Running:', cmd))
 
   status <- system(cmd, wait = TRUE)
 
   if (status != 0) {
-    error_msg <- paste('Failed to upload results to Oracle bucket for guid:', gwas_info$metadata$guid)
+    error_msg <- paste(gwas_info$metadata$guid, 'Failed to upload results to Oracle bucket')
     flog.error(error_msg)
     stop(error_msg)
   }
 
-  flog.info(paste('Successfully uploaded results to Oracle bucket for guid:', gwas_info$metadata$guid))
+  flog.info(paste(gwas_info$metadata$guid, 'Successfully uploaded results to Oracle bucket'))
 }
 
 send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
-  flog.info(paste("Sending update to API:", api_url))
+  flog.info(paste(gwas_info$metadata$guid, "Sending update to API:", api_url))
 
   if (success) {
     put_body <- list(
@@ -459,12 +458,10 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
     httr::add_headers("Content-Type" = "application/json")
   )
   if (httr::status_code(response) != 200) {
-    error_msg <- paste("Error updating GWAS:", httr::content(response, "text"))
+    error_msg <- paste(gwas_info$metadata$guid, "Error updating GWAS:", httr::content(response, "text"))
     flog.error(error_msg)
     stop(error_msg)
   }
-    
-  flog.info(paste("Successfully updated GWAS results for", gwas_info$metadata$guid))
 }
 
 main()

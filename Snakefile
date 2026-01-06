@@ -260,7 +260,7 @@ rule compile_results:
             --coloc_clustered_results_file {output.coloc_clustered_results} \
             --rare_results_file {output.rare_results}
 
-         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
+        #  rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
 
 # rule backup_data_dir:

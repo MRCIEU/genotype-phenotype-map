@@ -403,6 +403,6 @@ gwas_upload_db <- list(
       ld_block_id INTEGER NOT NULL,
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
       h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1)
-    )"
+    )")
   )
 )

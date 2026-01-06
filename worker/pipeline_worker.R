@@ -299,6 +299,12 @@ verify_gwas_data <- function(gwas_info, gwas) {
 }
 
 create_study_metadata_files <- function(gwas_info) {
+  file.create(glue::glue('{extracted_study_dir}/study_metadata.json'))
+  jsonlite::write_json(gwas_info$metadata, 
+                      glue::glue('{extracted_study_dir}/study_metadata.json'),
+                      auto_unbox = TRUE,
+                      pretty = TRUE)
+
   study_to_process <- data.frame(
     data_type = data_types$phenotype,
     data_format = gwas_info$metadata$file_type,
@@ -320,12 +326,6 @@ create_study_metadata_files <- function(gwas_info) {
   )
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')
   vroom::vroom_write(study_to_process, studies_to_process_file)
-
-  file.create(glue::glue('{extracted_study_dir}/study_metadata.json'))
-  jsonlite::write_json(gwas_info$metadata, 
-                      glue::glue('{extracted_study_dir}/study_metadata.json'),
-                      auto_unbox = TRUE,
-                      pretty = TRUE)
 }
 
 check_step_complete <- function(output_file, ld_block, output) {

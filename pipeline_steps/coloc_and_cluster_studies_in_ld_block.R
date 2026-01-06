@@ -79,12 +79,17 @@ main <- function() {
       dplyr::filter(
         min_p <= lowest_p_value_threshold & 
         (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
-      )
+      ) |>
+      dplyr::mutate(file = dplyr::case_when(
+        grepl('^study', file) ~ glue::glue('{data_dir}/{file}'),
+        TRUE ~ file
+      ))
   } else {
     finemapped_subset <- finemapped_studies
   }
 
   studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
+    print(flie)
     if (file.info(file)$size == 0) {
       message(glue::glue('{file} is empty, delete.'))
       return(NULL)

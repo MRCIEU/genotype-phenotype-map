@@ -356,7 +356,7 @@ compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
   
-  compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
+  compiled_coloc_pairwise_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
   compiled_coloc_clustered_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
   

@@ -188,12 +188,8 @@ process_message <- function(original_gwas_info) {
     } 
 
   }, error = function(e) {
-    error_msg <- if (!is.null(e$message) && nchar(e$message) > 0) {
-      e$message
-    } else {
-      paste("Error:", toString(e))
-    }
-    
+    error_msg <- e$message
+
     flog.error(paste(gwas_info$metadata$guid, "Error processing message:", error_msg))
     flog.error(paste(gwas_info$metadata$guid, "Error class:", class(e)[1]))
     if (!is.null(e$call)) {
@@ -435,6 +431,8 @@ upload_results <- function(results, gwas_info) {
 }
 
 send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
+  if (!is.na(TEST_RUN)) return()
+
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
   flog.info(paste(gwas_info$metadata$guid, "Sending update to API:", api_url))
 
@@ -450,7 +448,6 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
       results = results
     )
   }
-  if (!is.na(TEST_RUN)) return()
 
   response <- httr::PUT(
     url = api_url,

@@ -12,8 +12,12 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
-snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-  dplyr::select(chr, bp, snp)
+snp_annotations <- vroom::vroom(
+  file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+  col_select = c('chr', 'bp', 'snp'),
+  altrep = FALSE,
+  show_col_types = FALSE
+)
 
 main <- function() {
   if (!is.na(args$worker_guid)) {

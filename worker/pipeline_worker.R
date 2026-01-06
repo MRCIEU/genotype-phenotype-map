@@ -39,6 +39,7 @@ if (is.na(TEST_RUN)) {
 
 snp_annotations <- vroom::vroom(
   file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+  altrep = FALSE,
   show_col_types = FALSE,
   col_select = c('snp', 'rsid', 'display_snp')
 ) |>
@@ -137,6 +138,7 @@ process_message <- function(gwas_info) {
     parallel_block_processing <- 4
     blocks <- head(ld_blocks_to_colocalise$ld_block, 10)
     lapply(blocks, function(block) {
+      start_time <- Sys.time()
       ld_info <- ld_block_dirs(block)
 
       output_files <- list(
@@ -153,6 +155,7 @@ process_message <- function(gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1")
       output <- system(standardise_regions, wait = T, intern = T)
       check_step_complete(output_files$standardised, block, output)
+      gc()
 
       flog.info(paste('Imputing regions for block:', gwas_info$metadata$guid, block))
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
@@ -161,6 +164,7 @@ process_message <- function(gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1")
       output <- system(impute_regions, wait = T, intern = T)
       check_step_complete(output_files$imputed, block, output)
+      gc()
 
       flog.info(paste('Finemapping regions for block:', gwas_info$metadata$guid, block))
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
@@ -169,6 +173,7 @@ process_message <- function(gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1")
       output <- system(finemap_regions, wait = T, intern = T)
       check_step_complete(output_files$finemapped, block, output)
+      gc()
 
       flog.info(paste('Colocalising regions for block:', gwas_info$metadata$guid, block))
       coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
@@ -177,6 +182,8 @@ process_message <- function(gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1")
       output <- system(coloc_regions, wait = T, intern = T)
       check_step_complete(output_files$coloc, block, output)
+
+      flog.info(paste('Time taken for block:', gwas_info$metadata$guid, block, diff_time_taken(start_time)))
     })
 
     flog.info(paste('Compiling results for:', gwas_info$metadata$guid))

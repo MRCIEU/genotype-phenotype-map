@@ -89,7 +89,7 @@ main <- function() {
   }
 
   studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
-    print(flie)
+    print(file)
     if (file.info(file)$size == 0) {
       message(glue::glue('{file} is empty, delete.'))
       return(NULL)

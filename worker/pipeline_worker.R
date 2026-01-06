@@ -13,7 +13,6 @@ flog.appender(appender.tee(log_file))
 flog.threshold(INFO)
 
 parser <- argparser::arg_parser('Pipeline worker')
-parser <- argparser::add_argument(parser, '--reprocess_dlq', help = 'Reprocess DLQ messages', type = 'logical', default = F)
 parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
@@ -49,14 +48,7 @@ snp_annotations <- vroom::vroom(
 main <- function() {
   flog.info("Starting pipeline worker")
   
-  if (args$reprocess_dlq) {
-    flog.info("Reprocessing DLQ messages")
-    retry_dlq_messages()
-    return()
-  }
-
   while(TRUE) {
-    # Safety check: verify redis_conn exists and is valid
     if (!exists("redis_conn") || is.null(redis_conn)) {
       flog.error("Critical: redis_conn is not available. Exiting main loop.")
       break
@@ -67,12 +59,12 @@ main <- function() {
       
       if (!is.null(redis_message)) {
         gwas_info <- jsonlite::fromJSON(redis_message[[2]])
-        flog.info(paste("Received new message from queue with guid:", gwas_info$metadata$guid))
+        flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 
         processed <- process_message(gwas_info)
 
         if (!is.null(processed)) {
-          flog.error(paste("Failed to process message with guid:", gwas_info$metadata$guid))
+          flog.error(paste(gwas_info$metadata$guid, "Failed to process message"))
 
           message_and_error <- list(
             original_message = gwas_info,
@@ -81,7 +73,7 @@ main <- function() {
           )
           send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
         } else {
-          flog.info(paste("Successfully processed message with guid:", gwas_info$metadata$guid))
+          flog.info(paste(gwas_info$metadata$guid, "Successfully processed message"))
         }
       }
       Sys.sleep(5)
@@ -90,9 +82,9 @@ main <- function() {
         break
       }
     }, error = function(e) {
-      flog.error(paste("Error processing message:", e$message))
+      flog.error(paste(gwas_info$metadata$guid, "Error processing message:", e$message))
       if (!is.null(e$call)) {
-        flog.error(paste("Error call:", deparse(e$call)))
+        flog.error(paste(gwas_info$metadata$guid, "Error call:", deparse(e$call)))
       }
     })
   }
@@ -110,15 +102,14 @@ process_message <- function(original_gwas_info) {
     gwas_info <- gwas_data$gwas_info
     gwas <- gwas_data$gwas
 
-    flog.info('Verifying GWAS data')
     verification_result <- verify_gwas_data(gwas_info, gwas)
     if (!verification_result$valid) {
-      flog.error(verification_result$error)
+      flog.error(paste(gwas_info$metadata$guid, verification_result$error))
       send_update_gwas_upload(gwas_info, FALSE, paste("bad_data:",verification_result$error))
       return()
     }
 
-    flog.info('Extracting regions')
+    flog.info(paste(gwas_info$metadata$guid, 'Extracting regions'))
     create_study_metadata_files(gwas_info)
     extract_regions <- glue::glue("Rscript extract_regions_from_summary_stats.R",
       " --worker_guid {gwas_info$metadata$guid} 2>&1")
@@ -127,7 +118,7 @@ process_message <- function(original_gwas_info) {
     check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), 'extracted_snps.tsv', output)
     extracted_regions <- vroom::vroom(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), show_col_types = F)
 
-    flog.info('Organising LD blocks')
+    flog.info(paste(gwas_info$metadata$guid, 'Organising LD blocks'))
     ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
     organise_ld_blocks <- glue::glue("Rscript organise_extracted_regions_into_ld_blocks.R",
       " --output_file {ld_blocks_to_colocalise_file}",
@@ -149,7 +140,7 @@ process_message <- function(original_gwas_info) {
         coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
       )
 
-      flog.info(paste('Standardising regions for block:', gwas_info$metadata$guid, block))
+      flog.info(paste(gwas_info$metadata$guid, 'Standardising regions for block:', block))
       standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
         " --ld_block {block} ", 
         " --completed_output_file {output_files$standardised}",
@@ -158,7 +149,7 @@ process_message <- function(original_gwas_info) {
       check_step_complete(output_files$standardised, block, output)
       gc()
 
-      flog.info(paste('Imputing regions for block:', gwas_info$metadata$guid, block))
+      flog.info(paste(gwas_info$metadata$guid, 'Imputing regions for block:', block))
       impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$imputed}",
@@ -167,7 +158,7 @@ process_message <- function(original_gwas_info) {
       check_step_complete(output_files$imputed, block, output)
       gc()
 
-      flog.info(paste('Finemapping regions for block:', gwas_info$metadata$guid, block))
+      flog.info(paste(gwas_info$metadata$guid, 'Finemapping regions for block:', block))
       finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$finemapped}",
@@ -176,7 +167,7 @@ process_message <- function(original_gwas_info) {
       check_step_complete(output_files$finemapped, block, output)
       gc()
 
-      flog.info(paste('Colocalising regions for block:', gwas_info$metadata$guid, block))
+      flog.info(paste(gwas_info$metadata$guid, 'Colocalising regions for block:', block))
       coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
@@ -184,13 +175,14 @@ process_message <- function(original_gwas_info) {
       output <- system(coloc_regions, wait = T, intern = T)
       check_step_complete(output_files$coloc, block, output)
 
-      flog.info(paste('Time taken for block:', gwas_info$metadata$guid, block, diff_time_taken(start_time)))
+      flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
     })
 
-    flog.info(paste('Compiling results for:', gwas_info$metadata$guid))
+    flog.info(paste(gwas_info$metadata$guid, 'Compiling results'))
     results <- compile_results(gwas_info)
 
     if (is.na(TEST_RUN)) {
+      flog.info(paste(gwas_info$metadata$guid, 'Uploading results'))
       upload_results(results, gwas_info)
       send_update_gwas_upload(gwas_info, TRUE, NULL, results)
     } 
@@ -202,10 +194,10 @@ process_message <- function(original_gwas_info) {
       paste("Error:", toString(e))
     }
     
-    flog.error(paste("Error processing message:", error_msg))
-    flog.error(paste("Error class:", class(e)[1]))
+    flog.error(paste(gwas_info$metadata$guid, "Error processing message:", error_msg))
+    flog.error(paste(gwas_info$metadata$guid, "Error class:", class(e)[1]))
     if (!is.null(e$call)) {
-      flog.error(paste("Error call:", deparse(e$call)))
+      flog.error(paste(gwas_info$metadata$guid, "Error call:", deparse(e$call)))
     }
     
     # Create error details
@@ -242,10 +234,10 @@ get_gwas_data <- function(gwas_info) {
   download_status <- system(download_cmd, wait = TRUE)
 
   if (download_status != 0 || !file.exists(local_file_path)) {
-    error_msg <- paste('Failed to download file from Oracle bucket:', gwas_info$file_location)
+    error_msg <- paste(gwas_info$metadata$guid, 'Failed to download file from Oracle bucket:', gwas_info$file_location)
     flog.error(error_msg)
     send_update_gwas_upload(gwas_info, FALSE, error_msg)
-    return(error_msg)
+    stop(error_msg)
   }
 
   gwas_info$metadata$file_location <- local_file_path
@@ -339,15 +331,14 @@ create_study_metadata_files <- function(gwas_info) {
 check_step_complete <- function(output_file, ld_block, output) {
   if (!file.exists(output_file)) {
     error_msg <- glue::glue('Step {output_file} failed')
-    flog.error(error_msg)
+    flog.error(paste(gwas_info$metadata$guid, error_msg))
     if (!is.null(output) && length(output) > 0) {
       flog.error("Command output/error messages:")
-      # Log each line of output for better readability
       for (line in output) {
         flog.error(line)
       }
     } else {
-      flog.error("No output captured from command")
+      flog.error(paste(gwas_info$metadata$guid, "No output captured from command"))
     }
     rlang::abort(
       message = error_msg,
@@ -365,7 +356,7 @@ compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
   
-  compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv')
+  compiled_coloc_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
   compiled_coloc_clustered_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
   
@@ -375,20 +366,19 @@ compile_results <- function(gwas_info) {
   )
   
   if (length(finemapped_studies_files) > 0) {
-    flog.info(paste("Processing", length(finemapped_studies_files), "finemapped study files for", gwas_info$metadata$guid))
     tryCatch({
       study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
+        dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::left_join(snp_annotations, by = "snp") |>
         dplyr::select(study, chr, bp, snp, rsid, display_snp, unique_study_id, file, min_p, ld_block)
-      flog.info(paste("Successfully processed", nrow(study_extractions), "study extractions"))
     }, error = function(e) {
-      flog.error(paste("Error processing finemapped studies files:", e$message))
-      flog.error(paste("Files:", paste(finemapped_studies_files, collapse = ", ")))
+      flog.error(paste(gwas_info$metadata$guid, "Error processing finemapped studies files:", e$message))
+      flog.error(paste(gwas_info$metadata$guid, "Files:", paste(finemapped_studies_files, collapse = ", ")))
       stop(e)
     })
   } else {
-    flog.warn("No finemapped study files found")
+    flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.frame()
   }
   
@@ -396,14 +386,11 @@ compile_results <- function(gwas_info) {
     function(file) file.exists(file), 
     glue::glue('{ld_block_dirs}/coloc_pairwise_results.tsv.gz')
   )
-  flog.info(glue::glue('{ld_block_dirs}'))
-  flog.info(coloc_pairwise_results_files)
   if (length(coloc_pairwise_results_files) > 0) {
-    flog.info(paste("Processing", length(coloc_pairwise_results_files), "coloc pairwise result files for", gwas_info$metadata$guid))
-    coloc_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
+    coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
       dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid)
   } else {
-    coloc_results <- data.frame()
+    coloc_pairwise_results <- data.frame()
   }
 
   coloc_clustered_results_files <- Filter(
@@ -411,19 +398,18 @@ compile_results <- function(gwas_info) {
     glue::glue('{ld_block_dirs}/coloc_clustered_results.tsv.gz')
   )
   if (length(coloc_clustered_results_files) > 0) {
-    flog.info(paste("Processing", length(coloc_clustered_results_files), "coloc clustered result files for", gwas_info$metadata$guid))
     coloc_clustered_results <- vroom::vroom(coloc_clustered_results_files, delim = '\t', show_col_types = FALSE)
   } else {
     coloc_clustered_results <- data.frame()
   }
   
-  flog.info(paste("Writing compiled results to files for", gwas_info$metadata$guid))
-  vroom::vroom_write(coloc_results, compiled_coloc_results_file)
+  flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
+  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
   vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
   
   return(list(
-    coloc_results = coloc_results,
+    coloc_pairwise_results = coloc_pairwise_results,
     study_extractions = study_extractions,
     coloc_clustered_results = coloc_clustered_results
   ))

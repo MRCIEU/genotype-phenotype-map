@@ -78,7 +78,8 @@ main <- function() {
     finemapped_subset <- finemapped_studies |>
       dplyr::filter(
         min_p <= lowest_p_value_threshold & 
-        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
+        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b) &
+        !ignore
       ) |>
       dplyr::mutate(file = dplyr::case_when(
         grepl('^study', file) ~ glue::glue('{data_dir}/{file}'),

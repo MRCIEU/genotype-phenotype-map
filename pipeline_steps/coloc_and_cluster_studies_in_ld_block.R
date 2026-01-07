@@ -235,7 +235,7 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
 
   if (!is.na(worker_guid)) {
     pairs_filtered <- pairs_filtered |>
-      dplyr::filter(study_a == worker_guid | study_b == worker_guid)
+      dplyr::filter((study_a == worker_guid | study_b == worker_guid) & !ignore)
   }
 
   existing_results <- data.table::as.data.table(existing_results)

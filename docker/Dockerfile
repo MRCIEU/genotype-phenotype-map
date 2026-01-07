@@ -63,3 +63,4 @@ RUN Rscript docker/requirements.R && \
     find /usr/local/lib/R -name "*.zip" -delete
 
 COPY . /home/pipeline
+RUN rm -rf /home/pipeline/pipeline_steps/.snakemake/

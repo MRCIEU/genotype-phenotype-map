@@ -5,7 +5,8 @@ RUN if ! id -u opc > /dev/null 2>&1; then \
       useradd -u 1000 -g opc -m -s /bin/bash opc; \
     fi
 
-COPY --chown=opc:opc pipeline_steps/ /home/pipeline/pipeline_steps/
+RUN rm -rf /home/pipeline/pipeline_steps/.snakemake/
+COPY --chown=opc:opc pipeline_steps/ /home/pipeline/pipeline_steps/ 
 COPY --chown=opc:opc worker/ /home/pipeline/worker/
 
 USER opc

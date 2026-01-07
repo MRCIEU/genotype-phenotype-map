@@ -48,7 +48,6 @@ main <- function() {
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
-  q()
 
   message('Creating coloc pairs db...')
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)

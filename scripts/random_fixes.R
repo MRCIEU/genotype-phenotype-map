@@ -244,30 +244,43 @@ remove_bad_studies_fix <- function() {
 }
 
 cleanup_bad_snps <- function(block) {
-  source('../pipeline_steps/gwas_calculations.R')
-  if (!file.exists(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove_updated.tsv'))) return()
-  imputed_snps_to_remove <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove_updated.tsv'), show_col_types = F) |>
+  if (!file.exists(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove_updated.tsv'))) {
+    more_imputed_snps_to_remove <- data.frame()
+  } 
+  if (!file.exists(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv'))) {
+    imputed_snps_to_remove <- data.frame()
+  }
+
+  imputed_snps_to_remove <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove.tsv'), show_col_types = F) |>
     dplyr::filter(!is.na(bps_to_remove))
+  more_imputed_snps_to_remove <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputation_snps_to_remove_updated.tsv'), show_col_types = F) |>
+    dplyr::filter(!is.na(bps_to_remove))
+  
+  imputed_snps_to_remove <- dplyr::bind_rows(imputed_snps_to_remove, more_imputed_snps_to_remove)
   
   imputed_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputed_studies.tsv'), show_col_types = F) |>
     dplyr::filter(study %in% imputed_snps_to_remove$study)
   
   print(glue::glue('{block}: Updating {nrow(imputed_studies)} imputed studies'))
 
-  dont_print <- lapply(seq_len(nrow(imputed_studies)), function(i) {
+  altered_studies <- lapply(seq_len(nrow(imputed_studies)), function(i) {
     study <- imputed_studies[i, ]
     study_name <- study$study
     specific_to_remove <- dplyr::filter(imputed_snps_to_remove, study == study_name & !is.na(bps_to_remove))
-    if (nrow(specific_to_remove) == 0) return(study)
+    if (nrow(specific_to_remove) == 0) return(NULL)
 
     gwas <- vroom::vroom(study$file, show_col_types = F)
     updated_gwas <- dplyr::filter(gwas, !BP %in% specific_to_remove$bps_to_remove)
     rows_to_remove <- nrow(gwas) - nrow(updated_gwas)
-    if (rows_to_remove == 0) return()
-    # print(glue::glue('Removed {rows_to_remove} SNPs in {study$study}'))
+    if (rows_to_remove == 0) return(NULL)
+    # print(glue::glue('{block}: Removed {rows_to_remove} SNPs in {study$study}'))
 
     vroom::vroom_write(updated_gwas, study$file)
+    return(study_name)
   })
+  altered_studies <- unlist(altered_studies)
+
+  print(glue::glue('{block}: Altered {length(altered_studies)} studies out of {length(unique(imputed_snps_to_remove$study))}'))
 
   finemapped_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/finemapped_studies.tsv'), show_col_types = F)
 
@@ -296,7 +309,7 @@ cleanup_bad_snps <- function(block) {
     rows_to_remove <- nrow(gwas) - nrow(updated_gwas)
 
     if (rows_to_remove != 0) {
-      # print(glue::glue('Removed {rows_to_remove} SNPs in {study$unique_study_id}'))
+      # print(glue::glue('{block}: Removed {rows_to_remove} SNPs in {study$unique_study_id}'))
       vroom::vroom_write(updated_gwas, study$file)
     }
     if (nrow(updated_gwas) == 0) {
@@ -311,7 +324,7 @@ cleanup_bad_snps <- function(block) {
       study$bp <- interesting_snp$BP
       study$snp <- interesting_snp$SNP
       study$min_p <- 2 * pnorm(-abs(interesting_snp$NEW_Z))
-      # print(glue::glue('Found new SNP {study$snp} in updated gwas for {study$unique_study_id}'))
+      # print(glue::glue('{block}: Found new SNP {study$snp} in updated gwas for {study$unique_study_id}'))
     }
 
     return(study)
@@ -332,7 +345,8 @@ cleanup_bad_snps <- function(block) {
   new_coloc_pairwise_results <- coloc_pairwise_results |>
     dplyr::filter(!(
       (PP.H4.abf > 0.5 | PP.H3.abf > 0.5) &
-      (study_a %in% imputed_snps_to_remove$study | study_b %in% imputed_snps_to_remove$study |
+      # (study_a %in% imputed_snps_to_remove$study | study_b %in% imputed_snps_to_remove$study |
+      (study_a %in% altered_studies | study_b %in% altered_studies |
       unique_study_a %in% non_significant_finemapped_studies$unique_study_id | unique_study_b %in% non_significant_finemapped_studies$unique_study_id)
     )) 
   print(glue::glue('{block}: Removing {nrow(coloc_pairwise_results) - nrow(new_coloc_pairwise_results)} coloc pairwise results out of {nrow(coloc_pairwise_results)}'))
@@ -345,6 +359,8 @@ cleanup_all_problematic_snps <- function(blocks) {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
   blocks <- ld_info$block
+  # blocks <- c('EUR/1/38448977-39735335')
+  # blocks <- c('EUR/22/35695831-37164130')
 
   dont_print <- parallel::mclapply(blocks, mc.cores = 30, function(block) {
   # dont_print <- lapply(blocks, function(block) {
@@ -407,7 +423,6 @@ find_bad_imputations <- function() {
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
   blocks <- ld_info$block
   # blocks <- blocks[60:length(blocks)]
-  # blocks <- c('EUR/7/148057181-150144923')
   parallel::mclapply(blocks, mc.cores = 35, function(block) {
     print(block)
     investigate_bad_imputation(block, glue::glue('{ld_block_data_dir}/{block}/imputed_studies.tsv'))

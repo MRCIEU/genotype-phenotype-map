@@ -386,7 +386,7 @@ compile_results <- function(gwas_info) {
     coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
       dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
       dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
-      dplyr::rename(h3 = PP.H3.abf, h4 = PP.H4.abf)
+      dplyr::rename(unique_study_id_a = unique_study_a, unique_study_id_b = unique_study_b, h3 = PP.H3.abf, h4 = PP.H4.abf)
   } else {
     coloc_pairwise_results <- data.frame()
   }
@@ -401,7 +401,7 @@ compile_results <- function(gwas_info) {
       dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
       dplyr::ungroup() |>
       dplyr::arrange(coloc_group_id) |>
-      dplyr::select(unique_study_id, coloc_group_id, ld_block, h4_connectedness, h3_connectedness)
+      dplyr::select(unique_study_id, coloc_group_id, snp, ld_block, h4_connectedness, h3_connectedness)
   } else {
     coloc_clustered_results <- data.frame()
   }

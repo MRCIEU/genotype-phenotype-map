@@ -150,6 +150,12 @@ main <- function() {
 
   finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> 
     dplyr::distinct(unique_study_id, .keep_all = TRUE)
+  
+  if (is.na(args$worker_guid)) {
+    finemapped_results <- finemapped_results |>
+      dplyr::filter(study == args$worker_guid) |>
+      dplyr::mutate(file = gsub(data_dir, '', file), file_with_lbfs = gsub(data_dir, '', file_with_lbfs))
+  }
 
   if (nrow(finemapped_results) == 0) finemapped_results <- empty_finemapped_info()
 

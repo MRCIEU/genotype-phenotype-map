@@ -78,7 +78,7 @@ main <- function() {
       }
       Sys.sleep(5)
       stop_processing_file <- file.exists(glue::glue('{data_dir}/stop_processing'))
-      if (!is.na(TEST_RUN) || !is.null(TEST_RUN) || stop_processing_file) {
+      if (!is.na(TEST_RUN) || stop_processing_file) {
         break
       }
     }, error = function(e) {

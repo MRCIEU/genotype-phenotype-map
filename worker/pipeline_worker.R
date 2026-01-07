@@ -367,7 +367,7 @@ compile_results <- function(gwas_info) {
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
         dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::left_join(snp_annotations, by = "snp") |>
-        dplyr::select(study, chr, bp, snp, rsid, display_snp, unique_study_id, file, min_p, ld_block)
+        dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
     }, error = function(e) {
       flog.error(paste(gwas_info$metadata$guid, "Error processing finemapped studies files:", e$message))
       flog.error(paste(gwas_info$metadata$guid, "Files:", paste(finemapped_studies_files, collapse = ", ")))
@@ -384,7 +384,9 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_pairwise_results_files) > 0) {
     coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
-      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid)
+      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
+      dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
+      dplyr::rename(h3 = PP.H3.abf, h4 = PP.H4.abf)
   } else {
     coloc_pairwise_results <- data.frame()
   }
@@ -394,7 +396,12 @@ compile_results <- function(gwas_info) {
     glue::glue('{ld_block_dirs}/coloc_clustered_results.tsv.gz')
   )
   if (length(coloc_clustered_results_files) > 0) {
-    coloc_clustered_results <- vroom::vroom(coloc_clustered_results_files, delim = '\t', show_col_types = FALSE)
+    coloc_clustered_results <- vroom::vroom(coloc_clustered_results_files, delim = '\t', show_col_types = FALSE) |>
+      dplyr::group_by(ld_block, component) |>
+      dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
+      dplyr::ungroup() |>
+      dplyr::arrange(coloc_group_id) |>
+      dplyr::select(unique_study_id, coloc_group_id, ld_block, h4_connectedness, h3_connectedness)
   } else {
     coloc_clustered_results <- data.frame()
   }

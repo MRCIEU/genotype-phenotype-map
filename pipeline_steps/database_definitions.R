@@ -389,7 +389,10 @@ gwas_upload_db <- list(
       study_extraction_id_b INTEGER,
       ld_block_id INTEGER NOT NULL,
       h3 REAL CHECK (h3 BETWEEN 0 AND 1),
-      h4 REAL CHECK (h4 BETWEEN 0 AND 1)
+      h4 REAL CHECK (h4 BETWEEN 0 AND 1),
+      false_positive BOOLEAN NOT NULL,
+      false_negative BOOLEAN NOT NULL,
+      ignore BOOLEAN NOT NULL
     )"
   ),
   coloc_groups = list(

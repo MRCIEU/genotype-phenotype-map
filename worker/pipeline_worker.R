@@ -310,7 +310,7 @@ create_study_metadata_files <- function(gwas_info) {
     ancestry = gwas_info$metadata$ancestry,
     sample_size = gwas_info$metadata$sample_size,
     category = gwas_info$metadata$category,
-    study_location = gwas_info$file_location,
+    study_location = gwas_info$metadata$file_location,
     extracted_location = extracted_study_dir,
     reference_build = gwas_info$metadata$reference_build,
     p_value_threshold = gwas_info$metadata$p_value_threshold,
@@ -439,13 +439,14 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
   if (success) {
     put_body <- list(
       success = success,
-      results = results
+      coloc_pairs = results$coloc_pairwise_results,
+      study_extractions = results$study_extractions,
+      coloc_groups = results$coloc_clustered_results
     )
   } else {  
     put_body <- list(
       success = success,
-      failure_reason = failure_reason,
-      results = results
+      failure_reason = failure_reason
     )
   }
 
@@ -454,6 +455,7 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
     body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
     httr::add_headers("Content-Type" = "application/json")
   )
+  flog.info(paste(gwas_info$metadata$guid, "Response:", jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE)))
   if (httr::status_code(response) != 200) {
     error_msg <- paste(gwas_info$metadata$guid, "Error updating GWAS:", httr::content(response, "text"))
     flog.error(error_msg)

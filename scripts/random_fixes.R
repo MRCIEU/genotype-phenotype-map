@@ -257,6 +257,8 @@ cleanup_bad_snps <- function(block) {
     dplyr::filter(!is.na(bps_to_remove))
   
   imputed_snps_to_remove <- dplyr::bind_rows(imputed_snps_to_remove, more_imputed_snps_to_remove)
+
+  unique_altered_studies <- unique(imputed_snps_to_remove$study)
   
   imputed_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/imputed_studies.tsv'), show_col_types = F) |>
     dplyr::filter(study %in% imputed_snps_to_remove$study)
@@ -269,6 +271,7 @@ cleanup_bad_snps <- function(block) {
     specific_to_remove <- dplyr::filter(imputed_snps_to_remove, study == study_name & !is.na(bps_to_remove))
     if (nrow(specific_to_remove) == 0) return(NULL)
 
+    print(paste(block, study$file))
     gwas <- vroom::vroom(study$file, show_col_types = F)
     updated_gwas <- dplyr::filter(gwas, !BP %in% specific_to_remove$bps_to_remove)
     rows_to_remove <- nrow(gwas) - nrow(updated_gwas)
@@ -281,6 +284,7 @@ cleanup_bad_snps <- function(block) {
   altered_studies <- unlist(altered_studies)
 
   print(glue::glue('{block}: Altered {length(altered_studies)} studies out of {length(unique(imputed_snps_to_remove$study))}'))
+  if (length(altered_studies) == 0) return()
 
   finemapped_studies <- vroom::vroom(glue::glue('{ld_block_data_dir}/{block}/finemapped_studies.tsv'), show_col_types = F)
 
@@ -359,8 +363,11 @@ cleanup_all_problematic_snps <- function(blocks) {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
   blocks <- ld_info$block
-  # blocks <- c('EUR/1/38448977-39735335')
-  # blocks <- c('EUR/22/35695831-37164130')
+
+  blocks_to_skip <- vroom::vroom('finished_blocks.csv', show_col_types = F, delim = ',')$block
+  blocks <- setdiff(blocks, blocks_to_skip)
+  print(length(blocks))
+  print(blocks)
 
   dont_print <- parallel::mclapply(blocks, mc.cores = 30, function(block) {
   # dont_print <- lapply(blocks, function(block) {

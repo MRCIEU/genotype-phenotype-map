@@ -34,7 +34,6 @@ main <- function() {
     dplyr::filter(variant_type == variant_types$common)
 
   ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
-  print(file.info(ld_matrix_file))
   ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F, altrep = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
@@ -390,8 +389,6 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
-      print(study)
-      print(new_bp)
       if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
         study['cis_trans'] <- cis_trans$cis_only
       } else {

@@ -354,17 +354,22 @@ compile_results <- function(gwas_info) {
   compiled_coloc_pairwise_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
   compiled_coloc_clustered_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
-  
+  compiled_associations_file <- glue::glue('{extracted_study_dir}/compiled_associations.tsv')
+  lbfs_concatenated_file <- glue::glue('{extracted_study_dir}/gwas_with_lbfs.tsv.gz')
+
   finemapped_studies_files <- Filter(
     function(file) file.exists(file), 
     glue::glue('{ld_block_dirs}/finemapped_studies.tsv')
   )
   
+  finemapped_studies_full <- data.frame()
   if (length(finemapped_studies_files) > 0) {
     tryCatch({
-      study_extractions <- vroom::vroom(finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
+      finemapped_studies_full <- vroom::vroom(finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
+        dplyr::filter(study == gwas_info$metadata$guid)
+      
+      study_extractions <- finemapped_studies_full |>
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
-        dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::left_join(snp_annotations, by = "snp") |>
         dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
     }, error = function(e) {
@@ -405,96 +410,116 @@ compile_results <- function(gwas_info) {
     coloc_clustered_results <- data.frame()
   }
   
-  # Extract associations for SNPs in coloc clustered results
-  associations <- data.frame()
-  if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
-    tryCatch({
-      
-      finemapped_studies <- study_extractions |>
-        dplyr::select(unique_study_id, file_with_lbfs, ld_block) |>
-        dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
-      
-      # Get unique SNPs from coloc clustered results for this study
-      coloc_snps <- coloc_clustered_results |>
-        dplyr::filter(unique_study_id %in% finemapped_studies$unique_study_id) |>
-        dplyr::select(unique_study_id, snp, coloc_group_id, ld_block)
-      
-      if (nrow(coloc_snps) > 0 && nrow(finemapped_studies) > 0) {
-        # Join to get file paths
-        coloc_snps_with_files <- coloc_snps |>
-          dplyr::left_join(finemapped_studies, by = c("unique_study_id", "ld_block"))
-        
-        # Group by file to read each file once
-        files_to_read <- coloc_snps_with_files |>
-          dplyr::group_by(file_with_lbfs) |>
-          dplyr::group_split()
-        
-        # Read each file and extract relevant SNPs
-        associations_list <- lapply(files_to_read, function(file_group) {
-          file_path <- file_group$file_with_lbfs[1]
-          snp_mapping <- file_group |>
-            dplyr::select(snp, unique_study_id, coloc_group_id) |>
-            dplyr::distinct()
-          target_snps <- unique(snp_mapping$snp)
-          
-          # Handle relative paths
-          if (!grepl('^/', file_path) && !grepl('^study', file_path)) {
-            file_path <- file.path(data_dir, file_path)
-          } else if (grepl('^study', file_path)) {
-            file_path <- file.path(data_dir, file_path)
-          }
-          
-          if (!file.exists(file_path)) {
-            flog.warn(paste(gwas_info$metadata$guid, "Association file not found:", file_path))
-            return(data.frame())
-          }
-          
-          tryCatch({
-            file_associations <- vroom::vroom(file_path, show_col_types = FALSE) |>
-              dplyr::filter(SNP %in% target_snps) |>
-              dplyr::select(dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'P', 'IMPUTED', 'Z'))) |>
-              dplyr::rename(snp = SNP)
-            
-            # Add unique_study_id and coloc_group_id by joining with snp_mapping
-            file_associations <- file_associations |>
-              dplyr::left_join(snp_mapping, by = "snp") |>
-              dplyr::filter(!is.na(unique_study_id))
-            
-            return(file_associations)
-          }, error = function(e) {
-            flog.error(paste(gwas_info$metadata$guid, "Error reading association file:", file_path, "-", e$message))
-            return(data.frame())
-          })
-        })
-        
-        associations <- dplyr::bind_rows(associations_list)
-        
-        if (nrow(associations) > 0) {
-          # Join with snp_annotations to add display_snp and rsid
-          associations <- associations |>
-            dplyr::left_join(snp_annotations, by = "snp") |>
-            dplyr::select(unique_study_id, coloc_group_id, snp, dplyr::any_of(c('rsid', 'display_snp', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'P', 'IMPUTED', 'Z')))
-          
-          flog.info(paste(gwas_info$metadata$guid, "Extracted", nrow(associations), "associations for coloc clustered SNPs"))
-        }
-      }
-    }, error = function(e) {
-      flog.error(paste(gwas_info$metadata$guid, "Error extracting associations:", e$message))
-      associations <- data.frame()
-    })
-  }
-  
+  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions)
+
+  lbfs_concatenated <- concatenate_file_with_lbfs(finemapped_studies_full)
+
   flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
   vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
   vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
+  vroom::vroom_write(lbfs_concatenated, lbfs_concatenated_file)
+  # vroom::vroom_write(associations, compiled_associations_file)
   
   return(list(
     coloc_pairwise_results = coloc_pairwise_results,
     study_extractions = study_extractions,
     coloc_clustered_results = coloc_clustered_results,
-    associations = associations
+    associations = NULL 
   ))
+}
+
+#TODO: go through this, make sure it's working... it's NOT
+#TOOD: How do we get the summary stats?  I think we need to pull down the file_with_lbfs from the oracle bucket... ewwwww.
+#TODO: Either that or also save BETA and P into the _1 files.
+find_associations_for_coloc_clustered_snps <- function(gwas_info, coloc_clustered_results, study_extractions) {
+  if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
+    finemapped_studies <- study_extractions |>
+      dplyr::select(unique_study_id, file_with_lbfs, ld_block) |>
+      dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
+    
+    coloc_snps <- coloc_clustered_results |>
+      dplyr::filter(unique_study_id %in% finemapped_studies$unique_study_id) |>
+      dplyr::select(unique_study_id, snp, coloc_group_id, ld_block)
+    
+    if (nrow(coloc_snps) > 0 && nrow(finemapped_studies) > 0) {
+      # Join to get file paths
+      coloc_snps_with_files <- coloc_snps |>
+        dplyr::left_join(finemapped_studies, by = c("unique_study_id", "ld_block"))
+      
+      # Group by file to read each file once
+      files_to_read <- coloc_snps_with_files |>
+        dplyr::group_by(file_with_lbfs) |>
+        dplyr::group_split()
+      
+      # Read each file and extract relevant SNPs
+      associations_list <- lapply(files_to_read, function(file_group) {
+        file_path <- file_group$file_with_lbfs[1]
+        snp_mapping <- file_group |>
+          dplyr::select(snp, unique_study_id, coloc_group_id) |>
+          dplyr::distinct()
+        target_snps <- unique(snp_mapping$snp)
+        
+        # Handle relative paths
+        if (!grepl('^/', file_path) && !grepl('^study', file_path)) {
+          file_path <- file.path(data_dir, file_path)
+        } else if (grepl('^study', file_path)) {
+          file_path <- file.path(data_dir, file_path)
+        }
+        
+        if (!file.exists(file_path)) {
+          flog.warn(paste(gwas_info$metadata$guid, "Association file not found:", file_path))
+          return(data.frame())
+        }
+        
+        file_associations <- vroom::vroom(file_path, show_col_types = FALSE) |>
+          dplyr::filter(SNP %in% target_snps) |>
+          dplyr::select(dplyr::any_of(c('SNP', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'P', 'IMPUTED', 'Z'))) |>
+          dplyr::rename(snp = SNP)
+        
+        # Add unique_study_id and coloc_group_id by joining with snp_mapping
+        file_associations <- file_associations |>
+          dplyr::left_join(snp_mapping, by = "snp") |>
+          dplyr::filter(!is.na(unique_study_id))
+        
+        return(file_associations)
+      })
+      
+      associations <- dplyr::bind_rows(associations_list)
+      
+      if (nrow(associations) > 0) {
+        # Join with snp_annotations to add display_snp and rsid
+        associations <- associations |>
+          dplyr::left_join(snp_annotations, by = "snp") |>
+          dplyr::select(unique_study_id, coloc_group_id, snp, dplyr::any_of(c('rsid', 'display_snp', 'CHR', 'BP', 'EA', 'OA', 'EAF', 'BETA', 'SE', 'P', 'IMPUTED', 'Z')))
+        
+        flog.info(paste(gwas_info$metadata$guid, "Extracted", nrow(associations), "associations for coloc clustered SNPs"))
+        return(associations)
+      }
+    }
+  }
+}
+
+concatenate_file_with_lbfs <- function(gwas_info) {
+  lbfs_concatenated_file <- glue::glue('{extracted_study_dir}/gwas_with_lbfs.tsv.gz')
+  if (nrow(finemapped_studies_full) > 0) {
+    flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
+    
+    lbf_files <- unique(finemapped_studies_full$file_with_lbfs)       
+    if (nrow(lbf_files) > 0) {
+      lbfs_data_list <- lapply(lbf_files, function(file_path) {
+        file_data <- vroom::vroom(file_path, show_col_types = FALSE)
+        return(file_data)
+      })
+      
+      lbfs_data_list <- lbfs_data_list[sapply(lbfs_data_list, nrow) > 0]
+      lbfs_concatenated <- dplyr::bind_rows(lbfs_data_list)
+      
+      
+    } else {
+      return(data.frame())
+    }
+  }
 }
 
 upload_results <- function(results, gwas_info) {

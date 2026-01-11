@@ -227,10 +227,16 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
     #TODO: remove N from columns
   }
   for (name in names(columns)) {
+    # Skip if the mapping value is empty, NULL, or zero-length
+    if (is.null(columns[[name]]) || length(columns[[name]]) == 0 || 
+        (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)) {
+      next
+    }
+
     #this deletes an existing column that we're about to rename, so we don't have 2 columns
     already <- name != columns[[name]]
-    already <- already %in% TRUE
-    if (name %in% names(gwas) & already) {
+    already <- length(already) > 0 && any(already, na.rm = TRUE)
+    if (name %in% names(gwas) && already) {
       gwas <- gwas[ , -which(names(gwas) %in% c(name))]
     }
     names(gwas)[names(gwas) == columns[name]] <- name

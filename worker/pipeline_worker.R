@@ -250,7 +250,11 @@ get_gwas_data <- function(gwas_info) {
 }
 
 verify_gwas_data <- function(gwas_info, gwas) {
-  gwas_info$metadata$column_names <- Filter(\(column) !is.null(column), gwas_info$metadata$column_names)
+  gwas_info$metadata$column_names <- Filter(\(column) {
+    !is.null(column) && length(column) > 0 &&
+    (is.character(column) && nchar(column) > 0 || !is.character(column))
+  }, gwas_info$metadata$column_names)
+
   gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
   mandatory_columns <- c('CHR', 'BP', 'P', 'EA', 'OA', 'EAF')
   beta_columns <- c('BETA', 'SE')

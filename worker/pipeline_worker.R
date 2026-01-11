@@ -127,8 +127,7 @@ process_message <- function(original_gwas_info) {
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
     parallel_block_processing <- 4
-    blocks <- head(ld_blocks_to_colocalise$ld_block, 10)
-    lapply(blocks, function(block) {
+    dont_print <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
       start_time <- Sys.time()
       ld_info <- ld_block_dirs(block)
 
@@ -412,7 +411,7 @@ compile_results <- function(gwas_info) {
   
   # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions)
 
-  lbfs_concatenated <- concatenate_file_with_lbfs(finemapped_studies_full)
+  lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, finemapped_studies_full)
 
   flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
   vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
@@ -500,7 +499,7 @@ find_associations_for_coloc_clustered_snps <- function(gwas_info, coloc_clustere
   }
 }
 
-concatenate_file_with_lbfs <- function(gwas_info) {
+concatenate_file_with_lbfs <- function(gwas_info, finemapped_studies_full) {
   lbfs_concatenated_file <- glue::glue('{extracted_study_dir}/gwas_with_lbfs.tsv.gz')
   if (nrow(finemapped_studies_full) > 0) {
     flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
@@ -566,7 +565,6 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
     body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
     httr::add_headers("Content-Type" = "application/json")
   )
-  flog.info(paste(gwas_info$metadata$guid, "Response:", jsonlite::toJSON(put_body, auto_unbox = TRUE, pretty = TRUE)))
   if (httr::status_code(response) != 200) {
     error_msg <- paste(gwas_info$metadata$guid, "Error updating GWAS:", httr::content(response, "text"))
     flog.error(error_msg)

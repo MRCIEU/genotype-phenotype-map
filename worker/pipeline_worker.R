@@ -221,7 +221,7 @@ get_gwas_data <- function(gwas_info) {
   dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
 
   download_cmd <- paste('oci os object get',
-                        '--auth', 'instance-principal',
+                        '--auth', 'instance_principal',
                         '--bucket-name', shQuote(oracle_bucket_name),
                         '--name', shQuote(gwas_info$file_location),
                         '--file', shQuote(local_file_path))
@@ -526,7 +526,7 @@ upload_results <- function(results, gwas_info) {
   bucket_prefix <- glue::glue('gwas_upload/{gwas_info$metadata$guid}/')
 
   cmd <- paste('oci os object sync',
-               '--auth', 'instance-principal',
+               '--auth', 'instance_principal',
                '--bucket-name', shQuote(oracle_bucket_name),
                '--src-dir', shQuote(extracted_study_dir),
                '--prefix', shQuote(bucket_prefix))

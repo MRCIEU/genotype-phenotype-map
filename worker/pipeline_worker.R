@@ -221,6 +221,7 @@ get_gwas_data <- function(gwas_info) {
   dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
 
   download_cmd <- paste('oci os object get',
+                        '--auth', 'instance-principal',
                         '--bucket-name', shQuote(oracle_bucket_name),
                         '--name', shQuote(gwas_info$file_location),
                         '--file', shQuote(local_file_path))
@@ -507,7 +508,7 @@ concatenate_file_with_lbfs <- function(gwas_info, finemapped_studies_full) {
     lbf_files <- unique(finemapped_studies_full$file_with_lbfs)       
     if (length(lbf_files) > 0) {
       lbfs_data_list <- lapply(lbf_files, function(file_path) {
-        file_data <- vroom::vroom(file_path, show_col_types = FALSE)
+        file_data <- vroom::vroom(glue::glue('{data_dir}/{file_path}'), show_col_types = FALSE)
         return(file_data)
       })
       
@@ -525,6 +526,7 @@ upload_results <- function(results, gwas_info) {
   bucket_prefix <- glue::glue('gwas_upload/{gwas_info$metadata$guid}/')
 
   cmd <- paste('oci os object sync',
+               '--auth', 'instance-principal',
                '--bucket-name', shQuote(oracle_bucket_name),
                '--src-dir', shQuote(extracted_study_dir),
                '--prefix', shQuote(bucket_prefix))

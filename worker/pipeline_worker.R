@@ -505,7 +505,7 @@ concatenate_file_with_lbfs <- function(gwas_info, finemapped_studies_full) {
     flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
     
     lbf_files <- unique(finemapped_studies_full$file_with_lbfs)       
-    if (nrow(lbf_files) > 0) {
+    if (length(lbf_files) > 0) {
       lbfs_data_list <- lapply(lbf_files, function(file_path) {
         file_data <- vroom::vroom(file_path, show_col_types = FALSE)
         return(file_data)

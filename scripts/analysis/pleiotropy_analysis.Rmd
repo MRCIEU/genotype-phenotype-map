@@ -24,6 +24,11 @@ coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file
 ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
 
 dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+
+cb_blue <- "#0072B2"
+cb_light_blue <- "#80B9D9"
+cb_orange <- "#E69F00"
+cb_light_orange <- "#F3CF80"
 ```
 
 
@@ -139,7 +144,7 @@ snp_stats_text <- paste0(
 
 p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
   geom_point(alpha = 0.6, size = 2) +
-  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  geom_smooth(method = "lm", se = TRUE, color = cb_blue) +
   annotate("label", x = Inf, y = Inf, label = snp_stats_text, 
            hjust = 1.1, vjust = 1.5, size = 3.5, family = "mono",
            fill = "white", alpha = 0.8) +
@@ -301,7 +306,7 @@ multiple_genes_in_coloc_group <- function(only_protein_coding = FALSE, include_t
     filter(unique_genes > 0)
   
   p_gene_dist <- ggplot(unique_gene_bin_counts, aes(x = unique_gene_bin, y = count)) +
-    geom_bar(stat = "identity", fill = "darkgreen", color = "black", alpha = 0.7) +
+    geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
     geom_text(aes(label = count), vjust = -0.5, size = 3) +
     scale_x_discrete(limits = c(as.character(1:20), ">20")) +
     labs(
@@ -422,7 +427,7 @@ gene_trait_category_count_data <- gene_trait_category_counts %>%
 
 
 p_gene_trait_category <- ggplot(gene_trait_category_count_data, aes(x = num_trait_categories, y = count_offset)) +
-  geom_bar(stat = "identity", fill = "darkgreen", color = "black", alpha = 0.7) +
+  geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
   scale_x_continuous() +
   labs(
     title = "(A) Number of trait categories colocalising with a gene",
@@ -476,7 +481,7 @@ count_data <- number_of_genes %>%
   mutate(count_offset = count + 0.3)  # Add small offset to make count=1 visible
 
 p <- ggplot(count_data, aes(x = num_genes, y = count_offset)) +
-  geom_bar(stat = "identity", fill = "darkgreen", alpha = 1) +
+geom_bar(stat = "identity", fill = cb_blue, alpha = 1) +
   scale_x_continuous() +
   scale_y_log10() +
   labs(
@@ -588,7 +593,7 @@ network_plot <- ggraph(gene_tidy_graph, layout = "fr", niter = 1000) +
   geom_node_text(aes(label = name), size = 2.2, colour = "grey40", repel = TRUE) +
   scale_edge_alpha_continuous(range = c(0.1, 0.8)) +
   scale_size_continuous(range = c(2, 8)) +
-  scale_fill_gradient(low = "#c7e9c0", high = "#006400", name = "# of genes ±1Mb") +
+  scale_fill_gradient(low = cb_light_blue, high = cb_blue, name = "# of genes ±1Mb") +
   labs(
     title = "(C) Gene-Gene Colocalization Network within an LD Block",
     subtitle = paste("LD Block", ld_block_info$ld_block),
@@ -770,7 +775,7 @@ density_coloc_stats_text <- paste0(
 # Create scatter plot
 gene_density_coloc_scatter <- ggplot(ld_block_coloc_density, 
   aes(x = neighborhood_genes, y = num_coloc_partner_genes_in_block)) +
-  geom_point(alpha = 0.6, color = "#006400", size = 1.5) +
+  geom_point(alpha = 0.6, color = cb_blue, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, color = "black", linewidth = 0.5) +
   annotate("label", x = -Inf, y = Inf, label = density_coloc_stats_text, 
            hjust = -0.1, vjust = 1.5, size = 3.5, family = "mono",

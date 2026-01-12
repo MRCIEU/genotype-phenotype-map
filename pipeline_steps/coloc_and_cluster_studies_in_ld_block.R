@@ -91,6 +91,7 @@ main <- function() {
   }
 
   studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
+    flog.info(glue::glue('{args$ld_block}: Loading {file}'))
     if (file.info(file)$size == 0) {
       message(glue::glue('{file} is empty, delete.'))
       return(NULL)

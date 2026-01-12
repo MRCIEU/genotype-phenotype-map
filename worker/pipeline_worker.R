@@ -35,13 +35,6 @@ if (is.na(TEST_RUN)) {
   )
 }
 
-snp_annotations <- vroom::vroom(
-  file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
-  altrep = FALSE,
-  show_col_types = FALSE,
-  col_select = c('snp', 'rsid', 'display_snp')
-) |>
-  dplyr::mutate(snp = trimws(snp))
 
 
 main <- function() {
@@ -113,9 +106,7 @@ process_message <- function(original_gwas_info) {
     extract_regions <- glue::glue("Rscript extract_regions_from_summary_stats.R",
       " --worker_guid {gwas_info$metadata$guid} 2>&1")
     output <- system(extract_regions, wait = T, intern = T)
-
     check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), 'extracted_snps.tsv', output)
-    extracted_regions <- vroom::vroom(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), show_col_types = F)
 
     flog.info(paste(gwas_info$metadata$guid, 'Organising LD blocks'))
     ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
@@ -124,8 +115,13 @@ process_message <- function(original_gwas_info) {
       " --worker_guid {gwas_info$metadata$guid} 2>&1")
     output <- system(organise_ld_blocks, wait = T, intern = T)
     check_step_complete(ld_blocks_to_colocalise_file, 'updated_ld_blocks_to_colocalise.tsv', output)
-    ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
+    #cleaning up memory, so it utilises less memory on the worker
+    rm(gwas)
+    rm(gwas_data)
+    gc()
+
+    ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
     parallel_block_processing <- 3
     processed_blocks <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
       tryCatch({
@@ -177,11 +173,7 @@ process_message <- function(original_gwas_info) {
         flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
         return(block)
       }, error = function(e) {
-        flog.error(paste(gwas_info$metadata$guid, 'Error processing block:', block, '-', e$message))
-        if (!is.null(e$call)) {
-          flog.error(paste(gwas_info$metadata$guid, 'Error call:', deparse(e$call)))
-        }
-        return(NULL)
+        stop(paste(gwas_info$metadata$guid, 'Error processing block:', block))
       })
     })
     
@@ -359,6 +351,14 @@ check_step_complete <- function(output_file, ld_block, output) {
 compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
+
+  snp_annotations <- vroom::vroom(
+    file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+    altrep = FALSE,
+    show_col_types = FALSE,
+    col_select = c('snp', 'rsid', 'display_snp')
+  ) |>
+    dplyr::mutate(snp = trimws(snp))
   
   compiled_coloc_pairwise_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
@@ -419,7 +419,7 @@ compile_results <- function(gwas_info) {
     coloc_clustered_results <- data.frame()
   }
   
-  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions)
+  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)
 
   lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, finemapped_studies_full)
 
@@ -441,7 +441,7 @@ compile_results <- function(gwas_info) {
 #TODO: go through this, make sure it's working... it's NOT
 #TOOD: How do we get the summary stats?  I think we need to pull down the file_with_lbfs from the oracle bucket... ewwwww.
 #TODO: Either that or also save BETA and P into the _1 files.
-find_associations_for_coloc_clustered_snps <- function(gwas_info, coloc_clustered_results, study_extractions) {
+find_associations_for_coloc_clustered_snps <- function(gwas_info, coloc_clustered_results, study_extractions, snp_annotations) {
   if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
     finemapped_studies <- study_extractions |>
       dplyr::select(unique_study_id, file_with_lbfs, ld_block) |>

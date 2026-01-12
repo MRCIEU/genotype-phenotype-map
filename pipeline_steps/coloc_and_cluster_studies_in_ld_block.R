@@ -13,6 +13,15 @@ parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force cl
 
 args <- argparser::parse_args(parser)
 
+library(futile.logger)
+
+log_dir <- file.path(data_dir, "logs")
+dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+log_file <- file.path(log_dir, paste0("pipeline_worker_", format(Sys.time(), "%Y%m"), ".log"))
+
+flog.appender(appender.tee(log_file))
+flog.threshold(INFO)
+
 main <- function() {
   start_time <- Sys.time()
   if (!is.na(args$worker_guid)) {

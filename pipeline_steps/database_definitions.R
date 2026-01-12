@@ -355,6 +355,7 @@ gwas_upload_db <- list(
       is_published BOOLEAN NOT NULL,
       doi TEXT,
       should_be_added BOOLEAN,
+      upload_metadata JSON,
       status TEXT NOT NULL,
       failure_reason TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

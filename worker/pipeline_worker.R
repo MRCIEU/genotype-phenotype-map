@@ -127,54 +127,70 @@ process_message <- function(original_gwas_info) {
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
     parallel_block_processing <- 4
-    dont_print <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
-      start_time <- Sys.time()
-      ld_info <- ld_block_dirs(block)
+    processed_blocks <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
+      tryCatch({
+        start_time <- Sys.time()
+        ld_info <- ld_block_dirs(block)
 
-      output_files <- list(
-        standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
-        imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
-        finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
-        coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
-      )
+        output_files <- list(
+          standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
+          imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
+          finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
+          coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
+        )
 
-      flog.info(paste(gwas_info$metadata$guid, 'Standardising regions for block:', block))
-      standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
-        " --ld_block {block} ", 
-        " --completed_output_file {output_files$standardised}",
-        " --worker_guid {gwas_info$metadata$guid} 2>&1")
-      output <- system(standardise_regions, wait = T, intern = T)
-      check_step_complete(output_files$standardised, block, output)
-      gc()
+        flog.info(paste(gwas_info$metadata$guid, 'Standardising regions for block:', block))
+        standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
+          " --ld_block {block} ", 
+          " --completed_output_file {output_files$standardised}",
+          " --worker_guid {gwas_info$metadata$guid} 2>&1")
+        output <- system(standardise_regions, wait = T, intern = T)
+        check_step_complete(output_files$standardised, block, output)
+        gc()
 
-      flog.info(paste(gwas_info$metadata$guid, 'Imputing regions for block:', block))
-      impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
-        " --ld_block {block} ",
-        " --completed_output_file {output_files$imputed}",
-        " --worker_guid {gwas_info$metadata$guid} 2>&1")
-      output <- system(impute_regions, wait = T, intern = T)
-      check_step_complete(output_files$imputed, block, output)
-      gc()
+        flog.info(paste(gwas_info$metadata$guid, 'Imputing regions for block:', block))
+        impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
+          " --ld_block {block} ",
+          " --completed_output_file {output_files$imputed}",
+          " --worker_guid {gwas_info$metadata$guid} 2>&1")
+        output <- system(impute_regions, wait = T, intern = T)
+        check_step_complete(output_files$imputed, block, output)
+        gc()
 
-      flog.info(paste(gwas_info$metadata$guid, 'Finemapping regions for block:', block))
-      finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
-        " --ld_block {block} ",
-        " --completed_output_file {output_files$finemapped}",
-        " --worker_guid {gwas_info$metadata$guid} 2>&1")
-      output <- system(finemap_regions, wait = T, intern = T)
-      check_step_complete(output_files$finemapped, block, output)
-      gc()
+        flog.info(paste(gwas_info$metadata$guid, 'Finemapping regions for block:', block))
+        finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
+          " --ld_block {block} ",
+          " --completed_output_file {output_files$finemapped}",
+          " --worker_guid {gwas_info$metadata$guid} 2>&1")
+        output <- system(finemap_regions, wait = T, intern = T)
+        check_step_complete(output_files$finemapped, block, output)
+        gc()
 
-      flog.info(paste(gwas_info$metadata$guid, 'Colocalising regions for block:', block))
-      coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
-        " --ld_block {block} ",
-        " --completed_output_file {output_files$coloc}",
-        " --worker_guid {gwas_info$metadata$guid} 2>&1")
-      output <- system(coloc_regions, wait = T, intern = T)
-      check_step_complete(output_files$coloc, block, output)
+        flog.info(paste(gwas_info$metadata$guid, 'Colocalising regions for block:', block))
+        coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
+          " --ld_block {block} ",
+          " --completed_output_file {output_files$coloc}",
+          " --worker_guid {gwas_info$metadata$guid} 2>&1")
+        output <- system(coloc_regions, wait = T, intern = T)
+        check_step_complete(output_files$coloc, block, output)
 
-      flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
+        flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
+        return(block)
+      }, error = function(e) {
+        flog.error(paste(gwas_info$metadata$guid, 'Error processing block:', block, '-', e$message))
+        if (!is.null(e$call)) {
+          flog.error(paste(gwas_info$metadata$guid, 'Error call:', deparse(e$call)))
+        }
+        return(NULL)
+      })
     })
+    
+    successful_blocks <- sum(!sapply(processed_blocks, is.null))
+    failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, processed_blocks)
+    if (length(failed_blocks) > 0) {
+      flog.error(paste(gwas_info$metadata$guid, 'Failed blocks:', paste(failed_blocks, collapse = ", ")))
+      stop(paste(gwas_info$metadata$guid, 'Failed to process all blocks'))
+    }
 
     flog.info(paste(gwas_info$metadata$guid, 'Compiling results'))
     results <- compile_results(gwas_info)
@@ -328,26 +344,15 @@ create_study_metadata_files <- function(gwas_info) {
 }
 
 check_step_complete <- function(output_file, ld_block, output) {
-  if (!file.exists(output_file)) {
-    error_msg <- glue::glue('Step {output_file} failed')
-    flog.error(paste(gwas_info$metadata$guid, error_msg))
-    if (!is.null(output) && length(output) > 0) {
-      flog.error("Command output/error messages:")
-      for (line in output) {
-        flog.error(line)
-      }
-    } else {
-      flog.error(paste(gwas_info$metadata$guid, "No output captured from command"))
-    }
-    rlang::abort(
-      message = error_msg,
-      class = "pipeline_worker_error",
-      data = list(
-        output_file = output_file,
-        ld_block = ld_block,
-        output = output
-      )
-    )
+  cmd_failed <- !is.null(attr(output, "status")) && attr(output, "status") != 0
+  file_missing <- !file.exists(output_file)
+
+  if (cmd_failed || file_missing) {
+    fail_file <- glue::glue('{output_file}_failed.txt')
+    writeLines(output, fail_file)
+    error_msg <- glue::glue('{ld_block}: FAILED {output_file}')
+    flog.error(error_msg)
+    stop(error_msg)
   }
 }
 

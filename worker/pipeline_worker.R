@@ -126,7 +126,7 @@ process_message <- function(original_gwas_info) {
     check_step_complete(ld_blocks_to_colocalise_file, 'updated_ld_blocks_to_colocalise.tsv', output)
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
 
-    parallel_block_processing <- 4
+    parallel_block_processing <- 3
     processed_blocks <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
       tryCatch({
         start_time <- Sys.time()

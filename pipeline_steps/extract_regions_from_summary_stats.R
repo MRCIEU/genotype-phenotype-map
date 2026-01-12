@@ -36,11 +36,12 @@ main <- function() {
     study_metadata$column_names <- Filter(\(column) !is.null(column) && !is.na(column), study_metadata$column_names)
     gwas <- change_column_names(gwas, study_metadata$column_names)
 
+    start_time <- Sys.time()
     if (study_metadata$reference_build != reference_builds$GRCh38) {  
       gwas <- convert_dataframe_reference_build(gwas, study_metadata$reference_build)
     }
-
-    vroom::vroom_write(gwas, glue::glue('{extracted_study_dir}/gwas/updated_gwas.tsv.gz'))
+    time_taken <- diff_time_taken(start_time)
+    message(glue::glue('Time taken to convert reference build: {time_taken}'))
 
     extracted_regions <- split_into_regions(gwas, ld_blocks, study_metadata, p_value_threshold)
     extracted_output_file <- glue::glue('{extracted_study_dir}/extracted_snps.tsv')

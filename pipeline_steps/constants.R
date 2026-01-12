@@ -128,7 +128,11 @@ finemapped_column_types <- vroom::cols(
   snps_removed_by_qc = vroom::col_number(),
   time_taken = vroom::col_character(),
   cis_trans = vroom::col_character(),
-  ignore = vroom::col_logical()
+  ignore = vroom::col_logical(),
+  file = vroom::col_character(),
+  svg_file = vroom::col_character(),
+  file_with_lbfs = vroom::col_character(),
+  coverage = vroom::col_character()
 )
 
 studies_processed_column_types <- vroom::cols(

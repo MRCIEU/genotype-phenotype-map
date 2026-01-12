@@ -13,15 +13,6 @@ parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force cl
 
 args <- argparser::parse_args(parser)
 
-library(futile.logger)
-
-log_dir <- file.path(data_dir, "logs")
-dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
-log_file <- file.path(log_dir, paste0("pipeline_worker_", format(Sys.time(), "%Y%m"), ".log"))
-
-flog.appender(appender.tee(log_file))
-flog.threshold(INFO)
-
 main <- function() {
   start_time <- Sys.time()
   if (!is.na(args$worker_guid)) {
@@ -40,7 +31,6 @@ main <- function() {
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
-  message(glue::glue('{args$ld_block}: {finemapped_file}'))
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
       dplyr::filter(min_p <= lowest_p_value_threshold) |>
@@ -51,7 +41,6 @@ main <- function() {
 
   if (!is.na(args$worker_guid)) {
      existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
-     message(glue::glue('{args$ld_block}: {existing_finemapped_studies_file}'))
 
     if (file.exists(existing_finemapped_studies_file)) {
      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
@@ -100,7 +89,7 @@ main <- function() {
   }
 
   studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
-    flog.info(glue::glue('{args$ld_block}: Loading {file}'))
+    message(glue::glue('{args$ld_block}: Loading {file}'))
     if (file.info(file)$size == 0) {
       message(glue::glue('{file} is empty, delete.'))
       return(NULL)

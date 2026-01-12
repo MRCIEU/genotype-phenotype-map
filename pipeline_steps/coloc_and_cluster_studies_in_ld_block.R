@@ -88,28 +88,36 @@ main <- function() {
     finemapped_subset <- finemapped_studies
   }
 
-  studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
-    message(glue::glue('{args$ld_block}: Loading {file}'))
-    if (file.info(file)$size == 0) {
-      message(glue::glue('{file} is empty, delete.'))
+  studies_to_colocalise <- lapply(seq_len(nrow(finemapped_subset)), function(i) {
+    file <- finemapped_subset$file[i]
+    message(glue::glue('{args$ld_block}: Loading {i}/{nrow(finemapped_subset)}: {basename(file)}'))
+    
+    if (!file.exists(file)) {
+      message(glue::glue('{file} does not exist, skipping.'))
       return(NULL)
     }
 
-    gwas <- vroom::vroom(file, delim = '\t',
-      show_col_types = F,
-      col_select = c('SNP', 'LBF'),
-      altrep = F
+    gwas <- data.table::fread(
+      file, 
+      sep = '\t',
+      select = c('SNP', 'LBF'),
+      colClasses = c(SNP = 'character', LBF = 'numeric'),
+      verbose = FALSE,
+      showProgress = FALSE,
+      nThread = 1
     )
-    return(gwas)
+    
+    lbf_vector <- gwas$LBF
+    names(lbf_vector) <- gwas$SNP
+    rm(gwas)
+    
+    return(lbf_vector)
   })
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
+  studies_to_colocalise <- studies_to_colocalise[!sapply(studies_to_colocalise, is.null)]
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
-  # num_cores <- 200
-  # chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
-  # chunked_study_pairs <- split(study_pairs, chunk_factor)
-
-  # new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
+  gc(verbose = FALSE)
 
   results <- lapply(seq_len(nrow(study_pairs)), function(i) {
     pair <- study_pairs[i,]
@@ -257,15 +265,10 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
   harmonised_gwases <- harmonise_gwases(first_gwas, second_gwas)
   if (length(harmonised_gwases) == 0) return(NULL)
   
-  first_gwas <- harmonised_gwases[[1]]
-  second_gwas <- harmonised_gwases[[2]]
+  first_lbf <- harmonised_gwases[[1]]
+  second_lbf <- harmonised_gwases[[2]]
 
-  if (nrow(first_gwas) < 50 || nrow(second_gwas) < 50) return(NULL)
-
-  first_lbf <- first_gwas$LBF
-  names(first_lbf) <- first_gwas$SNP
-  second_lbf <- second_gwas$LBF
-  names(second_lbf) <- second_gwas$SNP
+  if (length(first_lbf) < 50 || length(second_lbf) < 50) return(NULL)
 
   result <- coloc::coloc.bf_bf(bf1 = first_lbf, bf2 = second_lbf)
   result$summary$h4 <- result$summary$PP.H4.abf
@@ -275,26 +278,34 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
 
 harmonise_gwases <- function(...) {
   gwases <- list(...)
-  snpids <- Reduce(intersect, lapply(gwases, function(gwas) as.character(gwas$SNP)))
+
+  snpids <- Reduce(intersect, lapply(gwases, function(gwas) names(gwas)))
   if (length(snpids) <= 1) return(list())
   snpids <- sort(snpids)
 
   gwases <- lapply(gwases, function(gwas) {
-    gwas <- as.data.frame(gwas)
-    gwas <- gwas[!duplicated(gwas$SNP), ]
-    gwas <- gwas[gwas$SNP %in% snpids, ]
-    gwas <- gwas[match(snpids, gwas$SNP), ]
+    gwas <- gwas[!duplicated(names(gwas))]
+    gwas <- gwas[names(gwas) %in% snpids]
+    gwas <- gwas[match(snpids, names(gwas))]
+    gwas <- gwas[!is.na(gwas)]
     return(gwas)
   })
 
-  stopifnot(identical(gwases[[1]]$SNP, gwases[[2]]$SNP))
+  final_snpids <- Reduce(intersect, lapply(gwases, function(gwas) names(gwas)))
+  if (length(final_snpids) <= 1) return(list())
+  final_snpids <- sort(final_snpids)
+
+  gwases <- lapply(gwases, function(gwas) {
+    gwas <- gwas[match(final_snpids, names(gwas))]
+    return(gwas)
+  })
+
+  stopifnot(identical(names(gwases[[1]]), names(gwases[[2]])))
   return(gwases)
 }
 
 # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
 prune_poor_finemapping_results <- function(finemapped_studies, coloc_results) {
-  #TODO: remove this ignore once it's been run once
-  finemapped_studies$ignore <- F
   coloc_results$ignore <- FALSE
   coloc_results <- coloc_results |>
     dplyr::mutate(ignore = ignore | study_a == study_b & h4 >= posterior_prob_h4_threshold)
@@ -589,17 +600,25 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
   components <- unique(coloc_groups$component)
   snp_and_connectedness_per_cluster <- lapply(components, function(component) {
     group_studies <- coloc_groups$unique_study_id[coloc_groups$component == component]
-    
-    all_group_data <- lapply(group_studies, function(study_id) {
+
+    all_lbf_vectors <- lapply(group_studies, function(study_id) {
       return(studies_to_colocalise[[study_id]])
     })
-    all_group_data <- do.call(rbind, all_group_data)
+    all_lbf_vectors <- all_lbf_vectors[!sapply(all_lbf_vectors, is.null)]
 
-    snp <- all_group_data |>
-      dplyr::group_by(SNP) |>
-      dplyr::summarise(cumulative_lbf = sum(LBF)) |>
-      dplyr::slice(which.max(cumulative_lbf)) |>
-      dplyr::pull(SNP)
+    if (length(all_lbf_vectors) == 0) {
+      return(data.frame(component = component, snp = NA_character_, h4_connectedness = 0, h3_connectedness = 0))
+    }
+
+    all_snps <- unique(unlist(lapply(all_lbf_vectors, names)))
+    cumulative_lbf <- sapply(all_snps, function(snp) {
+      sum(sapply(all_lbf_vectors, function(vec) {
+        if (snp %in% names(vec)) vec[snp] else 0
+      }), na.rm = TRUE)
+    })
+
+    # Find SNP with maximum cumulative LBF
+    snp <- names(cumulative_lbf)[which.max(cumulative_lbf)]
 
     coloc_results_per_cluster <- coloc_results[
       coloc_results$unique_study_a %in% group_studies &
@@ -607,6 +626,7 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
     ]
 
     total_pairs <- nrow(coloc_results_per_cluster)
+
     total_pairs_with_h4 <- sum(coloc_results_per_cluster$PP.H4.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
     total_pairs_with_h3 <- sum(coloc_results_per_cluster$PP.H3.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
     h4_connectedness <- total_pairs_with_h4 / total_pairs

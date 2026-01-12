@@ -83,6 +83,7 @@ main <- function() {
       ) |>
       dplyr::mutate(file = dplyr::case_when(
         grepl('^gwas_upload', file) ~ glue::glue('{data_dir}/{file}'),
+        grepl('^study', file) ~ glue::glue('{data_dir}/{file}'),
         TRUE ~ file
       ))
   } else {

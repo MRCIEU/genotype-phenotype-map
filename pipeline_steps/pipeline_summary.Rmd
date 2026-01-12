@@ -10,9 +10,10 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.width = 10, fig.heig
 library(ggplot2)
 library(scales)
 library(tidyr)
-darkgreen <- "#006400"
-gray <- "#666666"
-darkblue <- "#34495E"
+cb_blue <- "#0072B2"
+cb_light_blue <- "#80B9D9"
+cb_orange <- "#E69F00"
+cb_light_orange <- "#F3CF80"
 ```
 
 ```{r load-data, echo=F}
@@ -119,7 +120,7 @@ load_results_data <- function(specific_results_dir) {
   ))
 }
 
-latest_results <- load_results_data(latest_results_dir)
+latest_results <- load_results_data(current_results_dir)
 # last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
 # previous_results <- load_results_data(last_two_pipeline_runs[2])
 ```
@@ -150,7 +151,7 @@ knitr::kable(latest_sources_table)
 p1_label_threshold <- max(latest_sources$num_studies) * 0.12
 
 p1 <- ggplot(latest_sources, aes(x = ordered_name, y = num_studies)) +
-  geom_bar(stat = "identity", fill = darkgreen, alpha = 0.7) +
+  geom_bar(stat = "identity", fill = cb_blue, alpha = 0.7) +
   geom_text(
     aes(
       label = study_label,
@@ -466,8 +467,8 @@ p_tissue_counts <- ggplot(tissue_counts, aes(x = reorder(tissue, total), y = cou
   scale_y_continuous(labels = scales::comma) +
   scale_fill_manual(
     values = c(
-      "P ≤ 5e-8" = "#006400",
-      "P > 5e-8" = "#66A36C"
+      "P ≤ 5e-8" = cb_blue,
+      "P > 5e-8" = cb_orange 
     ),
     breaks = c("P ≤ 5e-8", "P > 5e-8")
   )
@@ -494,10 +495,10 @@ p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, f
   ) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c(
-    "Coloc with Phenotype" = "#006400",
-    "QTL only Coloc (Same Tissue)" = "#888888",
-    "QTL only Coloc (Multiple Tissues)" = "#666666",
-    "No Coloc" = "#34495E"
+    "Coloc with Phenotype" = cb_blue,
+    "QTL only Coloc (Same Tissue)" = cb_light_orange,
+    "QTL only Coloc (Multiple Tissues)" = cb_orange,
+    "No Coloc" = cb_light_blue
   ))
 
 ggsave(file.path(results_analysis_dir, 'summary_f_study_extractions_by_tissue_pvalue.png'), p_tissue_counts, width = 10, height = 6, dpi = 300)
@@ -648,10 +649,10 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
   scale_y_continuous(labels = scales::comma) +
   scale_fill_manual(
     values = c(
-      "Common: P ≤ 5e-8" = "#006400",
-      "Common: 1.5e-4 < P < 5e-8" = "#66A36C",
-      "Rare: P ≤ 5e-8" = "#2C3E50",
-      "Rare: 1.5e-4 < P < 5e-8" = "#95A5A6"
+      "Common: P ≤ 5e-8" = cb_blue,
+      "Common: 1.5e-4 < P < 5e-8" = cb_light_blue,
+      "Rare: P ≤ 5e-8" = cb_orange,
+      "Rare: 1.5e-4 < P < 5e-8" = cb_light_orange
     ),
     breaks = pval_variant_levels,
     guide = guide_legend(reverse = TRUE)
@@ -908,7 +909,7 @@ p4a <- ggplot(extractions_coloc_viz, aes(x = reorder(data_type, count), y = coun
         panel.grid.major.y = element_blank(),
         panel.grid.minor = element_blank()) +
   scale_y_continuous(labels = scales::comma) +
-  scale_fill_manual(values = c("In Coloc" = "#3498DB", "Not in Coloc" = "#95A5A6"))
+  scale_fill_manual(values = c("In Coloc" = cb_blue, "Not in Coloc" = cb_orange))
 
 ggsave(file.path(results_analysis_dir, 'study_extractions_in_coloc_vs_not_in_coloc.png'), p4a, width = 10, height = 6, dpi = 300)
 
@@ -1084,9 +1085,9 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
   ) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c(
-    "With Molecular Coloc" = "#006400",
-    "Without Molecular Coloc" = "#666666",
-    "No Coloc" = "#34495E"
+    "With Molecular Coloc" = cb_blue,
+    "Without Molecular Coloc" = cb_light_blue,
+    "No Coloc" = cb_orange
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
@@ -1122,10 +1123,10 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
   scale_y_continuous(labels = scales::comma) +
   scale_fill_manual(
     values = c(
-      "Common: P ≤ 5e-8" = "#006400",
-      "Common: 1.5e-4 < P < 5e-8" = "#66A36C",
-      "Rare: P ≤ 5e-8" = "#2C3E50",
-      "Rare: 1.5e-4 < P < 5e-8" = "#95A5A6"
+      "Common: P ≤ 5e-8" = cb_blue,
+      "Common: 1.5e-4 < P < 5e-8" = cb_light_blue,
+      "Rare: P ≤ 5e-8" = cb_orange,
+      "Rare: 1.5e-4 < P < 5e-8" = cb_light_orange
     ),
     breaks = pval_variant_levels,
     guide = guide_legend(reverse = TRUE)
@@ -1354,8 +1355,8 @@ p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = suppo
   ) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c(
-    "H4 > 0.8" = darkblue,
-    "H3 > 0.8" = darkgreen
+    "H4 > 0.8" = cb_orange,
+    "H3 > 0.8" = cb_blue
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 

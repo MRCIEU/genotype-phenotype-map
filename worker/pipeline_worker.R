@@ -139,9 +139,9 @@ process_message <- function(original_gwas_info) {
       return(process_single_block(block, gwas_info))
     })
     processed_blocks <- c(processed_blocks_parallel, processed_blocks_sequential)
-    
-    successful_blocks <- sum(!sapply(processed_blocks, is.null))
-    failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, successful_blocks)
+
+    successful_block_names <- unlist(processed_blocks[!sapply(processed_blocks, is.null)])
+    failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, successful_block_names)
 
     if (length(failed_blocks) > 0) {
       flog.error(paste(gwas_info$metadata$guid, 'Failed blocks:', paste(failed_blocks, collapse = ", ")))

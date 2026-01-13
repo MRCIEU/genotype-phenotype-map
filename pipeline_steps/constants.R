@@ -160,6 +160,38 @@ studies_processed_column_types <- vroom::cols(
   heritability_se = vroom::col_double()
 )
 
+coloc_clustered_results_column_types <- vroom::cols(
+  unique_study_id = vroom::col_character(),
+  component = vroom::col_number(),
+  ld_block = vroom::col_character(),
+  snp = vroom::col_character(),
+  h4_connectedness = vroom::col_double(),
+  h3_connectedness = vroom::col_double()
+)
+
+coloc_pairwise_results_column_types <- vroom::cols(
+  unique_study_a = vroom::col_character(),
+  study_a = vroom::col_character(),
+  unique_study_b = vroom::col_character(),
+  study_b = vroom::col_character(),
+  bp_distance = vroom::col_double(),
+  ignore = vroom::col_logical(),
+  false_positive = vroom::col_logical(),
+  false_negative = vroom::col_logical(),
+  nsnps = vroom::col_number(),
+  hit1 = vroom::col_character(),
+  hit2 = vroom::col_character(),
+  PP.H0.abf = vroom::col_double(),
+  PP.H1.abf = vroom::col_double(),
+  PP.H2.abf = vroom::col_double(),
+  PP.H3.abf = vroom::col_double(),
+  PP.H4.abf = vroom::col_double(),
+  idx1 = vroom::col_number(),
+  idx2 = vroom::col_number(),
+  h4 = vroom::col_double(),
+  ld_block = vroom::col_character()
+)
+
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
   file_prefix <- sub('\\..*', '', file_name)

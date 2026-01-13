@@ -434,7 +434,7 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_clustered_results_files) > 0) {
     lapply(coloc_clustered_results_files, function(file) {
-      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE))
+      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_clustered_results_column_types))
     }) |>
       dplyr::bind_rows() |>
       dplyr::group_by(ld_block, component) |>
@@ -452,7 +452,7 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_pairwise_results_files) > 0) {
     lapply(coloc_pairwise_results_files, function(file) {
-      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE))
+      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_pairwise_results_column_types))
     }) |>
     dplyr::bind_rows() |>
     dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>

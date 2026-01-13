@@ -308,7 +308,7 @@ identify_memory_intensive_blocks <- function(blocks, threshold = 10000, guid = N
 
     if (!file.exists(finemapped_file)) next
 
-    dt <- data.table::fread(finemapped_file, select = 1, nThread = 1, verbose = FALSE, showProgress = FALSE)
+    dt <- data.table::fread(finemapped_file, select = 'min_p', nThread = 1, verbose = FALSE, showProgress = FALSE)
     dt <- dt[min_p < min_p_allowed_for_worker]
     num_studies <- nrow(dt)
       

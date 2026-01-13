@@ -116,6 +116,7 @@ load_results_data <- function(specific_results_dir) {
   return(list(
     studies_conn = studies_conn,
     coloc_pairs_conn = coloc_pairs_conn,
+    coloc_pairs_significant_conn = coloc_pairs_significant_conn,
     associations_conn = associations_conn,
     ld_conn = ld_conn
   ))
@@ -129,9 +130,17 @@ latest_results <- load_results_data(current_results_dir)
 ### What has been ingested?
 
 ```{r high-level-metrics, echo=F, results='asis'}
-num_loci <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT * FROM study_extractions JOIN studies ON study_extractions.study_id = studies.id")
+# Select specific columns to avoid duplicate names from JOIN
+num_loci <- DBI::dbGetQuery(latest_results$studies_conn, "
+  SELECT study_extractions.*, 
+         studies.variant_type, 
+         studies.data_type
+  FROM study_extractions 
+  JOIN studies ON study_extractions.study_id = studies.id
+")
 num_common <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type == 'common'))
-num_rare <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type == 'rare'))
+all_num_rare <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type != 'common'))
+sig_num_rare <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type != 'common'))
 num_complex <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & (data_type == 'phenotype' | data_type == 'cell_trait' | data_type == 'plasma_protein')))
 num_qtl <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & (data_type == 'protein' | data_type == 'methylation' | data_type == 'splice_variant' | data_type == 'gene_expression' | data_type == 'transcript')))
 
@@ -160,18 +169,25 @@ num_rare_results <- max(rare_results$rare_result_group_id)
 ```
 
 
-Study Data:
+#### Study Data
+
 - Number distinct loci: `r scales::comma(nrow(num_loci))`
 - Number distinct loci with P ≤ 5e-8: `r scales::comma(nrow(dplyr::filter(num_loci, min_p <= 5e-8)))`
 - Number distinct loci with P ≤ 5e-8 and variant type common: `r scales::comma(num_common)`
-- Number distinct loci with P ≤ 5e-8 and variant type rare: `r scales::comma(num_rare)`
+- Number distinct loci with variant type rare: `r scales::comma(all_num_rare)`
+- Number distinct loci with P ≤ 5e-8 and variant type rare: `r scales::comma(sig_num_rare)`
 
-Coloc Data:
+#### Coloc Data
+
 - Number of coloc pairs: `r scales::comma(num_coloc_pairs)`
 - Number of coloc groups: `r scales::comma(num_coloc_groups)`
 - Average H4 connectedness: `r round(average_h4_connectedness, 3)`
 - Sentinal variants from coloc group: `r scales::comma(num_snps_in_coloc_groups$num_snps)`
 - SNPs that show up in multiple coloc groups: `r scales::comma(num_coloc_groups_with_same_snp$repeated_snp_count)`
+
+```{r exit-early, echo=F, eval=TRUE}
+knitr::knit_exit()
+```
 
 Broken down by data source:
 ```{r data-source, echo=F, fig.cap="Number of studies by data source"}
@@ -234,14 +250,13 @@ average_connectedness_score <- DBI::dbGetQuery(latest_results$studies_conn, "SEL
   dplyr::group_by(coloc_group_id) |>
   dplyr::summarise(h4_connectedness = mean(h4_connectedness), .groups = "drop")
 
-Average connectedness score: `r round(mean(average_connectedness_score$h4_connectedness), 3)`
-
 # false_positive_rate_table <- false_positive_rate |>
 #   dplyr::mutate(false_positive_rate = scales::percent(false_positive_rate))
 # false_negative_rate_table <- false_negative_rate |>
 #   dplyr::mutate(false_negative_rate = scales::percent(false_negative_rate))
 # knitr::kable(false_positive_rate_table)
 # knitr::kable(false_negative_rate_table)
+```
 
 ### Study Breakdown by data type:
 ```{r data-type, echo=F}
@@ -1141,8 +1156,6 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
 ggsave(file.path(results_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
 ```
 
-### Number of Ingested Loci by Trait Category (C)
-
 ```{r phenotype_study_extractions_by_trait_category_c, echo=F}
 # Create p-value threshold bar chart by trait category
 # Use shared trait category ordering based on molecular colocalization percentage from section (E)
@@ -1411,7 +1424,7 @@ ggsave(file.path(results_analysis_dir, 'summary_d_phenotype_h3_h4_rates_by_trait
 
 ## Matrix of coloc results by data type and by cis-trans:
 
-```{r matrix_of_coloc_results, echo=F, eval=F}
+```{r matrix_of_coloc_results, echo=F}
 coloc_matrix <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8)
 
 coloc_matrix_by_type <- matrix(0, nrow = length(unique_data_types), ncol = length(unique_data_types))
@@ -1457,7 +1470,7 @@ knitr::kable(as.data.frame(coloc_matrix_by_cis_trans), caption = "Number of colo
 ```
 
 ## Number of coloc pairs by h4 threshold (across all studies)
-```{r coloc_pairs_by_h4_threshold, echo=F, eval=F}
+```{r coloc_pairs_by_h4_threshold, echo=F}
 
 coloc_pairs <- function(results) {
   more_than_60 <- dplyr::filter(results, h4 > 0.60)

@@ -116,69 +116,33 @@ process_message <- function(original_gwas_info) {
     output <- system(organise_ld_blocks, wait = T, intern = T)
     check_step_complete(ld_blocks_to_colocalise_file, 'updated_ld_blocks_to_colocalise.tsv', output)
 
-    #cleaning up memory, so it utilises less memory on the worker
+    #cleaning up memory, so it utilises less in the parallel processes
     rm(gwas)
     rm(gwas_data)
     gc()
 
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
-    parallel_block_processing <- 4
-    processed_blocks <- parallel::mclapply(ld_blocks_to_colocalise$ld_block, mc.cores = parallel_block_processing, function(block) {
-      tryCatch({
-        start_time <- Sys.time()
-        ld_info <- ld_block_dirs(block)
 
-        output_files <- list(
-          standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
-          imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
-          finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
-          coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
-        )
+    memory_intensive_blocks <- identify_memory_intensive_blocks(ld_blocks_to_colocalise$ld_block)
 
-        flog.info(paste(gwas_info$metadata$guid, 'Standardising regions for block:', block))
-        standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
-          " --ld_block {block} ", 
-          " --completed_output_file {output_files$standardised}",
-          " --worker_guid {gwas_info$metadata$guid} 2>&1")
-        output <- system(standardise_regions, wait = T, intern = T)
-        check_step_complete(output_files$standardised, block, output)
-        gc()
+    blocks_parallel <- ld_blocks_to_colocalise$ld_block[!ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
+    blocks_sequential <- ld_blocks_to_colocalise$ld_block[ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
 
-        flog.info(paste(gwas_info$metadata$guid, 'Imputing regions for block:', block))
-        impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
-          " --ld_block {block} ",
-          " --completed_output_file {output_files$imputed}",
-          " --worker_guid {gwas_info$metadata$guid} 2>&1")
-        output <- system(impute_regions, wait = T, intern = T)
-        check_step_complete(output_files$imputed, block, output)
-        gc()
-
-        flog.info(paste(gwas_info$metadata$guid, 'Finemapping regions for block:', block))
-        finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
-          " --ld_block {block} ",
-          " --completed_output_file {output_files$finemapped}",
-          " --worker_guid {gwas_info$metadata$guid} 2>&1")
-        output <- system(finemap_regions, wait = T, intern = T)
-        check_step_complete(output_files$finemapped, block, output)
-        gc()
-
-        flog.info(paste(gwas_info$metadata$guid, 'Colocalising regions for block:', block))
-        coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
-          " --ld_block {block} ",
-          " --completed_output_file {output_files$coloc}",
-          " --worker_guid {gwas_info$metadata$guid} 2>&1")
-        output <- system(coloc_regions, wait = T, intern = T)
-        check_step_complete(output_files$coloc, block, output)
-
-        flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
-        return(block)
-      }, error = function(e) {
-        stop(paste(gwas_info$metadata$guid, 'Error processing block:', block))
-      })
+    parallel_block_processing <- 5
+    processed_blocks_parallel <- parallel::mclapply(blocks_parallel, mc.cores = parallel_block_processing, function(block) {
+      return(process_single_block(block, gwas_info))
     })
     
+    processed_blocks_sequential <- lapply(blocks_sequential, function(block) {
+      flog.info(paste(gwas_info$metadata$guid, 'Processing memory-intensive block sequentially:', block))
+      return(process_single_block(block, gwas_info))
+    })
+
+    processed_blocks <- c(processed_blocks_parallel, processed_blocks_sequential)
+    
     successful_blocks <- sum(!sapply(processed_blocks, is.null))
-    failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, processed_blocks)
+    failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, successful_blocks)
+
     if (length(failed_blocks) > 0) {
       flog.error(paste(gwas_info$metadata$guid, 'Failed blocks:', paste(failed_blocks, collapse = ", ")))
       stop(paste(gwas_info$metadata$guid, 'Failed to process all blocks'))
@@ -333,6 +297,79 @@ create_study_metadata_files <- function(gwas_info) {
   )
   studies_to_process_file <- glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv')
   vroom::vroom_write(study_to_process, studies_to_process_file)
+}
+
+identify_memory_intensive_blocks <- function(blocks, threshold = 10000, guid = NA) {
+  memory_intensive_blocks <- c()
+  
+  for (block in blocks) {
+    ld_info <- ld_block_dirs(block)
+    finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
+
+    if (!file.exists(finemapped_file)) next
+
+    dt <- data.table::fread(finemapped_file, select = 1, nThread = 1, verbose = FALSE, showProgress = FALSE)
+    num_studies <- nrow(dt)
+      
+    if (num_studies > threshold) memory_intensive_blocks <- c(memory_intensive_blocks, block)
+  }
+  
+  return(memory_intensive_blocks)
+}
+
+process_single_block <- function(block, gwas_info) {
+  tryCatch({
+    start_time <- Sys.time()
+    ld_info <- ld_block_dirs(block)
+
+    output_files <- list(
+      standardised = glue::glue('{ld_info$ld_block_data}/standardisation_complete'),
+      imputed = glue::glue('{ld_info$ld_block_data}/imputation_complete'),
+      finemapped = glue::glue('{ld_info$ld_block_data}/finemapping_complete'),
+      coloc = glue::glue('{ld_info$ld_block_data}/coloc_complete')
+    )
+
+    flog.info(paste(gwas_info$metadata$guid, 'Standardising regions for block:', block))
+    standardise_regions <- glue::glue("Rscript standardise_studies_in_ld_block.R",
+      " --ld_block {block} ", 
+      " --completed_output_file {output_files$standardised}",
+      " --worker_guid {gwas_info$metadata$guid} 2>&1")
+    output <- system(standardise_regions, wait = T, intern = T)
+    check_step_complete(output_files$standardised, block, output)
+    gc()
+
+    flog.info(paste(gwas_info$metadata$guid, 'Imputing regions for block:', block))
+    impute_regions <- glue::glue("Rscript impute_studies_in_ld_block.R",
+      " --ld_block {block} ",
+      " --completed_output_file {output_files$imputed}",
+      " --worker_guid {gwas_info$metadata$guid} 2>&1")
+    output <- system(impute_regions, wait = T, intern = T)
+    check_step_complete(output_files$imputed, block, output)
+    gc()
+
+    flog.info(paste(gwas_info$metadata$guid, 'Finemapping regions for block:', block))
+    finemap_regions <- glue::glue("Rscript finemap_studies_in_ld_block.R",
+      " --ld_block {block} ",
+      " --completed_output_file {output_files$finemapped}",
+      " --worker_guid {gwas_info$metadata$guid} 2>&1")
+    output <- system(finemap_regions, wait = T, intern = T)
+    check_step_complete(output_files$finemapped, block, output)
+    gc()
+
+    flog.info(paste(gwas_info$metadata$guid, 'Colocalising regions for block:', block))
+    coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
+      " --ld_block {block} ",
+      " --completed_output_file {output_files$coloc}",
+      " --worker_guid {gwas_info$metadata$guid} 2>&1")
+    output <- system(coloc_regions, wait = T, intern = T)
+    check_step_complete(output_files$coloc, block, output)
+
+    flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
+    return(block)
+  }, error = function(e) {
+    flog.error(paste(gwas_info$metadata$guid, 'Error processing block:', block, '-', e$message))
+    return(NULL)
+  })
 }
 
 check_step_complete <- function(output_file, ld_block, output) {

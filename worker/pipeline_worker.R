@@ -427,26 +427,16 @@ compile_results <- function(gwas_info) {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.frame()
   }
-  
-  coloc_pairwise_results_files <- Filter(
-    function(file) file.exists(file), 
-    glue::glue('{ld_block_dirs}/coloc_pairwise_results.tsv.gz')
-  )
-  if (length(coloc_pairwise_results_files) > 0) {
-    coloc_pairwise_results <- vroom::vroom(coloc_pairwise_results_files, delim = '\t', show_col_types = FALSE) |>
-      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
-      dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
-      dplyr::rename(unique_study_id_a = unique_study_a, unique_study_id_b = unique_study_b, h3 = PP.H3.abf, h4 = PP.H4.abf)
-  } else {
-    coloc_pairwise_results <- data.frame()
-  }
 
   coloc_clustered_results_files <- Filter(
     function(file) file.exists(file), 
     glue::glue('{ld_block_dirs}/coloc_clustered_results.tsv.gz')
   )
   if (length(coloc_clustered_results_files) > 0) {
-    coloc_clustered_results <- vroom::vroom(coloc_clustered_results_files, delim = '\t', show_col_types = FALSE) |>
+    lapply(coloc_clustered_results_files, function(file) {
+      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE))
+    }) |>
+      dplyr::bind_rows() |>
       dplyr::group_by(ld_block, component) |>
       dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
       dplyr::ungroup() |>
@@ -454,6 +444,22 @@ compile_results <- function(gwas_info) {
       dplyr::select(unique_study_id, coloc_group_id, snp, ld_block, h4_connectedness, h3_connectedness)
   } else {
     coloc_clustered_results <- data.frame()
+  }
+
+  coloc_pairwise_results_files <- Filter(
+    function(file) file.exists(file), 
+    glue::glue('{ld_block_dirs}/coloc_pairwise_results.tsv.gz')
+  )
+  if (length(coloc_pairwise_results_files) > 0) {
+    lapply(coloc_pairwise_results_files, function(file) {
+      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE))
+    }) |>
+    dplyr::bind_rows() |>
+    dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
+    dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
+    dplyr::rename(unique_study_id_a = unique_study_id, unique_study_id_b = unique_study_id, h3 = PP.H3.abf, h4 = PP.H4.abf)
+  } else {
+    coloc_pairwise_results <- data.frame()
   }
   
   # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)

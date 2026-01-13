@@ -132,26 +132,26 @@ main <- function() {
     })
     if (is.null(result)) {
       result <- data.frame(
-        ld_block = args$ld_block,
         unique_study_a = pair$unique_study_a,
         study_a = NA,
         unique_study_b = pair$unique_study_b,
         study_b = NA,
+        bp_distance = NA,
         ignore = T,
         false_positive = F,
         false_negative = F,
-        bp_distance = NA,
         nsnps = NA,
         hit1 = NA,
         hit2 = NA,
-        idx1 = NA,
-        idx2 = NA,
         PP.H0.abf = NA,
         PP.H1.abf = NA,
         PP.H2.abf = NA,
         PP.H3.abf = NA,
         PP.H4.abf = NA,
-        h4 = NA
+        idx1 = NA,
+        idx2 = NA,
+        h4 = NA,
+        ld_block = args$ld_block
       )
       return(result)
     }

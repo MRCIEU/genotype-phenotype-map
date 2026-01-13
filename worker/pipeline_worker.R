@@ -303,8 +303,7 @@ identify_memory_intensive_blocks <- function(blocks, threshold = 10000, guid = N
   memory_intensive_blocks <- c()
   
   for (block in blocks) {
-    ld_info <- ld_block_dirs(block)
-    finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
+    finemapped_file <- glue::glue('{data_dir}/ld_blocks/{block}/finemapped_studies.tsv')
 
     if (!file.exists(finemapped_file)) next
 

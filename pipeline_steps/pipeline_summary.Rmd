@@ -139,7 +139,7 @@ num_loci <- DBI::dbGetQuery(latest_results$studies_conn, "
   JOIN studies ON study_extractions.study_id = studies.id
 ")
 num_common <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type == 'common'))
-all_num_rare <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type != 'common'))
+all_num_rare <- nrow(dplyr::filter(num_loci, variant_type != 'common'))
 sig_num_rare <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & variant_type != 'common'))
 num_complex <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & (data_type == 'phenotype' | data_type == 'cell_trait' | data_type == 'plasma_protein')))
 num_qtl <- nrow(dplyr::filter(num_loci, min_p <= 5e-8 & (data_type == 'protein' | data_type == 'methylation' | data_type == 'splice_variant' | data_type == 'gene_expression' | data_type == 'transcript')))

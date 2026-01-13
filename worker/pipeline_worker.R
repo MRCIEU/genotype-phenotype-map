@@ -129,14 +129,13 @@ process_message <- function(original_gwas_info) {
     blocks_sequential <- ld_blocks_to_colocalise$ld_block[ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
 
     flog.info(paste(gwas_info$metadata$guid, 'Processing', length(blocks_parallel), 'blocks in parallel'))
-    parallel_block_processing <- 5
+    parallel_block_processing <- 6
     processed_blocks_parallel <- parallel::mclapply(blocks_parallel, mc.cores = parallel_block_processing, function(block) {
       return(process_single_block(block, gwas_info))
     })
 
-    flog.info(paste(gwas_info$metadata$guid, 'Processing large', length(processed_blocks_sequential), 'blocks sequentially'))
+    flog.info(paste(gwas_info$metadata$guid, 'Processing', length(blocks_sequential), 'memory-intensive blocks sequentially'))
     processed_blocks_sequential <- lapply(blocks_sequential, function(block) {
-      flog.info(paste(gwas_info$metadata$guid, 'Processing memory-intensive block sequentially:', block))
       return(process_single_block(block, gwas_info))
     })
     processed_blocks <- c(processed_blocks_parallel, processed_blocks_sequential)

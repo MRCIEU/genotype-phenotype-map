@@ -128,16 +128,17 @@ process_message <- function(original_gwas_info) {
     blocks_parallel <- ld_blocks_to_colocalise$ld_block[!ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
     blocks_sequential <- ld_blocks_to_colocalise$ld_block[ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
 
+    flog.info(paste(gwas_info$metadata$guid, 'Processing', length(blocks_parallel), 'blocks in parallel'))
     parallel_block_processing <- 5
     processed_blocks_parallel <- parallel::mclapply(blocks_parallel, mc.cores = parallel_block_processing, function(block) {
       return(process_single_block(block, gwas_info))
     })
-    
+
+    flog.info(paste(gwas_info$metadata$guid, 'Processing large', length(processed_blocks_sequential), 'blocks sequentially'))
     processed_blocks_sequential <- lapply(blocks_sequential, function(block) {
       flog.info(paste(gwas_info$metadata$guid, 'Processing memory-intensive block sequentially:', block))
       return(process_single_block(block, gwas_info))
     })
-
     processed_blocks <- c(processed_blocks_parallel, processed_blocks_sequential)
     
     successful_blocks <- sum(!sapply(processed_blocks, is.null))
@@ -308,6 +309,7 @@ identify_memory_intensive_blocks <- function(blocks, threshold = 10000, guid = N
     if (!file.exists(finemapped_file)) next
 
     dt <- data.table::fread(finemapped_file, select = 1, nThread = 1, verbose = FALSE, showProgress = FALSE)
+    dt <- dt[min_p < min_p_allowed_for_worker]
     num_studies <- nrow(dt)
       
     if (num_studies > threshold) memory_intensive_blocks <- c(memory_intensive_blocks, block)

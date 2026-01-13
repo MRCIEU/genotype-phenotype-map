@@ -8,6 +8,7 @@ oracle_api_server <- Sys.getenv('ORACLE_SERVER')
 oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
 
+min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 minimum_extraction_size <- 150

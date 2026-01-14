@@ -9,6 +9,7 @@ parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
+parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = minimum_p_value_threshold)
 parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force clustering', type = 'logical', default = FALSE)
 
 args <- argparser::parse_args(parser)
@@ -43,7 +44,9 @@ main <- function() {
      existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
 
     if (file.exists(existing_finemapped_studies_file)) {
-      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
+      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F) |>
+        dplyr::filter(min_p <= args$worker_p_value_threshold)
+
       finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
         dplyr::filter(min_p <= min_p_allowed_for_worker) |>
         dplyr::arrange(unique_study_id)
@@ -90,7 +93,6 @@ main <- function() {
 
   studies_to_colocalise <- lapply(seq_len(nrow(finemapped_subset)), function(i) {
     file <- finemapped_subset$file[i]
-    message(glue::glue('{args$ld_block}: Loading {i}/{nrow(finemapped_subset)}: {basename(file)}'))
     
     if (!file.exists(file)) {
       message(glue::glue('{file} does not exist, skipping.'))

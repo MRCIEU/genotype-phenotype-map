@@ -363,10 +363,10 @@ process_single_block <- function(block, gwas_info) {
     coloc_regions <- glue::glue("Rscript coloc_and_cluster_studies_in_ld_block.R",
       " --ld_block {block} ",
       " --completed_output_file {output_files$coloc}",
-      " --worker_guid {gwas_info$metadata$guid} 2>&1")
+      " --worker_guid {gwas_info$metadata$guid}",
+      " --worker_p_value_threshold {gwas_info$metadata$p_value_threshold} 2>&1")
     output <- system(coloc_regions, wait = T, intern = T)
     check_step_complete(output_files$coloc, block, output)
-    flog.info(output)
 
     flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
     return(block)

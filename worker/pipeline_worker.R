@@ -47,7 +47,16 @@ main <- function() {
     }
 
     tryCatch({
-      redis_message <- get_from_queue(redis_conn)
+      delete_message <- get_from_delete_queue(redis_conn)
+
+      if (!is.null(delete_message)) {
+        delete_info <- jsonlite::fromJSON(delete_message[[2]])
+        flog.info(paste(delete_info$guid, "Received new message from delete queue"))
+        delete_gwas(delete_info$guid)
+        next 
+      }
+
+      redis_message <- get_from_process_queue(redis_conn)
       
       if (!is.null(redis_message)) {
         gwas_info <- jsonlite::fromJSON(redis_message[[2]])
@@ -122,13 +131,9 @@ process_message <- function(original_gwas_info) {
     gc()
 
     ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
-
     memory_intensive_blocks <- identify_memory_intensive_blocks(ld_blocks_to_colocalise$ld_block)
 
     blocks_parallel <- ld_blocks_to_colocalise$ld_block[!ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
-
-    # TODO: remove after debugging: Move "EUR/8/20281092-22159255" to the top of blocks_parallel
-    blocks_parallel <- c("EUR/8/20281092-22159255", blocks_parallel)
     blocks_sequential <- ld_blocks_to_colocalise$ld_block[ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
 
     flog.info(paste(gwas_info$metadata$guid, 'Processing', length(blocks_parallel), 'blocks in parallel'))
@@ -627,6 +632,22 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
     error_msg <- paste(gwas_info$metadata$guid, "Error updating GWAS:", httr::content(response, "text"))
     flog.error(error_msg)
     stop(error_msg)
+  }
+}
+
+delete_gwas <- function(guid) {
+  flog.info(paste(guid, "Deleting GWAS"))
+  all_delete_status <- c()
+  delete_status <- system(glue::glue('rm -rf {gwas_upload_dir}gwas_upload/{guid}'), wait = TRUE)
+  all_delete_status <- c(all_delete_status, delete_status)
+  delete_status <- system(glue::glue('rm -rf {gwas_upload_dir}ld_blocks/gwas_upload/{guid}'), wait = TRUE)
+  all_delete_status <- c(all_delete_status, delete_status)
+  delete_status <- system(glue::glue('rm -rf {gwas_upload_dir}pipeline_metadata/gwas_upload/{guid}'), wait = TRUE)
+  all_delete_status <- c(all_delete_status, delete_status)
+
+  if (any(all_delete_status != 0)) {
+    error_msg <- paste(guid, "Failed to delete GWAS")
+    flog.error(error_msg)
   }
 }
 

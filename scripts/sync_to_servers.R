@@ -28,7 +28,7 @@ main <- function() {
   message('Sync completed successfully')
 }
 
-run_rsync <- function(src, server = NULL, dest, flags = '-av', extra_args = NULL) {
+run_rsync <- function(src, server = NULL, dest, flags = '-avu', extra_args = NULL) {
   cmd_parts <- c('rsync', flags)
   
   if (!is.null(extra_args)) {
@@ -99,15 +99,14 @@ sync_upload_server_data <- function() {
     src = vep_annotation_file,
     server = oracle_upload_server,
     dest = file.path(upload_server_data_dir, 'variant_annotation', basename(vep_annotation_file)),
-    flags = '-av --mkpath',
+    flags = '-avu --mkpath',
   )
 
   message('liftover data to oracle server')
   run_rsync(
     src = liftover_dir,
     server = oracle_upload_server,
-    dest = file.path(upload_server_data_dir, 'liftover'),
-    flags = '-av'
+    dest = file.path(upload_server_data_dir, 'liftover')
   )
 
   message('preparing ld_blocks directory')
@@ -117,7 +116,7 @@ sync_upload_server_data <- function() {
   run_rsync(
     src = ld_block_data_dir,
     dest = ld_blocks_rsync_dir,
-    flags = '-av --prune-empty-dirs',
+    flags = '-avu --prune-empty-dirs',
     extra_args = c('--include=*/', '--include=*coloc_pairwise_results.tsv.gz', '--exclude=*')
   )
   
@@ -146,8 +145,7 @@ sync_upload_server_data <- function() {
   run_rsync(
     '.',
     oracle_upload_server,
-    file.path(upload_server_data_dir, 'ld_blocks'),
-    flags = '-av'
+    file.path(upload_server_data_dir, 'ld_blocks')
   )
   setwd(old_wd)
 
@@ -155,8 +153,7 @@ sync_upload_server_data <- function() {
   run_rsync(
     paste0(ld_reference_panel_dir, '/'),
     oracle_upload_server,
-    file.path(upload_server_data_dir, 'ld_reference_panel_hg38'),
-    flags = '-av'
+    file.path(upload_server_data_dir, 'ld_reference_panel_hg38')
   )
 
   message('rsyncing finemapped files to oracle server')
@@ -171,7 +168,7 @@ sync_upload_server_data <- function() {
     src = extracted_study_dir,
     server = oracle_upload_server,
     dest = file.path(upload_server_data_dir, 'study'),
-    flags = '-av --prune-empty-dirs',
+    flags = '-avu --prune-empty-dirs',
     extra_args = extra_study_dir_args
   )
 }

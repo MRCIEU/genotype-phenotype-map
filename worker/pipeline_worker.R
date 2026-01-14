@@ -433,7 +433,7 @@ compile_results <- function(gwas_info) {
     glue::glue('{ld_block_dirs}/coloc_clustered_results.tsv.gz')
   )
   if (length(coloc_clustered_results_files) > 0) {
-    lapply(coloc_clustered_results_files, function(file) {
+    coloc_clustered_results <- lapply(coloc_clustered_results_files, function(file) {
       return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_clustered_results_column_types))
     }) |>
       dplyr::bind_rows() |>

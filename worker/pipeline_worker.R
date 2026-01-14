@@ -451,13 +451,13 @@ compile_results <- function(gwas_info) {
     glue::glue('{ld_block_dirs}/coloc_pairwise_results.tsv.gz')
   )
   if (length(coloc_pairwise_results_files) > 0) {
-    lapply(coloc_pairwise_results_files, function(file) {
+    coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
       return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_pairwise_results_column_types))
     }) |>
-    dplyr::bind_rows() |>
-    dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
-    dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
-    dplyr::rename(unique_study_id_a = unique_study_id, unique_study_id_b = unique_study_id, h3 = PP.H3.abf, h4 = PP.H4.abf)
+      dplyr::bind_rows() |>
+      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
+      dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
+      dplyr::rename(unique_study_id_a = unique_study_a, unique_study_id_b = unique_study_b, h3 = PP.H3.abf, h4 = PP.H4.abf)
   } else {
     coloc_pairwise_results <- data.frame()
   }

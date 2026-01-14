@@ -9,7 +9,7 @@ parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
-parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = minimum_p_value_threshold)
+parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = min_p_allowed_for_worker)
 parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force clustering', type = 'logical', default = FALSE)
 
 args <- argparser::parse_args(parser)

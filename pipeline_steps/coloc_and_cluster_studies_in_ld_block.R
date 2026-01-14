@@ -34,7 +34,7 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
-      dplyr::filter(min_p <= lowest_p_value_threshold) |>
+      dplyr::filter(min_p <= args$worker_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
   } else {
     finemapped_studies <- data.frame()
@@ -44,8 +44,7 @@ main <- function() {
      existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
 
     if (file.exists(existing_finemapped_studies_file)) {
-      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F) |>
-        dplyr::filter(min_p <= args$worker_p_value_threshold)
+      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
 
       finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
         dplyr::filter(min_p <= min_p_allowed_for_worker) |>

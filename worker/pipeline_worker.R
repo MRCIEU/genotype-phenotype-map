@@ -126,6 +126,9 @@ process_message <- function(original_gwas_info) {
     memory_intensive_blocks <- identify_memory_intensive_blocks(ld_blocks_to_colocalise$ld_block)
 
     blocks_parallel <- ld_blocks_to_colocalise$ld_block[!ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
+
+    # TODO: remove after debugging: Move "EUR/8/20281092-22159255" to the top of blocks_parallel
+    blocks_parallel <- c("EUR/8/20281092-22159255", blocks_parallel)
     blocks_sequential <- ld_blocks_to_colocalise$ld_block[ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks]
 
     flog.info(paste(gwas_info$metadata$guid, 'Processing', length(blocks_parallel), 'blocks in parallel'))
@@ -363,6 +366,7 @@ process_single_block <- function(block, gwas_info) {
       " --worker_guid {gwas_info$metadata$guid} 2>&1")
     output <- system(coloc_regions, wait = T, intern = T)
     check_step_complete(output_files$coloc, block, output)
+    flog.info(output)
 
     flog.info(paste(gwas_info$metadata$guid, 'Time taken for block:', block, diff_time_taken(start_time)))
     return(block)

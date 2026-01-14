@@ -606,15 +606,21 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
     })
     all_lbf_vectors <- all_lbf_vectors[!sapply(all_lbf_vectors, is.null)]
 
+
     if (length(all_lbf_vectors) == 0) {
+      message(glue::glue('No LBF vectors found for component {component}'))
+      message(glue::glue('Studies in component: {paste(group_studies, collapse = ", ")}'))
+      message(names(studies_to_colocalise))
       return(data.frame(component = component, snp = NA_character_, h4_connectedness = 0, h3_connectedness = 0))
     }
 
     all_snps <- unique(unlist(lapply(all_lbf_vectors, names)))
     cumulative_lbf <- sapply(all_snps, function(snp) {
-      sum(sapply(all_lbf_vectors, function(vec) {
-        if (snp %in% names(vec)) vec[snp] else 0
-      }), na.rm = TRUE)
+      sum(
+        sapply(all_lbf_vectors, function(vec) {
+          if (snp %in% names(vec)) vec[snp] else 0
+        }), na.rm = TRUE
+      )
     })
 
     # Find SNP with maximum cumulative LBF

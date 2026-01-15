@@ -121,6 +121,11 @@ process_message <- function(original_gwas_info) {
     output <- system(extract_regions, wait = T, intern = T)
     check_step_complete(glue::glue('{extracted_study_dir}/extracted_snps.tsv'), 'extracted_snps.tsv', output)
 
+    if (file.info(glue::glue('{extracted_study_dir}/extracted_snps.tsv'))$size == 0) {
+      flog.error(paste(gwas_info$metadata$guid, 'No regions extracted'))
+      stop(paste(gwas_info$metadata$guid, 'No regions extracted from GWAS, please ensure the p-value threshold is set correctly'))
+    }
+
     flog.info(paste(gwas_info$metadata$guid, 'Organising LD blocks'))
     ld_blocks_to_colocalise_file <- glue::glue('{pipeline_metadata_dir}/updated_ld_blocks_to_colocalise.tsv')
     organise_ld_blocks <- glue::glue("Rscript organise_extracted_regions_into_ld_blocks.R",
@@ -572,7 +577,7 @@ concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
         file_data <- vroom::vroom(glue::glue('{data_dir}/{file_path}'), show_col_types = FALSE)
         return(file_data)
       })
-      
+
       lbfs_data_list <- lbfs_data_list[sapply(lbfs_data_list, nrow) > 0]
       lbfs_concatenated <- dplyr::bind_rows(lbfs_data_list)
     } else {

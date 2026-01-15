@@ -306,11 +306,17 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
 
     return(extraction_info)
   })
-  
+
   extracted_regions <- extracted_regions[!sapply(extracted_regions, is.null)] |>
-    dplyr::bind_rows() |>
-    dplyr::arrange(dplyr::desc(log_p))
+    dplyr::bind_rows()
 
   message(glue::glue('Extracted {nrow(extracted_regions)} regions from {study_metadata$study_name}'))
-  return(extracted_regions)
+
+  if (nrow(extracted_regions) > 0) {
+    extracted_regions <- extracted_regions |>
+      dplyr::arrange(dplyr::desc(log_p))
+    return(extracted_regions)
+  } else {
+    return(data.frame())
+  }
 }

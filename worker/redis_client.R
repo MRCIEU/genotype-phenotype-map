@@ -2,7 +2,7 @@ library(futile.logger)
 
 process_gwas <- 'process_gwas'
 process_gwas_dlq <- glue::glue('{process_gwas}_dlq')
-delete_gwas <- 'delete_gwas'
+delete_gwas_queue <- 'delete_gwas'
 
 connect_to_redis <- function(max_retries = 5, initial_delay = 2) {
   host <- Sys.getenv("REDIS_HOST", "redis")
@@ -36,5 +36,5 @@ get_from_process_queue <- function(redis_conn) {
 }
 
 get_from_delete_queue <- function(redis_conn) {
-  redis_conn$BRPOP(delete_gwas, timeout = 0)
+  redis_conn$BRPOP(delete_gwas_queue, timeout = 0)
 }

@@ -48,7 +48,6 @@ main <- function() {
 
     tryCatch({
       delete_message <- get_from_delete_queue(redis_conn)
-      flog.info(paste("Delete message:", delete_message))
 
       if (!is.null(delete_message)) {
         delete_info <- jsonlite::fromJSON(delete_message[[2]])
@@ -90,7 +89,7 @@ main <- function() {
           flog.error(paste(gwas_info$metadata$guid, "Error call:", deparse(e$call)))
         }
       } else {
-        flog.error("Error processing message: Unknown GUID")
+        flog.error(paste("Error processing message: ", e$message))
       }
     })
   }

@@ -9,7 +9,7 @@ parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
-parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = min_p_allowed_for_worker)
+parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = NA)
 parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force clustering', type = 'logical', default = FALSE)
 
 args <- argparser::parse_args(parser)
@@ -34,7 +34,6 @@ main <- function() {
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
-      dplyr::filter(min_p <= args$worker_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
   } else {
     finemapped_studies <- data.frame()
@@ -44,10 +43,16 @@ main <- function() {
      existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
 
     if (file.exists(existing_finemapped_studies_file)) {
-      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
+      if (!is.na(args$worker_p_value_threshold)) {
+        finemapped_studies <- finemapped_studies |>
+          dplyr::filter(study == args$worker_guid) |>
+          dplyr::filter(min_p <= args$worker_p_value_threshold)
+      }
+
+      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F) |>
+        dplyr::filter(min_p <= min_p_allowed_for_worker)
 
       finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-        dplyr::filter(min_p <= min_p_allowed_for_worker) |>
         dplyr::arrange(unique_study_id)
     } else {
       existing_finemapped_studies <- data.frame()

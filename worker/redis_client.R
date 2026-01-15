@@ -32,9 +32,9 @@ send_to_dlq <- function(redis_conn, message) {
 }
 
 get_from_process_queue <- function(redis_conn) {
-  redis_conn$BRPOP(process_gwas, timeout = 0)
+  redis_conn$BRPOP(process_gwas, timeout = 0.1)
 }
 
 get_from_delete_queue <- function(redis_conn) {
-  redis_conn$BRPOP(delete_gwas_queue, timeout = 0)
+  redis_conn$BRPOP(delete_gwas_queue, timeout = 0.1)
 }

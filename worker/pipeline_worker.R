@@ -47,15 +47,15 @@ main <- function() {
     }
 
     tryCatch({
-      # delete_message <- get_from_delete_queue(redis_conn)
-      # flog.info(paste("Delete message:", delete_message))
+      delete_message <- get_from_delete_queue(redis_conn)
+      flog.info(paste("Delete message:", delete_message))
 
-      # if (!is.null(delete_message)) {
-      #   delete_info <- jsonlite::fromJSON(delete_message[[2]])
-      #   flog.info(paste(delete_info$guid, "Received new message from delete queue"))
-      #   delete_gwas(delete_info$guid)
-      #   next 
-      # }
+      if (!is.null(delete_message)) {
+        delete_info <- jsonlite::fromJSON(delete_message[[2]])
+        flog.info(paste(delete_info$guid, "Received new message from delete queue"))
+        delete_gwas(delete_info$guid)
+        next 
+      }
 
       redis_message <- get_from_process_queue(redis_conn)
       

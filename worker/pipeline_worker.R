@@ -424,19 +424,14 @@ compile_results <- function(gwas_info) {
   
   finemapped_studies_full <- data.frame()
   if (length(finemapped_studies_files) > 0) {
-    tryCatch({
-      finemapped_studies_full <- vroom::vroom(finemapped_studies_files, show_col_types = FALSE, col_types = finemapped_column_types) |>
-        dplyr::filter(study == gwas_info$metadata$guid)
-      
-      study_extractions <- finemapped_studies_full |>
-        dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
-        dplyr::left_join(snp_annotations, by = "snp") |>
-        dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
-    }, error = function(e) {
-      flog.error(paste(gwas_info$metadata$guid, "Error processing finemapped studies files:", e$message))
-      flog.error(paste(gwas_info$metadata$guid, "Files:", paste(finemapped_studies_files, collapse = ", ")))
-      stop(e)
-    })
+    study_extractions <- lapply(finemapped_studies_files, function(file) {
+      return(vroom::vroom(file, show_col_types = FALSE, col_types = finemapped_column_types))
+    }) |>
+      dplyr::bind_rows() |>
+      dplyr::filter(study == gwas_info$metadata$guid) |>
+      dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
+      dplyr::left_join(snp_annotations, by = "snp") |>
+      dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.frame()

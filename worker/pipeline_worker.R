@@ -110,7 +110,7 @@ process_message <- function(original_gwas_info) {
     verification_result <- verify_gwas_data(gwas_info, gwas)
     if (!verification_result$valid) {
       flog.error(paste(gwas_info$metadata$guid, verification_result$error))
-      send_update_gwas_upload(gwas_info, FALSE, paste("bad_data:",verification_result$error))
+      send_update_gwas_upload(gwas_info, FALSE, paste("Caught error: ",verification_result$error))
       return()
     }
 
@@ -123,7 +123,7 @@ process_message <- function(original_gwas_info) {
 
     if (file.info(glue::glue('{extracted_study_dir}/extracted_snps.tsv'))$size == 0) {
       flog.error(paste(gwas_info$metadata$guid, 'No regions extracted'))
-      stop(paste(gwas_info$metadata$guid, 'No regions extracted from GWAS, please ensure the p-value threshold is set correctly'))
+      stop(paste('Caught error: No regions extracted from GWAS, please ensure the p-value threshold is set correctly'))
     }
 
     flog.info(paste(gwas_info$metadata$guid, 'Organising LD blocks'))
@@ -229,7 +229,7 @@ get_gwas_data <- function(gwas_info) {
 
   if (grepl('.vcf', local_file_path, ignore.case = TRUE)) {
     #TODO: Implement VCF support
-    stop("VCF support not yet implemented")
+    stop("Caught error: VCF support not yet implemented")
   } else {
     gwas_info$metadata$file_type <- extraction_file_types$csv
     gwas <- vroom::vroom(local_file_path, show_col_types = F)

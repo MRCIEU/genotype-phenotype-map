@@ -429,8 +429,7 @@ compile_results <- function(gwas_info) {
       dplyr::bind_rows() |>
       dplyr::filter(study == gwas_info$metadata$guid) |>
       dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
-      dplyr::left_join(snp_annotations, by = "snp") |>
-      dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
+      dplyr::left_join(snp_annotations, by = "snp")
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.frame()
@@ -471,8 +470,10 @@ compile_results <- function(gwas_info) {
   }
   
   # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)
+  lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, study_extractions)
 
-  lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, finemapped_studies_full)
+  study_extractions <- study_extractions |>
+    dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
 
   flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
   vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
@@ -560,12 +561,12 @@ find_associations_for_coloc_clustered_snps <- function(gwas_info, coloc_clustere
   }
 }
 
-concatenate_file_with_lbfs <- function(gwas_info, finemapped_studies_full) {
+concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
   lbfs_concatenated_file <- glue::glue('{extracted_study_dir}/gwas_with_lbfs.tsv.gz')
-  if (nrow(finemapped_studies_full) > 0) {
+  if (nrow(study_extractions) > 0) {
     flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
-    
-    lbf_files <- unique(finemapped_studies_full$file_with_lbfs)       
+
+    lbf_files <- unique(study_extractions$file_with_lbfs)
     if (length(lbf_files) > 0) {
       lbfs_data_list <- lapply(lbf_files, function(file_path) {
         file_data <- vroom::vroom(glue::glue('{data_dir}/{file_path}'), show_col_types = FALSE)
@@ -574,12 +575,11 @@ concatenate_file_with_lbfs <- function(gwas_info, finemapped_studies_full) {
       
       lbfs_data_list <- lbfs_data_list[sapply(lbfs_data_list, nrow) > 0]
       lbfs_concatenated <- dplyr::bind_rows(lbfs_data_list)
-      
-      
     } else {
-      return(data.frame())
+      lbfs_concatenated <- data.frame()
     }
   }
+  return(lbfs_concatenated)
 }
 
 upload_results <- function(results, gwas_info) {

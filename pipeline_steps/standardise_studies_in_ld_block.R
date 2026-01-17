@@ -67,6 +67,8 @@ main <- function() {
       dplyr::distinct()
 
     vroom::vroom_write(standardised_studies, standardised_studies_file)
+  } else {
+    vroom::vroom_write(empty_standardised_studies(), standardised_studies_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)

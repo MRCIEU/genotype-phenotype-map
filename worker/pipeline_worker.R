@@ -583,6 +583,8 @@ concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
     } else {
       lbfs_concatenated <- data.frame()
     }
+  } else {
+    lbfs_concatenated <- data.frame()
   }
   return(lbfs_concatenated)
 }

@@ -107,6 +107,8 @@ main <- function() {
         dplyr::distinct(study, .keep_all = TRUE)
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
+  } else {
+    vroom::vroom_write(existing_imputed_studies, imputed_studies_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)

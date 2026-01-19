@@ -41,7 +41,7 @@ main <- function() {
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 
   if (nrow(imputed_studies) == 0) {
-    finemapped_results <- data.frame()
+    finemapped_results <- empty_finemapped_info()
   } else {
     finemapped_results_list <- lapply(seq_len(nrow(imputed_studies)), function(i) {
       gc()

@@ -35,12 +35,17 @@ if (is.na(TEST_RUN)) {
   )
 }
 
-
-
 main <- function() {
   flog.info("Starting pipeline worker")
   
   while(TRUE) {
+    # If the stop_processing file exists, hang forever
+    stop_processing_file <- file.exists(glue::glue('{data_dir}/stop_processing'))
+    if (!is.na(TEST_RUN) || stop_processing_file) {
+      flog.info("Stop processing file found, hanging forever")
+      system('tail -f /dev/null', wait = T)
+    }
+
     if (!exists("redis_conn") || is.null(redis_conn)) {
       flog.error("Critical: redis_conn is not available. Exiting main loop.")
       break
@@ -78,10 +83,6 @@ main <- function() {
         }
       }
       Sys.sleep(5)
-      stop_processing_file <- file.exists(glue::glue('{data_dir}/stop_processing'))
-      if (!is.na(TEST_RUN) || stop_processing_file) {
-        break
-      }
     }, error = function(e) {
       if (exists("gwas_info")) {
         flog.error(paste(gwas_info$metadata$guid, "Error processing message:", e$message))
@@ -165,6 +166,7 @@ process_message <- function(original_gwas_info) {
       stop(paste(gwas_info$metadata$guid, 'Failed to process all blocks'))
     }
 
+    gc()
     flog.info(paste(gwas_info$metadata$guid, 'Compiling results'))
     results <- compile_results(gwas_info)
 
@@ -464,27 +466,30 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_pairwise_results_files) > 0) {
     coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
-      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_pairwise_results_column_types))
+      cp_result <- vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_pairwise_results_column_types) |>
+        dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
+        dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore)
+      return(cp_result)
     }) |>
       dplyr::bind_rows() |>
-      dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
-      dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore) |>
       dplyr::rename(unique_study_id_a = unique_study_a, unique_study_id_b = unique_study_b, h3 = PP.H3.abf, h4 = PP.H4.abf)
   } else {
     coloc_pairwise_results <- data.frame()
   }
-  
-  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)
+
   lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, study_extractions)
+  vroom::vroom_write(lbfs_concatenated, lbfs_concatenated_file)
+  rm(lbfs_concatenated)
+
+  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)
 
   study_extractions <- study_extractions |>
     dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
 
   flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
-  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
   vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
-  vroom::vroom_write(lbfs_concatenated, lbfs_concatenated_file)
+  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
   # vroom::vroom_write(associations, compiled_associations_file)
   
   return(list(

@@ -224,7 +224,7 @@ p1 <- ggplot(latest_sources, aes(x = ordered_name, y = num_studies)) +
     show.legend = FALSE
   ) +
   coord_flip() +
-  labs(x = "Data Source", y = "Number of Studies", title = "(A) Number of Studies by Data Source") +
+  labs(x = "Data Source", y = "Number of Studies", title = "Number of Studies by Data Source") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         axis.text = element_text(color = "black"),
@@ -514,7 +514,7 @@ p_tissue_counts <- ggplot(tissue_counts, aes(x = reorder(tissue, total), y = cou
     x = "Tissue",
     y = "Count",
     fill = "",
-    title = "(F) Number of Ingested Loci by Tissue"
+    title = "Number of Ingested Loci by Tissue"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -541,7 +541,7 @@ p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, f
     x = "Tissue",
     y = "Percentage",
     fill = "",
-    title = "(G) Colocalization Membership by Tissue"
+    title = "Colocalization Membership by Tissue"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -700,7 +700,7 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
   geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
   coord_flip() +
   labs(x = "Data Type", y = "Count", fill = "",
-       title = "(B) Number of Ingested Loci by Data Type") +
+       title = "Number of Ingested Loci by Data Type") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         legend.position = "bottom",
@@ -744,7 +744,8 @@ phenotype_pval_variant_viz <- DBI::dbGetQuery(latest_results$studies_conn, "SELE
     pval_variant_category = paste(variant_group, pval_bucket, sep = ": ")
   ) |>
   dplyr::group_by(trait_category, pval_variant_category) |>
-  dplyr::summarise(count = dplyr::n(), .groups = "drop")
+  dplyr::summarise(count = dplyr::n(), .groups = "drop") |>
+  dplyr::filter(!is.na(trait_category))
 
 phenotype_pval_variant_totals <- phenotype_pval_variant_viz |>
   dplyr::group_by(trait_category) |>
@@ -1126,7 +1127,7 @@ p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type
             size = 3, color = "white") +
   coord_flip() +
   labs(x = "", y = "Percentage", fill = "Colocalization Type",
-       title = "(E) Clustered Molecular Colocalization Rates") +
+       title = "Clustered Molecular Colocalization Rates") +
   theme_minimal(base_size = 12) +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold"),
@@ -1160,6 +1161,7 @@ ggsave(file.path(results_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait
 # Create p-value threshold bar chart by trait category
 # Use shared trait category ordering based on molecular colocalization percentage from section (E)
 phenotype_pval_variant_viz_ordered <- phenotype_pval_variant_viz |>
+  dplyr::filter(!is.na(trait_category)) |>
   dplyr::mutate(
     pval_variant_category = factor(
       pval_variant_category,
@@ -1172,7 +1174,7 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
   geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
   coord_flip() +
   labs(x = "Trait Category", y = "Count", fill = "",
-       title = "(C) Number of Ingested Loci by Trait Category") +
+       title = "Number of Ingested Loci by Trait Category") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         legend.position = "bottom",
@@ -1394,7 +1396,7 @@ p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = suppo
     x = "",
     y = "Percentage",
     fill = "Colocalization Type",
-    title = "(D) Pairwise Molecular Colocalization Rates"
+    title = "Pairwise Molecular Colocalization Rates"
   ) +
   theme_minimal(base_size = 12) +
   theme(

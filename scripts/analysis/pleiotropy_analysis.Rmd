@@ -118,8 +118,8 @@ p_gene_pleiotropy <- ggplot(gene_pleiotropy_scores, aes(x = distinct_trait_categ
            fill = "white", alpha = 0.8) +
   labs(
     title = "Relationship between Gene Pleiotropy Metrics",
-    x = "Number of Trait Categories Colocalising with Gene",
-    y = "Number of Protein Coding Genes Colocalising with Gene"
+    x = "Number of Trait Categories Colocalizing with Gene",
+    y = "Number of Protein Coding Genes Colocalizing with Gene"
   ) +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
@@ -150,9 +150,9 @@ p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categor
            fill = "white", alpha = 0.8) +
   labs(
     title = "Relationship between SNP Pleiotropy Metrics",
-    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalising with SNP",
+    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalizing with SNP",
     x = "Number of Trait Categories",
-    y = "Number of Protein Coding Genes Colocalising with SNP"
+    y = "Number of Protein Coding Genes Colocalizing with SNP"
   ) +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
@@ -310,8 +310,8 @@ multiple_genes_in_coloc_group <- function(only_protein_coding = FALSE, include_t
     geom_text(aes(label = count), vjust = -0.5, size = 3) +
     scale_x_discrete(limits = c(as.character(1:20), ">20")) +
     labs(
-      title = glue::glue("Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per coloc group{if (include_trans) ', including trans' else ''}"),
-      x = "Number of unique genes per coloc group",
+      title = glue::glue("Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per colocalization group{if (include_trans) ', including trans' else ''}"),
+      x = "Number of unique genes per colocalization group",
       y = "Frequency",
       caption = paste("Total groups (with genes):", nrow(coloc_group_analysis_filtered),
         "| Mean:", round(mean(coloc_group_analysis_filtered$unique_genes), 2),
@@ -455,12 +455,12 @@ coloc_group_count_data <- coloc_groups_sizes %>%
   mutate(count_offset = count + 0.2)
 
 p_coloc_group_size <- ggplot(coloc_group_count_data, aes(x = num_studies, y = count_offset)) +
-  geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
+  geom_bar(stat = "identity", fill = cb_blue, color = cb_blue, alpha = 0.7) +
   scale_x_continuous() +
   scale_y_log10() +
   labs(
-    title = "Histogram of coloc group sizes",
-    x = "Number of distinct studies in coloc group",
+    title = "Number of studies in colocilization group",
+    x = "Number of studies in colocilization group",
     y = "Frequency (log scale)",
     caption = paste("Mean:", round(mean(coloc_groups_sizes$num_studies), 2),
                     "| Median:", round(median(coloc_groups_sizes$num_studies), 2))

@@ -62,8 +62,9 @@ main <- function() {
       }
 
       redis_message <- get_from_process_queue(redis_conn)
-      
+
       if (!is.null(redis_message)) {
+        flog.info(paste("Processing message with payload: ", redis_message))
         gwas_info <- jsonlite::fromJSON(redis_message[[2]])
         flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 

@@ -431,11 +431,12 @@ compile_results <- function(gwas_info) {
   finemapped_studies_full <- data.frame()
   if (length(finemapped_studies_files) > 0) {
     study_extractions <- lapply(finemapped_studies_files, function(file) {
-      return(vroom::vroom(file, show_col_types = FALSE, col_types = finemapped_column_types))
+      se_result <- vroom::vroom(file, show_col_types = FALSE, col_types = finemapped_column_types) |>
+        dplyr::filter(study == gwas_info$metadata$guid) |>
+        dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold)
+      return(se_result)
     }) |>
       dplyr::bind_rows() |>
-      dplyr::filter(study == gwas_info$metadata$guid) |>
-      dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold) |>
       dplyr::left_join(snp_annotations, by = "snp")
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))

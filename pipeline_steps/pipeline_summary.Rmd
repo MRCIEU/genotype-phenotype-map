@@ -166,6 +166,8 @@ average_h4_connectedness <- mean(average_h4_connectedness$h4_connectedness)
 
 rare_results <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT * FROM rare_results")
 num_rare_results <- max(rare_results$rare_result_group_id)
+
+unique_variants_in_coloc <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups")
 ```
 
 

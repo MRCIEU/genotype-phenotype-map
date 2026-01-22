@@ -51,6 +51,32 @@ cb_light_orange <- "#F3CF80"
 
 
 ```{r load-data, echo=F}
+
+# Find snp_ids that are in coloc_groups table under different coloc_group_ids
+
+snp_with_multiple_coloc_groups <- DBI::dbGetQuery(
+  studies_conn,
+  "
+  WITH coloc_groups_with_many_entries AS (
+    SELECT coloc_group_id
+    FROM coloc_groups
+    GROUP BY coloc_group_id
+    HAVING COUNT(*) > 5
+  )
+  SELECT snp_id, COUNT(DISTINCT coloc_group_id) AS num_coloc_groups
+  FROM coloc_groups
+  WHERE coloc_group_id IN (SELECT coloc_group_id FROM coloc_groups_with_many_entries)
+  GROUP BY snp_id
+  HAVING COUNT(DISTINCT coloc_group_id) > 1
+  "
+)
+
+# Print number of such SNPs and preview data
+num_snps_multiple_groups <- nrow(snp_with_multiple_coloc_groups)
+cat('Number of snp_ids found in multiple coloc_group_ids:', num_snps_multiple_groups, '\n')
+head(snp_with_multiple_coloc_groups)
+
+
 joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   coloc_pairs.*,
   -- Study extraction A details

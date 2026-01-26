@@ -52,13 +52,15 @@ run_rsync <- function(src, server = NULL, dest, flags = '-avu', extra_args = NUL
 sync_db_files <- function() {
   message('copying db files to oracle server')
   
+  #TODO: whenever we start using associations_full, change from associations_full_small to associations_full
   db_files <- list(
     'studies.db' = 'studies_new.db',
     'coloc_pairs.db' = 'coloc_pairs_new.db',
     'associations.db' = 'associations_new.db',
+    'associations_full_small.db' = 'associations_full_new.db',
     'ld.db' = 'ld_new.db'
   )
-  
+
   for (src_file in names(db_files)) {
     src_path <- file.path(latest_results_dir, src_file)
     dest_file <- db_files[[src_file]]

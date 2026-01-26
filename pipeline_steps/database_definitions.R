@@ -271,7 +271,7 @@ coloc_pairs_full_table <- list(
 coloc_pairs_significant_table <- list(
   name = "coloc_pairs",
   query = "CREATE TABLE coloc_pairs (
-    snp_id INTEGER NOT NULL,
+    snp_id INTEGER,
     study_extraction_a_id INTEGER NOT NULL,
     study_extraction_b_id INTEGER NOT NULL,
     ld_block_id INTEGER NOT NULL,

@@ -26,8 +26,15 @@ if (is.na(TEST_RUN)) {
 } else {
   flog.appender(appender.console())
   redis_conn <- list(
-    BRPOP = function(queue, timeout = 0) {
-      return(jsonlite::fromJSON(args$custom_message_file))
+    BRPOP = function(queue, timeout = 0.1) {
+      if (queue == delete_gwas_queue) {
+        return(NULL)
+      }
+      if (queue == process_gwas) {
+        payload <- readLines(args$custom_message_file, warn = FALSE)
+        return(list(process_gwas, payload))
+      }
+      return(NULL)
     },
     LPUSH = function(queue, message) {
       return(1)
@@ -60,7 +67,6 @@ main <- function() {
         delete_gwas(delete_info$guid)
         next 
       }
-
       redis_message <- get_from_process_queue(redis_conn)
 
       if (!is.null(redis_message)) {
@@ -93,6 +99,7 @@ main <- function() {
       } else {
         flog.error(paste("Error processing message: ", e$message))
       }
+      if (!is.na(TEST_RUN)) stop(e) 
     })
   }
 }
@@ -274,16 +281,30 @@ verify_gwas_data <- function(gwas_info, gwas) {
     return(list(valid = FALSE, error = paste("Missing mandatory columns:", paste(missing_columns, collapse = ", "))))
   }
 
+  error_checks <- ""
+
+  if (any(is.na(gwas$CHR))) {
+    error_checks <- paste(error_checks, "Some SNPs have missing CHR values, ")
+  }
+
+  if (any(is.na(gwas$BP))) {
+    error_checks <- paste(error_checks, "Some SNPs have missing BP values, ")
+  }
+
   if (any(gwas$P < 0, na.rm = T)) {
-    return(list(valid = FALSE, error = "Negative P-values found"))
+    error_checks <- paste(error_checks, "Some SNPs have negative P-values, ")
   }
 
   if (any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
-    return(list(valid = FALSE, error = "EAF values out of range"))
+    error_checks <- paste(error_checks, "Some SNPs have EAF values out of range, ")
   }
 
   if (has_beta && any(gwas$SE < 0, na.rm = T)) {
-    return(list(valid = FALSE, error = "Negative SE values found"))
+    error_checks <- paste(error_checks, "Some SNPs have negative SE values, ")
+  }
+
+  if (nchar(error_checks) > 0) {
+    return(list(valid = FALSE, error = error_checks))
   }
 
   return(list(valid = TRUE, error = NULL))

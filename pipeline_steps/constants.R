@@ -54,6 +54,10 @@ data_types <- list(splice_variant='splice_variant',
                            plasma_protein='plasma_protein',
                            phenotype='phenotype'
 )
+
+non_qtl_data_types <- c(data_types$metabolome, data_types$cell_trait, data_types$plasma_protein, data_types$phenotype)
+qtl_data_types <- c(data_types$splice_variant, data_types$transcript, data_types$gene_expression, data_types$protein, data_types$methylation)
+
 data_type_names <- list(splice_variant='sQTL',
                            transcript='tQTL',
                            gene_expression='eQTL',
@@ -61,7 +65,7 @@ data_type_names <- list(splice_variant='sQTL',
                            methylation='methQTL',
                            metabolome='metaQTL',
                            cell_trait='Cell Trait',
-                           plasma_protein='Plasma Protein',
+                           plasma_protein='Targeted Protein Measure',
                            phenotype='Phenotype'
 )
 cell_types <- c(

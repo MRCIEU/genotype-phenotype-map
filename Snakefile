@@ -56,7 +56,8 @@ new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
 pipeline_summary_file = f'{current_results_dir}/pipeline_summary.html'
 
 studies_db_file = f'{current_results_dir}/studies.db'
-associations_db_file = f'{current_results_dir}/associations.db'
+associations_full_db_file = f'{current_results_dir}/associations_full.db'
+associations_specific_db_file = f'{current_results_dir}/associations.db'
 coloc_pairs_full_db_file = f'{current_results_dir}/coloc_pairs_full.db'
 coloc_pairs_significant_db_file = f'{current_results_dir}/coloc_pairs.db'
 ld_db_file = f'{current_results_dir}/ld.db'
@@ -81,7 +82,8 @@ rule all:
         new_studies_processed,
         new_traits_processed,
         studies_db_file,
-        associations_db_file,
+        associations_full_db_file,
+        associations_specific_db_file,
         coloc_pairs_full_db_file,
         coloc_pairs_significant_db_file,
         ld_db_file,
@@ -211,7 +213,7 @@ rule coloc_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output} --force_clustering true"
+                --completed_output_file {output}"
         subprocess.run(command, shell=True)
 
 rule compare_rare_rule:
@@ -260,7 +262,7 @@ rule compile_results:
             --coloc_clustered_results_file {output.coloc_clustered_results} \
             --rare_results_file {output.rare_results}
 
-         rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
+        #  rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
 
 # rule backup_data_dir:
@@ -280,7 +282,8 @@ rule create_results_db:
    threads: 1
    output:
        studies_db_file = studies_db_file,
-       associations_db_file = associations_db_file,
+       associations_full_db_file = associations_full_db_file,
+       associations_specific_db_file = associations_specific_db_file,
        coloc_pairs_full_db_file = coloc_pairs_full_db_file,
        coloc_pairs_significant_db_file = coloc_pairs_significant_db_file,
        ld_db_file = ld_db_file,
@@ -290,7 +293,8 @@ rule create_results_db:
        """
        Rscript create_db_from_results.R \
            --studies_db_file {studies_db_file} \
-           --associations_db_file {associations_db_file} \
+           --associations_full_db_file {associations_full_db_file} \
+           --associations_specific_db_file {associations_specific_db_file} \
            --coloc_pairs_full_db_file {coloc_pairs_full_db_file} \
            --coloc_pairs_significant_db_file {coloc_pairs_significant_db_file} \
            --ld_db_file {ld_db_file} \
@@ -309,7 +313,7 @@ rule prepare_svg_files_for_use:
         """
 
 rule pipeline_summary:
-    input: studies_db_file, coloc_pairs_significant_db_file, associations_db_file, create_dbs_done_file
+    input: studies_db_file, coloc_pairs_significant_db_file, associations_full_db_file, associations_specific_db_file, create_dbs_done_file
     threads: 1
     output: pipeline_summary_file
     shell:

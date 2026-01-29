@@ -227,10 +227,16 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
     #TODO: remove N from columns
   }
   for (name in names(columns)) {
+    # Skip if the mapping value is empty, NULL, or zero-length
+    if (is.null(columns[[name]]) || length(columns[[name]]) == 0 || 
+        (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)) {
+      next
+    }
+
     #this deletes an existing column that we're about to rename, so we don't have 2 columns
     already <- name != columns[[name]]
-    already <- already %in% TRUE
-    if (name %in% names(gwas) & already) {
+    already <- length(already) > 0 && any(already, na.rm = TRUE)
+    if (name %in% names(gwas) && already) {
       gwas <- gwas[ , -which(names(gwas) %in% c(name))]
     }
     names(gwas)[names(gwas) == columns[name]] <- name
@@ -245,44 +251,72 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
 }
 
 split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshold) {
-  gwas <- dplyr::select(gwas, dplyr::any_of(required_columns))
-  
-  extracted_regions <- apply(ld_blocks, 1, function(ld_block) {
-    chr <- as.numeric(ld_block[['chr']])
-    start <- as.numeric(ld_block[['start']])
-    stop <- as.numeric(ld_block[['stop']])
+  ld_blocks_prepared <- ld_blocks |>
+    dplyr::mutate(
+      ld_block = ld_block_string(study_metadata$ancestry, chr, start, stop),
+      chr = as.numeric(chr),
+      start = as.numeric(start),
+      stop = as.numeric(stop)
+    )
 
-    snps_in_block <- dplyr::filter(gwas, CHR == chr & start <= BP & stop > BP)
-    if (nrow(snps_in_block) == 0) return()
+  gwas <- data.table::as.data.table(gwas)
+  ld_blocks <- data.table::as.data.table(ld_blocks_prepared)
 
+  data.table::setkey(ld_blocks, chr, start, stop)
+  gwas[, `:=`(start = BP, end = BP)]
+  data.table::setkey(gwas, CHR, start, end)
+
+  gwas_with_blocks <- data.table::foverlaps(
+    gwas,
+    ld_blocks,
+    by.x = c("CHR", "start", "end"),
+    by.y = c("chr", "start", "stop"),
+    type = "within",
+    nomatch = NULL
+  )
+  gwas_with_blocks <- gwas_with_blocks[!is.na(ld_block)]
+  gwas_with_blocks[, `:=`(start = NULL, end = NULL)]
+  gwas_with_blocks <- tibble::as_tibble(gwas_with_blocks) |>
+    dplyr::select(-dplyr::any_of(c("chr", "start", "stop", "ancestry")))
+  gwas_split <- split(gwas_with_blocks, gwas_with_blocks$ld_block)
+
+  extracted_regions <- parallel::mclapply(gwas_split, mc.cores = 10, function(snps_in_block) {
     top_hit <- dplyr::arrange(snps_in_block, P) |>
       dplyr::slice(1)
 
-    variant_p <- as.numeric(top_hit["P"])
-    variant_bp <- as.numeric(top_hit["BP"])
-    variant_chr <- as.numeric(top_hit["CHR"])
+    variant_p <- as.numeric(top_hit$P)
+    variant_bp <- as.numeric(top_hit$BP)
+    variant_chr <- as.numeric(top_hit$CHR)
 
     if (variant_p > p_value_threshold) {
-      return()
+      return(NULL)
     }
-    ld_block_identifier <- ld_block_string(study_metadata$ancestry, chr, start, stop)
-    snps_in_block$ld_block <- ld_block_identifier
 
     extracted_file <- glue::glue('{extracted_study_dir}/extracted/{study_metadata$ancestry}_{variant_chr}_{variant_bp}.tsv.gz')
     vroom::vroom_write(snps_in_block, extracted_file)
-   
+
     extraction_info <- data.frame(
       chr = variant_chr, 
       bp = variant_bp, 
       log_p = -log10(variant_p),
-      ld_block = ld_block_identifier,
+      ld_block = snps_in_block$ld_block[1],
       file = extracted_file,
       cis_trans = NA
     )
-  }) |>
-    dplyr::bind_rows() |>
-    dplyr::arrange(dplyr::desc(log_p))
+
+    return(extraction_info)
+  })
+
+  extracted_regions <- extracted_regions[!sapply(extracted_regions, is.null)] |>
+    dplyr::bind_rows()
 
   message(glue::glue('Extracted {nrow(extracted_regions)} regions from {study_metadata$study_name}'))
-  return(extracted_regions)
+
+  if (nrow(extracted_regions) > 0) {
+    extracted_regions <- extracted_regions |>
+      dplyr::arrange(dplyr::desc(log_p))
+    return(extracted_regions)
+  } else {
+    return(data.frame())
+  }
 }

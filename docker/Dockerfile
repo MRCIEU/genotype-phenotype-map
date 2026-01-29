@@ -62,4 +62,3 @@ RUN Rscript docker/requirements.R && \
     find /usr/local/lib/R -name "*.tar.gz" -delete && \
     find /usr/local/lib/R -name "*.zip" -delete
 
-COPY . /home/pipeline

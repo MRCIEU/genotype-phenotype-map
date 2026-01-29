@@ -28,26 +28,31 @@ main <- function() {
     orig_studies_db_file <- file.path(latest_results_dir, 'studies.db')
     orig_ld_db_file <- file.path(latest_results_dir, 'ld.db')
     orig_associations_db_file <- file.path(latest_results_dir, 'associations.db')
+    orig_associations_full_db_file <- file.path(latest_results_dir, 'associations_full.db')
     orig_coloc_pairs_db_file <- file.path(latest_results_dir, 'coloc_pairs.db')
 
     studies_db_file <- file.path(latest_results_dir, 'studies_small.db')
     ld_db_file <- file.path(latest_results_dir, 'ld_small.db')
     associations_db_file <- file.path(latest_results_dir, 'associations_small.db')
+    associations_full_db_file <- file.path(latest_results_dir, 'associations_full_small.db')
     coloc_pairs_db_file <- file.path(latest_results_dir, 'coloc_pairs_small.db')
 
     unlink(studies_db_file)
     unlink(ld_db_file)
     unlink(associations_db_file)
+    unlink(associations_full_db_file)
     unlink(coloc_pairs_db_file)
 
     orig_studies_con <- duckdb::dbConnect(duckdb::duckdb(), orig_studies_db_file, read_only=TRUE)
     orig_ld_con <- duckdb::dbConnect(duckdb::duckdb(), orig_ld_db_file, read_only=TRUE)
     orig_associations_con <- duckdb::dbConnect(duckdb::duckdb(), orig_associations_db_file, read_only=TRUE)
+    orig_associations_full_con <- duckdb::dbConnect(duckdb::duckdb(), orig_associations_full_db_file, read_only=TRUE)
     orig_coloc_pairs_con <- duckdb::dbConnect(duckdb::duckdb(), orig_coloc_pairs_db_file, read_only=TRUE)
 
     studies_con <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
     ld_con <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file)
     associations_con <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file)
+    associations_full_con <- duckdb::dbConnect(duckdb::duckdb(), associations_full_db_file)
     coloc_pairs_con <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_db_file)
 
     #remove text of foreign key constraints from all tables
@@ -158,13 +163,22 @@ main <- function() {
     ))
     DBI::dbAppendTable(coloc_pairs_con, "coloc_pairs", coloc_pairs)
 
-    DBI::dbExecute(associations_con, associations_db$associations_metadata$query)
 
-    associations_metadata <- DBI::dbGetQuery(orig_associations_con, "SELECT * FROM associations_metadata")
+    create_associations_table_query <- sub("table_name", "associations", associations_db$associations$query)
+    DBI::dbExecute(associations_con, create_associations_table_query)
+    associations <- DBI::dbGetQuery(orig_associations_con,
+        sprintf("SELECT * FROM associations WHERE snp_id IN (%s) AND study_id IN (%s)",
+        paste(snp_ids_to_keep, collapse=","),
+        paste(studies$id, collapse=","))
+    )
+    DBI::dbAppendTable(associations_con, "associations", associations)
+
+    DBI::dbExecute(associations_full_con, associations_db$associations_metadata$query)
+    associations_metadata <- DBI::dbGetQuery(orig_associations_full_con, "SELECT * FROM associations_metadata")
     all_associations <- lapply(associations_metadata$associations_table_name, function(table_name) {
         create_table_query <- sub("table_name", table_name, associations_db$associations$query)
-        DBI::dbExecute(associations_con, create_table_query)
-        associations <- DBI::dbGetQuery(orig_associations_con,
+        DBI::dbExecute(associations_full_con, create_table_query)
+        associations <- DBI::dbGetQuery(orig_associations_full_con,
           sprintf("SELECT * FROM %s WHERE snp_id IN (%s) AND study_id IN (%s)",
           table_name,
           paste(snp_ids_to_keep, collapse=","),
@@ -172,14 +186,14 @@ main <- function() {
         )
     })
     all_associations <- do.call(rbind, all_associations)
-    DBI::dbAppendTable(associations_con, 'associations_1', all_associations)
+    DBI::dbAppendTable(associations_full_con, 'associations_1', all_associations)
     associations_metadata <- data.frame(
       start_snp_id = 1,
       stop_snp_id = .Machine$integer.max,
       associations_table_name = 'associations_1'
     )
-    DBI::dbAppendTable(associations_con, "associations_metadata", associations_metadata)
-    
+    DBI::dbAppendTable(associations_full_con, "associations_metadata", associations_metadata)
+
     ld_to_keep <- DBI::dbGetQuery(
         orig_ld_con,
         sprintf("SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s)",
@@ -191,6 +205,7 @@ main <- function() {
     DBI::dbDisconnect(studies_con, shutdown=TRUE)
     DBI::dbDisconnect(ld_con, shutdown=TRUE)
     DBI::dbDisconnect(associations_con, shutdown=TRUE)
+    DBI::dbDisconnect(associations_full_con, shutdown=TRUE)
     DBI::dbDisconnect(coloc_pairs_con, shutdown=TRUE)
 }
 

@@ -9,6 +9,7 @@ parser <- argparser::arg_parser('Colocalise studies per region')
 parser <- argparser::add_argument(parser, '--ld_block', help = 'LD block that the studies are in', type = 'character')
 parser <- argparser::add_argument(parser, '--completed_output_file', help = 'Coloc result file to save', type = 'character')
 parser <- argparser::add_argument(parser, '--worker_guid', help = 'Worker GUID', type = 'character', default = NA)
+parser <- argparser::add_argument(parser, '--worker_p_value_threshold', help = 'Worker p-value threshold', type = 'numeric', default = NA)
 parser <- argparser::add_argument(parser, '--force_clustering', help = 'Force clustering', type = 'logical', default = FALSE)
 
 args <- argparser::parse_args(parser)
@@ -31,10 +32,8 @@ main <- function() {
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
-  message(glue::glue('{args$ld_block}: {finemapped_file}'))
   if (file.exists(finemapped_file)) {
     finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
-      dplyr::filter(min_p <= lowest_p_value_threshold) |>
       dplyr::arrange(unique_study_id)
   } else {
     finemapped_studies <- data.frame()
@@ -42,13 +41,19 @@ main <- function() {
 
   if (!is.na(args$worker_guid)) {
      existing_finemapped_studies_file <- glue::glue('{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv')
-     message(glue::glue('{args$ld_block}: {existing_finemapped_studies_file}'))
 
     if (file.exists(existing_finemapped_studies_file)) {
-     existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F)
-     finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
-       dplyr::filter(min_p <= lowest_p_value_threshold) |>
-       dplyr::arrange(unique_study_id)
+      if (!is.na(args$worker_p_value_threshold)) {
+        finemapped_studies <- finemapped_studies |>
+          dplyr::filter(study == args$worker_guid) |>
+          dplyr::filter(min_p <= args$worker_p_value_threshold)
+      }
+
+      existing_finemapped_studies <- vroom::vroom(existing_finemapped_studies_file, col_types = finemapped_column_types, show_col_types=F) |>
+        dplyr::filter(min_p <= min_p_allowed_for_worker)
+
+      finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
+        dplyr::arrange(unique_study_id)
     } else {
       existing_finemapped_studies <- data.frame()
     }
@@ -78,33 +83,47 @@ main <- function() {
     finemapped_subset <- finemapped_studies |>
       dplyr::filter(
         min_p <= lowest_p_value_threshold & 
-        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b)
-      )
+        (unique_study_id %in% study_pairs$unique_study_a | unique_study_id %in% study_pairs$unique_study_b) &
+        !ignore
+      ) |>
+      dplyr::mutate(file = dplyr::case_when(
+        grepl('^gwas_upload', file) ~ glue::glue('{data_dir}/{file}'),
+        grepl('^study', file) ~ glue::glue('{data_dir}/{file}'),
+        TRUE ~ file
+      ))
   } else {
     finemapped_subset <- finemapped_studies
   }
 
-  studies_to_colocalise <- lapply(finemapped_subset$file, function(file) {
-    if (file.info(file)$size == 0) {
-      message(glue::glue('{file} is empty, delete.'))
+  studies_to_colocalise <- lapply(seq_len(nrow(finemapped_subset)), function(i) {
+    file <- finemapped_subset$file[i]
+    
+    if (!file.exists(file)) {
+      message(glue::glue('{file} does not exist, skipping.'))
       return(NULL)
     }
 
-    gwas <- vroom::vroom(file, delim = '\t',
-      show_col_types = F,
-      col_select = c('SNP', 'LBF'),
-      altrep = F
+    gwas <- data.table::fread(
+      file, 
+      sep = '\t',
+      select = c('SNP', 'LBF'),
+      colClasses = c(SNP = 'character', LBF = 'numeric'),
+      verbose = FALSE,
+      showProgress = FALSE,
+      nThread = 1
     )
-    return(gwas)
+    
+    lbf_vector <- gwas$LBF
+    names(lbf_vector) <- gwas$SNP
+    rm(gwas)
+    
+    return(lbf_vector)
   })
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
+  studies_to_colocalise <- studies_to_colocalise[!sapply(studies_to_colocalise, is.null)]
   message(glue::glue('{args$ld_block}: Loaded {length(studies_to_colocalise)} studies in {diff_time_taken(start_time)}'))
 
-  # num_cores <- 200
-  # chunk_factor <- ceiling((1:nrow(study_pairs)) / (nrow(study_pairs) / num_cores))
-  # chunked_study_pairs <- split(study_pairs, chunk_factor)
-
-  # new_coloc_results <- parallel::mclapply(chunked_study_pairs, mc.cores = num_cores, function(chunk) {
+  gc(verbose = FALSE)
 
   results <- lapply(seq_len(nrow(study_pairs)), function(i) {
     pair <- study_pairs[i,]
@@ -119,26 +138,26 @@ main <- function() {
     })
     if (is.null(result)) {
       result <- data.frame(
-        ld_block = args$ld_block,
         unique_study_a = pair$unique_study_a,
         study_a = NA,
         unique_study_b = pair$unique_study_b,
         study_b = NA,
+        bp_distance = NA,
         ignore = T,
         false_positive = F,
         false_negative = F,
-        bp_distance = NA,
         nsnps = NA,
         hit1 = NA,
         hit2 = NA,
-        idx1 = NA,
-        idx2 = NA,
         PP.H0.abf = NA,
         PP.H1.abf = NA,
         PP.H2.abf = NA,
         PP.H3.abf = NA,
         PP.H4.abf = NA,
-        h4 = NA
+        idx1 = NA,
+        idx2 = NA,
+        h4 = NA,
+        ld_block = args$ld_block
       )
       return(result)
     }
@@ -151,46 +170,64 @@ main <- function() {
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
-    coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
-      dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
-      dplyr::mutate(ld_block = args$ld_block)
+    coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
     
-    results <- prune_poor_finemapping_results(finemapped_studies, coloc_results)
-    finemapped_studies <- results$finemapped_studies
-    coloc_results <- results$coloc_results
+    can_cluster <- nrow(coloc_results) > 0 && "unique_study_a" %in% colnames(coloc_results)
 
-    filtered_coloc_results <- coloc_results |>
-      dplyr::filter(!ignore) |>
-      dplyr::mutate(
-        min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
-        min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
-      )
+    if (can_cluster) {
+      coloc_results <- coloc_results |>
+        dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
+        dplyr::mutate(ld_block = args$ld_block)
+      
+      results <- prune_poor_finemapping_results(finemapped_studies, coloc_results)
+      finemapped_studies <- results$finemapped_studies
+      coloc_results <- results$coloc_results
 
-    clustered_results <- cluster_coloc_results(filtered_coloc_results, finemapped_studies, start_time)
-    coloc_results <- mark_false_positives_and_negatives(coloc_results, clustered_results)
-    
-    message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$false_positive, na.rm = TRUE)} false positives and {sum(coloc_results$false_negative, na.rm = TRUE)} false negatives'))
+      filtered_coloc_results <- coloc_results |>
+        dplyr::filter(!ignore) |>
+        dplyr::mutate(
+          min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+          min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
+        )
 
-    additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
+      clustered_results <- cluster_coloc_results(filtered_coloc_results, finemapped_studies, start_time)
+      coloc_results <- mark_false_positives_and_negatives(coloc_results, clustered_results)
+      
+      message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$false_positive, na.rm = TRUE)} false positives and {sum(coloc_results$false_negative, na.rm = TRUE)} false negatives'))
 
-    if (nrow(clustered_results$groups) == 0) {
-      clustered_results$groups <- data.frame(
-        unique_study_id = character(),
-        component = integer(),
-        ld_block = character(),
-        snp = character(),
-        h4_connectedness = numeric(),
-        h3_connectedness = numeric()
-      )
+      additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
+
+      if (nrow(clustered_results$groups) == 0) {
+        clustered_results$groups <- data.frame(
+          unique_study_id = character(),
+          component = integer(),
+          ld_block = character(),
+          snp = character(),
+          h4_connectedness = numeric(),
+          h3_connectedness = numeric()
+        )
+      } else {
+        clustered_results$groups <- clustered_results$groups |>
+          dplyr::mutate(ld_block = args$ld_block) |>
+          dplyr::left_join(additional_data_per_cluster, by = "component") |>
+          dplyr::arrange(component)
+      }
+
+      clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
+      saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/igraph_clustered_results.rds'))
     } else {
-      clustered_results$groups <- clustered_results$groups |>
-        dplyr::mutate(ld_block = args$ld_block) |>
-        dplyr::left_join(additional_data_per_cluster, by = "component") |>
-        dplyr::arrange(component)
+      clustered_results <- list(
+        groups = data.frame(
+          unique_study_id = character(),
+          component = integer(),
+          ld_block = character(),
+          snp = character(),
+          h4_connectedness = numeric(),
+          h3_connectedness = numeric()
+        )
+      )
     }
 
-    clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
-    saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/igraph_clustered_results.rds'))
     vroom::vroom_write(finemapped_studies, finemapped_file)
     vroom::vroom_write(coloc_results, coloc_results_file)
     vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))
@@ -230,7 +267,7 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
 
   if (!is.na(worker_guid)) {
     pairs_filtered <- pairs_filtered |>
-      dplyr::filter(study_a == worker_guid | study_b == worker_guid)
+      dplyr::filter((study_a == worker_guid | study_b == worker_guid) & !ignore)
   }
 
   existing_results <- data.table::as.data.table(existing_results)
@@ -252,15 +289,10 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
   harmonised_gwases <- harmonise_gwases(first_gwas, second_gwas)
   if (length(harmonised_gwases) == 0) return(NULL)
   
-  first_gwas <- harmonised_gwases[[1]]
-  second_gwas <- harmonised_gwases[[2]]
+  first_lbf <- harmonised_gwases[[1]]
+  second_lbf <- harmonised_gwases[[2]]
 
-  if (nrow(first_gwas) < 50 || nrow(second_gwas) < 50) return(NULL)
-
-  first_lbf <- first_gwas$LBF
-  names(first_lbf) <- first_gwas$SNP
-  second_lbf <- second_gwas$LBF
-  names(second_lbf) <- second_gwas$SNP
+  if (length(first_lbf) < 50 || length(second_lbf) < 50) return(NULL)
 
   result <- coloc::coloc.bf_bf(bf1 = first_lbf, bf2 = second_lbf)
   result$summary$h4 <- result$summary$PP.H4.abf
@@ -270,26 +302,34 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
 
 harmonise_gwases <- function(...) {
   gwases <- list(...)
-  snpids <- Reduce(intersect, lapply(gwases, function(gwas) as.character(gwas$SNP)))
+
+  snpids <- Reduce(intersect, lapply(gwases, function(gwas) names(gwas)))
   if (length(snpids) <= 1) return(list())
   snpids <- sort(snpids)
 
   gwases <- lapply(gwases, function(gwas) {
-    gwas <- as.data.frame(gwas)
-    gwas <- gwas[!duplicated(gwas$SNP), ]
-    gwas <- gwas[gwas$SNP %in% snpids, ]
-    gwas <- gwas[match(snpids, gwas$SNP), ]
+    gwas <- gwas[!duplicated(names(gwas))]
+    gwas <- gwas[names(gwas) %in% snpids]
+    gwas <- gwas[match(snpids, names(gwas))]
+    gwas <- gwas[!is.na(gwas)]
     return(gwas)
   })
 
-  stopifnot(identical(gwases[[1]]$SNP, gwases[[2]]$SNP))
+  final_snpids <- Reduce(intersect, lapply(gwases, function(gwas) names(gwas)))
+  if (length(final_snpids) <= 1) return(list())
+  final_snpids <- sort(final_snpids)
+
+  gwases <- lapply(gwases, function(gwas) {
+    gwas <- gwas[match(final_snpids, names(gwas))]
+    return(gwas)
+  })
+
+  stopifnot(identical(names(gwases[[1]]), names(gwases[[2]])))
   return(gwases)
 }
 
 # Check for within study colocalising finemapped regions (requires pairwise coloc to between credible sets)
 prune_poor_finemapping_results <- function(finemapped_studies, coloc_results) {
-  #TODO: remove this ignore once it's been run once
-  finemapped_studies$ignore <- F
   coloc_results$ignore <- FALSE
   coloc_results <- coloc_results |>
     dplyr::mutate(ignore = ignore | study_a == study_b & h4 >= posterior_prob_h4_threshold)
@@ -584,17 +624,31 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
   components <- unique(coloc_groups$component)
   snp_and_connectedness_per_cluster <- lapply(components, function(component) {
     group_studies <- coloc_groups$unique_study_id[coloc_groups$component == component]
-    
-    all_group_data <- lapply(group_studies, function(study_id) {
+
+    all_lbf_vectors <- lapply(group_studies, function(study_id) {
       return(studies_to_colocalise[[study_id]])
     })
-    all_group_data <- do.call(rbind, all_group_data)
+    all_lbf_vectors <- all_lbf_vectors[!sapply(all_lbf_vectors, is.null)]
 
-    snp <- all_group_data |>
-      dplyr::group_by(SNP) |>
-      dplyr::summarise(cumulative_lbf = sum(LBF)) |>
-      dplyr::slice(which.max(cumulative_lbf)) |>
-      dplyr::pull(SNP)
+
+    if (length(all_lbf_vectors) == 0) {
+      message(glue::glue('No LBF vectors found for component {component}'))
+      message(glue::glue('Studies in component: {paste(group_studies, collapse = ", ")}'))
+      message(names(studies_to_colocalise))
+      return(data.frame(component = component, snp = NA_character_, h4_connectedness = 0, h3_connectedness = 0))
+    }
+
+    all_snps <- unique(unlist(lapply(all_lbf_vectors, names)))
+    cumulative_lbf <- sapply(all_snps, function(snp) {
+      sum(
+        sapply(all_lbf_vectors, function(vec) {
+          if (snp %in% names(vec)) vec[snp] else 0
+        }), na.rm = TRUE
+      )
+    })
+
+    # Find SNP with maximum cumulative LBF
+    snp <- names(cumulative_lbf)[which.max(cumulative_lbf)]
 
     coloc_results_per_cluster <- coloc_results[
       coloc_results$unique_study_a %in% group_studies &
@@ -602,6 +656,7 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
     ]
 
     total_pairs <- nrow(coloc_results_per_cluster)
+
     total_pairs_with_h4 <- sum(coloc_results_per_cluster$PP.H4.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
     total_pairs_with_h3 <- sum(coloc_results_per_cluster$PP.H3.abf >= posterior_prob_h4_threshold, na.rm = TRUE)
     h4_connectedness <- total_pairs_with_h4 / total_pairs

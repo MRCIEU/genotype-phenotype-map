@@ -24,6 +24,11 @@ coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file
 ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
 
 dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+
+cb_blue <- "#0072B2"
+cb_light_blue <- "#80B9D9"
+cb_orange <- "#E69F00"
+cb_light_orange <- "#F3CF80"
 ```
 
 
@@ -46,6 +51,32 @@ dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_f
 
 
 ```{r load-data, echo=F}
+
+# Find snp_ids that are in coloc_groups table under different coloc_group_ids
+
+snp_with_multiple_coloc_groups <- DBI::dbGetQuery(
+  studies_conn,
+  "
+  WITH coloc_groups_with_many_entries AS (
+    SELECT coloc_group_id
+    FROM coloc_groups
+    GROUP BY coloc_group_id
+    HAVING COUNT(*) > 5
+  )
+  SELECT snp_id, COUNT(DISTINCT coloc_group_id) AS num_coloc_groups
+  FROM coloc_groups
+  WHERE coloc_group_id IN (SELECT coloc_group_id FROM coloc_groups_with_many_entries)
+  GROUP BY snp_id
+  HAVING COUNT(DISTINCT coloc_group_id) > 1
+  "
+)
+
+# Print number of such SNPs and preview data
+num_snps_multiple_groups <- nrow(snp_with_multiple_coloc_groups)
+cat('Number of snp_ids found in multiple coloc_group_ids:', num_snps_multiple_groups, '\n')
+head(snp_with_multiple_coloc_groups)
+
+
 joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   coloc_pairs.*,
   -- Study extraction A details
@@ -106,20 +137,67 @@ gene_stats_text <- paste0(
 )
 
 p_gene_pleiotropy <- ggplot(gene_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
-  geom_point(alpha = 0.6, size = 2, color = "#006400") +
+  geom_point(alpha = 0.6, size = 2, color = cb_blue) +
   geom_smooth(method = "lm", se = TRUE, color = "black") +
   annotate("label", x = -Inf, y = Inf, label = gene_stats_text, 
            hjust = -0.1, vjust = 1.5, size = 3.5, family = "mono",
            fill = "white", alpha = 0.8) +
   labs(
-    title = "(E) Relationship between Gene Pleiotropy Metrics",
-    x = "Number of Trait Categories Colocalising with Gene",
-    y = "Number of Protein Coding Genes Colocalising with Gene"
+    title = "Relationship between Gene Pleiotropy Metrics",
+    x = "Number of Trait Categories Colocalizing with Gene",
+    y = "Number of Protein Coding Genes Colocalizing with Gene"
   ) +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
 ggsave(p_gene_pleiotropy, filename = file.path(results_analysis_dir, "pleiotropy_e_gene_pleiotropy_plot.png"), width = 8, height = 6)
+
+# Create histogram of distinct_protein_coding_genes distribution
+gene_pleiotropy_binned <- gene_pleiotropy_scores %>%
+  mutate(
+    protein_coding_genes_bin = case_when(
+      distinct_protein_coding_genes == 0 ~ "0",
+      distinct_protein_coding_genes <= 20 ~ as.character(distinct_protein_coding_genes),
+      TRUE ~ ">20"
+    )
+  )
+
+# Convert to factor with proper ordering
+gene_pleiotropy_binned$protein_coding_genes_bin <- factor(
+  gene_pleiotropy_binned$protein_coding_genes_bin,
+  levels = c(as.character(0:20), ">20")
+)
+
+# Count by bins
+gene_pleiotropy_bin_counts <- gene_pleiotropy_binned %>%
+  group_by(protein_coding_genes_bin) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  filter(!is.na(protein_coding_genes_bin))
+
+# Filter out 0 gene groups for summary statistics
+gene_pleiotropy_filtered <- gene_pleiotropy_binned %>%
+  filter(distinct_protein_coding_genes > 0)
+
+p_gene_pleiotropy_dist <- ggplot(gene_pleiotropy_bin_counts, aes(x = protein_coding_genes_bin, y = count)) +
+  geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
+  geom_text(aes(label = count), vjust = -0.5, size = 3) +
+  scale_x_discrete(limits = c(as.character(1:20), ">20")) +
+  labs(
+    title = "Distribution of Protein Coding Genes Colocalizing with Other Genes",
+    x = "Number of protein coding genes colocalizing with a gene",
+    y = "Count of genes",
+    caption = paste("Total genes (with colocalizing genes):", nrow(gene_pleiotropy_filtered),
+      "| Mean:", round(mean(gene_pleiotropy_filtered$distinct_protein_coding_genes), 2),
+      "| Median:", round(median(gene_pleiotropy_filtered$distinct_protein_coding_genes), 2)
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+ggsave(p_gene_pleiotropy_dist, filename = file.path(results_analysis_dir, "pleiotropy_gene_protein_coding_genes_distribution.png"), width = 8, height = 6)
 
 snp_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM snp_pleiotropy")
 
@@ -139,15 +217,15 @@ snp_stats_text <- paste0(
 
 p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
   geom_point(alpha = 0.6, size = 2) +
-  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  geom_smooth(method = "lm", se = TRUE, color = cb_blue) +
   annotate("label", x = Inf, y = Inf, label = snp_stats_text, 
            hjust = 1.1, vjust = 1.5, size = 3.5, family = "mono",
            fill = "white", alpha = 0.8) +
   labs(
     title = "Relationship between SNP Pleiotropy Metrics",
-    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalising with SNP",
+    subtitle = "Trait Categories vs. Number of Protein Coding Genes Colocalizing with SNP",
     x = "Number of Trait Categories",
-    y = "Number of Protein Coding Genes Colocalising with SNP"
+    y = "Number of Protein Coding Genes Colocalizing with SNP"
   ) +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
@@ -203,7 +281,7 @@ meth_stats_text <- paste0(
 # Create plot with logistic regression curve
 meth_plot <- ggplot(coloc_group_meth_summary, 
   aes(x = num_protein_coding_non_meth, y = has_methylation)) +
-  geom_jitter(height = 0.05, width = 0.1, alpha = 0.3, color = "#006400", size = 0.8) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.3, color = cb_blue, size = 0.8) +
   geom_smooth(method = "glm", method.args = list(family = "binomial"), 
               se = TRUE, color = "black", linewidth = 0.8) +
   annotate("label", x = -Inf, y = Inf, label = meth_stats_text, 
@@ -301,12 +379,12 @@ multiple_genes_in_coloc_group <- function(only_protein_coding = FALSE, include_t
     filter(unique_genes > 0)
   
   p_gene_dist <- ggplot(unique_gene_bin_counts, aes(x = unique_gene_bin, y = count)) +
-    geom_bar(stat = "identity", fill = "darkgreen", color = "black", alpha = 0.7) +
+    geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
     geom_text(aes(label = count), vjust = -0.5, size = 3) +
     scale_x_discrete(limits = c(as.character(1:20), ">20")) +
     labs(
-      title = glue::glue("(B) Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per coloc group{if (include_trans) ', including trans' else ''}"),
-      x = "Number of unique genes per coloc group",
+      title = glue::glue("Number of unique {if (only_protein_coding) 'protein coding' else 'all'} genes per colocalization group{if (include_trans) ', including trans' else ''}"),
+      x = "Number of unique genes per colocalization group",
       y = "Frequency",
       caption = paste("Total groups (with genes):", nrow(coloc_group_analysis_filtered),
         "| Mean:", round(mean(coloc_group_analysis_filtered$unique_genes), 2),
@@ -320,10 +398,73 @@ multiple_genes_in_coloc_group <- function(only_protein_coding = FALSE, include_t
     )
   p_gene_dist_file <- file.path(results_analysis_dir, glue::glue("pleiotropy_b_num_genes_per_coloc_group_{if (only_protein_coding) 'protein_coding' else 'all'}_{if (include_trans) 'including_trans' else 'excluding_trans'}.png"))
   ggsave(p_gene_dist, filename = p_gene_dist_file, width = 8, height = 6)
+
+  
+
   return(p_gene_dist)
 }
 
 multiple_genes_in_coloc_group(only_protein_coding = TRUE, include_trans = FALSE)
+```
+
+### Comparison of Gene-centric vs. Coloc-group-centric Pleiotropy
+Does the number of genes colocalizing with a specific gene match the distribution of genes found within individual colocalization groups?
+
+```{r distribution_comparison, echo=F}
+# Recalculate Distribution 2 (Protein-coding, excluding trans, non-methylation)
+# matching the logic of pleiotropy_b_num_genes_per_coloc_group_protein_coding_excluding_trans
+dist2_data <- coloc_group_data %>%
+  filter(gene_biotype == "protein_coding") %>%
+  filter(cis_trans != "trans" | is.na(cis_trans)) %>% 
+  filter(data_type != "methylation") %>%
+  group_by(coloc_group_id) %>%
+  summarise(unique_genes = n_distinct(gene, na.rm = TRUE), .groups = 'drop') %>%
+  filter(unique_genes > 0)
+
+dist1_vals <- gene_pleiotropy_filtered$distinct_protein_coding_genes
+dist2_vals <- dist2_data$unique_genes
+
+# Calculate summary stats
+stats_comparison <- data.frame(
+  Metric = c("Mean", "Median", "SD", "Max", "N"),
+  Gene_centric = c(mean(dist1_vals), median(dist1_vals), sd(dist1_vals), max(dist1_vals), length(dist1_vals)),
+  Coloc_group_centric = c(mean(dist2_vals), median(dist2_vals), sd(dist2_vals), max(dist2_vals), length(dist2_vals))
+)
+
+# KS test
+ks_res <- ks.test(dist1_vals, dist2_vals)
+
+# Print results
+knitr::kable(stats_comparison, caption = "Comparison of Pleiotropy Distributions", digits = 3)
+
+cat("\n**Kolmogorov-Smirnov test for difference in distributions:**\n")
+cat("D =", round(ks_res$statistic, 4), ", p-value =", formatC(ks_res$p.value, format = "e", digits = 3), "\n")
+
+# Visualization: Overlapping ECDF
+plot_data <- bind_rows(
+  tibble(value = dist1_vals, source = "Gene-centric (Colocalizing genes per gene)"),
+  tibble(value = dist2_vals, source = "Coloc-group-centric (Unique genes per group)")
+)
+
+p_comp <- ggplot(plot_data, aes(x = value, color = source)) +
+  stat_ecdf(size = 1) +
+  labs(
+    title = "ECDF Comparison: Gene-centric vs Coloc-group-centric",
+    subtitle = "Cumulative probability of gene counts",
+    x = "Number of Genes",
+    y = "Cumulative Probability"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Gene-centric (Colocalizing genes per gene)" = cb_blue, 
+                                "Coloc-group-centric (Unique genes per group)" = cb_orange)) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5))
+
+comparison_plot_file <- file.path(results_analysis_dir, "pleiotropy_distribution_comparison_ecdf.png")
+ggsave(p_comp, filename = comparison_plot_file, width = 8, height = 6)
+print(p_comp)
+```
 
 ### Gene colocalization vs regional gene density (within ±1Mb)
 # Use protein-coding genes only to match graph (B) context
@@ -422,10 +563,10 @@ gene_trait_category_count_data <- gene_trait_category_counts %>%
 
 
 p_gene_trait_category <- ggplot(gene_trait_category_count_data, aes(x = num_trait_categories, y = count_offset)) +
-  geom_bar(stat = "identity", fill = "darkgreen", color = "black", alpha = 0.7) +
+  geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
   scale_x_continuous() +
   labs(
-    title = "(A) Number of trait categories colocalising with a gene",
+    title = "Number of trait categories colocalising with a gene",
     x = "Number of trait categories per gene",
     y = "Frequency (log scale)",
     caption = paste( "Mean:", round(mean(gene_trait_category_counts$num_trait_categories), 2),
@@ -437,6 +578,36 @@ p_gene_trait_category <- ggplot(gene_trait_category_count_data, aes(x = num_trai
 p_gene_trait_category_file <- file.path(results_analysis_dir, "pleiotropy_a_num_trait_categories_per_gene.png")
 ggsave(p_gene_trait_category, filename = p_gene_trait_category_file, width = 8, height = 6)
 print(p_gene_trait_category)
+
+# Compute and plot histogram of the size of coloc groups (number of distinct studies per coloc group)
+coloc_groups_sizes <- DBI::dbGetQuery(studies_conn, "
+  SELECT coloc_group_id, COUNT(DISTINCT study_id) AS num_studies
+  FROM coloc_groups
+  GROUP BY coloc_group_id
+")
+
+coloc_group_count_data <- coloc_groups_sizes %>%
+  count(num_studies, name = "count") %>%
+  mutate(count_offset = count + 0.2)
+
+p_coloc_group_size <- ggplot(coloc_group_count_data, aes(x = num_studies, y = count_offset)) +
+  geom_bar(stat = "identity", fill = cb_blue, color = cb_blue, alpha = 0.7) +
+  scale_x_continuous() +
+  scale_y_log10() +
+  labs(
+    title = "Number of studies in colocilization group",
+    x = "Number of studies in colocilization group",
+    y = "Frequency (log scale)",
+    caption = paste("Mean:", round(mean(coloc_groups_sizes$num_studies), 2),
+                    "| Median:", round(median(coloc_groups_sizes$num_studies), 2))
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+coloc_group_size_file <- file.path(results_analysis_dir, "pleiotropy_coloc_group_size_histogram.png")
+ggsave(p_coloc_group_size, filename = coloc_group_size_file, width = 8, height = 6)
+print(p_coloc_group_size)
+
 
 
 all_phenotype_studies <- DBI::dbGetQuery(studies_conn, "SELECT studies.*, traits.trait_name FROM studies
@@ -476,11 +647,11 @@ count_data <- number_of_genes %>%
   mutate(count_offset = count + 0.3)  # Add small offset to make count=1 visible
 
 p <- ggplot(count_data, aes(x = num_genes, y = count_offset)) +
-  geom_bar(stat = "identity", fill = "darkgreen", alpha = 1) +
+geom_bar(stat = "identity", fill = cb_blue, alpha = 1) +
   scale_x_continuous() +
   scale_y_log10() +
   labs(
-    title = "(D) Number of genes colocalising per trait",
+    title = "Number of genes colocalising per trait",
     x = "Frequency (log scale)",
     y = "Number of genes colocalising per trait",
     caption = paste("Mean:", round(mean(number_of_genes$num_genes), 2),
@@ -588,9 +759,9 @@ network_plot <- ggraph(gene_tidy_graph, layout = "fr", niter = 1000) +
   geom_node_text(aes(label = name), size = 2.2, colour = "grey40", repel = TRUE) +
   scale_edge_alpha_continuous(range = c(0.1, 0.8)) +
   scale_size_continuous(range = c(2, 8)) +
-  scale_fill_gradient(low = "#c7e9c0", high = "#006400", name = "# of genes ±1Mb") +
+  scale_fill_gradient(low = cb_light_blue, high = cb_blue, name = "# of genes ±1Mb") +
   labs(
-    title = "(C) Gene-Gene Colocalization Network within an LD Block",
+    title = "Gene-Gene Colocalization Network within an LD Block",
     subtitle = paste("LD Block", ld_block_info$ld_block),
     caption = paste(
       "Total Genes:", vcount(gene_graph),
@@ -756,9 +927,6 @@ density_coloc_p <- pf(lm_density_coloc_summary$fstatistic[1],
                       lm_density_coloc_summary$fstatistic[3], 
                       lower.tail = FALSE)
 density_coloc_slope <- coef(lm_density_coloc)[2]
-overall_corr <- cor(ld_block_coloc_density$neighborhood_genes, 
-                    ld_block_coloc_density$num_coloc_partner_genes_in_block, 
-                    use = "complete.obs")
 
 # Create annotation text
 density_coloc_stats_text <- paste0(
@@ -770,14 +938,13 @@ density_coloc_stats_text <- paste0(
 # Create scatter plot
 gene_density_coloc_scatter <- ggplot(ld_block_coloc_density, 
   aes(x = neighborhood_genes, y = num_coloc_partner_genes_in_block)) +
-  geom_point(alpha = 0.6, color = "#006400", size = 1.5) +
+  geom_point(alpha = 0.6, color = cb_blue, size = 1.5) +
   geom_smooth(method = "lm", se = TRUE, color = "black", linewidth = 0.5) +
   annotate("label", x = -Inf, y = Inf, label = density_coloc_stats_text, 
            hjust = -0.1, vjust = 1.5, size = 3.5, family = "mono",
            fill = "white", alpha = 0.8) +
   labs(
-    title = "(B b) Gene density vs colocalizing partners within LD blocks",
-    subtitle = paste("Overall correlation (limited to partners within same LD block): r =", round(overall_corr, 3)),
+    title = "Gene density vs colocalizing partners within LD blocks",
     x = "Number of protein-coding genes in ±1Mb window",
     y = "Number of colocalizing protein-coding genes (same LD block only)",
     caption = paste("Each point is a gene. Coloc partners counted only within the same LD block")

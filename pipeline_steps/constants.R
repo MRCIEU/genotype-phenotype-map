@@ -2,12 +2,14 @@ options(error = function() traceback(20))
 Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
 
 data_dir <- Sys.getenv('DATA_DIR')
-gwas_upload_dir <- Sys.getenv('GWAS_UPLOAD_DIR')
+gwas_upload_dir <- Sys.getenv('DATA_DIR')
 results_dir <- Sys.getenv('RESULTS_DIR')
 oracle_api_server <- Sys.getenv('ORACLE_SERVER')
-oracle_pipeline_server <- Sys.getenv('ORACLE_SERVER')
+oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
+is_test_run <- !is.na(TEST_RUN)
 
+min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 minimum_extraction_size <- 150
@@ -37,6 +39,7 @@ extracted_study_dir <- glue::glue('{data_dir}study/')
 variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
 svg_dir <- glue::glue('{data_dir}svgs/')
 
+oracle_bucket_name <- Sys.getenv('ORACLE_BUCKET_NAME')
 server_sync_dir <- file.path(data_dir, 'rsync_to_server')
 oracle_data_dir <- '/oradiskvdb1/data/'
 
@@ -52,6 +55,10 @@ data_types <- list(splice_variant='splice_variant',
                            plasma_protein='plasma_protein',
                            phenotype='phenotype'
 )
+
+non_qtl_data_types <- c(data_types$metabolome, data_types$cell_trait, data_types$plasma_protein, data_types$phenotype)
+qtl_data_types <- c(data_types$splice_variant, data_types$transcript, data_types$gene_expression, data_types$protein, data_types$methylation)
+
 data_type_names <- list(splice_variant='sQTL',
                            transcript='tQTL',
                            gene_expression='eQTL',
@@ -59,7 +66,7 @@ data_type_names <- list(splice_variant='sQTL',
                            methylation='methQTL',
                            metabolome='metaQTL',
                            cell_trait='Cell Trait',
-                           plasma_protein='Plasma Protein',
+                           plasma_protein='Targeted Protein Measure',
                            phenotype='Phenotype'
 )
 cell_types <- c(
@@ -127,7 +134,11 @@ finemapped_column_types <- vroom::cols(
   snps_removed_by_qc = vroom::col_number(),
   time_taken = vroom::col_character(),
   cis_trans = vroom::col_character(),
-  ignore = vroom::col_logical()
+  ignore = vroom::col_logical(),
+  file = vroom::col_character(),
+  svg_file = vroom::col_character(),
+  file_with_lbfs = vroom::col_character(),
+  coverage = vroom::col_character()
 )
 
 studies_processed_column_types <- vroom::cols(
@@ -152,6 +163,38 @@ studies_processed_column_types <- vroom::cols(
   coverage = vroom::col_character(),
   heritability = vroom::col_double(),
   heritability_se = vroom::col_double()
+)
+
+coloc_clustered_results_column_types <- vroom::cols(
+  unique_study_id = vroom::col_character(),
+  component = vroom::col_number(),
+  ld_block = vroom::col_character(),
+  snp = vroom::col_character(),
+  h4_connectedness = vroom::col_double(),
+  h3_connectedness = vroom::col_double()
+)
+
+coloc_pairwise_results_column_types <- vroom::cols(
+  unique_study_a = vroom::col_character(),
+  study_a = vroom::col_character(),
+  unique_study_b = vroom::col_character(),
+  study_b = vroom::col_character(),
+  bp_distance = vroom::col_double(),
+  ignore = vroom::col_logical(),
+  false_positive = vroom::col_logical(),
+  false_negative = vroom::col_logical(),
+  nsnps = vroom::col_number(),
+  hit1 = vroom::col_character(),
+  hit2 = vroom::col_character(),
+  PP.H0.abf = vroom::col_double(),
+  PP.H1.abf = vroom::col_double(),
+  PP.H2.abf = vroom::col_double(),
+  PP.H3.abf = vroom::col_double(),
+  PP.H4.abf = vroom::col_double(),
+  idx1 = vroom::col_number(),
+  idx2 = vroom::col_number(),
+  h4 = vroom::col_double(),
+  ld_block = vroom::col_character()
 )
 
 file_prefix <- function(file_path) {
@@ -196,7 +239,7 @@ flattened_ld_block_name <- function(ld_block_string) {
 
 update_directories_for_worker <- function(worker_guid) {
   ld_block_data_dir <<- glue::glue('{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/')
-  extracted_study_dir <<- glue::glue('{gwas_upload_dir}study/gwas_upload/{worker_guid}/')
+  extracted_study_dir <<- glue::glue('{gwas_upload_dir}gwas_upload/{worker_guid}/')
   pipeline_metadata_dir <<- glue::glue('{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
 }
 

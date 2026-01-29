@@ -18,7 +18,7 @@ main <- function() {
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
   ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
-  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F, altrep = F)
   ld_matrix_eig <- readRDS(glue::glue('{ld_info$ld_reference_panel_prefix}.ldeig.rds'))
 
   standardised_studies_file <- glue::glue('{ld_info$ld_block_data}/standardised_studies.tsv')
@@ -107,6 +107,8 @@ main <- function() {
         dplyr::distinct(study, .keep_all = TRUE)
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
+  } else {
+    vroom::vroom_write(existing_imputed_studies, imputed_studies_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)

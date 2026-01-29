@@ -12,8 +12,12 @@ discard_gwas_size <- 150
 minimum_gwas_size <- 700
 number_finemapped_results_threshold <- 3
 
-snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |>
-  dplyr::select(chr, bp, snp)
+snp_annotations <- vroom::vroom(
+  file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+  col_select = c('chr', 'bp', 'snp'),
+  altrep = FALSE,
+  show_col_types = FALSE
+)
 
 main <- function() {
   if (!is.na(args$worker_guid)) {
@@ -30,14 +34,14 @@ main <- function() {
     dplyr::filter(variant_type == variant_types$common)
 
   ld_matrix_file <- glue::glue('{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz')
-  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F)
+  ld_matrix <- vroom::vroom(ld_matrix_file, col_names=F, show_col_types = F, altrep = F)
   ld_matrix_info <- vroom::vroom(glue::glue('{ld_info$ld_reference_panel_prefix}.tsv'), show_col_types = F)
 
   finemapped_results_file <- glue::glue('{ld_info$ld_block_data}/finemapped_studies.tsv')
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 
   if (nrow(imputed_studies) == 0) {
-    finemapped_results <- data.frame()
+    finemapped_results <- empty_finemapped_info()
   } else {
     finemapped_results_list <- lapply(seq_len(nrow(imputed_studies)), function(i) {
       gc()
@@ -143,8 +147,14 @@ main <- function() {
     }
   }
 
-  finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> 
-    dplyr::distinct(unique_study_id, .keep_all = TRUE)
+  if (!is.na(args$worker_guid)) {
+    finemapped_results <- finemapped_results |>
+      dplyr::filter(study == args$worker_guid) |>
+      dplyr::mutate(file = gsub(data_dir, '', file), file_with_lbfs = gsub(data_dir, '', file_with_lbfs))
+  } else {
+    finemapped_results <- dplyr::bind_rows(existing_finemapped_results, finemapped_results) |> 
+      dplyr::distinct(unique_study_id, .keep_all = TRUE)
+  }
 
   if (nrow(finemapped_results) == 0) finemapped_results <- empty_finemapped_info()
 
@@ -373,14 +383,12 @@ split_susie_result_into_conditional_gwases <- function(susie_result, gwas, study
     if (is.na(args$worker_guid)) {
       svg_file <- glue::glue("{extracted_study_dir}{study$study}/svgs/extractions/{block_name}.svg")
       is_sparse <- study[['coverage']] == coverage_types$sparse
-      create_svg_for_ld_block(conditioned_gwas, study$study, svg_file, is_sparse)
+      create_svg_for_ld_block(conditioned_gwas, svg_file, args$ld_block, is_sparse)
     }
     svg_files <- c(svg_files, svg_file)
 
     # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
     if (!is.na(study['cis_trans']) && study['cis_trans'] == cis_trans$cis_only) {
-      print(study)
-      print(new_bp)
       if (abs(as.numeric(study['bp']) - new_bp) < 1000000) {
         study['cis_trans'] <- cis_trans$cis_only
       } else {

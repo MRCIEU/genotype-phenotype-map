@@ -31,11 +31,16 @@ test_that("Identify studies to process", {
 })
 
 test_that("Pipeline execution and file validation", {
-  skip()
   snakemake_log <- glue::glue('{data_dir}pipeline_metadata/logs/snakemake.log')
-  # system(glue::glue("snakemake --profile ./ > {snakemake_log} 2>&1"), wait = TRUE)
+  system(glue::glue("snakemake --profile ./ > {snakemake_log} 2>&1"), wait = TRUE)
   output <- readLines(snakemake_log)
   has_errors <- grepl("error", output, ignore.case = TRUE)
+  if (any(has_errors)) {
+    error_file <- glue::glue('{data_dir}pipeline_metadata/logs/snakemake_error.log')
+    writeLines(output, error_file)
+    print(glue::glue("Errors written to {error_file}"))
+    stop()
+  }
   expect_false(any(has_errors), info = "Pipeline execution should not contain errors")
 
   expected_tsv_files <- list(

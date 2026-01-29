@@ -206,8 +206,8 @@ calculate_opengwas_studies_to_process <- function(entries) {
 
     study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
     ancestry <- study_metadata$population
-    category <- study_metadata$category
-    if (is.null(category)) category <- NA
+    category <- ifelse(is.null(study_metadata$category), study_categories$continuous, tolower(study_metadata$category))
+
     if (is.null(ancestry) || ancestry != ancestry_map[[opengwas_study[['ancestry']]]]) {
       return(data.frame())
     } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {

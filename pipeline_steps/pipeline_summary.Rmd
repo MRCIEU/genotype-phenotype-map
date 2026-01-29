@@ -187,10 +187,6 @@ unique_variants_in_coloc <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT
 - Sentinal variants from coloc group: `r scales::comma(num_snps_in_coloc_groups$num_snps)`
 - SNPs that show up in multiple coloc groups: `r scales::comma(num_coloc_groups_with_same_snp$repeated_snp_count)`
 
-```{r exit-early, echo=F, eval=TRUE}
-knitr::knit_exit()
-```
-
 Broken down by data source:
 ```{r data-source, echo=F, fig.cap="Number of studies by data source"}
 
@@ -1052,124 +1048,132 @@ gwas_hits_numeric <- lapply(trait_categories_list, function(tc) {
     num_study_extractions_molecular_coloc = num_study_extractions_molecular_coloc,
     num_study_extractions_no_coloc = nrow(all_phenotype_study_extractions_without_coloc),
     num_study_extractions_total = total_extractions,
-    percent_without_molecular_coloc = all_significant_non_molecular_coloc / total_extractions,
-    percent_with_molecular_coloc = num_study_extractions_molecular_coloc / total_extractions,
-    percent_with_no_coloc = nrow(all_phenotype_study_extractions_without_coloc) / total_extractions
+    percent_without_molecular_coloc = if(total_extractions > 0) all_significant_non_molecular_coloc / total_extractions else 0,
+    percent_with_molecular_coloc = if(total_extractions > 0) num_study_extractions_molecular_coloc / total_extractions else 0,
+    percent_with_no_coloc = if(total_extractions > 0) nrow(all_phenotype_study_extractions_without_coloc) / total_extractions else 0
   ))
 }) |> dplyr::bind_rows()
 
-gwas_totals_row <- gwas_hits_numeric |>
-  dplyr::summarise(
-    trait_category = "Total",
-    num_study_extractions = sum(num_study_extractions),
-    num_study_extractions_without_molecular_coloc = sum(num_study_extractions_without_molecular_coloc),
-    num_study_extractions_molecular_coloc = sum(num_study_extractions_molecular_coloc),
-    num_study_extractions_no_coloc = sum(num_study_extractions_no_coloc),
-    num_study_extractions_total = sum(num_study_extractions_total),
-    percent_without_molecular_coloc = num_study_extractions_without_molecular_coloc / num_study_extractions_total,
-    percent_with_molecular_coloc = num_study_extractions_molecular_coloc / num_study_extractions_total,
-    percent_with_no_coloc = num_study_extractions_no_coloc / num_study_extractions_total
-  )
+if (nrow(gwas_hits_numeric) > 0) {
+  gwas_totals_row <- gwas_hits_numeric |>
+    dplyr::summarise(
+      trait_category = "Total",
+      num_study_extractions = sum(num_study_extractions, na.rm = TRUE),
+      num_study_extractions_without_molecular_coloc = sum(num_study_extractions_without_molecular_coloc, na.rm = TRUE),
+      num_study_extractions_molecular_coloc = sum(num_study_extractions_molecular_coloc, na.rm = TRUE),
+      num_study_extractions_no_coloc = sum(num_study_extractions_no_coloc, na.rm = TRUE),
+      num_study_extractions_total = sum(num_study_extractions_total, na.rm = TRUE),
+      percent_without_molecular_coloc = if(num_study_extractions_total > 0) num_study_extractions_without_molecular_coloc / num_study_extractions_total else 0,
+      percent_with_molecular_coloc = if(num_study_extractions_total > 0) num_study_extractions_molecular_coloc / num_study_extractions_total else 0,
+      percent_with_no_coloc = if(num_study_extractions_total > 0) num_study_extractions_no_coloc / num_study_extractions_total else 0
+    )
 
-gwas_hits_table <- gwas_hits_numeric |>
-  dplyr::mutate(
-    num_study_extractions = scales::comma(num_study_extractions),
-    num_study_extractions_without_molecular_coloc = scales::comma(num_study_extractions_without_molecular_coloc),
-    num_study_extractions_molecular_coloc = scales::comma(num_study_extractions_molecular_coloc),
-    num_study_extractions_no_coloc = scales::comma(num_study_extractions_no_coloc),
-    num_study_extractions_total = scales::comma(num_study_extractions_total),
-    percent_without_molecular_coloc = scales::percent(percent_without_molecular_coloc, accuracy = 0.1),
-    percent_with_molecular_coloc = scales::percent(percent_with_molecular_coloc, accuracy = 0.1),
-    percent_with_no_coloc = scales::percent(percent_with_no_coloc, accuracy = 0.1)
-  )
+  gwas_hits_table <- gwas_hits_numeric |>
+    dplyr::mutate(
+      num_study_extractions = scales::comma(num_study_extractions),
+      num_study_extractions_without_molecular_coloc = scales::comma(num_study_extractions_without_molecular_coloc),
+      num_study_extractions_molecular_coloc = scales::comma(num_study_extractions_molecular_coloc),
+      num_study_extractions_no_coloc = scales::comma(num_study_extractions_no_coloc),
+      num_study_extractions_total = scales::comma(num_study_extractions_total),
+      percent_without_molecular_coloc = scales::percent(percent_without_molecular_coloc, accuracy = 0.1),
+      percent_with_molecular_coloc = scales::percent(percent_with_molecular_coloc, accuracy = 0.1),
+      percent_with_no_coloc = scales::percent(percent_with_no_coloc, accuracy = 0.1)
+    )
 
-gwas_total_table <- gwas_totals_row |>
-  dplyr::mutate(
-    num_study_extractions = scales::comma(num_study_extractions),
-    num_study_extractions_without_molecular_coloc = scales::comma(num_study_extractions_without_molecular_coloc),
-    num_study_extractions_molecular_coloc = scales::comma(num_study_extractions_molecular_coloc),
-    num_study_extractions_no_coloc = scales::comma(num_study_extractions_no_coloc),
-    num_study_extractions_total = scales::comma(num_study_extractions_total),
-    percent_without_molecular_coloc = scales::percent(percent_without_molecular_coloc, accuracy = 0.1),
-    percent_with_molecular_coloc = scales::percent(percent_with_molecular_coloc, accuracy = 0.1),
-    percent_with_no_coloc = scales::percent(percent_with_no_coloc, accuracy = 0.1)
-  )
+  gwas_total_table <- gwas_totals_row |>
+    dplyr::mutate(
+      num_study_extractions = scales::comma(num_study_extractions),
+      num_study_extractions_without_molecular_coloc = scales::comma(num_study_extractions_without_molecular_coloc),
+      num_study_extractions_molecular_coloc = scales::comma(num_study_extractions_molecular_coloc),
+      num_study_extractions_no_coloc = scales::comma(num_study_extractions_no_coloc),
+      num_study_extractions_total = scales::comma(num_study_extractions_total),
+      percent_without_molecular_coloc = scales::percent(percent_without_molecular_coloc, accuracy = 0.1),
+      percent_with_molecular_coloc = scales::percent(percent_with_molecular_coloc, accuracy = 0.1),
+      percent_with_no_coloc = scales::percent(percent_with_no_coloc, accuracy = 0.1)
+    )
 
-gwas_hits_table <- dplyr::bind_rows(gwas_hits_table, gwas_total_table) |>
-  dplyr::select(trait_category, num_study_extractions, percent_without_molecular_coloc, percent_with_molecular_coloc, percent_with_no_coloc)
+  gwas_hits_table <- dplyr::bind_rows(gwas_hits_table, gwas_total_table) |>
+    dplyr::select(trait_category, num_study_extractions, percent_without_molecular_coloc, percent_with_molecular_coloc, percent_with_no_coloc)
 
-knitr::kable(gwas_hits_table, caption = "Breakdown of phenotype info by trait category")
+  knitr::kable(gwas_hits_table, caption = "Breakdown of phenotype info by trait category")
 
-# Create shared trait category ordering based on highest percentage with molecular colocalization
-# This ordering will be used across all trait category graphs (C), (D), and (E) for consistency
-shared_trait_category_order <- gwas_hits_numeric |>
-  dplyr::arrange(dplyr::desc(percent_with_molecular_coloc)) |>
-  dplyr::pull(trait_category) |>
-  unique()
+  # Create shared trait category ordering based on highest percentage with molecular colocalization
+  # This ordering will be used across all trait category graphs (C), (D), and (E) for consistency
+  shared_trait_category_order <- gwas_hits_numeric |>
+    dplyr::arrange(dplyr::desc(percent_with_molecular_coloc)) |>
+    dplyr::pull(trait_category) |>
+    unique()
 
-# Create visualization
-gwas_viz <- gwas_hits_numeric |>
-  dplyr::select(trait_category, percent_with_no_coloc, percent_without_molecular_coloc, percent_with_molecular_coloc) |>
-  tidyr::pivot_longer(cols = c(percent_with_no_coloc, percent_without_molecular_coloc, percent_with_molecular_coloc), 
-                      names_to = "coloc_type", values_to = "percentage") |>
-  dplyr::mutate(
-    coloc_type = dplyr::case_when(
-      coloc_type == "percent_with_no_coloc" ~ "No Coloc",
-      coloc_type == "percent_with_molecular_coloc" ~ "With Molecular Coloc",
-      coloc_type == "percent_without_molecular_coloc" ~ "Without Molecular Coloc"
-    ),
-    coloc_type = factor(coloc_type, levels = c("No Coloc", "Without Molecular Coloc", "With Molecular Coloc")),
-    trait_category = factor(trait_category, levels = rev(shared_trait_category_order))
-  )
+  # Create visualization
+  gwas_viz <- gwas_hits_numeric |>
+    dplyr::select(trait_category, percent_with_no_coloc, percent_without_molecular_coloc, percent_with_molecular_coloc) |>
+    tidyr::pivot_longer(cols = c(percent_with_no_coloc, percent_without_molecular_coloc, percent_with_molecular_coloc), 
+                        names_to = "coloc_type", values_to = "percentage") |>
+    dplyr::mutate(
+      coloc_type = dplyr::case_when(
+        coloc_type == "percent_with_no_coloc" ~ "No Coloc",
+        coloc_type == "percent_with_molecular_coloc" ~ "With Molecular Coloc",
+        coloc_type == "percent_without_molecular_coloc" ~ "Without Molecular Coloc"
+      ),
+      coloc_type = factor(coloc_type, levels = c("No Coloc", "Without Molecular Coloc", "With Molecular Coloc")),
+      trait_category = factor(trait_category, levels = rev(shared_trait_category_order))
+    )
 
-p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type)) +
-  geom_bar(stat = "identity", position = "stack", alpha = 0.8) +
-  geom_text(aes(label = scales::percent(percentage, accuracy = 0.1)),
-            position = position_stack(vjust = 0.5),
-            size = 3, color = "white") +
-  coord_flip() +
-  labs(x = "", y = "Percentage", fill = "Colocalization Type",
-       title = "Clustered Molecular Colocalization Rates") +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    legend.position = "bottom",
-    legend.box = "horizontal",
-    legend.justification = "center",
-    legend.box.just = "center",
-    legend.box.margin = margin(t = 5, r = 0, b = 5, l = 0),
-    legend.title = element_text(hjust = 0.5, size = 10),
-    legend.text = element_text(hjust = 0.5, size = 8),
-    axis.text = element_text(color = "black"),
-    panel.grid.major.y = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title.position = "plot",
-    plot.margin = margin(t = 15, r = 30, b = 30, l = 15)
-  ) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
-  scale_fill_manual(values = c(
-    "With Molecular Coloc" = cb_blue,
-    "Without Molecular Coloc" = cb_light_blue,
-    "No Coloc" = cb_orange
-  )) +
-  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
+  p5 <- ggplot(gwas_viz, aes(x = trait_category, y = percentage, fill = coloc_type)) +
+    geom_bar(stat = "identity", position = "stack", alpha = 0.8) +
+    geom_text(aes(label = scales::percent(percentage, accuracy = 0.1)),
+              position = position_stack(vjust = 0.5),
+              size = 3, color = "white") +
+    coord_flip() +
+    labs(x = "", y = "Percentage", fill = "Colocalization Type",
+         title = "Clustered Molecular Colocalization Rates") +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "bottom",
+      legend.box = "horizontal",
+      legend.justification = "center",
+      legend.box.just = "center",
+      legend.box.margin = margin(t = 5, r = 0, b = 5, l = 0),
+      legend.title = element_text(hjust = 0.5, size = 10),
+      legend.text = element_text(hjust = 0.5, size = 8),
+      axis.text = element_text(color = "black"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.title.position = "plot",
+      plot.margin = margin(t = 15, r = 30, b = 30, l = 15)
+    ) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
+    scale_fill_manual(values = c(
+      "With Molecular Coloc" = cb_blue,
+      "Without Molecular Coloc" = cb_light_blue,
+      "No Coloc" = cb_orange
+    )) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
-
-ggsave(file.path(results_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
+  ggsave(file.path(results_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
+} else {
+  cat("No phenotype colocalizations found to analyze by trait category.\n")
+  shared_trait_category_order <- character(0)
+}
 ```
 
 ```{r phenotype_study_extractions_by_trait_category_c, echo=F}
 # Create p-value threshold bar chart by trait category
 # Use shared trait category ordering based on molecular colocalization percentage from section (E)
 phenotype_pval_variant_viz_ordered <- phenotype_pval_variant_viz |>
-  dplyr::filter(!is.na(trait_category)) |>
+  dplyr::filter(!is.na(trait_category), trait_category != "NA") |>
   dplyr::mutate(
     pval_variant_category = factor(
       pval_variant_category,
       levels = pval_variant_levels
     ),
-    trait_category = factor(trait_category, levels = rev(shared_trait_category_order))
+    # For this panel only, drop the explicit \"NA\" trait category from the ordering vector
+    trait_category = factor(
+      trait_category,
+      levels = rev(shared_trait_category_order[shared_trait_category_order != "NA"])
+    )
   )
 
 p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, y = count, fill = pval_variant_category)) +

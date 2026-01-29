@@ -1,4 +1,3 @@
-
 library(testthat)
 
 setwd('../../')
@@ -40,7 +39,9 @@ test_that("Pipeline worker runs for TSV file", {
 
   has_errors <- grepl("error", output, ignore.case = TRUE)
   if (any(has_errors)) {
-    print(output)
+    error_file <- glue::glue('{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/failed_worker_error.log')
+    writeLines(output, error_file)
+    print(glue::glue("Errors written to {error_file}"))
   }
   expect_false(any(has_errors), info = "Pipeline worker should not contain errors")
 
@@ -61,7 +62,7 @@ test_that("Pipeline worker runs for TSV file", {
   }
 
   compiled_files <- c(
-    glue::glue('{extracted_study_dir}/compiled_coloc_results.tsv'),
+    glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv'),
     glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv'),
     glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
   )

@@ -7,6 +7,7 @@ results_dir <- Sys.getenv('RESULTS_DIR')
 oracle_api_server <- Sys.getenv('ORACLE_SERVER')
 oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')
 TEST_RUN <- Sys.getenv('TEST_RUN', NA)
+is_test_run <- !is.na(TEST_RUN)
 
 min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8

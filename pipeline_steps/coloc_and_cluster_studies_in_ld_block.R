@@ -170,46 +170,64 @@ main <- function() {
   message(glue::glue('{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}'))
 
   if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
-    coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results) |>
-      dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
-      dplyr::mutate(ld_block = args$ld_block)
+    coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
     
-    results <- prune_poor_finemapping_results(finemapped_studies, coloc_results)
-    finemapped_studies <- results$finemapped_studies
-    coloc_results <- results$coloc_results
+    can_cluster <- nrow(coloc_results) > 0 && "unique_study_a" %in% colnames(coloc_results)
 
-    filtered_coloc_results <- coloc_results |>
-      dplyr::filter(!ignore) |>
-      dplyr::mutate(
-        min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
-        min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
-      )
+    if (can_cluster) {
+      coloc_results <- coloc_results |>
+        dplyr::distinct(unique_study_a, unique_study_b, .keep_all = TRUE) |>
+        dplyr::mutate(ld_block = args$ld_block)
+      
+      results <- prune_poor_finemapping_results(finemapped_studies, coloc_results)
+      finemapped_studies <- results$finemapped_studies
+      coloc_results <- results$coloc_results
 
-    clustered_results <- cluster_coloc_results(filtered_coloc_results, finemapped_studies, start_time)
-    coloc_results <- mark_false_positives_and_negatives(coloc_results, clustered_results)
-    
-    message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$false_positive, na.rm = TRUE)} false positives and {sum(coloc_results$false_negative, na.rm = TRUE)} false negatives'))
+      filtered_coloc_results <- coloc_results |>
+        dplyr::filter(!ignore) |>
+        dplyr::mutate(
+          min_p_study_a = finemapped_studies[match(unique_study_a, finemapped_studies$unique_study_id),]$min_p,
+          min_p_study_b = finemapped_studies[match(unique_study_b, finemapped_studies$unique_study_id),]$min_p
+        )
 
-    additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
+      clustered_results <- cluster_coloc_results(filtered_coloc_results, finemapped_studies, start_time)
+      coloc_results <- mark_false_positives_and_negatives(coloc_results, clustered_results)
+      
+      message(glue::glue('{args$ld_block}: Marked {sum(coloc_results$false_positive, na.rm = TRUE)} false positives and {sum(coloc_results$false_negative, na.rm = TRUE)} false negatives'))
 
-    if (nrow(clustered_results$groups) == 0) {
-      clustered_results$groups <- data.frame(
-        unique_study_id = character(),
-        component = integer(),
-        ld_block = character(),
-        snp = character(),
-        h4_connectedness = numeric(),
-        h3_connectedness = numeric()
-      )
+      additional_data_per_cluster <- find_snp_and_connectedness_per_cluster(clustered_results$groups, studies_to_colocalise, filtered_coloc_results)
+
+      if (nrow(clustered_results$groups) == 0) {
+        clustered_results$groups <- data.frame(
+          unique_study_id = character(),
+          component = integer(),
+          ld_block = character(),
+          snp = character(),
+          h4_connectedness = numeric(),
+          h3_connectedness = numeric()
+        )
+      } else {
+        clustered_results$groups <- clustered_results$groups |>
+          dplyr::mutate(ld_block = args$ld_block) |>
+          dplyr::left_join(additional_data_per_cluster, by = "component") |>
+          dplyr::arrange(component)
+      }
+
+      clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
+      saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/igraph_clustered_results.rds'))
     } else {
-      clustered_results$groups <- clustered_results$groups |>
-        dplyr::mutate(ld_block = args$ld_block) |>
-        dplyr::left_join(additional_data_per_cluster, by = "component") |>
-        dplyr::arrange(component)
+      clustered_results <- list(
+        groups = data.frame(
+          unique_study_id = character(),
+          component = integer(),
+          ld_block = character(),
+          snp = character(),
+          h4_connectedness = numeric(),
+          h3_connectedness = numeric()
+        )
+      )
     }
 
-    clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
-    saveRDS(clustered_results, glue::glue('{ld_info$ld_block_data}/igraph_clustered_results.rds'))
     vroom::vroom_write(finemapped_studies, finemapped_file)
     vroom::vroom_write(coloc_results, coloc_results_file)
     vroom::vroom_write(clustered_results$groups, glue::glue('{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz'))

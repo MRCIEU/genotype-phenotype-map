@@ -16,7 +16,7 @@ parser <- argparser::arg_parser('Pipeline worker')
 parser <- argparser::add_argument(parser, '--custom_message_file', help = 'Custom message to process (if testing)', type = 'character', default = NULL)
 args <- argparser::parse_args(parser)
 
-if (is.na(TEST_RUN)) {
+if (!is_test_run) {
   tryCatch({
     redis_conn <- connect_to_redis()
   }, error = function(e) {
@@ -31,8 +31,12 @@ if (is.na(TEST_RUN)) {
         return(NULL)
       }
       if (queue == process_gwas) {
-        payload <- readLines(args$custom_message_file, warn = FALSE)
-        return(list(process_gwas, payload))
+        raw_payload <- paste(readLines(args$custom_message_file, warn = FALSE), collapse = "\n")
+        parsed_payload <- tryCatch(jsonlite::fromJSON(raw_payload), error = function(e) NULL)
+        if (is.character(parsed_payload) && length(parsed_payload) == 2) {
+          return(as.list(parsed_payload))
+        }
+        return(list(process_gwas, raw_payload))
       }
       return(NULL)
     },
@@ -48,7 +52,7 @@ main <- function() {
   while(TRUE) {
     # If the stop_processing file exists, hang forever
     stop_processing_file <- file.exists(glue::glue('{data_dir}/stop_processing'))
-    if (!is.na(TEST_RUN) || stop_processing_file) {
+    if (stop_processing_file) {
       flog.info("Stop processing file found, hanging forever")
       system('tail -f /dev/null', wait = T)
     }
@@ -59,7 +63,9 @@ main <- function() {
     }
 
     tryCatch({
+      print("Getting delete message")
       delete_message <- get_from_delete_queue(redis_conn)
+      print(delete_message)
 
       if (!is.null(delete_message)) {
         delete_info <- jsonlite::fromJSON(delete_message[[2]])
@@ -67,10 +73,12 @@ main <- function() {
         delete_gwas(delete_info$guid)
         next 
       }
+      print("Getting process message")
       redis_message <- get_from_process_queue(redis_conn)
+      print(redis_message)
 
       if (!is.null(redis_message)) {
-        flog.info(paste("Processing message with payload: ", redis_message))
+        flog.info(paste("Processing message with payload: ", redis_message[[2]]))
         gwas_info <- jsonlite::fromJSON(redis_message[[2]])
         flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 
@@ -99,8 +107,9 @@ main <- function() {
       } else {
         flog.error(paste("Error processing message: ", e$message))
       }
-      if (!is.na(TEST_RUN)) stop(e) 
+      if (is_test_run) stop(e) 
     })
+    if (is_test_run) break
   }
 }
 
@@ -178,7 +187,7 @@ process_message <- function(original_gwas_info) {
     flog.info(paste(gwas_info$metadata$guid, 'Compiling results'))
     results <- compile_results(gwas_info)
 
-    if (is.na(TEST_RUN)) {
+    if (!is_test_run) {
       flog.info(paste(gwas_info$metadata$guid, 'Uploading results'))
       upload_results(results, gwas_info)
       send_update_gwas_upload(gwas_info, TRUE, NULL, results)
@@ -209,7 +218,7 @@ process_message <- function(original_gwas_info) {
 }
 
 get_gwas_data <- function(gwas_info) {
-  if (!is.na(TEST_RUN)) {
+  if (is_test_run) {
     gwas_info$metadata$file_location <- gwas_info$file_location
     gwas_info$metadata$file_type <- extraction_file_types$csv
     gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
@@ -638,7 +647,7 @@ upload_results <- function(results, gwas_info) {
 }
 
 send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
-  if (!is.na(TEST_RUN)) return()
+  if (is_test_run) return()
 
   api_url <- glue::glue("https://gpmap.opengwas.io/api/v1/gwas/{gwas_info$metadata$guid}")
   flog.info(paste(gwas_info$metadata$guid, "Sending update to API:", api_url))

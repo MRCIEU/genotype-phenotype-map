@@ -53,8 +53,8 @@ rare_results = f'{current_results_dir}/rare_results.tsv.gz'
 study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
-pipeline_summary_file = f'{current_results_dir}/pipeline_summary.html'
-opengwas_ids_file = f'{current_results_dir}/opengwas_ids.json'
+pipeline_summary_file = f'{current_results_dir}/static_web/pipeline_summary.html'
+opengwas_ids_file = f'{current_results_dir}/static_web/opengwas_ids.json'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_full_db_file = f'{current_results_dir}/associations_full.db'
@@ -313,6 +313,7 @@ rule create_static_web_files:
     shell:
         """
         Rscript create_static_web_files.R \
+            --studies_db_file {studies_db_file} \
             --pipeline_summary_file {output.pipeline_summary_file} \
             --opengwas_ids_file {output.opengwas_ids_file} \
             --svg_files_ready_file {output.svg_files_ready_file}

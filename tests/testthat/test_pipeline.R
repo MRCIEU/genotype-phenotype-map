@@ -43,14 +43,19 @@ test_that("Pipeline execution and file validation", {
   }
   expect_false(any(has_errors), info = "Pipeline execution should not contain errors")
 
+  expected_static_web_files <- list(
+    opengwas_ids_file=glue::glue('{static_web_dir}opengwas_ids.json'),
+    pipeline_summary_file=glue::glue('{static_web_dir}pipeline_summary.html'),
+    svg_files_ready_file=glue::glue('{static_web_dir}svg_files_ready')
+  )
+
   expected_tsv_files <- list(
     studies_file=file.path(current_results_dir, "studies_processed.tsv.gz"),
     traits_file=file.path(current_results_dir, "traits_processed.tsv.gz"),
     study_extractions_file=file.path(current_results_dir, "study_extractions.tsv.gz"),
     coloc_clustered_results_file=file.path(current_results_dir, "coloc_clustered_results.tsv.gz"),
     coloc_pairwise_results_file=file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"),
-    rare_results_file=file.path(current_results_dir, "rare_results.tsv.gz"),
-    pipeline_summary_file=file.path(current_results_dir, "pipeline_summary.html")
+    rare_results_file=file.path(current_results_dir, "rare_results.tsv.gz")
   )
 
   expected_db_files <- list(
@@ -194,8 +199,18 @@ test_that("Pipeline execution and file validation", {
   })
 
   test_that("Pipeline Summary is valid", {
-    expect_true(file.exists(expected_tsv_files$pipeline_summary_file), info = glue::glue("File should exist: {expected_tsv_files$pipeline_summary_file}"))
-    expect_true(file.size(expected_tsv_files$pipeline_summary_file) > 0, info = glue::glue("File should not be empty: {expected_tsv_files$pipeline_summary_file}"))
+    expect_true(file.exists(expected_static_web_files$pipeline_summary_file), info = glue::glue("File should exist: {expected_static_web_files$pipeline_summary_file}"))
+    expect_true(file.size(expected_static_web_files$pipeline_summary_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$pipeline_summary_file}"))
+  })
+
+  test_that("OpenGWAS IDs are valid", {
+    expect_true(file.exists(expected_static_web_files$opengwas_ids_file), info = glue::glue("File should exist: {expected_static_web_files$opengwas_ids_file}"))
+    expect_true(file.size(expected_static_web_files$opengwas_ids_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$opengwas_ids_file}"))
+  })
+
+  test_that("SVG files are ready", {
+    expect_true(file.exists(expected_static_web_files$svg_files_ready_file), info = glue::glue("File should exist: {expected_static_web_files$svg_files_ready_file}"))
+    expect_true(file.size(expected_static_web_files$svg_files_ready_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$svg_files_ready_file}"))
   })
 
   test_that("DB files are valid", {

@@ -54,6 +54,7 @@ study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
 pipeline_summary_file = f'{current_results_dir}/pipeline_summary.html'
+opengwas_ids_file = f'{current_results_dir}/opengwas_ids.json'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_full_db_file = f'{current_results_dir}/associations_full.db'
@@ -302,23 +303,19 @@ rule create_results_db:
            --completed_output_file {output.create_dbs_done_file}
        """
 
-rule prepare_svg_files_for_use:
-    input: studies_db_file, create_dbs_done_file
-    threads: 1
-    output: temporary(svg_files_ready_file)
-    shell:
-        """
-        R -e "source('constants.R'); source('svg_helpers.R'); prepare_svg_files_for_use()"
-        touch {output}
-        """
-
-rule pipeline_summary:
+rule create_static_web_files:
     input: studies_db_file, coloc_pairs_significant_db_file, associations_full_db_file, associations_specific_db_file, create_dbs_done_file
     threads: 1
-    output: pipeline_summary_file
+    output:
+        svg_files_ready_file = svg_files_ready_file,
+        pipeline_summary_file = pipeline_summary_file,
+        opengwas_ids_file = opengwas_ids_file
     shell:
         """
-        R -e "rmarkdown::render('pipeline_summary.Rmd', output_file = '{output}')"
+        Rscript create_static_web_files.R \
+            --pipeline_summary_file {output.pipeline_summary_file} \
+            --opengwas_ids_file {output.opengwas_ids_file} \
+            --svg_files_ready_file {output.svg_files_ready_file}
         """
 
 rule copy_results_to_other_directories:

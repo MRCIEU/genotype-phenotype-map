@@ -6,7 +6,7 @@ library(jsonlite)
 parser <- argparser::arg_parser('Sync data files to Oracle server')
 parser <- argparser::add_argument(parser, '--all_files', help = 'Sync all files', type = 'logical', flag = TRUE)
 parser <- argparser::add_argument(parser, '--db_files', help = 'Sync database files', type = 'logical', flag = TRUE)
-parser <- argparser::add_argument(parser, '--svg_files', help = 'Sync SVG files', type = 'logical', flag = TRUE)
+parser <- argparser::add_argument(parser, '--static_web_files', help = 'Sync static web files', type = 'logical', flag = TRUE)
 parser <- argparser::add_argument(parser, '--upload_server_data', help = 'Sync upload server data', type = 'logical', flag = TRUE)
 parser <- argparser::add_argument(parser, '--summary_stats', help = 'Sync summary statistics', type = 'logical', flag = TRUE)
 parser <- argparser::add_argument(parser, '--rdsf', help = 'Sync to RDSF', type = 'logical', flag = TRUE)
@@ -15,12 +15,13 @@ args <- argparser::parse_args(parser)
 
 rdsf_dir <- '/mnt/GPMap_rdsf/Data-Bris/working/'
 upload_server_data_dir <- '/oradiskvdb1/data'
-api_server_svg_dir <- '/home/opc/gpmap_data/static/svgs'
+api_server_static_web_dir <- '/home/opc/gpmap_data/static'
+api_server_svg_dir <- glue::glue('{api_server_static_web_dir}/svgs')
 api_server_db_dir <- '/home/opc/gpmap_data/db'
 
 main <- function() {
   if (args$all_files || args$db_files) sync_db_files()
-  if (args$all_files || args$svg_files) sync_svg_files()
+  if (args$all_files || args$static_web_files) sync_static_web_files()
   if (args$all_files || args$upload_server_data) sync_upload_server_data()
   if (args$all_files || args$summary_stats) sync_summary_stats()
   if (args$all_files || args$rdsf) sync_to_rdsf()
@@ -75,8 +76,13 @@ sync_db_files <- function() {
   }
 }
 
-sync_svg_files <- function() {
-  message('copying svg files to oracle server')
+sync_static_web_files <- function() {
+  message('copying static web files to oracle server')
+  files_in_static_web_dir <- list.files(static_web_dir, full.names = TRUE, include.dirs = FALSE)
+
+  for (file in files_in_static_web_dir) {
+    run_rsync(src = file, server = oracle_api_server, dest = file.path(api_server_static_web_dir, basename(file)))
+  }
   
   traits_src <- file.path(svg_dir, 'traits', '')
   groups_src <- file.path(svg_dir, 'groups', '')

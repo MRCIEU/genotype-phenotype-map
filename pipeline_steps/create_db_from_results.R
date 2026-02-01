@@ -528,10 +528,7 @@ find_relevant_snps <- function(studies_db) {
 
   study_extractions_snps <- data.table::as.data.table(studies_db$study_extractions$data)[, .(id, min_p, snp_id, study_id, ld_block_id)]
   study_extractions_snps <- unique(study_extractions_snps)
-  study_extractions_snps <- study_extractions_snps[
-    !id %in% studies_db$coloc_groups$data$study_extraction_id &
-    min_p <= lowest_p_value_threshold
-  ]
+  study_extractions_snps <- study_extractions_snps[min_p <= lowest_p_value_threshold]
   study_extractions_snps <- snp_annotations_subset[study_extractions_snps, on = "snp_id"]
   study_extractions_snps <- ld_blocks_subset[study_extractions_snps, on = "ld_block_id"]
   study_extractions_snps <- studies_subset[study_extractions_snps, on = "study_id"]
@@ -677,10 +674,10 @@ load_data_into_associations_db <- function(associations_conn, associations_speci
   associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
   message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
+  associations <- unique(associations, by = c("snp_id", "study_id", "general"))
   associations <- associations[order(snp_id, study_id)]
   associations_general <- associations[general == TRUE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
   associations_specific <- associations[general == FALSE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
-  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "snp_id")
 
   #Writing specific associations to specific DB
   create_table_query <- sub("table_name", associations_db$associations$name, associations_db$associations$query)
@@ -688,6 +685,7 @@ load_data_into_associations_db <- function(associations_conn, associations_speci
   DBI::dbAppendTable(associations_specific_conn, associations_db$associations$name, associations_specific)
 
   #Writing general associations to full DB
+  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "snp_id")
   DBI::dbExecute(associations_conn, associations_db$associations_metadata$query)
   DBI::dbAppendTable(associations_conn, associations_db$associations_metadata$name,
     data.frame(
@@ -740,7 +738,6 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
         general_extractions <- extractions[SNP %in% association_snps$candidate_snp]
         general_extractions[, study_name := study[['study']]]
         data.table::setnames(general_extractions, tolower(names(general_extractions)))
-        general_extractions$general <- TRUE
 
         # Get SNPs that should be extracted for this specific study (from coloc_groups)
         study_specific_snps <- association_snps[study_name == study[['study']]]$candidate_snp
@@ -756,12 +753,16 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
 
         specific_study_extractions <- data.table::data.table()
         if (study[['study']] %in% study_extractions_snps$study_name) {
-          specific_study_extractions <- study_extractions_snps[study_name == study[['study']]]
-          specific_study_extractions <- extractions[SNP %in% specific_study_extractions$candidate_snp]
+          relevant_study_extractions_snps <- study_extractions_snps[study_name == study[['study']]]
+          specific_study_extractions <- extractions[SNP %in% relevant_study_extractions_snps$candidate_snp]
           specific_study_extractions[, study_name := study[['study']]]
           data.table::setnames(specific_study_extractions, tolower(names(specific_study_extractions)))
         }
 
+        general_extractions <- dplyr::bind_rows(general_extractions, specific_study_extractions)
+        if (nrow(general_extractions) > 0) {
+          general_extractions$general <- TRUE
+        }
         specific_extractions <- dplyr::bind_rows(specific_association_extractions, specific_study_extractions)
         if (nrow(specific_extractions) > 0) {
           specific_extractions$general <- FALSE

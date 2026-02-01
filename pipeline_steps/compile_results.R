@@ -124,6 +124,11 @@ aggregate_data_produced_by_pipeline <- function(ld_info, studies_to_process_file
 create_study_extractions <- function(pipeline_data) {
   finemapped_studies <- pipeline_data$finemapped_studies |>
     dplyr::filter(min_p <= p_value_threshold) |>
+    dplyr::mutate(
+      file = sub('//', '/', file),
+      svg_file = sub('//', '/', svg_file),
+      file_with_lbfs = sub('//', '/', file_with_lbfs)
+    ) |>
     dplyr::select(study, unique_study_id, file, snp, chr, bp, min_p, cis_trans, ld_block, svg_file, file_with_lbfs, ignore)
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[match(finemapped_studies$study, pipeline_data$studies_processed$study_name)]

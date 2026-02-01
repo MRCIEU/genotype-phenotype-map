@@ -45,8 +45,10 @@ test_that("Pipeline execution and file validation", {
 
   expected_static_web_files <- list(
     opengwas_ids_file=glue::glue('{static_web_dir}opengwas_ids.json'),
-    pipeline_summary_file=glue::glue('{static_web_dir}pipeline_summary.html'),
-    svg_files_ready_file=glue::glue('{static_web_dir}svg_files_ready')
+    phenotype_id_map_file=glue::glue('{static_web_dir}phenotype_id_map.json'),
+    robots_txt_file=glue::glue('{static_web_dir}robots.txt'),
+    sitemap_xml_file=glue::glue('{static_web_dir}sitemap.xml'),
+    pipeline_summary_file=glue::glue('{static_web_dir}pipeline_summary.html')
   )
 
   expected_tsv_files <- list(
@@ -198,19 +200,11 @@ test_that("Pipeline execution and file validation", {
     expect_true(nrow(rare_results) > 0, info = "Rare results should not be empty")
   })
 
-  test_that("Pipeline Summary is valid", {
+  test_that("Static web files are ready", {
     expect_true(file.exists(expected_static_web_files$pipeline_summary_file), info = glue::glue("File should exist: {expected_static_web_files$pipeline_summary_file}"))
     expect_true(file.size(expected_static_web_files$pipeline_summary_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$pipeline_summary_file}"))
-  })
-
-  test_that("OpenGWAS IDs are valid", {
     expect_true(file.exists(expected_static_web_files$opengwas_ids_file), info = glue::glue("File should exist: {expected_static_web_files$opengwas_ids_file}"))
     expect_true(file.size(expected_static_web_files$opengwas_ids_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$opengwas_ids_file}"))
-  })
-
-  test_that("SVG files are ready", {
-    expect_true(file.exists(expected_static_web_files$svg_files_ready_file), info = glue::glue("File should exist: {expected_static_web_files$svg_files_ready_file}"))
-    expect_true(file.size(expected_static_web_files$svg_files_ready_file) > 0, info = glue::glue("File should not be empty: {expected_static_web_files$svg_files_ready_file}"))
   })
 
   test_that("DB files are valid", {

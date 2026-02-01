@@ -23,8 +23,8 @@ posterior_prob_thresholds <- list(
 )
 
 gpm_website_data <- list(
-  url = 'https://gpm.opengwas.io',
-  contact = 'https://gpm.opengwas.io/contact',
+  url = 'https://gpmap.opengwas.io',
+  contact = 'https://gpmap.opengwas.io/contact',
   name = 'The Genotype-Phenotype Map Team'
 )
 

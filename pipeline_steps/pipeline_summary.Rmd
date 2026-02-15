@@ -122,12 +122,12 @@ load_results_data <- function(specific_results_dir) {
   ))
 }
 
-latest_results <- load_results_data(current_results_dir)
+latest_results <- load_results_data(latest_results_dir)
 # last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
 # previous_results <- load_results_data(last_two_pipeline_runs[2])
 ```
 
-### What has been ingested?
+### What has been extracted?
 
 ```{r high-level-metrics, echo=F, results='asis'}
 # Select specific columns to avoid duplicate names from JOIN
@@ -188,7 +188,7 @@ unique_variants_in_coloc <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT
 - SNPs that show up in multiple coloc groups: `r scales::comma(num_coloc_groups_with_same_snp$repeated_snp_count)`
 
 Broken down by data source:
-```{r data-source, echo=F, fig.cap="Number of studies by data source"}
+```{r data-source, echo=F, fig.cap="Number of traits by data source"}
 
 latest_sources <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_sources.name, COUNT(studies.*) as num_studies
   FROM studies
@@ -222,7 +222,7 @@ p1 <- ggplot(latest_sources, aes(x = ordered_name, y = num_studies)) +
     show.legend = FALSE
   ) +
   coord_flip() +
-  labs(x = "Data Source", y = "Number of Studies", title = "Number of Studies by Data Source") +
+  labs(x = "Data Source", y = "Number of Traits", title = "Number of traits by data source") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         axis.text = element_text(color = "black"),
@@ -317,7 +317,7 @@ p2 <- ggplot(data_types_viz, aes(x = reorder(data_type, count), y = count, fill 
             hjust = -0.1, size = 3) +
   coord_flip() +
   labs(x = "Data Type", y = "Count", fill = "Metric",
-       title = "Study Breakdown by Data Type") +
+       title = "Study breakdown by data type") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         legend.position = "bottom",
@@ -512,7 +512,7 @@ p_tissue_counts <- ggplot(tissue_counts, aes(x = reorder(tissue, total), y = cou
     x = "Tissue",
     y = "Count",
     fill = "",
-    title = "Number of Ingested Loci by Tissue"
+    title = "Number of extracted loci by tissue"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -539,7 +539,7 @@ p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, f
     x = "Tissue",
     y = "Percentage",
     fill = "",
-    title = "Colocalization Membership by Tissue"
+    title = "Colocalization membership by tissue"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -698,7 +698,7 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
   geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
   coord_flip() +
   labs(x = "Data Type", y = "Count", fill = "",
-       title = "Number of Ingested Loci by Data Type") +
+       title = "Number of extracted loci by data type") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         legend.position = "bottom",
@@ -769,7 +769,7 @@ if (nrow(finemap_viz) > 0) {
               hjust = -0.1, size = 3.5) +
     coord_flip() +
     labs(x = "Data Type", y = "Finemap Ratio", 
-         title = "Finemap Ratio by Data Type") +
+         title = "Finemap ratio by data type") +
     theme_minimal(base_size = 12) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold"),
           axis.text = element_text(color = "black"),
@@ -1180,7 +1180,7 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
   geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
   coord_flip() +
   labs(x = "Trait Category", y = "Count", fill = "",
-       title = "Number of Ingested Loci by Trait Category") +
+       title = "Number of extracted loci by trait category") +
   theme_minimal(base_size = 12) +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"),
         legend.position = "bottom",

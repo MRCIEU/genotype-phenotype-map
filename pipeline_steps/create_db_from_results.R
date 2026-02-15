@@ -53,12 +53,11 @@ main <- function() {
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   studies_db <- match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
+  message('Creating coloc pairs db...')
+  load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
   message('Creating associations db...')
   load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
-
-  message('Creating coloc pairs db...')
-  load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(associations_full_conn, shutdown=TRUE)
@@ -366,7 +365,7 @@ create_wide_tables <- function(studies_conn) {
 
 format_pleiotropy_scores <- function(studies_db) {
   studies_subset <- studies_db$studies$data |>
-    dplyr::select(id, study_name, trait_id, gene_id) |>
+    dplyr::select(id, study_name, trait_id, gene_id, data_type) |>
     dplyr::rename(study_id=id)
 
   traits_subset <- studies_db$traits$data |>
@@ -381,6 +380,7 @@ format_pleiotropy_scores <- function(studies_db) {
     dplyr::left_join(studies_subset, by ="study_id") |>
     dplyr::left_join(traits_subset, by ="trait_id") |>
     dplyr::left_join(gene_annotations_subset, by="gene_id") |>
+    dplyr::filter(data_type != data_types$methylation) |>
     dplyr::filter(gene_biotype == "protein_coding" | is.na(gene_biotype))
   
   studies_db$snp_pleiotropy$data <- pleiotropy_data |>
@@ -460,7 +460,7 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
 
   DBI::dbAppendTable(coloc_pairs_full_conn, coloc_pairs_full_table$name, pairwise_colocs)
 
-  significant_colocs <- pairwise_colocs[h4 > posterior_prob_threshold]
+  significant_colocs <- pairwise_colocs[h4 > posterior_prob_threshold_minimum]
   print(paste('Found', nrow(significant_colocs), 'significant pairwise colocs'))
 
   study_extraction_snp_map <- studies_db$coloc_groups$data |>
@@ -472,12 +472,12 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
     dplyr::select(get_table_column_names(coloc_pairs_significant_table)) |>
     dplyr::arrange(snp_id, study_extraction_a_id, study_extraction_b_id)
 
-  print(paste('Found', nrow(significant_colocs), 'pairwise colocs after selecting columns'))
-  significant_colocs_filtered <- significant_colocs |>
-    dplyr::filter(!is.na(snp_id))
-  print(paste('Found', nrow(significant_colocs_filtered), 'significant pairwise colocs after filtering things not found in coloc groups'))
+  # print(paste('Found', nrow(significant_colocs), 'pairwise colocs after selecting columns'))
+  # significant_colocs_filtered <- significant_colocs |>
+  #   dplyr::filter(!is.na(snp_id))
+  # print(paste('Found', nrow(significant_colocs_filtered), 'significant pairwise colocs after filtering things not found in coloc groups'))
 
-  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs_filtered)
+  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
 
   # significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "snp_id")
   # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)

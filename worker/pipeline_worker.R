@@ -440,13 +440,6 @@ compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     {\(dirs) dirs[!dirs %in% dirname(dirs[-1])]}()
 
-  snp_annotations <- vroom::vroom(
-    file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
-    altrep = FALSE,
-    show_col_types = FALSE,
-    col_select = c('snp', 'rsid', 'display_snp')
-  ) |>
-    dplyr::mutate(snp = trimws(snp))
   
   compiled_coloc_pairwise_results_file <- glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv')
   compiled_study_extractions_file <- glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv')
@@ -459,19 +452,34 @@ compile_results <- function(gwas_info) {
     glue::glue('{ld_block_dirs}/finemapped_studies.tsv')
   )
   
-  finemapped_studies_full <- data.frame()
   if (length(finemapped_studies_files) > 0) {
     study_extractions <- lapply(finemapped_studies_files, function(file) {
-      se_result <- vroom::vroom(file, show_col_types = FALSE, col_types = finemapped_column_types) |>
+      se_result <- data.table::fread(file, showProgress = FALSE, colClasses = list(character = c("chr", "snp", "study", "unique_study_id"))) |>
         dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold)
       return(se_result)
     }) |>
-      dplyr::bind_rows() |>
-      dplyr::left_join(snp_annotations, by = "snp")
+      data.table::rbindlist(fill = TRUE)
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
-    study_extractions <- data.frame()
+    study_extractions <- data.table::data.table()
+  }
+
+  all_snps_in_ld_blocks <- study_extractions |>
+    dplyr::distinct(snp) |>
+    dplyr::pull(snp)
+  
+  snp_annotations <- data.table::fread(
+    file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
+    select = c('snp', 'rsid', 'display_snp'),
+    showProgress = FALSE,
+    colClasses = list(character = c("snp", "rsid", "display_snp"))
+  ) |>
+    dplyr::mutate(snp = trimws(snp)) |>
+    dplyr::filter(snp %in% all_snps_in_ld_blocks)
+  
+  if (nrow(study_extractions) > 0) {
+    study_extractions <- merge(study_extractions, snp_annotations, by = "snp", all.x = TRUE)
   }
 
   coloc_clustered_results_files <- Filter(
@@ -480,16 +488,21 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_clustered_results_files) > 0) {
     coloc_clustered_results <- lapply(coloc_clustered_results_files, function(file) {
-      return(vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_clustered_results_column_types))
+      return(data.table::fread(file, showProgress = FALSE))
     }) |>
-      dplyr::bind_rows() |>
-      dplyr::group_by(ld_block, component) |>
-      dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
-      dplyr::ungroup() |>
-      dplyr::arrange(coloc_group_id) |>
-      dplyr::select(unique_study_id, coloc_group_id, snp, ld_block, h4_connectedness, h3_connectedness)
+      data.table::rbindlist(fill = TRUE)
+    
+    if (nrow(coloc_clustered_results) > 0) {
+      coloc_clustered_results <- coloc_clustered_results |>
+        dplyr::group_by(ld_block, component) |>
+        dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
+        dplyr::ungroup() |>
+        dplyr::arrange(coloc_group_id) |>
+        dplyr::select(unique_study_id, coloc_group_id, snp, ld_block, h4_connectedness, h3_connectedness) |>
+        data.table::as.data.table()
+    }
   } else {
-    coloc_clustered_results <- data.frame()
+    coloc_clustered_results <- data.table::data.table()
   }
 
   coloc_pairwise_results_files <- Filter(
@@ -498,20 +511,23 @@ compile_results <- function(gwas_info) {
   )
   if (length(coloc_pairwise_results_files) > 0) {
     coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
-      cp_result <- vroom::vroom(file, delim = '\t', show_col_types = FALSE, col_types = coloc_pairwise_results_column_types) |>
+      cp_result <- data.table::fread(file, showProgress = FALSE) |>
         dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
         dplyr::select(unique_study_a, unique_study_b, PP.H3.abf, PP.H4.abf, ld_block, false_positive, false_negative, ignore)
       return(cp_result)
     }) |>
-      dplyr::bind_rows() |>
-      dplyr::rename(unique_study_id_a = unique_study_a, unique_study_id_b = unique_study_b, h3 = PP.H3.abf, h4 = PP.H4.abf)
+      data.table::rbindlist(fill = TRUE)
+    
+    if (nrow(coloc_pairwise_results) > 0) {
+      data.table::setnames(coloc_pairwise_results, 
+                           old = c("unique_study_a", "unique_study_b", "PP.H3.abf", "PP.H4.abf"), 
+                           new = c("unique_study_id_a", "unique_study_id_b", "h3", "h4"))
+    }
   } else {
-    coloc_pairwise_results <- data.frame()
+    coloc_pairwise_results <- data.table::data.table()
   }
 
-  lbfs_concatenated <- concatenate_file_with_lbfs(gwas_info, study_extractions)
-  vroom::vroom_write(lbfs_concatenated, lbfs_concatenated_file)
-  rm(lbfs_concatenated)
+  concatenate_file_with_lbfs(gwas_info, study_extractions)
 
   # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations)
 
@@ -609,21 +625,26 @@ concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
     flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
 
     lbf_files <- unique(study_extractions$file_with_lbfs)
+    lbf_files <- lbf_files[!is.na(lbf_files)]
+    
     if (length(lbf_files) > 0) {
-      lbfs_data_list <- lapply(lbf_files, function(file_path) {
-        file_data <- vroom::vroom(glue::glue('{data_dir}/{file_path}'), show_col_types = FALSE)
-        return(file_data)
-      })
-
-      lbfs_data_list <- lbfs_data_list[sapply(lbfs_data_list, nrow) > 0]
-      lbfs_concatenated <- dplyr::bind_rows(lbfs_data_list)
-    } else {
-      lbfs_concatenated <- data.frame()
+      if (file.exists(lbfs_concatenated_file)) unlink(lbfs_concatenated_file)
+      
+      for (i in seq_along(lbf_files)) {
+        file_path <- glue::glue('{data_dir}/{lbf_files[i]}')
+        if (!file.exists(file_path)) next
+        
+        dt <- data.table::fread(file_path, showProgress = FALSE)
+        if (nrow(dt) > 0) {
+          data.table::fwrite(dt, lbfs_concatenated_file, append = TRUE, 
+                             compress = "gzip", sep = "\t")
+        }
+        rm(dt);
+        gc(verbose = FALSE)
+      }
     }
-  } else {
-    lbfs_concatenated <- data.frame()
   }
-  return(lbfs_concatenated)
+  return(NULL)
 }
 
 upload_results <- function(results, gwas_info) {

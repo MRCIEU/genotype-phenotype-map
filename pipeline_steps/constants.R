@@ -12,15 +12,12 @@ is_test_run <- !is.na(TEST_RUN)
 min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
-minimum_extraction_size <- 150
-posterior_prob_h4_threshold <- 0.8
 
-#TODO: look into removing these
-posterior_prob_threshold <- 0.5
-posterior_prob_thresholds <- list(
-  strong=0.8,
-  moderate=0.6
-)
+minimum_extraction_size <- 150
+
+posterior_prob_h4_threshold <- 0.8
+posterior_prob_threshold_minimum <- 0.5
+
 
 gpm_website_data <- list(
   url = 'https://gpmap.opengwas.io',

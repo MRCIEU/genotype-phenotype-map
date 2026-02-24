@@ -6,7 +6,7 @@ if (!requireNamespace("BiocManager", quietly = TRUE)) {
 
 install.packages(c('remotes', 'devtools'))
 
-cran_install <- c('testthat', 'susieR', 'Rfast', 'duckdb', 'validate', 'redux', 'sendmailR', 'igraph', 'svglite', 'readxl', 'janitor')
+cran_install <- c('testthat', 'susieR', 'Rfast', 'duckdb', 'validate', 'redux', 'sendmailR', 'igraph', 'svglite', 'readxl', 'janitor', 'lintr', 'styler', 'formatR')
 install.packages(cran_install)
 
 # Install packages from GitHub and specific versions

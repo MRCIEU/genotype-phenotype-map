@@ -255,3 +255,16 @@ safe_lapply <- function(X, FUN, ...) {
     )
   })
 }
+
+replace_except_first_two_dashes <- function(x) {
+  dash_positions <- gregexpr("-", x)[[1]]
+  if (length(dash_positions) <= 2) {
+    return(x)
+  }
+  result <- x
+  for (i in 3:length(dash_positions)) {
+    pos <- dash_positions[i]
+    substr(result, pos, pos) <- "_"
+  }
+  return(result)
+}

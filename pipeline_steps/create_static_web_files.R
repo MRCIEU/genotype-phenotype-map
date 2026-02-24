@@ -15,7 +15,7 @@ main <- function() {
   create_seo_files(args$studies_db_file, args$static_web_dir)
   prepare_svg_files_for_use(args$studies_db_file)
 
-  rmarkdown::render('pipeline_summary.Rmd', output_file = file.path(args$static_web_dir, 'pipeline_summary.html'))
+  rmarkdown::render('../scripts/analysis/pipeline_summary.Rmd', output_file = file.path(args$static_web_dir, 'pipeline_summary.html'))
   vroom::vroom_write(data.frame(), args$static_web_files_ready_file)
 }
 
@@ -28,7 +28,8 @@ create_opengwas_map <- function(studies_db_file, static_web_dir) {
     WHERE source IN ('ebi_catalog', 'ukb')
     AND studies.data_type = 'phenotype' AND studies.variant_type = 'common'"
   )
-  jsonlite::write_json(phenotype_studies$study_name, file.path(static_web_dir, 'opengwas_ids.json'), auto_unbox = TRUE, pretty = TRUE)
+  updated_study_names <- lapply(phenotype_studies$study_name, replace_except_first_two_dashes)
+  jsonlite::write_json(updated_study_names, file.path(static_web_dir, 'opengwas_ids.json'), auto_unbox = TRUE, pretty = TRUE)
   phenotype_id_map <- setNames(as.list(phenotype_studies$trait_name), phenotype_studies$trait_id)
   jsonlite::write_json(phenotype_id_map, file.path(static_web_dir, 'phenotype_id_map.json'), auto_unbox = TRUE, pretty = TRUE)
   duckdb::dbDisconnect(studies_conn, shutdown = TRUE)
@@ -76,7 +77,7 @@ create_seo_files <- function(studies_db_file, static_web_dir) {
     studies,
     "
   <url>
-    <loc>{base_url}/traits.html?id={trait_id}</loc>
+    <loc>{base_url}/trait.html?id={trait_id}</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>"

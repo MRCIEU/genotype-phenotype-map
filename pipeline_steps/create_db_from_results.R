@@ -53,6 +53,7 @@ main <- function() {
   load_data_into_ld_db(ld_conn, studies_db, all_relevant_snps)
   studies_db <- match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
+
   message('Creating coloc pairs db...')
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
@@ -175,8 +176,8 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
   # Remove the traits that don't have any study extractions
   studies_db$traits$data <- vroom::vroom(file.path(current_results_dir, "traits_processed.tsv.gz"), show_col_types = F) |>
     dplyr::filter(study_name %in% studies_db$studies$data$study_name) |>
-    resolve_ids_for_table(studies_db$traits$existing_ids, studies_db$traits$persist_id_from) |>
     dplyr::rename(trait_name=trait, trait=study_name, trait_category=category) |>
+    resolve_ids_for_table(studies_db$traits$existing_ids, studies_db$traits$persist_id_from) |>
     dplyr::select(get_table_column_names(studies_db$traits))
 
   traits_subset <- studies_db$traits$data |>
@@ -361,6 +362,21 @@ create_wide_tables <- function(studies_conn) {
     DBI::dbExecute(studies_conn, table$query)
     DBI::dbExecute(studies_conn, table$indexes)
   })
+
+  #specific alteration of source_url for opengwas studies
+  coloc_groups_wide <- DBI::dbGetQuery(studies_conn,
+    "SELECT coloc_groups_wide.source_url, coloc_groups_wide.study_id, studies.study_name
+     FROM coloc_groups_wide
+     JOIN studies ON coloc_groups_wide.study_id = studies.id")
+  is_opengwas <- startsWith(coloc_groups_wide$source_url, "https://opengwas.io/")
+  if (any(is_opengwas)) {
+    og <- coloc_groups_wide[is_opengwas, ]
+    og$source_url <- paste0("https://opengwas.io/datasets/",
+      vapply(og$study_name, replace_except_first_two_dashes, character(1)))
+    DBI::dbExecute(studies_conn,
+      "UPDATE coloc_groups_wide SET source_url = ? WHERE study_id = ?",
+      list(og$source_url, og$study_id))
+  }
 }
 
 format_pleiotropy_scores <- function(studies_db) {

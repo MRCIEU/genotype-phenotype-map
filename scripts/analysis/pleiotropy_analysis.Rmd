@@ -60,6 +60,8 @@ joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   study_extraction_a.unique_study_id AS study_extraction_a_unique_study_id,
   study_extraction_a.min_p AS min_p_a,
   study_extraction_a.cis_trans AS cis_trans_a,
+  study_extraction_a.bp AS bp_a,
+  study_extraction_a.chr AS chr_a,
   -- Study A details
   study_a.study_name AS study_name_a,
   study_a.gene AS gene_a,
@@ -72,6 +74,8 @@ joined_coloc_results <- DBI::dbGetQuery(coloc_pairs_conn, 'SELECT
   study_extraction_b.unique_study_id AS study_extraction_b_unique_study_id,
   study_extraction_b.min_p AS min_p_b,
   study_extraction_b.cis_trans AS cis_trans_b,
+  study_extraction_b.bp AS bp_b,
+  study_extraction_b.chr AS chr_b,
   -- Study B details
   study_b.study_name AS study_name_b,
   study_b.gene AS gene_b,
@@ -1257,6 +1261,92 @@ For any causal variant:
 * Rate of incorrectness due to LD = significant h4 / significant h3
 * How many significant h4 traits are spurious? (Spurious: h4 > 0.8 & failed the clustering step)
 
+### Proximal pairs (within 1 kb)
+
+Restricting to colocalization pairs where the two study extractions are on the same chromosome and within 1 kilobase (≤ 1,000 bp) of each other. This removes any confounding from long-range LD and focuses on pairs whose causal signals are essentially co-localised.
+
+```{r h4_h3_ratio_proximal, echo=F}
+hemoglobin_study_id <- 'ebi-a-GCST90002384'
+
+# Filter to pairs on the same chromosome and within 1 kb
+proximal_pairs <- joined_coloc_results %>%
+  dplyr::filter(
+    chr_a == chr_b,
+    abs(bp_a - bp_b) <= 1000
+  )
+
+cat(glue::glue("Total coloc pairs within 1 kb: {scales::comma(nrow(proximal_pairs))} ",
+               "out of {scales::comma(nrow(joined_coloc_results))} total ",
+               "({round(nrow(proximal_pairs) / nrow(joined_coloc_results) * 100, 1)}%)\n\n"))
+
+prox_num_h4 <- nrow(proximal_pairs[proximal_pairs$h4 > 0.8, ])
+prox_num_h4_spurious <- nrow(proximal_pairs[proximal_pairs$h4 > 0.8 & proximal_pairs$false_positive, ])
+prox_num_h3 <- nrow(proximal_pairs[proximal_pairs$h3 > 0.8, ])
+prox_num_h3_spurious <- nrow(proximal_pairs[proximal_pairs$h3 > 0.8 & proximal_pairs$false_positive, ])
+
+# Same hemoglobin example, restricted to proximal pairs
+prox_hemoglobin <- proximal_pairs[proximal_pairs$study_name_a == hemoglobin_study_id | proximal_pairs$study_name_b == hemoglobin_study_id, ]
+prox_hemo_h4 <- nrow(prox_hemoglobin[prox_hemoglobin$h4 > 0.8, ])
+prox_hemo_h3 <- nrow(prox_hemoglobin[prox_hemoglobin$h3 > 0.8, ])
+prox_hemo_h4_spurious <- nrow(prox_hemoglobin[prox_hemoglobin$h4 > 0.8 & prox_hemoglobin$false_positive, ])
+
+prox_summary <- tibble::tribble(
+  ~trait, ~num_significant_h4, ~num_spurious_h4, ~num_significant_h3, ~h3_h4_ratio,
+  'All (≤1 kb)', prox_num_h4, prox_num_h4_spurious, prox_num_h3, ifelse(prox_num_h4 > 0, prox_num_h3 / prox_num_h4, NA),
+  'Hemoglobin (≤1 kb)', prox_hemo_h4, prox_hemo_h4_spurious, prox_hemo_h3, ifelse(prox_hemo_h4 > 0, prox_hemo_h3 / prox_hemo_h4, NA)
+)
+
+knitr::kable(prox_summary, caption = "H3 vs H4 for proximal pairs (within 1 kb)")
+```
+
+### H3/H4 matrix by data type — proximal pairs only
+This is a big matrix, skipping for now.
+```{r h4_h3_ratio_proximal_matrix, echo=F, eval=F}
+prox_coloc_matrix <- dplyr::filter(proximal_pairs, h4 > 0.8 | h3 > 0.8)
+
+prox_h4_matrix <- matrix(0, nrow = length(unique_data_types), ncol = length(unique_data_types))
+rownames(prox_h4_matrix) <- unique_data_types
+colnames(prox_h4_matrix) <- unique_data_types
+
+prox_h3_matrix <- matrix(0, nrow = length(unique_data_types), ncol = length(unique_data_types))
+rownames(prox_h3_matrix) <- unique_data_types
+colnames(prox_h3_matrix) <- unique_data_types
+
+if (nrow(prox_coloc_matrix) > 0) {
+  for (i in 1:nrow(prox_coloc_matrix)) {
+    type_a <- prox_coloc_matrix$data_type_a[i]
+    type_b <- prox_coloc_matrix$data_type_b[i]
+
+    if (prox_coloc_matrix$h4[i] > 0.8) {
+      prox_h4_matrix[type_a, type_b] <- prox_h4_matrix[type_a, type_b] + 1
+      if (type_a != type_b) {
+        prox_h4_matrix[type_b, type_a] <- prox_h4_matrix[type_b, type_a] + 1
+      }
+    } else if (prox_coloc_matrix$h3[i] > 0.8) {
+      prox_h3_matrix[type_a, type_b] <- prox_h3_matrix[type_a, type_b] + 1
+      if (type_a != type_b) {
+        prox_h3_matrix[type_b, type_a] <- prox_h3_matrix[type_b, type_a] + 1
+      }
+    }
+  }
+}
+
+prox_h4_matrix[lower.tri(prox_h4_matrix)] <- NA
+prox_h4_display <- as.data.frame(prox_h4_matrix)
+prox_h4_display[, unique_data_types] <- lapply(prox_h4_display[, unique_data_types], scales::comma)
+knitr::kable(prox_h4_display, caption = "H4 > 0.8 between data types (≤1 kb pairs)")
+
+prox_h3_matrix[lower.tri(prox_h3_matrix)] <- NA
+prox_h3_display <- as.data.frame(prox_h3_matrix)
+prox_h3_display[, unique_data_types] <- lapply(prox_h3_display[, unique_data_types], scales::comma)
+knitr::kable(prox_h3_display, caption = "H3 > 0.8 between data types (≤1 kb pairs)")
+
+prox_ratio <- as.data.frame(prox_h3_matrix) / as.data.frame(prox_h4_matrix)
+knitr::kable(prox_ratio, caption = "Ratio of H3 > 0.8 to H4 > 0.8 between data types (≤1 kb pairs)")
+```
+
+### All pairs (unrestricted)
+
 ```{r h4_h3_ratio, echo=F}
 num_significant_h4 <- nrow(joined_coloc_results[joined_coloc_results$h4 > 0.8, ])
 num_spurious_h4 <- nrow(joined_coloc_results[joined_coloc_results$h4 > 0.8 & joined_coloc_results$false_positive, ])
@@ -1282,7 +1372,8 @@ knitr::kable(h4_summary)
 
 #### Breakdown of ratio of h3 to h4 by data type
 
-```{r matrix_of_coloc_results, echo=F}
+This is a big matrix, skipping for now.
+```{r matrix_of_coloc_results, echo=F, eval=F}
 coloc_matrix <- dplyr::filter(joined_coloc_results, h4 > 0.8 | h3 > 0.8)
 
 # Create the n×n matrix

@@ -251,6 +251,7 @@ additional_studies_tables <- list(
       CREATE INDEX idx_study_extractions_wide_gene_id ON study_extractions_wide(gene_id);
       CREATE INDEX idx_study_extractions_wide_snp_id ON study_extractions_wide(snp_id);
       CREATE INDEX idx_study_extractions_wide_ld_block_id ON study_extractions_wide(ld_block_id);"
+  )
 )
 
 ld_table <- list(

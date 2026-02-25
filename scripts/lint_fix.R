@@ -1,30 +1,13 @@
 #!/usr/bin/env Rscript
-# Auto-fix linting issues using styler + formatR
+# Auto-fix linting issues using styler
 # Usage: Rscript scripts/lint_fix.R
 #
 # Step 1: styler — tidyverse formatting (spacing, indentation, braces)
-# Step 2: formatR — assignment arrows
-# Step 3: Trailing whitespace / tab cleanup
-# Step 4: Report remaining lint issues
+# Step 2: Trailing whitespace / tab cleanup
+# Step 3: Report remaining lint issues
 
 library(styler)
-library(formatR)
 library(lintr)
-
-# Get line length from .lintr config (default to 120)
-line_length <- 120
-if (file.exists(".lintr")) {
-  lintr_content <- readLines(".lintr", warn = FALSE)
-  line_length_match <- grep("line_length_linter\\(([0-9]+)\\)", lintr_content, value = TRUE)
-  if (length(line_length_match) > 0) {
-    line_length_str <- regmatches(line_length_match, regexpr("[0-9]+", line_length_match))
-    if (length(line_length_str) > 0) {
-      line_length <- as.numeric(line_length_str[1])
-    }
-  }
-}
-
-message(paste("Target line length:", line_length))
 
 exclude_dirs <- c(
   "docs",
@@ -53,8 +36,8 @@ styler::style_dir(
 )
 message("✓ styler complete!")
 
-# ── Step 2: formatR ──────────────────────────────────────────────────────────
-message("\nStep 2: Formatting with formatR (assignment arrows)...")
+# ── Step 2: Trailing whitespace / tab cleanup ─────────────────────────────────
+message("\nStep 2: Fixing trailing whitespace and tabs...")
 
 r_files <- list.files(
   path = ".",
@@ -68,54 +51,6 @@ r_files <- r_files[!grepl(
   "scripts/lint\\.R$|scripts/lint_check\\.R$|scripts/lint_fix\\.R$|scripts/lint_summary\\.R$",
   r_files
 )]
-
-message(paste("Found", length(r_files), "R files"))
-
-files_changed <- 0
-files_errored <- 0
-
-for (file in r_files) {
-  tryCatch(
-    {
-      original <- readLines(file, warn = FALSE)
-
-      tidied <- formatR::tidy_source(
-        source = file,
-        width.cutoff = 500,
-        arrow = TRUE,
-        indent = 2,
-        brace.newline = FALSE,
-        comment = TRUE,
-        blank = TRUE,
-        args.newline = FALSE,
-        output = FALSE
-      )
-
-      new_content <- tidied$text.tidy
-
-      if (!identical(paste(original, collapse = "\n"), paste(new_content, collapse = "\n"))) {
-        writeLines(new_content, file)
-        files_changed <- files_changed + 1
-        message(paste("  ℹ", file, "- reformatted"))
-      } else {
-        message(paste("  ✔", file))
-      }
-    },
-    error = function(e) {
-      files_errored <<- files_errored + 1
-      message(paste("  ✖", file, "-", e$message))
-    }
-  )
-}
-
-message(paste0(
-  "\n✓ formatR complete! ",
-  files_changed, " file(s) changed, ",
-  files_errored, " error(s)"
-))
-
-# ── Step 3: Trailing whitespace / tab cleanup ─────────────────────────────────
-message("\nStep 3: Fixing trailing whitespace and tabs...")
 
 additional_fixes <- 0
 for (file in r_files) {
@@ -153,8 +88,8 @@ if (additional_fixes > 0) {
   message("✓ No whitespace fixes needed")
 }
 
-# ── Step 4: Report remaining lint issues ──────────────────────────────────────
-message("\nStep 4: Checking remaining lint issues...")
+# ── Step 3: Report remaining lint issues ──────────────────────────────────────
+message("\nStep 3: Checking remaining lint issues...")
 
 lint_results <- list()
 for (file in r_files) {

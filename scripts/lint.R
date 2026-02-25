@@ -14,10 +14,7 @@ r_files <- list.files(
 
 # Exclude certain directories
 exclude_dirs <- c(
-  "docs",
-  "data_formatting",
-  "pre_steps/vep_annotation",
-  "tests/testthat"
+  "docs"
 )
 
 # Filter out excluded directories

@@ -32,6 +32,7 @@ This will take 10 or so minutes to run, and ensures that the pipeline, and the p
 #### Lint
 To ensure the code format is in line with the repo, please run these commands.
 
+`make format`
 `make lint`
 `make lint-summary`
 

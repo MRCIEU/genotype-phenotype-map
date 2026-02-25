@@ -10,9 +10,7 @@ library(styler)
 library(lintr)
 
 exclude_dirs <- c(
-  "docs",
-  "data_formatting",
-  "pre_steps/vep_annotation"
+  "docs"
 )
 
 # ── Step 1: styler ────────────────────────────────────────────────────────────
@@ -30,7 +28,7 @@ styler::style_dir(
   ),
   transformers = styler::tidyverse_style(
     indent_by = 2,
-    scope = "tokens",
+    scope = "spaces",
     strict = TRUE
   )
 )
@@ -87,28 +85,4 @@ if (additional_fixes > 0) {
   message(paste("✓ Fixed whitespace in", additional_fixes, "files"))
 } else {
   message("✓ No whitespace fixes needed")
-}
-
-# ── Step 3: Report remaining lint issues ──────────────────────────────────────
-message("\nStep 3: Checking remaining lint issues...")
-
-lint_results <- list()
-for (file in r_files) {
-  file_lints <- lintr::lint(file)
-  if (length(file_lints) > 0) {
-    lint_results <- c(lint_results, file_lints)
-  }
-}
-
-if (length(lint_results) > 0) {
-  issue_types <- sapply(lint_results, function(x) x$linter)
-  issue_counts <- table(issue_types)
-
-  message("\nRemaining issues by type:")
-  print(sort(issue_counts, decreasing = TRUE))
-
-  message(paste("\nTotal remaining issues:", length(lint_results)))
-  message("Run 'make lint' to see details.")
-} else {
-  message("\n✓ No linting issues found!")
 }

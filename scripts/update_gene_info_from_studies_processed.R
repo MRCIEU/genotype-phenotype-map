@@ -27,7 +27,7 @@ new_genes <- getBM(
     "start_position",
     "end_position",
     "strand"
-  ) ,
+  ),
   values = new_ensg_ids, mart = mart
 )
 

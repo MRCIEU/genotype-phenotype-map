@@ -74,9 +74,6 @@ main <- function() {
     ld_blocks <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM ld_blocks")
     DBI::dbAppendTable(studies_con, "ld_blocks", ld_blocks)
 
-    # results_metadata <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM results_metadata")
-    # DBI::dbAppendTable(studies_con, "results_metadata", results_metadata)
-
     coloc_groups <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT coloc_group_id FROM coloc_groups WHERE study_id IN (%s)",
         paste(study_ids, collapse=",")
@@ -95,6 +92,7 @@ main <- function() {
     DBI::dbAppendTable(studies_con, "coloc_groups", coloc_groups)
     DBI::dbAppendTable(studies_con, "coloc_groups_wide", coloc_groups_wide)
 
+
     studies <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT * FROM studies WHERE id IN (%s)", paste(study_ids, collapse=",")
     ))
@@ -108,9 +106,14 @@ main <- function() {
         sprintf("SELECT * FROM study_extractions WHERE id IN (%s)",
         paste(coloc_groups$study_extraction_id, collapse=",")
     ))
+    study_extractions_wide <- DBI::dbGetQuery(orig_studies_con,
+        sprintf("SELECT * FROM study_extractions_wide WHERE id IN (%s)",
+        paste(coloc_groups$study_extraction_id, collapse=",")
+    ))
 
     all_study_ids <- unique(c(traits$study_id, studies$id))
     DBI::dbAppendTable(studies_con, "study_extractions", study_extractions)
+    DBI::dbAppendTable(studies_con, "study_extractions_wide", study_extractions_wide)
 
     rare_results_groups <- DBI::dbGetQuery(orig_studies_con,
         sprintf("SELECT rare_result_group_id FROM rare_results WHERE study_id IN (%s)",

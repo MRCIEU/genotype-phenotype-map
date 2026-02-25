@@ -54,11 +54,11 @@ main <- function() {
   studies_db <- match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
 
-  message('Creating associations db...')
-  load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
-
   message('Creating coloc pairs db...')
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
+
+  message('Creating associations db...')
+  load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
 
   DBI::dbDisconnect(studies_conn, shutdown=TRUE)
   DBI::dbDisconnect(associations_full_conn, shutdown=TRUE)
@@ -176,8 +176,8 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
   # Remove the traits that don't have any study extractions
   studies_db$traits$data <- vroom::vroom(file.path(current_results_dir, "traits_processed.tsv.gz"), show_col_types = F) |>
     dplyr::filter(study_name %in% studies_db$studies$data$study_name) |>
-    resolve_ids_for_table(studies_db$traits$existing_ids, studies_db$traits$persist_id_from) |>
     dplyr::rename(trait_name=trait, trait=study_name, trait_category=category) |>
+    resolve_ids_for_table(studies_db$traits$existing_ids, studies_db$traits$persist_id_from) |>
     dplyr::select(get_table_column_names(studies_db$traits))
 
   traits_subset <- studies_db$traits$data |>
@@ -362,11 +362,26 @@ create_wide_tables <- function(studies_conn) {
     DBI::dbExecute(studies_conn, table$query)
     DBI::dbExecute(studies_conn, table$indexes)
   })
+
+  #specific alteration of source_url for opengwas studies
+  coloc_groups_wide <- DBI::dbGetQuery(studies_conn,
+    "SELECT coloc_groups_wide.source_url, coloc_groups_wide.study_id, studies.study_name
+     FROM coloc_groups_wide
+     JOIN studies ON coloc_groups_wide.study_id = studies.id")
+  is_opengwas <- startsWith(coloc_groups_wide$source_url, "https://opengwas.io/")
+  if (any(is_opengwas)) {
+    og <- coloc_groups_wide[is_opengwas, ]
+    og$source_url <- paste0("https://opengwas.io/datasets/",
+      vapply(og$study_name, replace_except_first_two_dashes, character(1)))
+    DBI::dbExecute(studies_conn,
+      "UPDATE coloc_groups_wide SET source_url = ? WHERE study_id = ?",
+      list(og$source_url, og$study_id))
+  }
 }
 
 format_pleiotropy_scores <- function(studies_db) {
   studies_subset <- studies_db$studies$data |>
-    dplyr::select(id, study_name, trait_id, gene_id) |>
+    dplyr::select(id, study_name, trait_id, gene_id, data_type) |>
     dplyr::rename(study_id=id)
 
   traits_subset <- studies_db$traits$data |>
@@ -381,6 +396,7 @@ format_pleiotropy_scores <- function(studies_db) {
     dplyr::left_join(studies_subset, by ="study_id") |>
     dplyr::left_join(traits_subset, by ="trait_id") |>
     dplyr::left_join(gene_annotations_subset, by="gene_id") |>
+    dplyr::filter(data_type != data_types$methylation) |>
     dplyr::filter(gene_biotype == "protein_coding" | is.na(gene_biotype))
   
   studies_db$snp_pleiotropy$data <- pleiotropy_data |>
@@ -460,7 +476,7 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
 
   DBI::dbAppendTable(coloc_pairs_full_conn, coloc_pairs_full_table$name, pairwise_colocs)
 
-  significant_colocs <- pairwise_colocs[h4 > posterior_prob_threshold]
+  significant_colocs <- pairwise_colocs[h4 > posterior_prob_threshold_minimum]
   print(paste('Found', nrow(significant_colocs), 'significant pairwise colocs'))
 
   study_extraction_snp_map <- studies_db$coloc_groups$data |>
@@ -472,12 +488,12 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
     dplyr::select(get_table_column_names(coloc_pairs_significant_table)) |>
     dplyr::arrange(snp_id, study_extraction_a_id, study_extraction_b_id)
 
-  print(paste('Found', nrow(significant_colocs), 'pairwise colocs after selecting columns'))
-  significant_colocs_filtered <- significant_colocs |>
-    dplyr::filter(!is.na(snp_id))
-  print(paste('Found', nrow(significant_colocs_filtered), 'significant pairwise colocs after filtering things not found in coloc groups'))
+  # print(paste('Found', nrow(significant_colocs), 'pairwise colocs after selecting columns'))
+  # significant_colocs_filtered <- significant_colocs |>
+  #   dplyr::filter(!is.na(snp_id))
+  # print(paste('Found', nrow(significant_colocs_filtered), 'significant pairwise colocs after filtering things not found in coloc groups'))
 
-  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs_filtered)
+  DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
 
   # significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "snp_id")
   # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)
@@ -528,10 +544,7 @@ find_relevant_snps <- function(studies_db) {
 
   study_extractions_snps <- data.table::as.data.table(studies_db$study_extractions$data)[, .(id, min_p, snp_id, study_id, ld_block_id)]
   study_extractions_snps <- unique(study_extractions_snps)
-  study_extractions_snps <- study_extractions_snps[
-    !id %in% studies_db$coloc_groups$data$study_extraction_id &
-    min_p <= lowest_p_value_threshold
-  ]
+  study_extractions_snps <- study_extractions_snps[min_p <= lowest_p_value_threshold]
   study_extractions_snps <- snp_annotations_subset[study_extractions_snps, on = "snp_id"]
   study_extractions_snps <- ld_blocks_subset[study_extractions_snps, on = "ld_block_id"]
   study_extractions_snps <- studies_subset[study_extractions_snps, on = "study_id"]
@@ -677,10 +690,10 @@ load_data_into_associations_db <- function(associations_conn, associations_speci
   associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
   message('Removed ', original_num_rows - nrow(associations), ' rows with missing values')
 
+  associations <- unique(associations, by = c("snp_id", "study_id", "general"))
   associations <- associations[order(snp_id, study_id)]
   associations_general <- associations[general == TRUE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
   associations_specific <- associations[general == FALSE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
-  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "snp_id")
 
   #Writing specific associations to specific DB
   create_table_query <- sub("table_name", associations_db$associations$name, associations_db$associations$query)
@@ -688,6 +701,7 @@ load_data_into_associations_db <- function(associations_conn, associations_speci
   DBI::dbAppendTable(associations_specific_conn, associations_db$associations$name, associations_specific)
 
   #Writing general associations to full DB
+  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "snp_id")
   DBI::dbExecute(associations_conn, associations_db$associations_metadata$query)
   DBI::dbAppendTable(associations_conn, associations_db$associations_metadata$name,
     data.frame(
@@ -740,7 +754,6 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
         general_extractions <- extractions[SNP %in% association_snps$candidate_snp]
         general_extractions[, study_name := study[['study']]]
         data.table::setnames(general_extractions, tolower(names(general_extractions)))
-        general_extractions$general <- TRUE
 
         # Get SNPs that should be extracted for this specific study (from coloc_groups)
         study_specific_snps <- association_snps[study_name == study[['study']]]$candidate_snp
@@ -756,12 +769,16 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
 
         specific_study_extractions <- data.table::data.table()
         if (study[['study']] %in% study_extractions_snps$study_name) {
-          specific_study_extractions <- study_extractions_snps[study_name == study[['study']]]
-          specific_study_extractions <- extractions[SNP %in% specific_study_extractions$candidate_snp]
+          relevant_study_extractions_snps <- study_extractions_snps[study_name == study[['study']]]
+          specific_study_extractions <- extractions[SNP %in% relevant_study_extractions_snps$candidate_snp]
           specific_study_extractions[, study_name := study[['study']]]
           data.table::setnames(specific_study_extractions, tolower(names(specific_study_extractions)))
         }
 
+        general_extractions <- dplyr::bind_rows(general_extractions, specific_study_extractions)
+        if (nrow(general_extractions) > 0) {
+          general_extractions$general <- TRUE
+        }
         specific_extractions <- dplyr::bind_rows(specific_association_extractions, specific_study_extractions)
         if (nrow(specific_extractions) > 0) {
           specific_extractions$general <- FALSE

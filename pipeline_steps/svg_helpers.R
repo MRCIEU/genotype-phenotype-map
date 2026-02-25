@@ -305,13 +305,14 @@ create_svgs_from_gwas <- function(study, gwas) {
   jsonlite::write_json(metadata, glue::glue("{study$extracted_location}/svgs/full.json"), pretty = TRUE, auto_unbox = TRUE)
 }
 
-prepare_svg_files_for_use <- function(do_all = FALSE) {
+prepare_svg_files_for_use <- function(studies_db_file, do_all = FALSE) {
+  original_wd <- getwd()
   dir.create(glue::glue('{svg_dir}/traits'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/groups'), showWarnings = F, recursive = T)
   dir.create(glue::glue('{svg_dir}/extractions'), showWarnings = F, recursive = T)
 
   #find out which new studies and extractions are missing from the svg directory
-  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), glue::glue("{current_results_dir}/studies.db"), read_only = TRUE)
+  current_studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
 
   studies_query <- "SELECT * FROM studies WHERE data_type = 'phenotype' AND variant_type = 'common'"
   current_studies <- DBI::dbGetQuery(current_studies_conn, studies_query)
@@ -376,6 +377,7 @@ prepare_svg_files_for_use <- function(do_all = FALSE) {
     })
   })
   print(warnings())
+  setwd(original_wd)
 }
 
 bp_to_pixel <- function(cumulative_bp, total_cumulative_bp, svg_width = 1250) {

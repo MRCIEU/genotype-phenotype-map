@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: feature/get-pipeline-working-again
+SUCCESS: All tests passed on branch: feature/restructure-static-output

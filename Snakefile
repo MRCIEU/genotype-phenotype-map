@@ -13,7 +13,7 @@ TIMESTAMP = os.getenv('TIMESTAMP')
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-
+STATIC_WEB_DIR = RESULTS_DIR + 'current/static_web/'
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
@@ -53,7 +53,7 @@ rare_results = f'{current_results_dir}/rare_results.tsv.gz'
 study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
-pipeline_summary_file = f'{current_results_dir}/pipeline_summary.html'
+static_web_files_ready_file = f'{STATIC_WEB_DIR}/static_web_files_ready'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_full_db_file = f'{current_results_dir}/associations_full.db'
@@ -66,7 +66,6 @@ create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
 
 backup_done_file = f'{current_results_dir}/backup_done'
 sync_done_file = f'{current_results_dir}/sync_done'
-svg_files_ready_file = f'{current_results_dir}/svg_files_ready'
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -89,10 +88,7 @@ rule all:
         ld_db_file,
         gwas_upload_db_file,
         create_dbs_done_file,
-        svg_files_ready_file,
-        pipeline_summary_file
-        # backup_done_file,
-        # sync_done_file,
+        static_web_files_ready_file
 
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
@@ -302,27 +298,20 @@ rule create_results_db:
            --completed_output_file {output.create_dbs_done_file}
        """
 
-rule prepare_svg_files_for_use:
-    input: studies_db_file, create_dbs_done_file
-    threads: 1
-    output: temporary(svg_files_ready_file)
-    shell:
-        """
-        R -e "source('constants.R'); source('svg_helpers.R'); prepare_svg_files_for_use()"
-        touch {output}
-        """
-
-rule pipeline_summary:
+rule create_static_web_files:
     input: studies_db_file, coloc_pairs_significant_db_file, associations_full_db_file, associations_specific_db_file, create_dbs_done_file
     threads: 1
-    output: pipeline_summary_file
+    output: temporary(static_web_files_ready_file)
     shell:
         """
-        R -e "rmarkdown::render('pipeline_summary.Rmd', output_file = '{output}')"
+        Rscript create_static_web_files.R \
+            --studies_db_file {studies_db_file} \
+            --static_web_dir {STATIC_WEB_DIR} \
+            --static_web_files_ready_file {output}
         """
 
 rule copy_results_to_other_directories:
-    input: pipeline_summary_file
+    input: static_web_files_ready_file
     threads: 1
     output: timestamped_results_dir
     shell:

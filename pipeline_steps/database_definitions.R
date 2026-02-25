@@ -237,6 +237,20 @@ additional_studies_tables <- list(
       JOIN ld_blocks ON rare_results.ld_block_id = ld_blocks.id",
     indexes = "CREATE INDEX idx_rare_results_wide_study_id ON rare_results_wide(study_id);
       CREATE INDEX idx_rare_results_wide_study_extraction_id ON rare_results_wide(study_extraction_id);"
+  ),
+  study_extractions_wide = list(
+    name = "study_extractions_wide",
+    query = "CREATE TABLE study_extractions_wide AS 
+      SELECT study_extractions.*, gene_annotations.gene AS gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue
+        FROM study_extractions
+        JOIN studies ON study_extractions.study_id = studies.id
+        JOIN traits ON studies.trait_id = traits.id
+        LEFT JOIN gene_annotations ON study_extractions.gene_id = gene_annotations.id",
+    indexes = "CREATE INDEX idx_study_extractions_wide_id ON study_extractions_wide(id);
+      CREATE INDEX idx_study_extractions_wide_study_id ON study_extractions_wide(study_id);
+      CREATE INDEX idx_study_extractions_wide_gene_id ON study_extractions_wide(gene_id);
+      CREATE INDEX idx_study_extractions_wide_snp_id ON study_extractions_wide(snp_id);
+      CREATE INDEX idx_study_extractions_wide_ld_block_id ON study_extractions_wide(ld_block_id);"
   )
 )
 

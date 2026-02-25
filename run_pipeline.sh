@@ -39,9 +39,9 @@ apptainer run $APPTAINER_VARS $IMAGE snakemake --profile ./ $EXTRA_SNAKEMAKE_ARG
 
 exit 0
 
-apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/post_pipeline_cleanup.R \ 
-  --current_results_dir $RESULTS_DIR/$TIMESTAMP \ 
-  --pipeline_summary_file $RESULTS_DIR/$TIMESTAMP/pipeline_summary.html &>> $snakemake_log
+# apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/post_pipeline_cleanup.R \ 
+#   --current_results_dir $RESULTS_DIR/$TIMESTAMP \ 
+#   --pipeline_summary_file $RESULTS_DIR/$TIMESTAMP/pipeline_summary.html &>> $snakemake_log
 
-rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
+# rm $DATA_DIR/pipeline_metadata/studies_to_process.tsv
 echo "End time $(date)"

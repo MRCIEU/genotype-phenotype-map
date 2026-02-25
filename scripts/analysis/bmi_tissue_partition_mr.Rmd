@@ -1,0 +1,801 @@
+---
+title: "BMI tissue-partitioned MR, example"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE)
+library(data.table)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(ggplot2)
+library(UpSetR)
+#pak::pak("MRCIEU/gpmapr") # update 
+library(gpmapr)
+library(TwoSampleMR)
+library(MVMR)
+library(ieugwasr)
+
+```
+
+
+```{r, include=FALSE}
+
+out.dir <- "/Users/rj18633/OneDrive - University of Bristol/postdoc/gp_map/results/vignettes/repo_rerun/"
+
+```
+
+
+Search BMI....
+
+```{r, include=TRUE} 
+search <- search_options_api()
+search <- search$search_terms
+bmi_deets <- search[which(search$type_id == 1992),]
+
+print(bmi_deets)
+```
+
+Query BMI... 
+
+```{r search_bmi, include=TRUE}
+bmi <-  trait(1992, include_associations = TRUE, include_coloc_pairs = TRUE)  
+
+
+## study extractions
+bmi_se <- bmi$study_extractions
+
+## coloc groups 
+bmi_cg <- bmi$coloc_groups
+
+## pairwise coloc H3/H4 
+bmi_cp <- bmi$coloc_pairs
+
+## bmi_assocs  
+bmi_effs <- bmi_cg[which(bmi_cg$study_id == 1992),]  
+
+
+
+```
+
+
+Annotate the coloc_pairs results with trait names...
+
+coloc_pairs shows the pairwise coloc results for BMI with other traits mapped by study_extraction id. Map these to trait names using the coloc_groups dataframe to make a more intuitive summary of the paired coloc results. 
+
+- Identify the study_extraction_ids for BMI
+- Filter coloc_pairs to just the pairwise analyses with BMI (mapped with study_extraction ids)
+- Complete mapping the remaining study_extraction IDs in the pairwise results 
+
+```{r bmi_se_ids, include=TRUE}
+
+ids <- bmi_effs$study_extraction_id
+
+print(paste0("Number of BMI loci which underwent coloc analysis: ", NROW(unique(ids))))
+
+
+bmi_coloc_res <- bmi_cp %>%
+  dplyr::filter(
+    study_extraction_a_id %in% ids |
+      study_extraction_b_id %in% ids
+  )
+
+
+## annotate the coloc results with trait names 
+annotate_coloc <- function(coloc_res, coloc_groups) {
+  # join study_extraction_a_id
+  coloc_res <- coloc_res %>%
+    left_join(
+      coloc_groups %>%
+        select(study_extraction_id, trait_name, source_name, tissue) %>%
+        rename(trait_a = trait_name,
+              source_a = source_name),
+      by = c("study_extraction_a_id" = "study_extraction_id")
+    )
+  
+  # join study_extraction_b_id
+  coloc_res <- coloc_res %>%
+    left_join(
+      coloc_groups %>%
+        select(study_extraction_id, trait_name, source_name, tissue) %>%
+        rename(trait_b = trait_name,
+              source_b = source_name),
+      by = c("study_extraction_b_id" = "study_extraction_id")
+    )
+  
+  return(coloc_res)
+}
+
+bmi_coloc_annotated <- annotate_coloc(bmi_coloc_res, bmi_cg)
+
+colnames(bmi_coloc_annotated)[c(11,14)] <- c("tissue_a", "tissue_b")
+
+
+```
+
+
+Check out the tissue eQTL profile of all BMI coloc results...  
+
+```{r bmi_tissues, include=TRUE}
+
+## grab gtex, eqtlGen, brain emeta and brain Meta 
+srcs <- c("GTEx Atlas", "Brain eMeta","Brain Meta", "eQTLGen")
+
+tissue_res <- bmi_coloc_annotated[which(bmi_coloc_annotated$source_a %in% srcs | 
+                                       bmi_coloc_annotated$source_b %in% srcs), ]
+
+
+
+## filter sqtls 
+tissue_res <- tissue_res %>%
+  filter(!apply(across(everything(), as.character), 1,
+                function(row) any(grepl("sQTL", row))))
+
+
+### tidy
+## harmonise trait a/b 
+dat1 <- tissue_res %>%
+  mutate(swap = trait_b == "Body mass index") %>% # update trait name
+  mutate(
+    study_extraction_a_id_new = if_else(swap, study_extraction_b_id, study_extraction_a_id),
+    study_extraction_b_id_new = if_else(swap, study_extraction_a_id, study_extraction_b_id),
+    trait_a_new = if_else(swap, trait_b, trait_a),
+    trait_b_new = if_else(swap, trait_a, trait_b),
+    source_a_new = if_else(swap, source_b, source_a),
+    source_b_new = if_else(swap, source_a, source_b),
+    tissue_a_new  = if_else(swap, tissue_b, tissue_a),
+    tissue_b_new  = if_else(swap, tissue_a, tissue_b)
+  ) %>%
+  select(-swap, -study_extraction_a_id, -study_extraction_b_id, -trait_a, -trait_b, -source_a, -source_b, -tissue_a, -tissue_b) %>%
+  rename(
+    study_extraction_a_id = study_extraction_a_id_new,
+    study_extraction_b_id = study_extraction_b_id_new,
+    trait_a = trait_a_new,
+    trait_b = trait_b_new,
+    source_a = source_a_new,
+    source_b = source_b_new,
+     tissue_a = tissue_a_new,
+    tissue_b = tissue_b_new
+  )
+
+
+dat1 <- dat1[,c("snp_id","trait_a", "study_extraction_a_id", "trait_b", "study_extraction_b_id", "source_b", "tissue_b", "h3", "h4")]
+
+dat1 <- dat1 %>%
+  mutate(tissue_b = if_else(tissue_b == "Blood", "Whole Blood", tissue_b))
+
+
+## merge with trait effect estimates 
+effs <- bmi_effs[,c("snp_id", "study_extraction_id", "min_p", "display_snp","rsid", "beta", "se", "p", "eaf", "imputed")]
+
+
+## rm rows missing summ stats 
+effs <- effs %>% 
+  filter(!is.na(beta))
+
+
+dat2 <- merge(dat1, effs, by = c("snp_id"))
+
+# filter cell line dat 
+cells <- c("Cells EBV transformed lymphocytes", "Cells Cultured fibroblasts")
+dat2 <- dat2[!(dat2$tissue_b %in% cells),] 
+
+
+print(paste0("Number of BMI loci which with evidence for colocalization with a tissue eQTL: ", NROW(unique(dat2$snp_id)))) 
+
+```
+
+
+Identify tissues which contribute most.. 
+
+
+```{r instruments_per_tissue, fig.width=12, fig.height=14}
+# how many snps per tissue 
+tbl <- dat2 %>%
+  group_by(tissue_b) %>%
+  summarise(n_unique_snps = n_distinct(snp_id)) %>%
+  arrange(desc(n_unique_snps))
+
+print(tbl)
+
+
+## subset dat2 
+tp_snps <- dat2[,c("tissue_b", "trait_b", "source_b", "snp_id", "display_snp","rsid", "study_extraction_a_id", "beta", "se", "p", "eaf", "h4")]
+colnames(tp_snps) <- c("tissue", "gene", "source", "snp_id", "display_snp","rsid", "study_extraction_id_trait", "beta", "se", "p", "eaf", "h4")
+
+```
+
+Upset plot.. 
+
+- illustrate to what extent SNPs/instruments are unique to a tissue.
+
+```{r}
+
+# data source combined 
+snp_matrix <- tp_snps %>%
+  select(snp_id, tissue) %>%
+  distinct() %>%  # avoid duplicates
+  mutate(present = 1) %>%
+  pivot_wider(
+    names_from = tissue,
+    values_from = present,
+    values_fill = list(present = 0)
+  )
+
+upset_data <- as.data.frame(snp_matrix)
+rownames(upset_data) <- upset_data$snp_id
+upset_data$snp_id <- NULL
+
+# plot
+upp1 <- upset(
+   upset_data,
+   nsets = 18,      
+   nintersects = NA, 
+   order.by = "freq"
+ )
+
+
+upp1
+
+## summarise the subset data 
+set_sizes <- colSums(upset_data)
+top_sets <- names(sort(set_sizes, decreasing = TRUE))[1:18]
+
+upset_top <- upset_data[, top_sets]
+upset_top_nonzero <- upset_top[rowSums(upset_top) > 0, ]
+n_distinct_intersections <- nrow(
+  unique(upset_top_nonzero)
+)
+
+
+intersection_table <- upset_top_nonzero %>%
+  as.data.frame() %>%
+  count(across(everything()), name = "n_snps") %>%
+  arrange(desc(n_snps))
+
+head(intersection_table, 10)
+
+tail_distribution <- intersection_table %>%
+  count(n_snps, name = "n_intersections") %>%
+  arrange(n_snps)
+
+tail_distribution
+
+n_intersections <- nrow(unique(upset_top_nonzero))
+ 
+n_intersections 
+
+
+#write.table(tail_distribution, paste0(out.dir, "summary_of_upset_dat.txt"), col.names = T, row.names = FALSE, quote = FALSE, sep = "\t")
+
+# 
+# tiff(
+#   filename = file.path(out.dir, "bmi_upset.tiff"),
+#   width = 13,
+#   height = 6,
+#   units = "in",
+#   res = 300
+# )
+
+print(
+  upset(
+    upset_data,
+    nsets = 18,
+    #nintersects = 70,
+    nintersects = n_intersections,
+    order.by = "freq"
+  )
+)
+
+
+#dev.off() 
+
+
+
+```
+
+Characterize the trait composition of lead tissues... 
+
+```{r}
+
+
+```
+
+Dig in to the complex trait profile of putative tissue partitioned exposure vars.... 
+- PCA analysis 
+
+```{r}
+top_tissues <- c(tbl$tissue_b[c(1:6,9)])
+top_tissues
+
+df <- tp_snps[which(tp_snps$tissue %in% top_tissues),]
+expsres <- unique(df$tissue)
+
+print(paste0("Number of BMI loci incorporated into TPMR across tissues: ", NROW(unique(df$rsid))))
+
+snps <- unique(df$snp_id)
+
+## get the BMI/complex trait profile for these SNPs 
+pheno_dat <- bmi_coloc_annotated[which(bmi_coloc_annotated$snp_id %in% snps),]
+pheno_dat <- pheno_dat %>% 
+  filter(is.na(tissue_a))
+srcs1 <- c("GoDMC", "eQTLGen", "UK Biobank Proteomics", "OneK1K")
+pheno_dat <- pheno_dat[!(pheno_dat$source_b %in% srcs1),]
+pheno_dat1 <- pheno_dat[,c(1,2,3,6,9,10,12,13)]
+
+## harmonise traits so bmi always a: 
+idx <- pheno_dat1$trait_b == "Body mass index" & pheno_dat1$trait_a != "Body mass index"
+cols <- c("study_extraction", "source", "tissue", "trait")
+
+for (x in cols) {
+  a <- grep(paste0("^", x, "_a"), colnames(pheno_dat1), value = TRUE)
+  b <- grep(paste0("^", x, "_b"), colnames(pheno_dat1), value = TRUE)
+
+  tmp <- pheno_dat1[idx, a]
+  pheno_dat1[idx, a] <- pheno_dat1[idx, b]
+  pheno_dat1[idx, b] <- tmp
+}
+
+pheno_dat11 <- na.omit(pheno_dat1)
+
+## rm repeat bmi traits  
+rmbmi <- c("Body mass index (UKB data field 21001)", "Body mass index (BMI)")
+pheno_dat11 <- pheno_dat11[!(pheno_dat11$trait_b %in% rmbmi),]
+
+## how many unique complex traits 
+NROW(unique(pheno_dat11$trait_b))  
+
+## complex trait profile per tissue  
+df2 <- df1[,c(1,2,3,4,5,6)]
+
+## tissue by trait matrix 
+df2_sub <- df2 %>%
+  select(snp_id, tissue) %>%
+  distinct()
+
+
+tissue_trait_counts <- df2_sub %>%
+  inner_join(pheno_sub, by = "snp_id") %>%
+  count(tissue, trait_b) %>%
+  pivot_wider(
+    names_from = trait_b,
+    values_from = n,
+    values_fill = 0
+  )
+
+
+mat <- tissue_trait_counts %>%
+  column_to_rownames("tissue") %>%
+  as.matrix()
+
+##  
+colnames(mat)[apply(mat, 2, sd) == 0] 
+mat_nz <- mat[, apply(mat, 2, sd) != 0]
+
+## snp counts 
+snp_counts <- df2_sub %>%
+   distinct(tissue, snp_id) %>%
+   count(tissue, name = "n_snps")
+
+pca_res <- prcomp(mat_nz, scale. = TRUE) # tissue*trait snp count matrix scaled by tissue
+
+loadings <- pca_res$rotation  # columns are PCs, rows are traits
+head(loadings)  
+contrib_PC1 <- sort(abs(loadings[,1]), decreasing = TRUE)  # top contributors to PC1
+contrib_PC2 <- sort(abs(loadings[,2]), decreasing = TRUE) 
+var_explained <- summary(pca_res)$importance[2, 1:2] * 100
+var_explained
+
+
+## plot 
+pca_scores <- as.data.frame(pca_res$x) # extract tissue scores 
+pca_scores$tissue <- rownames(pca_scores)
+
+pca_scores <- pca_scores %>%
+  left_join(snp_counts, by = "tissue") # add snp counts 
+
+
+pc1_var2 <- round(100 * summary(pca_res)$importance[2, 1], 1)
+pc2_var2 <- round(100 * summary(pca_res)$importance[2, 2], 1)
+
+
+## colour palette
+cb_blue <- "#0072B2"
+cb_light_blue <- "#80B9D9"
+
+cb_orange <- "#E69F00"
+cb_light_orange <- "#F3CF80"
+
+
+#### plot
+
+pca_scores <- pca_scores %>%
+  mutate(
+    quadrant = case_when(
+      PC1 >= 0 & PC2 >= 0 ~ "Q1",
+      PC1 <  0 & PC2 >= 0 ~ "Q2",
+      PC1 <  0 & PC2 <  0 ~ "Q3",
+      PC1 >= 0 & PC2 <  0 ~ "Q4"
+    )
+  )
+
+quad_cols <- c(
+  Q1 = cb_blue,
+  Q2 = cb_light_blue,
+  Q3 = cb_orange,
+  Q4 = cb_light_orange
+)
+
+
+pcap1 <- ggplot(
+  pca_scores,
+  aes(PC1, PC2, label = tissue, size = n_snps, colour = quadrant)
+) +
+  geom_point(alpha = 0.85) +
+  geom_text_repel(
+    size = 4,
+    seed = 123,
+    show.legend = FALSE,
+    box.padding = 0.6,
+    point.padding = 0.5,
+    force = 1.5,
+    min.segment.length = 0
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey70") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey70") +
+  scale_colour_manual(values = quad_cols, guide = "none") +
+  scale_size_continuous(range = c(3, 8)) +
+  guides(
+    size = guide_legend(
+      override.aes = list(
+        colour = cb_blue,
+        alpha = 1
+      )
+    )
+  ) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "PCA of the trait profiles of tissue-stratified BMI loci",
+    x = paste0("PC1 (", pc1_var2, "%)"),
+    y = paste0("PC2 (", pc2_var2, "%)"),
+    size = "nSNPs"
+  )
+
+
+pcap1
+
+# ggsave(
+#   filename = paste0(out.dir, "bmi_tpmr_trait_profile_pca_quadrants.tiff"),
+#   plot = pcap1,
+#   width = 9,
+#   height = 6,
+#   units = "in",
+#   dpi = 300       
+# )
+
+```
+
+
+```{r}
+## tissue pleiotropy table  
+snps_per_tissue <- df2_sub %>%
+  distinct(tissue, snp_id)
+
+
+pheno_links <- pheno_dat %>%
+  select(snp_id, trait_b) %>%
+  distinct()
+
+
+summary <- snps_per_tissue %>%
+  left_join(pheno_links, by = "snp_id") %>%
+  group_by(tissue) %>%
+  summarise(
+    n_snps   = n_distinct(snp_id),
+    n_traits = n_distinct(trait_b, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+summary <- summary[order(-summary$n_traits), ]
+print(summary)
+
+# write.table(summary_tbl_like, paste0(out.dir, "bmi_tpmr_pleiotropy_summary1.txt"), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE) 
+
+```
+
+
+Trait enrichment in tissues... 
+- hierarchical clustering 
+
+```{r}
+mat1 <- mat_nz
+
+#d <- dist(mat1, method = "euclidean", diag = FALSE, upper = FALSE, p = 2)
+#hclust(d, method = "complete", members = NULL)
+
+
+#### 
+mat_prop <- mat1 / rowSums(mat1)
+
+
+trait_z <- scale(mat_prop)
+p2 <- pheatmap(
+  t(trait_z),
+  cluster_cols = TRUE,
+  cluster_rows = TRUE,
+  show_colnames = TRUE,
+  show_rownames = FALSE
+)
+
+p2
+
+## save plot 
+# pheatmap(
+#   t(trait_z),
+#   cluster_cols = TRUE,
+#   cluster_rows = TRUE,
+#   show_colnames = TRUE,
+#   show_rownames = FALSE,
+#   filename = paste0(out.dir, "bmi_tissue_traits_z_heatmap.png"),
+#   width = 8,
+#   height = 10
+# )
+# 
+
+
+#### enriched traits per tissue 
+wb_z <- trait_z["Whole Blood", ]
+wb_top <- sort(wb_z, decreasing = TRUE)
+
+head(wb_top, 30)
+
+#top_n <- 20
+z_thresh <- 2
+
+### all traits above z threshold 
+top_traits_tbl <- lapply(rownames(trait_z), function(tissue) {
+  z <- trait_z[tissue, ]
+  
+  tibble(
+    tissue  = tissue,
+    trait   = names(z),
+    z_score = as.numeric(z)
+  ) %>%
+    filter(z_score > z_thresh) %>%     # filter on z score 
+    arrange(desc(z_score)) #%>%
+  #  slice_head(n = top_n)
+}) %>%
+  bind_rows()
+
+top_traits_tbl
+
+
+#write.table(top_traits_tbl, paste0(out.dir, "bmi_tissue_traits_z_rep_traits.txt"), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
+
+
+```
+
+
+#### MVMR/TPMR... 
+- Select top tissues (brain and subcutaneous adipose) to evluate in TPMR 
+- Format exposure dfs... 
+
+```{r format_tissue_expsrs}
+
+top_tissues
+top_tissues <- c("Brain (Meta)", "Adipose Subcutaneous")
+
+df <- tp_snps[which(tp_snps$tissue %in% top_tissues),]
+
+
+# update effect allele coding - effect allele is second 
+df$other_allele <- sub(".+ ([A-Z]+)/([A-Z]+)$", "\\1", df$display_snp)
+df$effect_allele  <- sub(".+ ([A-Z]+)/([A-Z]+)$", "\\2", df$display_snp)
+
+
+brain1 <-  df[which(df$tissue == top_tissues[1]),]
+brain1 <- brain1[,c("tissue", "source", "snp_id", "rsid", "h4", "beta", "se", "p", "eaf", "effect_allele", "other_allele")]
+
+## drop duplicated snps  - preferentially keep rows from Meta brain because higher power 
+brain1 <- brain1 %>%
+  arrange(factor(source, levels = c("Brain Meta", "Brain eMeta"))) %>% 
+  distinct(snp_id, .keep_all = TRUE)
+
+
+
+```
+
+
+Format all tp-BMI exposures... 
+
+
+```{r}
+
+# reference tissue 
+brain1 <- brain1 %>%
+  select(tissue, snp_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele)
+
+tissue_name <- top_tissues[2]
+
+tissue_df <- df %>%
+    filter(tissue == tissue_name) %>%
+    select(tissue, snp_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele) %>%
+    distinct(snp_id, .keep_all = TRUE)
+  
+  # harmonise: add missing snps from one to the other
+  add_b1 <- tissue_df %>%
+    filter(!snp_id %in% brain1$snp_id) %>%
+    mutate(
+      tissue = unique(brain1$tissue)[1],
+      h4 = 0.001
+    )
+  
+  brain_tmp <- bind_rows(brain1, add_b1)
+  
+  add_t1 <- brain_tmp %>%
+    filter(!snp_id %in% tissue_df$snp_id) %>%
+    mutate(
+      tissue = unique(tissue_df$tissue)[1],
+      h4 = 0.001
+    )
+  
+  tissue_tmp <- bind_rows(tissue_df, add_t1)
+  
+  # combine & calculate weighted beta
+  expdf <- bind_rows(brain_tmp, tissue_tmp) %>%
+    mutate(weighted_beta = beta * h4) %>%
+    select(
+      Phenotype = tissue,
+      SNP = rsid,
+      beta = weighted_beta,
+      se, pval = p, eaf, effect_allele, other_allele
+    )
+  
+
+
+```
+
+
+
+Run example tpmr.... 
+
+
+``` {r mr_all}
+
+  
+  exp_name <- top_tissues[2]
+  exp_dat <- format_data(expdf, type = 'exposure')
+  
+  # traits to test against
+  traits <- c('ieu-a-7', 'ebi-a-GCST006414', 'ebi-a-GCST009541', 'ebi-a-GCST006906', 'finn-b-I9_PAD')
+  
+  
+  results_file <- paste0(out.dir, "tpmr_", exp_name, "_results.txt")
+  fstats_file  <- paste0(out.dir, "tpmr_", exp_name, "_fstats.txt")
+  
+
+  # loop over traits 
+  for (i in traits)  {
+    
+    #i <- traits[1]
+    
+    ## MVMR
+    outcome_dat <- extract_outcome_data(exp_dat$SNP, i)
+    
+    mvdat <- mv_harmonise_data(exp_dat, outcome_dat, harmonise_strictness = 1)
+    
+    ### Conditional F-stats 
+    F.data <- format_mvmr(
+      BXGs = mvdat$exposure_beta[, c(1, 2)],
+      BYG = mvdat$outcome_beta,
+      seBXGs = mvdat$exposure_se[, c(1, 2)],
+      seBYG = mvdat$outcome_se,
+      RSID = row.names(mvdat$exposure_beta)
+    )
+    
+    pheno_mat <- cor(mvdat$exposure_beta[, c(1, 2)])
+    seBXGs <- mvdat$exposure_se[, c(1, 2)]
+    pos <- phenocov_mvmr(pheno_mat, seBXGs) 
+    fstats <- strength_mvmr(r_input = F.data, gencov = pos)[1, ]
+    
+    res <- mv_multiple(mvdat)
+    res <- res$result
+    res$OR <- exp(res$b)
+    res$lower_CI <- exp(res$b - (1.96 * res$se))
+    res$upper_CI <- exp(res$b + (1.96 * res$se)) 
+    
+    #
+    write.table(
+      res,
+      file = results_file,
+      col.names = !file.exists(results_file),
+      row.names = FALSE,
+      quote = FALSE,
+      sep = "\t",
+      append = TRUE
+    )
+    
+    write.table(
+      fstats,
+      file = fstats_file,
+      col.names = !file.exists(fstats_file),
+      row.names = FALSE,
+      quote = FALSE,
+      sep = "\t",
+      append = TRUE
+    )
+  }
+#}
+
+
+```
+
+
+Add separate analysis for T2D 
+
+```{r mr}
+
+#exp_dat <- format_data(expdf, type='exposure')
+tmp <- load("/Volumes/MRC-IEU-research/projects/ieu2/p1/131/working/results/inclusion_criteria/outcome_gwas/T2D_Mahajan2018.RData")
+
+
+
+# 
+
+  outcome_dat <- out_dat[which(out_dat$SNP %in% exp_dat$SNP),]
+  
+  
+  mvdat <- mv_harmonise_data(exp_dat, outcome_dat, harmonise_strictness = 1)
+  
+  ### Conditional F-stats 
+  F.data<-format_mvmr(BXGs=mvdat$exposure_beta[,c(1,2)],
+                      BYG=mvdat$outcome_beta,
+                      seBXGs=mvdat$exposure_se[,c(1,2)],
+                      seBYG=mvdat$outcome_se,
+                      RSID=row.names(mvdat$exposure_beta))
+  
+  pheno_mat <- cor(mvdat$exposure_beta[,c(1,2)])
+  seBXGs=mvdat$exposure_se[,c(1,2)]
+  pos <- phenocov_mvmr(pheno_mat, seBXGs) 
+  fstats <- strength_mvmr(r_input=F.data,gencov=pos)[1,]
+  res <- mv_multiple(mvdat)
+  
+  res <- res$result
+  res$OR <- exp(res$b)
+  res$lower_CI <- exp(res$b -(1.96*res$se))
+  res$upper_CI <- exp(res$b +(1.96*res$se)) 
+
+
+
+ # append res
+    write.table(
+      res,
+      file = results_file,
+      col.names = !file.exists(results_file),
+      row.names = FALSE,
+      quote = FALSE,
+      sep = "\t",
+      append = TRUE
+    )
+
+    message("Appended results to: ", results_file)
+        
+    write.table(
+      fstats,
+      file = fstats_file,
+      col.names = !file.exists(fstats_file),
+      row.names = FALSE,
+      quote = FALSE,
+      sep = "\t",
+      append = TRUE
+    )
+  
+
+
+```

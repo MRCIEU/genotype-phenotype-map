@@ -1,0 +1,3 @@
+Chr	ProbeID	ProbeBp	PathOfEsd	GeneticDistance
+1	ENSG00000278267	17436	/home/rj18633/scratch/gp.map/data/interval/eqtl/test.out/chr1/ENSG00000278267.esd	0
+1	ENSG00000238009	133723	/home/rj18633/scratch/gp.map/data/interval/eqtl/test.out/chr1/ENSG00000238009.esd	0

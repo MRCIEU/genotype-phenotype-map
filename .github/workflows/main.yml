@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Run linter
+      run: make lint-check
     - name: Check that tests have been run successfully
       env:
         BRANCH_NAME: ${{ github.head_ref || github.ref_name }}

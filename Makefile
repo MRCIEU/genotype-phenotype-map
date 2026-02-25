@@ -18,15 +18,6 @@ lint:
 	@echo "Linting R files..."
 	@Rscript scripts/lint.R
 
-lint-check:
-	@echo "Running lint check..."
-	@Rscript scripts/lint_check.R
-
-lint-fix:
-	@echo "Auto-fixing linting issues..."
-	@Rscript scripts/lint_fix.R
-	@echo "Auto-fix complete!"
-
 lint-summary:
 	@echo "Analyzing linting issues..."
 	@Rscript scripts/lint_summary.R

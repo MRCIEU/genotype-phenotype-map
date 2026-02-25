@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
-# Lint all R files and show results
-# Usage: Rscript scripts/lint.R
+# Lint check script that exits with error code if issues are found
+# Usage: Rscript scripts/lint_check.R
 
 library(lintr)
 
@@ -41,9 +41,17 @@ for (file in r_files) {
 }
 
 if (length(lint_results) > 0) {
+  # Print all linting issues
   print(lint_results)
+
+  # Count issues by type
+  issue_count <- length(lint_results)
   message("\n")
-  message(paste("Found", length(lint_results), "linting issue(s)."))
+  message(paste("Found", issue_count, "linting issue(s)."))
+  message("Run 'make lint' to see details.")
+
+  quit(status = 1)
 } else {
   message("No linting issues found!")
+  quit(status = 0)
 }

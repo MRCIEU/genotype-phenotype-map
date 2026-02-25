@@ -18,6 +18,24 @@ add a row to this csv indicating where they are on disk, and what script to inge
 
 Notes: Snakemake slows down if you try to run the pipeline with too many studies at once.  Please keep it to less than 200,000 studies.
 
+### Development:
+
+#### Tests
+
+Because of the extensive amount of test data needed to run the pipeline, tests are currently not run as a part of GitHub actions,
+but tests must be run before you can merge in a PR.  To run the tests, please run
+
+`make test`
+
+This will take 10 or so minutes to run, and ensures that the pipeline, and the pipeline_worker both run correctly and without errors.
+
+#### Lint
+To ensure the code format is in line with the repo, please run these commands.
+
+`make lint`
+`make lint-summary`
+
+
 ## Concepts
 
 * **Study:** Any individual summary statistic study to ingest.  A GWAS is a study (ex. BMI), a specific gene-tissue-expression is a study (ex. GTEx Whole Blood WASH7P)

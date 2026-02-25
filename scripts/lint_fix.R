@@ -65,9 +65,9 @@ for (file in r_files) {
         leading_tabs <- regmatches(line, regexpr("^\\t*", line))
         if (nchar(leading_tabs) > 0) {
           spaces <- paste(rep(" ", nchar(leading_tabs) * 2), collapse = "")
-          gsub("^\\t+", spaces, line, perl = TRUE)
+          return(gsub("^\\t+", spaces, line, perl = TRUE))
         } else {
-          line
+          return(line)
         }
       }, USE.NAMES = FALSE)
 
@@ -78,6 +78,7 @@ for (file in r_files) {
     },
     error = function(e) {
       message(paste("  Warning: Could not process", file, "-", e$message))
+      return()
     }
   )
 }

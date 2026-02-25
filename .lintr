@@ -1,7 +1,7 @@
 linters: linters_with_defaults(
-    indentation_linter = indentation_linter(indent = 2),
+    indentation_linter = indentation_linter(indent = 2, hanging_indent_style = "tidy"),
     line_length_linter = line_length_linter(120),
-    object_length_linter(length = 50L),
+    object_length_linter(length = 60L),
     return_linter = return_linter(return_style = "explicit"),
     object_name_linter = NULL,
     object_usage_linter = NULL,

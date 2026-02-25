@@ -1,43 +1,44 @@
-source('../pipeline_steps/constants.R')
+source("../pipeline_steps/constants.R")
 
-studies_to_remove <- c("ukb-wes-az-00012120",
-"ukb-wes-az-00012169",
-"ukb-wes-az-00012250",
-"ukb-wes-az-00012421",
-"ukb-wes-az-00012651",
-"ukb-wes-az-00012662",
-"ukb-wes-az-00012803",
-"ukb-wes-az-00012824",
-"ukb-wes-az-00012906",
-"ukb-wes-az-00013036",
-"ukb-wes-az-00013098",
-"ukb-wes-az-00013514",
-"ukb-wes-az-00013569",
-"ukb-wes-az-00013727",
-"ukb-wes-az-00013994",
-"ukb-wes-az-00014119",
-"ukb-wes-az-00014434",
-"ukb-wes-az-00014451",
-"ukb-wes-az-00014481",
-"ukb-wes-az-00014636",
-"ukb-wes-az-00014727",
-"ukb-wes-az-00014728",
-"ukb-wes-az-00014729",
-"ukb-wes-az-00014734",
-"ukb-wes-az-00014817"
+studies_to_remove <- c(
+  "ukb-wes-az-00012120",
+  "ukb-wes-az-00012169",
+  "ukb-wes-az-00012250",
+  "ukb-wes-az-00012421",
+  "ukb-wes-az-00012651",
+  "ukb-wes-az-00012662",
+  "ukb-wes-az-00012803",
+  "ukb-wes-az-00012824",
+  "ukb-wes-az-00012906",
+  "ukb-wes-az-00013036",
+  "ukb-wes-az-00013098",
+  "ukb-wes-az-00013514",
+  "ukb-wes-az-00013569",
+  "ukb-wes-az-00013727",
+  "ukb-wes-az-00013994",
+  "ukb-wes-az-00014119",
+  "ukb-wes-az-00014434",
+  "ukb-wes-az-00014451",
+  "ukb-wes-az-00014481",
+  "ukb-wes-az-00014636",
+  "ukb-wes-az-00014727",
+  "ukb-wes-az-00014728",
+  "ukb-wes-az-00014729",
+  "ukb-wes-az-00014734",
+  "ukb-wes-az-00014817"
 )
-message(paste('Removing', length(studies_to_remove), 'studies from pipeline'))
+message(paste("Removing", length(studies_to_remove), "studies from pipeline"))
 
-ld_blocks <- vroom::vroom('../pipeline_steps/data/ld_blocks.tsv')
+ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 ld_info <- dplyr::filter(ld_info, dir.exists(ld_block_data))
 
 main <- function() {
   delete_data_in_ld_blocks <- safe_lapply(ld_info$ld_block_data, function(ld_block) {
-    print(glue::glue('block: {ld_block}'))
-    extracted_studies_file <- glue::glue('{ld_block}/extracted_studies.tsv')
+    print(glue::glue("block: {ld_block}"))
+    extracted_studies_file <- glue::glue("{ld_block}/extracted_studies.tsv")
     if (!file.exists(extracted_studies_file) || file.size(extracted_studies_file) == 0) {
-      print(paste('extracted STUDIES FILE MISSING:', extracted_studies_file))
+      print(paste("extracted STUDIES FILE MISSING:", extracted_studies_file))
       return()
     }
 
@@ -45,26 +46,30 @@ main <- function() {
     entries <- nrow(extracted_studies)
     extracted_studies <- dplyr::filter(extracted_studies, !study %in% studies_to_remove)
     if (!entries - nrow(extracted_studies) == 0) {
-      print(paste('removed', entries - nrow(extracted_studies), 'rows from extracted_studies'))
+      print(paste("removed", entries - nrow(extracted_studies), "rows from extracted_studies"))
       vroom::vroom_write(extracted_studies, extracted_studies_file)
     }
 
-    standardised_studies_file <- glue::glue('{ld_block}/standardised_studies.tsv')
+    standardised_studies_file <- glue::glue("{ld_block}/standardised_studies.tsv")
     if (!file.exists(standardised_studies_file) || file.size(standardised_studies_file) == 0) {
-      print(paste('standardised STUDIES FILE MISSING:', standardised_studies_file))
+      print(paste("standardised STUDIES FILE MISSING:", standardised_studies_file))
       return()
     }
-    standardised_studies <- vroom::vroom(standardised_studies_file, col_types = standardised_column_types, show_col_types = F)
+    standardised_studies <- vroom::vroom(
+      standardised_studies_file,
+      col_types = standardised_column_types,
+      show_col_types = F
+    )
     entries <- nrow(standardised_studies)
     standardised_studies <- dplyr::filter(standardised_studies, !study %in% studies_to_remove)
     if (!entries - nrow(standardised_studies) == 0) {
       vroom::vroom_write(standardised_studies, standardised_studies_file)
-      print(paste('removed', entries - nrow(standardised_studies), 'rows from standardised_studies'))
+      print(paste("removed", entries - nrow(standardised_studies), "rows from standardised_studies"))
     }
 
-    imputed_studies_file <- paste0(ld_block, '/imputed_studies.tsv')
+    imputed_studies_file <- paste0(ld_block, "/imputed_studies.tsv")
     if (!file.exists(imputed_studies_file) || file.size(imputed_studies_file) == 0) {
-      print(paste('IMPUTED STUDIES FILE MISSING:', imputed_studies_file))
+      print(paste("IMPUTED STUDIES FILE MISSING:", imputed_studies_file))
       return()
     }
 
@@ -82,7 +87,7 @@ main <- function() {
     #   return()
     # }
 
-    # finemapped_studies <- vroom::vroom(finemapped_studies_file, col_types = finemapped_column_types, show_col_types = F)
+    # finemapped_studies <- vroom::vroom(finemapped_studies_file, col_types = finemapped_column_types, show_col_types = F) # nolint: line_length_linter.
     # entries <- nrow(finemapped_studies)
     # finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove)
     # if (!entries - nrow(finemapped_studies) == 0) {
@@ -103,7 +108,7 @@ main <- function() {
     #   vroom::vroom_write(coloc_results, coloc_results_file)
     # }
 
-    #No need to remove from coloc_clustered_results.tsv.gz as gets recreated every time
+    # No need to remove from coloc_clustered_results.tsv.gz as gets recreated every time
   })
 
   # delete_study_directories <- lapply(studies_to_remove, function(study) {
@@ -112,28 +117,28 @@ main <- function() {
   #   unlink(extracted_study_dir, recursive = T)
   # })
 
-  #and then delete them from the results
-  studies_processed_file <- glue::glue('{current_results_dir}/studies_processed.tsv.gz')
-  studies_processed <- vroom::vroom(studies_processed_file, show_col_types=F)
+  # and then delete them from the results
+  studies_processed_file <- glue::glue("{current_results_dir}/studies_processed.tsv.gz")
+  studies_processed <- vroom::vroom(studies_processed_file, show_col_types = F)
   entries <- nrow(studies_processed)
   studies_processed <- dplyr::filter(studies_processed, !study_name %in% studies_to_remove)
-  print(paste('removed', entries - nrow(studies_processed), 'rows from studies_processed file'))
+  print(paste("removed", entries - nrow(studies_processed), "rows from studies_processed file"))
   vroom::vroom_write(studies_processed, studies_processed_file)
 
-  study_extractions_file <- glue::glue('{current_results_dir}/study_extractions.tsv.gz')
-  study_extractions <- vroom::vroom(study_extractions_file, show_col_types=F)
+  study_extractions_file <- glue::glue("{current_results_dir}/study_extractions.tsv.gz")
+  study_extractions <- vroom::vroom(study_extractions_file, show_col_types = F)
   entries <- nrow(study_extractions)
   study_extractions <- dplyr::filter(study_extractions, !study %in% studies_to_remove)
-  print(paste('removed', entries - nrow(study_extractions), 'rows from study_extractions file'))
+  print(paste("removed", entries - nrow(study_extractions), "rows from study_extractions file"))
   vroom::vroom_write(study_extractions, study_extractions_file)
 
-  traits_processed_file <- glue::glue('{current_results_dir}/traits_processed.tsv.gz')
-  traits_processed <- vroom::vroom(traits_processed_file, show_col_types=F)
+  traits_processed_file <- glue::glue("{current_results_dir}/traits_processed.tsv.gz")
+  traits_processed <- vroom::vroom(traits_processed_file, show_col_types = F)
   entries <- nrow(traits_processed)
   traits_processed <- dplyr::filter(traits_processed, !study_name %in% studies_to_remove)
-  print(paste('removed', entries - nrow(traits_processed), 'rows from traits_processed file'))
+  print(paste("removed", entries - nrow(traits_processed), "rows from traits_processed file"))
   vroom::vroom_write(traits_processed, traits_processed_file)
-
+  return()
 }
 
 

@@ -3,7 +3,7 @@ format_unique_snp_string <- function(chr, bp, ea, oa) {
   compressed_ea <- trimws(as.character(ea))
   compressed_oa <- trimws(as.character(oa))
   formatted_bp <- format(as.numeric(bp), scientific = FALSE, trim = TRUE)
-  snp_string <- glue::glue('{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  snp_string <- glue::glue("{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}")
   return(snp_string)
 }
 
@@ -11,60 +11,66 @@ format_compressed_allele_snp_string <- function(chr, bp, ea, oa) {
   compressed_ea <- compress_alleles(as.character(ea))
   compressed_oa <- compress_alleles(as.character(oa))
   formatted_bp <- trimws(as.character(bp))
-  snp_string <- glue::glue('{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}')
+  snp_string <- glue::glue("{chr}:{formatted_bp}_{compressed_ea}_{compressed_oa}")
   return(snp_string)
 }
 
 compress_alleles <- function(alleles) {
-  sapply(alleles, function(allele) if(nchar(allele) > 10) digest::digest(allele, algo='murmur32') else as.character(allele))
+  return(sapply(
+    alleles,
+    function(allele) if (nchar(allele) > 10) digest::digest(allele, algo = "murmur32") else as.character(allele)
+  ))
 }
 
 
 convert_reference_build <- function(study,
                                     file_type,
                                     file,
-                                    input_reference_build=reference_builds$GRCh37,
-                                    output_reference_build=reference_builds$GRCh38) {
-
-  if (file_type == 'vcf') {
+                                    input_reference_build = reference_builds$GRCh37,
+                                    output_reference_build = reference_builds$GRCh38) {
+  if (file_type == "vcf") {
     return(convert_vcf_reference_build(study, file, input_reference_build, output_reference_build))
-  }
-  else if (file_type == 'csv') {
+  } else if (file_type == "csv") {
     return(convert_csv_reference_build(study, file, input_reference_build, output_reference_build))
-  }
-  else {
-    stop(paste(c("Error: file type", file_type, "not recocognised.",
-                 "File types must be one of:", extraction_file_types), collapse = " "))
+  } else {
+    stop(paste(c(
+      "Error: file type", file_type, "not recocognised.",
+      "File types must be one of:", extraction_file_types
+    ), collapse = " "))
   }
 }
 
 convert_vcf_reference_build <- function(study, vcf_file) {
-  if (input_reference_build == output_reference_build) return(vcf_file)
-
-  dir.create(glue::glue('{study$extracted_location}/vcf'), showWarnings = F, recursive = T)
-  liftover_conversion <- available_liftover_conversions[[glue::glue('{input_reference_build}{output_reference_build}')]]
-  if (is.null(liftover_conversion)) {
-    stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
-                 "Reference builds must be one of:", reference_builds), collapse = " "))
+  if (input_reference_build == output_reference_build) {
+    return(vcf_file)
   }
-  output_file <- glue::glue('{study$extracted_location}vcf/hg38.vcf.gz')
-  rejected_file <- glue::glue('{study$extracted_location}vcf/hg38_rejected.vcf')
-  fasta_file <- glue::glue('{liftover_dir}/hg38.fa')
+
+  dir.create(glue::glue("{study$extracted_location}/vcf"), showWarnings = F, recursive = T)
+  liftover_conversion <- available_liftover_conversions[[glue::glue("{input_reference_build}{output_reference_build}")]]
+  if (is.null(liftover_conversion)) {
+    stop(paste(c(
+      "Error: liftOver combination of", input_build, output_build, "not recocognised.",
+      "Reference builds must be one of:", reference_builds
+    ), collapse = " "))
+  }
+  output_file <- glue::glue("{study$extracted_location}vcf/hg38.vcf.gz")
+  rejected_file <- glue::glue("{study$extracted_location}vcf/hg38_rejected.vcf")
+  fasta_file <- glue::glue("{liftover_dir}/hg38.fa")
 
   if (file.exists(output_file)) {
-    message(glue::glue('{vcf_file} already converted to hg38.'))
+    message(glue::glue("{vcf_file} already converted to hg38."))
     return(output_file)
   }
 
   bcf_liftover_command <- glue::glue(
-    '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/num_to_chr.txt {vcf_file} | ',
-      '/home/bcftools/bcftools +liftover --no-version -Ou -- ',
-      '-s {liftover_dir}/hg19.fa ',
-      '-f {liftover_dir}/hg38.fa ',
-      '-c {liftover_conversion} ',
-      '--reject {rejected_file} | ',
-        '/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_to_num.txt | ',
-          '/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi'
+    "/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/num_to_chr.txt {vcf_file} | ",
+    "/home/bcftools/bcftools +liftover --no-version -Ou -- ",
+    "-s {liftover_dir}/hg19.fa ",
+    "-f {liftover_dir}/hg38.fa ",
+    "-c {liftover_conversion} ",
+    "--reject {rejected_file} | ",
+    "/home/bcftools/bcftools annotate --rename-chrs {liftover_dir}/chr_to_num.txt | ",
+    "/home/bcftools/bcftools sort -Oz -o {output_file} -W=tbi"
   )
   system(bcf_liftover_command, wait = T, ignore.stdout = T)
 
@@ -78,21 +84,23 @@ convert_vcf_reference_build <- function(study, vcf_file) {
 #' @return gwas input is altered and returned
 #' @export
 convert_dataframe_reference_build <- function(gwas,
-                                        input_reference_build=reference_builds$GRCh37,
-                                        output_reference_build=reference_builds$GRCh38) {
+                                              input_reference_build = reference_builds$GRCh37,
+                                              output_reference_build = reference_builds$GRCh38) {
   if (input_reference_build == output_reference_build) {
     return(gwas)
   }
 
   liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
   if (is.null(liftover_conversion)) {
-    stop(paste(c("Error: liftOver combination of", input_build, output_build, "not recocognised.",
-                  "Reference builds must be one of:", reference_builds), collapse = " "))
+    stop(paste(c(
+      "Error: liftOver combination of", input_build, output_build, "not recocognised.",
+      "Reference builds must be one of:", reference_builds
+    ), collapse = " "))
   }
 
   original_gwas_size <- nrow(gwas)
 
-  gwas$CHRBP <- paste(gwas$CHR, gwas$BP, sep=":")
+  gwas$CHRBP <- paste(gwas$CHR, gwas$BP, sep = ":")
   if (input_reference_build == reference_builds$GRCh37) {
     gwas$BP37 <- gwas$BP
   } else if (input_reference_build == reference_builds$GRCh38) {
@@ -111,8 +119,10 @@ convert_dataframe_reference_build <- function(gwas,
 
   updated_gwas_size <- nrow(gwas)
   if (updated_gwas_size < original_gwas_size) {
-    message(paste("Warning: During liftover conversion, the GWAS lost", original_gwas_size - updated_gwas_size,
-                  "rows out of ", original_gwas_size))
+    message(paste(
+      "Warning: During liftover conversion, the GWAS lost", original_gwas_size - updated_gwas_size,
+      "rows out of ", original_gwas_size
+    ))
   }
 
   return(gwas)
@@ -124,11 +134,11 @@ create_bed_file_from_gwas <- function(gwas, output_file) {
   bed_format <- tibble::tibble(
     CHR = paste0("chr", gwas$CHR),
     BP1 = gwas$BP,
-    BP2 = gwas$BP+1,
+    BP2 = gwas$BP + 1,
     CHRBP = paste0(CHR, ":", BP1, "-", BP2)
   )
 
-  vroom::vroom_write(bed_format, output_file, col_names=F, delim=" ")
+  vroom::vroom_write(bed_format, output_file, col_names = F, delim = " ")
   return(bed_format)
 }
 
@@ -138,18 +148,19 @@ run_liftover <- function(bed_file_input, bed_file_output, input_build, output_bu
   liftover_conversion <- available_liftover_conversions[[paste0(input_build, output_build)]]
 
   liftover_command <- paste(lifover_binary, bed_file_input, liftover_conversion, bed_file_output, unmapped)
-  system(liftover_command, wait=T)
+  system(liftover_command, wait = T)
+  return()
 }
 
 
 use_bed_file_to_update_gwas <- function(gwas, bed_file) {
-  liftover_bed <- vroom::vroom(bed_file, col_names=F, show_col_types=F)
+  liftover_bed <- vroom::vroom(bed_file, col_names = F, show_col_types = F)
   liftover_bed$X1 <- gsub("chr", "", liftover_bed$X1)
-  liftover_bed$X4 <- sub(".*:(\\d+)-.*", "\\1", liftover_bed$X4, perl=T)
+  liftover_bed$X4 <- sub(".*:(\\d+)-.*", "\\1", liftover_bed$X4, perl = T)
 
   bed_map <- tibble::tibble(
     NEW_BP = liftover_bed$X2,
-    ORIGINAL_CHRBP = paste(liftover_bed$X1, liftover_bed$X4, sep=":")
+    ORIGINAL_CHRBP = paste(liftover_bed$X1, liftover_bed$X4, sep = ":")
   )
 
   matching <- match(gwas$CHRBP, bed_map$ORIGINAL_CHRBP)
@@ -162,7 +173,7 @@ standardise_columns <- function(gwas, N) {
   gwas_columns <- colnames(gwas)
 
   if (!all(c("CHR", "BP") %in% gwas_columns)) {
-    if(all(grepl("\\d:\\d", gwas$SNP))) {
+    if (all(grepl("\\d:\\d", gwas$SNP))) {
       gwas <- tidyr::separate(data = gwas, col = "SNP", into = c("CHR", "BP"), sep = "[:_]", remove = F)
       gwas$BP <- as.numeric(gwas$BP)
     }
@@ -172,7 +183,7 @@ standardise_columns <- function(gwas, N) {
     gwas <- convert_or_to_beta(gwas)
   }
 
-  if ("LOG_P" %in% gwas_columns && ! "P" %in% gwas_columns) {
+  if ("LOG_P" %in% gwas_columns && !"P" %in% gwas_columns) {
     gwas <- convert_negative_log_p_to_p(gwas)
   }
 
@@ -224,27 +235,27 @@ standardise_alleles <- function(gwas) {
 change_column_names <- function(gwas, columns = list(), remove_extra_columns = F) {
   if (!is.null(columns$N) && is.numeric(columns$N)) {
     gwas$N <- columns$N
-    #TODO: remove N from columns
+    # TODO: remove N from columns
   }
   for (name in names(columns)) {
     # Skip if the mapping value is empty, NULL, or zero-length
-    if (is.null(columns[[name]]) || length(columns[[name]]) == 0 || 
-        (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)) {
+    if (is.null(columns[[name]]) || length(columns[[name]]) == 0 ||
+          (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)) {
       next
     }
 
-    #this deletes an existing column that we're about to rename, so we don't have 2 columns
+    # this deletes an existing column that we're about to rename, so we don't have 2 columns
     already <- name != columns[[name]]
     already <- length(already) > 0 && any(already, na.rm = TRUE)
     if (name %in% names(gwas) && already) {
-      gwas <- gwas[ , -which(names(gwas) %in% c(name))]
+      gwas <- gwas[, -which(names(gwas) %in% c(name))]
     }
     names(gwas)[names(gwas) == columns[name]] <- name
   }
 
   if (remove_extra_columns) {
     columns_to_remove <- setdiff(colnames(gwas), names(columns))
-    gwas <- gwas[,-which(colnames(gwas) %in% columns_to_remove)]
+    gwas <- gwas[, -which(colnames(gwas) %in% columns_to_remove)]
   }
 
   return(gwas)
@@ -292,12 +303,14 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
       return(NULL)
     }
 
-    extracted_file <- glue::glue('{extracted_study_dir}/extracted/{study_metadata$ancestry}_{variant_chr}_{variant_bp}.tsv.gz')
+    extracted_file <- glue::glue(
+      "{extracted_study_dir}/extracted/{study_metadata$ancestry}_{variant_chr}_{variant_bp}.tsv.gz"
+    )
     vroom::vroom_write(snps_in_block, extracted_file)
 
     extraction_info <- data.frame(
-      chr = variant_chr, 
-      bp = variant_bp, 
+      chr = variant_chr,
+      bp = variant_bp,
       log_p = -log10(variant_p),
       ld_block = snps_in_block$ld_block[1],
       file = extracted_file,
@@ -310,7 +323,7 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
   extracted_regions <- extracted_regions[!sapply(extracted_regions, is.null)] |>
     dplyr::bind_rows()
 
-  message(glue::glue('Extracted {nrow(extracted_regions)} regions from {study_metadata$study_name}'))
+  message(glue::glue("Extracted {nrow(extracted_regions)} regions from {study_metadata$study_name}"))
 
   if (nrow(extracted_regions) > 0) {
     extracted_regions <- extracted_regions |>

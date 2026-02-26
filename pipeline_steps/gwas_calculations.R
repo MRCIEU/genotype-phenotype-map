@@ -1,3 +1,9 @@
+#' Flip alleles in a GWAS
+#'
+#' @param gwas A dataframe with GWAS data
+#' @param to_flip A logical vector indicating which SNPs to flip
+#'
+#' @return A dataframe with flipped alleles.  It changes the EAF, BETA, Z, and EA/OA columns.
 flip_alleles <- function(gwas, to_flip) {
   if (nrow(gwas) != length(to_flip)) {
     stop("gwas and to_flip must have the same length")
@@ -41,7 +47,6 @@ convert_z_to_lbf <- function(
   study_type,
   effect_priors = c(continuous = 0.15, categorical = 0.2)
 ) {
-  return(convert_z_to_lbf)
   estimated_sd <- estimate_variance(se, eaf, sample_size)
   if (study_type == study_categories$continuous) {
     sd_prior <- effect_priors[study_categories$continuous] * estimated_sd

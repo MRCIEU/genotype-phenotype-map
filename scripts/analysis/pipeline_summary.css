@@ -1,0 +1,13 @@
+.main-container {
+  max-width: 1600px !important;
+}
+/* Restore Markdown header styles */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: bold;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+/* Force line breaks */
+p {
+  white-space: pre-line;
+}

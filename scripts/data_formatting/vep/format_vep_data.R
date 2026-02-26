@@ -1,5 +1,5 @@
-source("../../pipeline_steps/constants.R")
-source("../../pipeline_steps/common_extraction_functions.R")
+source("../../../pipeline_steps/constants.R")
+source("../../../pipeline_steps/common_extraction_functions.R")
 
 main <- function() {
   vep_annotations_file <- glue::glue("{variant_annotation_dir}/vep_annotations_hg38.tsv.gz")

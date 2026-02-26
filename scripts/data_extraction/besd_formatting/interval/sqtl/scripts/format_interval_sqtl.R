@@ -3,16 +3,11 @@ library(dplyr)
 library(parallel)
 
 in_dir <- "INTERVAL_sQTL_summary_statistics/"
-
 flist_dir <- "sqtl/flist_drafts/"
-
 out_dir <- "esds/"
 
 chrs <- list.files(in_dir)
-
-chrs <- chrs[1:22] 
-
-#data <- chrs[1]
+chrs <- chrs[1:22]
 
 # Define the per-file processing function
 process_file <- function(data) {
@@ -24,7 +19,8 @@ process_file <- function(data) {
   file <- fread(file_path, select = c(1:4, 7:13))
   file$SNP <- paste(file$chr, file$pos_b38, sep = ":")
 
-  colnames(file) <- c("phenotype_id", "variant_id", "splicemid_distance", "Freq", "pval_nominal", "b", "se", "chr", "pos_b38", "A1", "A2", "SNP")
+  colnames(file) <- c("phenotype_id", "variant_id", "splicemid_distance", "Freq", "pval_nominal",
+                      "b", "se", "chr", "pos_b38", "A1", "A2", "SNP")
 
   # Standardise alleles
   standardise_alleles <- function(qtl) {
@@ -42,13 +38,13 @@ process_file <- function(data) {
     return(qtl)
   }
 
+  dat_flipped <- standardise_alleles(file)
 
-# standardise alleles 
-
-    dat_flipped <- standardise_alleles(file)
-
-  dat_clean <- dat_flipped[, c("chr", "SNP", "pos_b38", "A1", "A2","Freq", "b", "se", "pval_nominal", "splicemid_distance", "phenotype_id")]
-  colnames(dat_clean) <- c("Chr", "SNP", "Bp", "A1", "A2", "Freq", "Beta", "se", "p", "splicemid_distance", "probe")
+  dat_clean <- dat_flipped[,
+    c("chr", "SNP", "pos_b38", "A1", "A2", "Freq", "b", "se", "pval_nominal", "splicemid_distance", "phenotype_id")
+  ]
+  colnames(dat_clean) <- c("Chr", "SNP", "Bp", "A1", "A2", "Freq",
+                           "Beta", "se", "p", "splicemid_distance", "probe")
   dat_clean$Bp <- as.numeric(dat_clean$Bp)
   setDT(dat_clean)
 
@@ -56,21 +52,22 @@ process_file <- function(data) {
   esd_dir <- file.path(out_dir, chromosome)
   if (!dir.exists(esd_dir)) dir.create(esd_dir, recursive = TRUE)
 
-
-
- # Create flist metadata
+  # Create flist metadata
   flist_dat <- dat_clean[, .(Chr, probe, Bp, splicemid_distance)]
   flist_dat[, ProbeBp := Bp - splicemid_distance]
   flist_dat <- unique(flist_dat[, .(Chr, probe, ProbeBp)])
   flist_dat[, PathOfEsd := file.path(esd_dir, paste0(probe, ".esd"))]
   colnames(flist_dat) <- c("Chr", "ProbeID", "ProbeBp", "PathOfEsd")
   flist_dat$GeneticDistance <- 0
-  write.table(unique(flist_dat), file.path(flist_dir, paste0("flist_", chromosome, ".draft.txt")),
-              col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
 
-
-
-
+  write.table(
+    unique(flist_dat),
+    file.path(flist_dir, paste0("flist_", chromosome, ".draft.txt")),
+    col.names = TRUE,
+    row.names = FALSE,
+    sep = "\t",
+    quote = FALSE
+  )
 
   # Split by gene and write ESDs
   genes <- split(dat_clean, by = "probe", keep.by = TRUE)
@@ -81,14 +78,8 @@ process_file <- function(data) {
   }
 
   return(paste("Completed:", data))
-
-
-
 }
-
 
 # run in parallel
 results <- mclapply(chrs, process_file, mc.cores = 12)
-#print(results)
-
 print("completed formatting esds! Next update flist drafts.")

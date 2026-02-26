@@ -9,7 +9,7 @@ help:
 
 format:
 	@echo "Formatting R files..."
-	@Rscript tests/lint_fix.R
+	@Rscript tests/lint_format.R
 	@echo "Formatting complete!"
 
 lint:

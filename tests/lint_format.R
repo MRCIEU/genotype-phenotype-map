@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Auto-fix linting issues using styler
-# Usage: Rscript scripts/lint_fix.R
+# Usage: Rscript scripts/lint_format.R
 #
 # Step 1: styler — tidyverse formatting (spacing, indentation, braces)
 # Step 2: Trailing whitespace / tab cleanup
@@ -20,12 +20,6 @@ styler::style_dir(
   filetype = "r",
   recursive = TRUE,
   exclude_dirs = exclude_dirs,
-  exclude_files = c(
-    "scripts/lint.R",
-    "scripts/lint_check.R",
-    "scripts/lint_fix.R",
-    "scripts/lint_summary.R"
-  ),
   transformers = styler::tidyverse_style(
     indent_by = 2,
     scope = "spaces",
@@ -45,10 +39,6 @@ r_files <- list.files(
 )
 
 r_files <- r_files[!grepl(paste(exclude_dirs, collapse = "|"), r_files)]
-r_files <- r_files[!grepl(
-  "scripts/lint\\.R$|scripts/lint_check\\.R$|scripts/lint_fix\\.R$|scripts/lint_summary\\.R$",
-  r_files
-)]
 
 additional_fixes <- 0
 for (file in r_files) {

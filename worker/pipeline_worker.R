@@ -51,6 +51,9 @@ if (!is_test_run) {
     },
     LPUSH = function(queue, message) {
       return(1)
+    },
+    LREM = function(queue, count, element) {
+      return(0)
     }
   )
 }
@@ -84,28 +87,40 @@ main <- function() {
           next
         }
         print("Getting process message")
-        redis_message <- get_from_process_queue(redis_conn)
+        redis_message <- get_from_in_progress_queue(redis_conn)
+        if (is.null(redis_message)) {
+          redis_message <- get_from_process_queue(redis_conn)
+        }
         print(redis_message)
 
         if (!is.null(redis_message)) {
-          flog.info(paste("Processing message with payload: ", redis_message[[2]]))
-          gwas_info <- jsonlite::fromJSON(redis_message[[2]])
-          flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
+          payload <- redis_message[[2]]
+          add_to_in_progress_queue(redis_conn, payload)
+          tryCatch(
+            {
+              flog.info(paste("Processing message with payload: ", payload))
+              gwas_info <- jsonlite::fromJSON(payload)
+              flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 
-          processed <- process_message(gwas_info)
+              processed <- process_message(gwas_info)
 
-          if (!is.null(processed)) {
-            flog.error(paste(gwas_info$metadata$guid, "Failed to process message"))
+              if (!is.null(processed)) {
+                flog.error(paste(gwas_info$metadata$guid, "Failed to process message"))
 
-            message_and_error <- list(
-              original_message = gwas_info,
-              error = processed,
-              timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-            )
-            send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
-          } else {
-            flog.info(paste(gwas_info$metadata$guid, "Successfully processed message"))
-          }
+                message_and_error <- list(
+                  original_message = gwas_info,
+                  error = processed,
+                  timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+                )
+                send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
+              } else {
+                flog.info(paste(gwas_info$metadata$guid, "Successfully processed message"))
+              }
+            },
+            finally = {
+              remove_from_in_progress_queue(redis_conn, payload)
+            }
+          )
         }
         Sys.sleep(5)
       },

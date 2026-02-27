@@ -1,6 +1,7 @@
 library(futile.logger)
 
 process_gwas <- "process_gwas"
+process_gwas_in_progress <- glue::glue("{process_gwas}_in_progress")
 process_gwas_dlq <- glue::glue("{process_gwas}_dlq")
 delete_gwas_queue <- "delete_gwas"
 
@@ -46,10 +47,24 @@ send_to_dlq <- function(redis_conn, message) {
   return()
 }
 
+get_from_in_progress_queue <- function(redis_conn) {
+  return(redis_conn$BRPOP(process_gwas_in_progress, timeout = 0.1))
+}
+
 get_from_process_queue <- function(redis_conn) {
   return(redis_conn$BRPOP(process_gwas, timeout = 0.1))
 }
 
 get_from_delete_queue <- function(redis_conn) {
   return(redis_conn$BRPOP(delete_gwas_queue, timeout = 0.1))
+}
+
+add_to_in_progress_queue <- function(redis_conn, message) {
+  redis_conn$LPUSH(process_gwas_in_progress, message)
+  return()
+}
+
+remove_from_in_progress_queue <- function(redis_conn, message) {
+  redis_conn$LREM(process_gwas_in_progress, 0, message)
+  return()
 }

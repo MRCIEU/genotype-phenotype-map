@@ -1,5 +1,12 @@
-linters: with_defaults(
-  line_length_linter = line_length_linter(120),
-  quotes_linter = NULL,
-  object_name_linter = NULL
-)
+linters: linters_with_defaults(
+    indentation_linter = indentation_linter(indent = 2, hanging_indent_style = "tidy"),
+    line_length_linter = line_length_linter(120),
+    object_length_linter(length = 60L),
+    return_linter = return_linter(return_style = "explicit"),
+    object_name_linter = NULL,
+    object_usage_linter = NULL,
+    T_and_F_symbol_linter = NULL,
+    commented_code_linter = NULL,
+    pipe_consistency_linter = NULL
+  )
+encoding: "UTF-8"

@@ -1,12 +1,12 @@
 options(error = function() traceback(20))
-Sys.setenv('VROOM_CONNECTION_SIZE' = 500000)
+Sys.setenv("VROOM_CONNECTION_SIZE" = 500000)
 
-data_dir <- Sys.getenv('DATA_DIR')
-gwas_upload_dir <- Sys.getenv('DATA_DIR')
-results_dir <- Sys.getenv('RESULTS_DIR')
-oracle_api_server <- Sys.getenv('ORACLE_SERVER')
-oracle_upload_server <- Sys.getenv('ORACLE_UPLOAD_SERVER')
-TEST_RUN <- Sys.getenv('TEST_RUN', NA)
+data_dir <- Sys.getenv("DATA_DIR")
+gwas_upload_dir <- Sys.getenv("DATA_DIR")
+results_dir <- Sys.getenv("RESULTS_DIR")
+oracle_api_server <- Sys.getenv("ORACLE_SERVER")
+oracle_upload_server <- Sys.getenv("ORACLE_UPLOAD_SERVER")
+TEST_RUN <- Sys.getenv("TEST_RUN", NA)
 is_test_run <- !is.na(TEST_RUN)
 
 min_p_allowed_for_worker <- 1e-6
@@ -20,52 +20,65 @@ posterior_prob_threshold_minimum <- 0.5
 
 
 gpm_website_data <- list(
-  url = 'https://gpmap.opengwas.io',
-  contact = 'https://gpmap.opengwas.io/contact',
-  name = 'The Genotype-Phenotype Map Team'
+  url = "https://gpmap.opengwas.io",
+  contact = "https://gpmap.opengwas.io/contact",
+  name = "The Genotype-Phenotype Map Team"
 )
 
-latest_results_dir <- glue::glue('{results_dir}latest/')
-current_results_dir <- glue::glue('{results_dir}current/')
-results_analysis_dir <- glue::glue('{latest_results_dir}analysis/')
-pipeline_metadata_dir <- glue::glue('{data_dir}pipeline_metadata/')
-ld_block_data_dir <- glue::glue('{data_dir}ld_blocks/')
-ld_reference_panel_dir <- glue::glue('{data_dir}ld_reference_panel_hg38/')
-liftover_dir <- glue::glue('{data_dir}liftover/')
-extracted_study_dir <- glue::glue('{data_dir}study/')
-variant_annotation_dir <- glue::glue('{data_dir}variant_annotation/')
-static_web_dir <- glue::glue('{current_results_dir}static_web/')
-svg_dir <- glue::glue('{static_web_dir}svgs/')
+latest_results_dir <- glue::glue("{results_dir}latest/")
+current_results_dir <- glue::glue("{results_dir}current/")
+results_analysis_dir <- glue::glue("{latest_results_dir}analysis/")
+pipeline_metadata_dir <- glue::glue("{data_dir}pipeline_metadata/")
+ld_block_data_dir <- glue::glue("{data_dir}ld_blocks/")
+ld_reference_panel_dir <- glue::glue("{data_dir}ld_reference_panel_hg38/")
+liftover_dir <- glue::glue("{data_dir}liftover/")
+extracted_study_dir <- glue::glue("{data_dir}study/")
+variant_annotation_dir <- glue::glue("{data_dir}variant_annotation/")
+static_web_dir <- glue::glue("{current_results_dir}static_web/")
+svg_dir <- glue::glue("{static_web_dir}svgs/")
 
-oracle_bucket_name <- Sys.getenv('ORACLE_BUCKET_NAME')
-server_sync_dir <- file.path(data_dir, 'rsync_to_server')
-oracle_data_dir <- '/oradiskvdb1/data/'
+oracle_bucket_name <- Sys.getenv("ORACLE_BUCKET_NAME")
+server_sync_dir <- file.path(data_dir, "rsync_to_server")
+oracle_data_dir <- "/oradiskvdb1/data/"
 
-bespoke_parsing_options <- list(none='none', gtex_sqtl='gtex_sqtl')
+bespoke_parsing_options <- list(none = "none", gtex_sqtl = "gtex_sqtl")
 
-data_types <- list(splice_variant='splice_variant',
-                           transcript='transcript',
-                           gene_expression='gene_expression',
-                           protein='protein',
-                           methylation='methylation',
-                           metabolome='metabolome',
-                           cell_trait='cell_trait',
-                           plasma_protein='plasma_protein',
-                           phenotype='phenotype'
+data_types <- list(
+  splice_variant = "splice_variant",
+  transcript = "transcript",
+  gene_expression = "gene_expression",
+  protein = "protein",
+  methylation = "methylation",
+  metabolome = "metabolome",
+  cell_trait = "cell_trait",
+  plasma_protein = "plasma_protein",
+  phenotype = "phenotype"
 )
 
-non_qtl_data_types <- c(data_types$metabolome, data_types$cell_trait, data_types$plasma_protein, data_types$phenotype)
-qtl_data_types <- c(data_types$splice_variant, data_types$transcript, data_types$gene_expression, data_types$protein, data_types$methylation)
+non_qtl_data_types <- c(
+  data_types$metabolome,
+  data_types$cell_trait,
+  data_types$plasma_protein,
+  data_types$phenotype
+)
+qtl_data_types <- c(
+  data_types$splice_variant,
+  data_types$transcript,
+  data_types$gene_expression,
+  data_types$protein,
+  data_types$methylation
+)
 
-data_type_names <- list(splice_variant='sQTL',
-                           transcript='tQTL',
-                           gene_expression='eQTL',
-                           protein='pQTL',
-                           methylation='methQTL',
-                           metabolome='metaQTL',
-                           cell_trait='Cell Trait',
-                           plasma_protein='Targeted Protein Measure',
-                           phenotype='Phenotype'
+data_type_names <- list(
+  splice_variant = "sQTL",
+  transcript = "tQTL",
+  gene_expression = "eQTL",
+  protein = "pQTL",
+  methylation = "methQTL",
+  metabolome = "metaQTL",
+  cell_trait = "Cell Trait",
+  plasma_protein = "Targeted Protein Measure",
+  phenotype = "Phenotype"
 )
 cell_types <- c(
   "B IN",
@@ -83,33 +96,33 @@ cell_types <- c(
   "NKR",
   "Plasma"
 )
-study_categories <- list(continuous='continuous', categorical='categorical')
-data_formats <- list(opengwas='opengwas', besd='besd', tsv='tsv')
-cis_trans <- list(cis_only='cis', trans_only='trans', cis_trans='cis_trans')
-variant_types <- list(common='common', rare_exome='rare_exome', rare_wgs='rare_wgs')
-ancestry_map <- list(EUR='European', EAS='East Asian', AFR='African', SAS='South Asian')
+study_categories <- list(continuous = "continuous", categorical = "categorical")
+data_formats <- list(opengwas = "opengwas", besd = "besd", tsv = "tsv")
+cis_trans <- list(cis_only = "cis", trans_only = "trans", cis_trans = "cis_trans")
+variant_types <- list(common = "common", rare_exome = "rare_exome", rare_wgs = "rare_wgs")
+ancestry_map <- list(EUR = "European", EAS = "East Asian", AFR = "African", SAS = "South Asian")
 reverse_ancestry_map <- setNames(names(ancestry_map), ancestry_map)
 
-reference_builds <- list(GRCh37="GRCh37", GRCh38="GRCh38")
+reference_builds <- list(GRCh37 = "GRCh37", GRCh38 = "GRCh38")
 available_liftover_conversions <- list(
-  'GRCh36GRCh37' = glue::glue('{liftover_dir}hg18ToHg19.over.chain.gz'),
-  'GRCh38GRCh37' = glue::glue('{liftover_dir}hg38ToHg19.over.chain.gz'),
-  'GRCh37GRCh38' = glue::glue('{liftover_dir}/hg19ToHg38.over.chain.gz')
+  "GRCh36GRCh37" = glue::glue("{liftover_dir}hg18ToHg19.over.chain.gz"),
+  "GRCh38GRCh37" = glue::glue("{liftover_dir}hg38ToHg19.over.chain.gz"),
+  "GRCh37GRCh38" = glue::glue("{liftover_dir}/hg19ToHg38.over.chain.gz")
 )
-extraction_file_types <- list(vcf='vcf', csv='csv')
-coverage_types <- list(dense='dense', sparse='sparse')
+extraction_file_types <- list(vcf = "vcf", csv = "csv")
+coverage_types <- list(dense = "dense", sparse = "sparse")
 
-standardised_gwas_columns <- c('CHR','BP','EA','OA','EAF','BETA','SE','P','SNP','Z','GENE')
-required_columns <- c("CHR","BP","EA","OA","EAF","BETA","SE","P")
+standardised_gwas_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "SNP", "Z", "GENE")
+required_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P")
 
 standardised_column_types <- vroom::cols(
   chr = vroom::col_character(),
   bp = vroom::col_number(),
   sample_size = vroom::col_number(),
   p_value_threshold = vroom::col_number(),
-  snps_removed_by_reference_panel=vroom::col_number(),
-  eaf_from_reference_panel=vroom::col_logical(),
-  time_taken=vroom::col_character()
+  snps_removed_by_reference_panel = vroom::col_number(),
+  eaf_from_reference_panel = vroom::col_logical(),
+  time_taken = vroom::col_character()
 )
 
 imputed_column_types <- vroom::cols(
@@ -117,7 +130,7 @@ imputed_column_types <- vroom::cols(
   bp = vroom::col_number(),
   sample_size = vroom::col_number(),
   p_value_threshold = vroom::col_number(),
-  time_taken=vroom::col_character()
+  time_taken = vroom::col_character()
 )
 
 finemapped_column_types <- vroom::cols(
@@ -197,14 +210,15 @@ coloc_pairwise_results_column_types <- vroom::cols(
 
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
-  file_prefix <- sub('\\..*', '', file_name)
+  file_prefix <- sub("\\..*", "", file_name)
   return(file_prefix)
 }
 
 ld_block_dirs <- function(block) {
-  ld_info <- data.frame(block = block,
-                        ld_block_data = glue::glue('{ld_block_data_dir}{block}'),
-                        ld_reference_panel_prefix=glue::glue('{ld_reference_panel_dir}{block}')
+  ld_info <- data.frame(
+    block = block,
+    ld_block_data = glue::glue("{ld_block_data_dir}{block}"),
+    ld_reference_panel_prefix = glue::glue("{ld_reference_panel_dir}{block}")
   )
   # ld_info <- dplyr::bind_cols(ld_info, ld_block_components(block))
   return(ld_info)
@@ -218,27 +232,28 @@ construct_ld_block <- function(ancestry, chr, start, stop) {
 }
 
 ld_block_string <- function(ancestry, chr, start, stop) {
-  return(glue::glue('{ancestry}/{chr}/{start}-{stop}'))
+  return(glue::glue("{ancestry}/{chr}/{start}-{stop}"))
 }
 
 ld_block_components <- function(ld_block) {
-  components <- strsplit(ld_block, '[/-]')[[1]]
+  components <- strsplit(ld_block, "[/-]")[[1]]
   return(data.frame(
-    ancestry = components[1], 
-    chr = components[2], 
-    start = as.numeric(components[3]), 
+    ancestry = components[1],
+    chr = components[2],
+    start = as.numeric(components[3]),
     stop = as.numeric(components[4])
   ))
 }
 
 flattened_ld_block_name <- function(ld_block_string) {
-  return(gsub('[/-]', '_', ld_block_string))
+  return(gsub("[/-]", "_", ld_block_string))
 }
 
 update_directories_for_worker <- function(worker_guid) {
-  ld_block_data_dir <<- glue::glue('{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/')
-  extracted_study_dir <<- glue::glue('{gwas_upload_dir}gwas_upload/{worker_guid}/')
-  pipeline_metadata_dir <<- glue::glue('{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/')
+  ld_block_data_dir <<- glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{worker_guid}/")
+  extracted_study_dir <<- glue::glue("{gwas_upload_dir}gwas_upload/{worker_guid}/")
+  pipeline_metadata_dir <<- glue::glue("{gwas_upload_dir}pipeline_metadata/gwas_upload/{worker_guid}/")
+  return()
 }
 
 diff_time_taken <- function(start_time) {
@@ -246,14 +261,14 @@ diff_time_taken <- function(start_time) {
 }
 
 safe_lapply <- function(X, FUN, ...) {
-  lapply(X, function(x) {
-    tryCatch(
+  return(lapply(X, function(x) {
+    return(tryCatch(
       FUN(x, ...),
       error = function(e) {
         stop("An error occurred: ", conditionMessage(e))
       }
-    )
-  })
+    ))
+  }))
 }
 
 replace_except_first_two_dashes <- function(x) {

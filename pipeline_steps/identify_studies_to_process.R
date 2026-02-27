@@ -1,24 +1,24 @@
-setwd('pipeline_steps')
-source('constants.R')
+setwd("pipeline_steps")
+source("constants.R")
 
 minimum_snps_in_opengwas_study <- 1000000
 
-study_list <- vroom::vroom('data/study_list.csv', show_col_types=F)
-studies_to_ignore <- vroom::vroom('data/ignore_studies.tsv', delim='\t', show_col_types=F)
-rare_studies_to_ignore <- vroom::vroom('data/ignore_studies_rare.tsv', delim='\t', show_col_types=F)
-studies_processed_file <- glue::glue('{latest_results_dir}/studies_processed.tsv.gz')
+study_list <- vroom::vroom("data/study_list.csv", show_col_types = F)
+studies_to_ignore <- vroom::vroom("data/ignore_studies.tsv", delim = "\t", show_col_types = F)
+rare_studies_to_ignore <- vroom::vroom("data/ignore_studies_rare.tsv", delim = "\t", show_col_types = F)
+studies_processed_file <- glue::glue("{latest_results_dir}/studies_processed.tsv.gz")
 
 if (!is.na(TEST_RUN)) {
-  study_list <- vroom::vroom('../tests/data/study_list.csv', show_col_types=F)
+  study_list <- vroom::vroom("../tests/data/study_list.csv", show_col_types = F)
 }
 if (file.exists(studies_processed_file)) {
-  studies_processed <- vroom::vroom(studies_processed_file, delim='\t', show_col_types=F)
+  studies_processed <- vroom::vroom(studies_processed_file, delim = "\t", show_col_types = F)
 } else {
-  studies_processed <- data.frame(study_name=NA)
+  studies_processed <- data.frame(study_name = NA)
 }
 
 main <- function() {
-  if(!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
+  if (!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
   validate_study_list(study_list)
 
   opengwas_entries <- dplyr::filter(study_list, data_format == data_formats$opengwas)
@@ -34,7 +34,7 @@ main <- function() {
 
   duplicated_study_names <- duplicated(studies_to_process$study_name)
   if (any(duplicated_study_names)) {
-    stop(glue::glue('Error: study names are not unique {studies_to_process$study_name[duplicated_study_names]}'))
+    stop(glue::glue("Error: study names are not unique {studies_to_process$study_name[duplicated_study_names]}"))
   }
 
   studies_to_process <- studies_to_process |>
@@ -42,21 +42,26 @@ main <- function() {
     dplyr::filter(!study_name %in% studies_to_ignore$study) |>
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
-  message(paste('Found', nrow(studies_to_process), 'new studies to process'))
-  print(glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
+  message(paste("Found", nrow(studies_to_process), "new studies to process"))
+  print(glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"))
 
-  vroom::vroom_write(studies_to_process, glue::glue('{pipeline_metadata_dir}/studies_to_process.tsv'))
+  vroom::vroom_write(studies_to_process, glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"))
+  return()
 }
 
 validate_study_list <- function(study_list) {
-  study_sources <- vroom::vroom('data/study_sources.csv', show_col_types=F)
+  study_sources <- vroom::vroom("data/study_sources.csv", show_col_types = F)
 
-  if (!all(study_list$source %in% study_sources$source)) stop('Error: study_list and study_sources are not compatible')
-  if (!all(study_list$data_type %in% data_types)) stop('Error: some data_type values in study_list are not valid')
-  if (!all(study_list$data_format %in% data_formats)) stop('Error: some data_format values in study_list are not valid')
-  if (!all(study_list$variant_type %in% variant_types)) stop('Error: some variant_type values in study_list are not valid')
-  if (!all(study_list$reference_build %in% reference_builds)) stop('Error: some reference_build values in study_list are not valid')
-  if (!all(study_list$coverage %in% coverage_types)) stop('Error: some coverage values in study_list are not valid')
+  if (!all(study_list$source %in% study_sources$source)) stop("Error: study_list and study_sources are not compatible")
+  if (!all(study_list$data_type %in% data_types)) stop("Error: some data_type values in study_list are not valid")
+  if (!all(study_list$data_format %in% data_formats)) stop("Error: some data_format values in study_list are not valid")
+  if (!all(study_list$variant_type %in% variant_types)) {
+    stop("Error: some variant_type values in study_list are not valid")
+  }
+  if (!all(study_list$reference_build %in% reference_builds)) {
+    stop("Error: some reference_build values in study_list are not valid")
+  }
+  if (!all(study_list$coverage %in% coverage_types)) stop("Error: some coverage values in study_list are not valid")
 }
 
 #' calculate_besd_studies_to_process
@@ -64,138 +69,150 @@ validate_study_list <- function(study_list) {
 #' ex: gtex-liver-ENSG00000269981
 #' NOTE: all underscores _ will be turned into dashes -
 calculate_besd_studies_to_process <- function(entries) {
-  if (nrow(entries) == 0) return(data.frame())
+  if (nrow(entries) == 0) {
+    return(data.frame())
+  }
   expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
-    data_source <- basename(entry['data_location'])
+    data_source <- basename(entry["data_location"])
     all_studies <- Sys.glob(file_regex)
     all_studies <- all_studies[!file.info(all_studies)$isdir]
     studies_without_extensions <- unique(tools::file_path_sans_ext(all_studies))
 
-    if (length(all_studies) == 0) return(data.frame())
+    if (length(all_studies) == 0) {
+      return(data.frame())
+    }
 
     return(data.frame(
-      data_type = entry[['data_type']],
-      source = entry[['source']],
-      data_format = entry[['data_format']],
-      bespoke_parsing = entry[['bespoke_parsing']],
-      reference_build = entry[['reference_build']],
+      data_type = entry[["data_type"]],
+      source = entry[["source"]],
+      data_format = entry[["data_format"]],
+      bespoke_parsing = entry[["bespoke_parsing"]],
+      reference_build = entry[["reference_build"]],
       data_source = data_source,
       study = studies_without_extensions,
-      directory = entry[['data_location']],
-      p_value_threshold = entry[['p_value_threshold']],
-      ancestry = entry[['ancestry']],
-      variant_type = entry[['variant_type']],
-      coverage = entry[['coverage']]
+      directory = entry[["data_location"]],
+      p_value_threshold = entry[["p_value_threshold"]],
+      ancestry = entry[["ancestry"]],
+      variant_type = entry[["variant_type"]],
+      coverage = entry[["coverage"]]
     ))
-  })|> dplyr::bind_rows()
+  }) |> dplyr::bind_rows()
 
-  if (length(expanded_studies) == 0) return(data.frame())
+  if (length(expanded_studies) == 0) {
+    return(data.frame())
+  }
 
-  processing_information <- apply(expanded_studies, 1, function(besd_study) {
+  return(apply(expanded_studies, 1, function(besd_study) {
     all_files_present <- Sys.glob(glue::glue('{besd_study["study"]}.*'))
     if (length(all_files_present) < 4) {
-      stop(paste('BESD study must include besd, epi, esi, and json files:', besd_study['study']))
+      stop(paste("BESD study must include besd, epi, esi, and json files:", besd_study["study"]))
     }
 
     metadata <- jsonlite::fromJSON(glue::glue('{besd_study["study"]}.json'))
 
     if (is.null(metadata$tissue) || is.null(metadata$sample_size)) {
-      stop(paste('json file is missing tissue or sample_size', besd_study['study']))
+      stop(paste("json file is missing tissue or sample_size", besd_study["study"]))
     }
 
     epi <- vroom::vroom(glue::glue('{besd_study["study"]}.epi'), col_names = F, show_col_types = F) |>
       dplyr::mutate(X1 = suppressWarnings(as.numeric(X1))) |>
-      dplyr::filter(suppressWarnings(X1 %in% seq(1,22)))
+      dplyr::filter(suppressWarnings(X1 %in% seq(1, 22)))
 
     probes <- epi$X2
     genes <- epi$X5
-    ensgs <- ifelse(grepl('ENSG', epi$X2), sub('.*(ENSG\\d+).*', '\\1', epi$X2), NA)
+    ensgs <- ifelse(grepl("ENSG", epi$X2), sub(".*(ENSG\\d+).*", "\\1", epi$X2), NA)
 
-    specifier <- basename(besd_study['study'])
-    studies <- paste(besd_study['data_source'], specifier, probes, sep = '-')
-    studies <- gsub('_', '-', studies)
-    studies <- gsub('\\.', '-', studies)
+    specifier <- basename(besd_study["study"])
+    studies <- paste(besd_study["data_source"], specifier, probes, sep = "-")
+    studies <- gsub("_", "-", studies)
+    studies <- gsub("\\.", "-", studies)
     traits <- studies
-    if (besd_study['bespoke_parsing'] == 'godmc') {
-      genes <- NA 
+    if (besd_study["bespoke_parsing"] == "godmc") {
+      genes <- NA
       trait_names <- glue::glue('{metadata$tissue} {probes} {data_type_names[[besd_study["data_type"]]]}')
     } else {
       genes <- epi$X5
       trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
     }
 
-    data_study_dir <- glue::glue('{data_dir}study/{studies}/')
+    data_study_dir <- glue::glue("{data_dir}study/{studies}/")
 
     category <- ifelse(is.null(metadata$category), study_categories$continuous, tolower(metadata$category))
     tissue <- ifelse(is.null(metadata$tissue), NA, metadata$tissue)
     cell_type <- ifelse(is.null(metadata$cell_type) || length(metadata$cell_type) == 0, NA, metadata$cell_type)
 
     if (!is.na(cell_type) && !cell_type %in% cell_types) {
-      stop(glue::glue('Error: cell_type is not valid: {cell_type}'))
+      stop(glue::glue("Error: cell_type is not valid: {cell_type}"))
     }
 
     return(data.frame(
-      data_type = besd_study[['data_type']],
-      source = besd_study[['source']],
-      data_format = besd_study[['data_format']],
+      data_type = besd_study[["data_type"]],
+      source = besd_study[["source"]],
+      data_format = besd_study[["data_format"]],
       study_name = studies,
       trait = traits,
       trait_name = trait_names,
-      ancestry = besd_study[['ancestry']],
+      ancestry = besd_study[["ancestry"]],
       sample_size = metadata$sample_size,
       category = category,
-      study_location = besd_study[['study']],
+      study_location = besd_study[["study"]],
       extracted_location = data_study_dir,
-      reference_build = besd_study[['reference_build']],
-      p_value_threshold = format(besd_study[['p_value_threshold']], scientific=FALSE),
-      variant_type = besd_study[['variant_type']],
+      reference_build = besd_study[["reference_build"]],
+      p_value_threshold = format(besd_study[["p_value_threshold"]], scientific = FALSE),
+      variant_type = besd_study[["variant_type"]],
       probe = probes,
       gene = genes,
       ensg = ensgs,
       tissue = tissue,
       cell_type = cell_type,
-      coverage = besd_study[['coverage']],
+      coverage = besd_study[["coverage"]],
       heritability = NA,
       heritability_se = NA
     ))
-  }) |> dplyr::bind_rows()
+  }) |>
+    dplyr::bind_rows())
 }
 
 calculate_opengwas_studies_to_process <- function(entries) {
-  if (nrow(entries) == 0) return(data.frame())
+  if (nrow(entries) == 0) {
+    return(data.frame())
+  }
   expanded_studies <- apply(entries, 1, function(entry) {
     file_regex <- glue::glue('{entry[["data_location"]]}/{entry[["id_pattern"]]}')
     all_directories <- Sys.glob(file_regex)
     return(data.frame(
-      data_type = entry[['data_type']],
-      source = entry[['source']],
+      data_type = entry[["data_type"]],
+      source = entry[["source"]],
       directory = all_directories,
-      reference_build = entry[['reference_build']],
-      ancestry = entry[['ancestry']],
-      p_value_threshold = entry[['p_value_threshold']],
-      data_format = entry[['data_format']],
-      variant_type = entry[['variant_type']],
-      coverage = entry[['coverage']]
+      reference_build = entry[["reference_build"]],
+      ancestry = entry[["ancestry"]],
+      p_value_threshold = entry[["p_value_threshold"]],
+      data_format = entry[["data_format"]],
+      variant_type = entry[["variant_type"]],
+      coverage = entry[["coverage"]]
     ))
   }) |> dplyr::bind_rows()
 
   processing_information <- apply(expanded_studies, 1, function(opengwas_study) {
-    directory <- opengwas_study[['directory']]
+    directory <- opengwas_study[["directory"]]
     study <- basename(directory)
-    new_study_name <- gsub('_', '-', study)
-    data_study_dir <- glue::glue('{data_dir}study/{new_study_name}/')
+    new_study_name <- gsub("_", "-", study)
+    data_study_dir <- glue::glue("{data_dir}study/{new_study_name}/")
 
     ldsc_observed_h2 <- NA_real_
     ldsc_observed_h2_se <- NA_real_
-    ldsc_file <- glue::glue('{directory}/ldsc.txt.log')
+    ldsc_file <- glue::glue("{directory}/ldsc.txt.log")
     if (file.exists(ldsc_file)) {
       ldsc_result <- readLines(ldsc_file)
-      ldsc_observed_line <- ldsc_result[grepl('Total Observed scale h2', ldsc_result)]
+      ldsc_observed_line <- ldsc_result[grepl("Total Observed scale h2", ldsc_result)]
       if (length(ldsc_observed_line) > 0) {
         ldsc_capture <- regmatches(
           ldsc_observed_line,
-          regexec('Total Observed scale h2:\\s*([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \\(([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\\)', ldsc_observed_line)
+          regexec(
+            "Total Observed scale h2:\\s*([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \\(([-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\\)", # nolint: line_length_linter.
+            ldsc_observed_line
+          )
         )[[1]]
         if (length(ldsc_capture) == 3) {
           ldsc_observed_h2 <- suppressWarnings(as.numeric(ldsc_capture[2]))
@@ -204,11 +221,11 @@ calculate_opengwas_studies_to_process <- function(entries) {
       }
     }
 
-    study_metadata <- jsonlite::fromJSON(glue::glue('{directory}/{study}.json'))
+    study_metadata <- jsonlite::fromJSON(glue::glue("{directory}/{study}.json"))
     ancestry <- study_metadata$population
     category <- ifelse(is.null(study_metadata$category), study_categories$continuous, tolower(study_metadata$category))
 
-    if (is.null(ancestry) || ancestry != ancestry_map[[opengwas_study[['ancestry']]]]) {
+    if (is.null(ancestry) || ancestry != ancestry_map[[opengwas_study[["ancestry"]]]]) {
       return(data.frame())
     } else if (as.numeric(study_metadata$nsnp) < minimum_snps_in_opengwas_study) {
       return(data.frame())
@@ -218,9 +235,9 @@ calculate_opengwas_studies_to_process <- function(entries) {
     }
 
     return(data.frame(
-      data_type = opengwas_study[['data_type']],
-      data_format = opengwas_study[['data_format']],
-      source = opengwas_study[['source']],
+      data_type = opengwas_study[["data_type"]],
+      data_format = opengwas_study[["data_format"]],
+      source = opengwas_study[["source"]],
       study_name = new_study_name,
       trait = new_study_name,
       trait_name = study_metadata$trait,
@@ -229,59 +246,65 @@ calculate_opengwas_studies_to_process <- function(entries) {
       category = category,
       study_location = directory,
       extracted_location = data_study_dir,
-      reference_build = opengwas_study[['reference_build']],
-      p_value_threshold = format(opengwas_study[['p_value_threshold']], scientific=FALSE),
-      variant_type = opengwas_study[['variant_type']],
+      reference_build = opengwas_study[["reference_build"]],
+      p_value_threshold = format(opengwas_study[["p_value_threshold"]], scientific = FALSE),
+      variant_type = opengwas_study[["variant_type"]],
       gene = NA,
       probe = NA,
       tissue = NA,
       cell_type = NA,
-      coverage = opengwas_study[['coverage']],
+      coverage = opengwas_study[["coverage"]],
       heritability = ldsc_observed_h2,
       heritability_se = ldsc_observed_h2_se
     ))
-  }) |> dplyr::bind_rows()
+  }) |>
+    dplyr::bind_rows()
+
+  return(processing_information)
 }
 
 calculate_tsv_studies_to_process <- function(entries) {
-  if (nrow(entries) == 0) return(data.frame())
+  if (nrow(entries) == 0) {
+    return(data.frame())
+  }
 
   expanded_studies <- apply(entries, 1, function(entry) {
     metadata_file <- glue::glue('{entry[["data_location"]]}/metadata.tsv')
     if (!file.exists(metadata_file)) {
-      stop(glue::glue('metadata file is missing: {metadata_file}'))
+      stop(glue::glue("metadata file is missing: {metadata_file}"))
     }
 
-    tsv_metadata <- vroom::vroom(metadata_file, show_col_types=F) |>
-      dplyr::filter(grepl(entry[['id_pattern']], study_location)) |>
-      dplyr::mutate(study_name = gsub('_', '-', study_name))
+    tsv_metadata <- vroom::vroom(metadata_file, show_col_types = F) |>
+      dplyr::filter(grepl(entry[["id_pattern"]], study_location)) |>
+      dplyr::mutate(study_name = gsub("_", "-", study_name))
 
-    data_study_dir <- glue::glue('{data_dir}study/{tsv_metadata$study_name}/')
+    data_study_dir <- glue::glue("{data_dir}study/{tsv_metadata$study_name}/")
 
     return(data.frame(
-      data_type = entry[['data_type']],
-      data_format = entry[['data_format']],
-      source = entry[['source']],
+      data_type = entry[["data_type"]],
+      data_format = entry[["data_format"]],
+      source = entry[["source"]],
       study_name = tsv_metadata$study_name,
       trait = tsv_metadata$study_name,
       trait_name = tsv_metadata$trait,
-      ancestry = entry[['ancestry']],
+      ancestry = entry[["ancestry"]],
       sample_size = tsv_metadata$sample_size,
       category = tsv_metadata$category,
       study_location = tsv_metadata$study_location,
       extracted_location = data_study_dir,
-      reference_build = entry[['reference_build']],
-      p_value_threshold = format(entry[['p_value_threshold']], scientific=FALSE),
-      variant_type = entry[['variant_type']],
-      gene = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$gene, NA),
+      reference_build = entry[["reference_build"]],
+      p_value_threshold = format(entry[["p_value_threshold"]], scientific = FALSE),
+      variant_type = entry[["variant_type"]],
+      gene = ifelse(entry[["data_type"]] != data_types$phenotype, tsv_metadata$gene, NA),
       probe = NA,
-      tissue = ifelse(entry[['data_type']] != data_types$phenotype, tsv_metadata$tissue, NA),
+      tissue = ifelse(entry[["data_type"]] != data_types$phenotype, tsv_metadata$tissue, NA),
       cell_type = NA,
-      coverage = entry[['coverage']],
+      coverage = entry[["coverage"]],
       heritability = NA,
       heritability_se = NA
     ))
-  }) |> dplyr::bind_rows()
+  }) |>
+    dplyr::bind_rows()
 
   return(expanded_studies)
 }

@@ -1,7 +1,6 @@
 # genotype-phenotype-map
 
-Scoping document: https://uob.sharepoint.com/:w:/r/teams/grp-brs-tds/Shared%20Documents/The%20Human%20Genotype-Phenotype%20Map/Kickoff%20Document.docx?d=w3c2c1890b3bf4ec6a8e3883780b05c94&csf=1&web=1&e=KFn1PY
-
+![CI Tests](https://github.com/MRCIEU/genotype-phenotype-map/actions/workflows/main.yml/badge.svg)
 
 ## How to use:
 
@@ -17,6 +16,25 @@ add a row to this csv indicating where they are on disk, and what script to inge
     * This will first calculate the studies that haven't been processed, then start the snakemake pipeline
 
 Notes: Snakemake slows down if you try to run the pipeline with too many studies at once.  Please keep it to less than 200,000 studies.
+
+### Development:
+
+#### Tests
+
+Because of the extensive amount of test data needed to run the pipeline, tests are currently not run as a part of GitHub actions,
+but tests must be run before you can merge in a PR.  To run the tests, please run
+
+`make test`
+
+This will take 10 or so minutes to run, and ensures that the pipeline, and the pipeline_worker both run correctly and without errors.
+
+#### Lint
+To ensure the code format is in line with the repo, please run these commands.
+
+`make format`
+`make lint`
+`make lint-summary`
+
 
 ## Concepts
 
@@ -73,3 +91,5 @@ Both data `DATA_DIR` and `RESULTS_DIR` directories will be populated
   * `ld.db`: ld database
   * `gwas_upload.db`: gwas upload database
   * `studies.db`: studies database
+
+Scoping document: https://uob.sharepoint.com/:w:/r/teams/grp-brs-tds/Shared%20Documents/The%20Human%20Genotype-Phenotype%20Map/Kickoff%20Document.docx?d=w3c2c1890b3bf4ec6a8e3883780b05c94&csf=1&web=1&e=KFn1PY

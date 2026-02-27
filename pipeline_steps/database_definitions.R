@@ -200,18 +200,19 @@ studies_db <- list(
   )
 )
 
+# nolint start: line_length_linter.
 additional_studies_tables <- list(
   coloc_groups_wide = list(
     name = "coloc_groups_wide",
-    query = "CREATE TABLE coloc_groups_wide AS 
-      SELECT coloc_groups.*, 
+    query = "CREATE TABLE coloc_groups_wide AS
+      SELECT coloc_groups.*,
         snp_annotations.chr, snp_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
         study_extractions.ld_block, snp_annotations.display_snp, snp_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
         traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
-      FROM coloc_groups 
+      FROM coloc_groups
       JOIN studies ON coloc_groups.study_id = studies.id
-      JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id 
+      JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id
       JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
       LEFT JOIN gene_annotations on studies.gene_id = gene_annotations.id
       JOIN traits ON studies.trait_id = traits.id
@@ -221,7 +222,7 @@ additional_studies_tables <- list(
   ),
   rare_results_wide = list(
     name = "rare_results_wide",
-    query = "CREATE TABLE rare_results_wide AS 
+    query = "CREATE TABLE rare_results_wide AS
       SELECT rare_results.*,
         study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans, snp_annotations.display_snp, snp_annotations.rsid,
         gene_annotation.gene AS gene, situated_gene_annotation.gene AS situated_gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
@@ -240,7 +241,7 @@ additional_studies_tables <- list(
   ),
   study_extractions_wide = list(
     name = "study_extractions_wide",
-    query = "CREATE TABLE study_extractions_wide AS 
+    query = "CREATE TABLE study_extractions_wide AS
       SELECT study_extractions.*, gene_annotations.gene AS gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue
         FROM study_extractions
         JOIN studies ON study_extractions.study_id = studies.id
@@ -253,6 +254,7 @@ additional_studies_tables <- list(
       CREATE INDEX idx_study_extractions_wide_ld_block_id ON study_extractions_wide(ld_block_id);"
   )
 )
+# nolint end
 
 ld_table <- list(
   name = "ld",
@@ -311,8 +313,8 @@ coloc_pairs_significant_db <- list(
     )"
   ),
   coloc_pairs = list(
-  name = "coloc_pairs",
-  query = "CREATE TABLE table_name (
+    name = "coloc_pairs",
+    query = "CREATE TABLE table_name (
     snp_id INTEGER NOT NULL,
     study_extraction_a_id INTEGER NOT NULL,
     study_extraction_b_id INTEGER NOT NULL,
@@ -323,7 +325,7 @@ coloc_pairs_significant_db <- list(
     false_negative BOOLEAN NOT NULL,
     PRIMARY KEY (study_extraction_a_id, study_extraction_b_id)
   )",
-  indexes = "CREATE INDEX idx_table_name_study_extraction_a_id ON table_name (study_extraction_a_id);
+    indexes = "CREATE INDEX idx_table_name_study_extraction_a_id ON table_name (study_extraction_a_id);
     CREATE INDEX idx_table_name_study_extraction_b_id ON table_name (study_extraction_b_id);
     CREATE INDEX idx_table_name_ld_block_id ON table_name (ld_block_id);
     CREATE INDEX idx_table_name_snp_id ON table_name (snp_id);"

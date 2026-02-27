@@ -1,16 +1,16 @@
 library(testthat)
 
-setwd('../../')
-source('pipeline_steps/constants.R')
-ld_block_of_interest <- 'EUR/1/101384499-103762931'
+setwd("../../")
+source("pipeline_steps/constants.R")
+ld_block_of_interest <- "EUR/1/101384499-103762931"
 
 setup({
-  real_ld_block_data_dir <- sub('/test/', '/', ld_block_data_dir)
-  existing_finemapped_studies <- glue::glue('{ld_block_of_interest}/finemapped_studies.tsv')
-  dir.create(glue::glue('{ld_block_data_dir}/{ld_block_of_interest}'), recursive = TRUE, showWarnings = FALSE)
+  real_ld_block_data_dir <- sub("/test/", "/", ld_block_data_dir)
+  existing_finemapped_studies <- glue::glue("{ld_block_of_interest}/finemapped_studies.tsv")
+  dir.create(glue::glue("{ld_block_data_dir}/{ld_block_of_interest}"), recursive = TRUE, showWarnings = FALSE)
   file.copy(
-    glue::glue('{real_ld_block_data_dir}/{existing_finemapped_studies}'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv')
+    glue::glue("{real_ld_block_data_dir}/{existing_finemapped_studies}"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv")
   )
 })
 
@@ -26,7 +26,7 @@ setup({
 # })
 
 test_that("Pipeline worker runs for TSV file", {
-  redis_payload <- '/home/pipeline/tests/data/hg38_tsv_redis_message.json'
+  redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message.json"
   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),
     wait = TRUE,
     intern = TRUE,
@@ -39,7 +39,7 @@ test_that("Pipeline worker runs for TSV file", {
 
   has_errors <- grepl("error", output, ignore.case = TRUE)
   if (any(has_errors)) {
-    error_file <- glue::glue('{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/failed_worker_error.log')
+    error_file <- glue::glue("{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/failed_worker_error.log")
     writeLines(output, error_file)
     print(glue::glue("Errors written to {error_file}"))
   }
@@ -49,11 +49,11 @@ test_that("Pipeline worker runs for TSV file", {
   expect_true(dir.exists(extracted_study_dir), info = "GWAS upload directory should exist")
   expect_true(dir.exists(ld_block_data_dir), info = "LD block data directory should exist")
   ld_block_files <- c(
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/standardised_studies.tsv'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz'),
-    glue::glue('{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz')
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/standardised_studies.tsv"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz")
   )
   for (file in ld_block_files) {
     expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))
@@ -62,9 +62,9 @@ test_that("Pipeline worker runs for TSV file", {
   }
 
   compiled_files <- c(
-    glue::glue('{extracted_study_dir}/compiled_coloc_pairwise_results.tsv'),
-    glue::glue('{extracted_study_dir}/compiled_extracted_studies.tsv'),
-    glue::glue('{extracted_study_dir}/compiled_coloc_clustered_results.tsv')
+    glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv"),
+    glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv"),
+    glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv")
   )
   for (file in compiled_files) {
     expect_true(file.exists(file), info = glue::glue("Compiled file should exist: {file}"))

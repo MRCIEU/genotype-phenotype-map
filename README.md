@@ -59,3 +59,12 @@ See [DOCUMENTATION.md](DOCUMENTATION.md) for:
 - Adding new data to the pipeline
 - Ancillary data requirements
 - Data and results directory layout
+
+## Wiki
+
+See [the wiki](https://github.com/MRCIEU/genotype-phenotype-map/wiki) for:
+
+- More detailed information on how to add data to the pipeline
+- Formatting data into BESD format
+- More detailed data architecture information
+- More detailed information of the results

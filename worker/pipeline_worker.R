@@ -36,17 +36,15 @@ if (!is_test_run) {
   flog.appender(appender.console())
   redis_conn <- list(
     BRPOP = function(queue, timeout = 0.1) {
-      if (queue == delete_gwas_queue) {
-        return(NULL)
+      if (queue == delete_gwas_queue) return(NULL)
+      raw_payload <- paste(readLines(args$custom_message_file, warn = FALSE), collapse = "\n")
+      parsed_payload <- tryCatch(jsonlite::fromJSON(raw_payload), error = function(e) NULL)
+      if (!is.character(parsed_payload) || length(parsed_payload) < 2) {
+        return(if (queue == process_gwas) list(process_gwas, raw_payload) else NULL)
       }
-      if (queue == process_gwas) {
-        raw_payload <- paste(readLines(args$custom_message_file, warn = FALSE), collapse = "\n")
-        parsed_payload <- tryCatch(jsonlite::fromJSON(raw_payload), error = function(e) NULL)
-        if (is.character(parsed_payload) && length(parsed_payload) == 2) {
-          return(as.list(parsed_payload))
-        }
-        return(list(process_gwas, raw_payload))
-      }
+      file_queue_name <- parsed_payload[[1]]
+      payload <- parsed_payload[[2]]
+      if (queue == file_queue_name) return(list(queue, payload))
       return(NULL)
     },
     LPUSH = function(queue, message) {

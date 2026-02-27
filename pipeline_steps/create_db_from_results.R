@@ -85,8 +85,6 @@ main <- function() {
   message("Creating studies db")
   studies_db <- populate_existing_row_ids(studies_db)
   studies_db <- load_data_for_studies_db(studies_db, studies_conn)
-  # saveRDS(studies_db, file.path(current_results_dir, "studies_db.rds"))
-  # studies_db <- readRDS(file.path(current_results_dir, "studies_db.rds"))
 
   all_relevant_snps <- find_relevant_snps(studies_db)
 

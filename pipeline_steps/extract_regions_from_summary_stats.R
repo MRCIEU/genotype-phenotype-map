@@ -45,6 +45,11 @@ main <- function() {
     study_metadata$column_names <- Filter(\(column) !is.null(column) && !is.na(column), study_metadata$column_names)
     gwas <- change_column_names(gwas, study_metadata$column_names)
 
+    # Filter out rows with non-numeric CHR (e.g. chrX, chr7_KI270803v1_alt) and convert to numeric
+    chr_numeric <- suppressWarnings(as.numeric(gsub("^chr", "", as.character(gwas$CHR))))
+    gwas <- gwas[chr_numeric %in% 1:22, ]
+    gwas$CHR <- chr_numeric[chr_numeric %in% 1:22]
+
     start_time <- Sys.time()
     if (study_metadata$reference_build != reference_builds$GRCh38) {
       gwas <- convert_dataframe_reference_build(gwas, study_metadata$reference_build)

@@ -34,6 +34,14 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "TSV of study regexes to exclude from sync (column: study_regex)",
+  type = "logical",
+  flag = TRUE,
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--summary_stats",
   help = "Sync summary statistics",
   type = "logical",
@@ -176,6 +184,13 @@ sync_upload_server_data <- function() {
 
   for (file in finemapped_src_files) {
     finemapped_studies <- vroom::vroom(file, show_col_types = F, delim = "\t")
+    if (!is.na(args$block_list) && file.exists(args$block_list)) {
+      block_list <- vroom::vroom(args$block_list, show_col_types = F)
+      block_regexes <- block_list$study_regex
+      finemapped_studies <- finemapped_studies |>
+        dplyr::filter(!grepl(paste(block_regexes, collapse = "|"), study))
+    }
+
     finemapped_studies$file <- gsub(paste0("^", data_dir), "", finemapped_studies$file)
     finemapped_studies$svg_file <- gsub(paste0("^", data_dir), "", finemapped_studies$svg_file)
     finemapped_studies$file_with_lbfs <- gsub(paste0("^", data_dir), "", finemapped_studies$file_with_lbfs)

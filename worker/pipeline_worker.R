@@ -152,6 +152,7 @@ process_message <- function(original_gwas_info) {
       gwas_info <- gwas_data$gwas_info
       gwas <- gwas_data$gwas
 
+      create_study_metadata_files(gwas_info)
       verification_result <- verify_gwas_data(gwas_info, gwas)
       if (!verification_result$valid) {
         flog.error(paste(gwas_info$metadata$guid, verification_result$error))
@@ -160,7 +161,6 @@ process_message <- function(original_gwas_info) {
       }
 
       flog.info(paste(gwas_info$metadata$guid, "Extracting regions"))
-      create_study_metadata_files(gwas_info)
       extract_regions <- glue::glue(
         "Rscript extract_regions_from_summary_stats.R",
         " --worker_guid {gwas_info$metadata$guid} 2>&1"

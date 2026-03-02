@@ -63,7 +63,7 @@ main <- function() {
   })
   safe_lapply(additional_studies_tables, function(table) {
     DBI::dbExecute(studies_con, table$query)
-    DBI::dbExecute(studies_con, table$indexes)
+    # DBI::dbExecute(studies_con, table$indexes)
     return()
   })
 

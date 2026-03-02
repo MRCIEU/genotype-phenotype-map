@@ -40,7 +40,7 @@ Tests require substantial test data and are not run in GitHub Actions. You must 
 make test
 ```
 
-This takes around 10 minutes and validates the pipeline and pipeline worker.
+This takes around 15 minutes and validates the pipeline and pipeline worker.
 
 #### Linting
 

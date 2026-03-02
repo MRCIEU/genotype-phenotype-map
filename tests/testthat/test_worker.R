@@ -80,3 +80,46 @@ test_that("Pipeline worker runs for VCF file", {
 test_that("Pipeline worker picks up message from DLQ", {
   expect_true(TRUE)
 })
+
+test_that("get_from_in_progress_queue returns message when queue has items", {
+  source("worker/redis_client.R", local = TRUE)
+
+  test_payload <- '{"metadata":{"guid":"test-guid"}}'
+  mock_conn <- list(
+    BRPOP = function(queue, timeout = 0.1) {
+      if (queue == process_gwas_in_progress) {
+        return(list(process_gwas_in_progress, test_payload))
+      }
+      return(NULL)
+    }
+  )
+
+  result <- get_from_in_progress_queue(mock_conn)
+  expect_false(is.null(result))
+  expect_equal(result[[1]], process_gwas_in_progress)
+  expect_equal(result[[2]], test_payload)
+})
+
+# test_that("Pipeline worker processes message from in_progress queue when custom message has in_progress queue name", {
+#   redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message_in_progress.json"
+#   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),
+#     wait = TRUE,
+#     intern = TRUE,
+#     ignore.stdout = FALSE,
+#     ignore.stderr = FALSE
+#   )
+
+#   redis_message <- jsonlite::fromJSON(redis_payload)
+#   gwas_info <- jsonlite::fromJSON(redis_message[[2]])
+
+#   has_errors <- grepl("error", output, ignore.case = TRUE)
+#   if (any(has_errors)) {
+#     error_file <- glue::glue("{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/failed_worker_error.log")
+#     writeLines(output, error_file)
+#     print(glue::glue("Errors written to {error_file}"))
+#   }
+#   expect_false(any(has_errors), info = "Pipeline worker should process from in_progress queue without errors")
+
+#   update_directories_for_worker(gwas_info$metadata$guid)
+#   expect_true(dir.exists(extracted_study_dir), info = "GWAS upload directory should exist")
+# })

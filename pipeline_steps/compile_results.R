@@ -20,6 +20,13 @@ parser <- argparser::add_argument(
   help = "Current state of processed traits",
   type = "character"
 )
+parser <- argparser::add_argument(
+  parser,
+  "--block_list",
+  help = "TSV of study regexes to exclude from compiled output (column: study_regex)",
+  type = "character",
+  default = NA
+)
 # OUTPUT
 parser <- argparser::add_argument(
   parser,
@@ -65,6 +72,12 @@ parser <- argparser::add_argument(
 )
 
 args <- argparser::parse_args(parser)
+
+block_regexes <- NULL
+if (!is.na(args$block_list) && file.exists(args$block_list)) {
+  block_list <- vroom::vroom(args$block_list, show_col_types = F)
+  block_regexes <- block_list$study_regex
+}
 
 main <- function() {
   ld_blocks <- vroom::vroom("data/ld_blocks.tsv", show_col_types = F)
@@ -190,6 +203,30 @@ aggregate_data_produced_by_pipeline <- function(
     traits_processed <- dplyr::mutate(traits_processed, category = NA)
   }
 
+  if (!is.null(block_regexes) && length(block_regexes) > 0) {
+    extracted_studies <- extracted_studies |> dplyr::filter(!is_study_blocked(study))
+    standardised_studies <- standardised_studies |> dplyr::filter(!is_study_blocked(study))
+    imputed_studies <- imputed_studies |> dplyr::filter(!is_study_blocked(study))
+    finemapped_studies <- finemapped_studies |> dplyr::filter(!is_study_blocked(study))
+    studies_processed <- studies_processed |> dplyr::filter(!is_study_blocked(study_name))
+    traits_processed <- traits_processed |> dplyr::filter(!is_study_blocked(study_name))
+
+    coloc_pairwise_results <- coloc_pairwise_results |>
+      dplyr::filter(!is_study_blocked(sub("_.*", "", unique_study_a)) &
+          !is_study_blocked(sub("_.*", "", unique_study_b))
+      )
+
+    coloc_clustered_results <- coloc_clustered_results |>
+      dplyr::filter(!is_study_blocked(sub("_.*", "", unique_study_id)))
+
+    if (nrow(compare_rare_results) > 0 && "traits" %in% names(compare_rare_results)) {
+      compare_rare_results <- compare_rare_results |>
+        dplyr::filter(vapply(strsplit(traits, ", "), function(ids) {
+          return(!any(is_study_blocked(sub("_.*", "", trimws(ids)))))
+        }, logical(1)))
+    }
+  }
+
   return(list(
     extracted_studies = extracted_studies,
     standardised_studies = standardised_studies,
@@ -256,6 +293,11 @@ create_study_extractions <- function(pipeline_data) {
 
   all_studies <- dplyr::bind_rows(finemapped_studies, rare_studies)
   return(all_studies)
+}
+
+is_study_blocked <- function(study_name) {
+  if (length(block_regexes) == 0) return(rep(FALSE, length(study_name)))
+  return(vapply(study_name, function(s) any(vapply(block_regexes, function(p) grepl(p, s), logical(1))), logical(1)))
 }
 
 main()

@@ -39,6 +39,13 @@ parser <- argparser::add_argument(
   type = "logical",
   default = FALSE
 )
+parser <- argparser::add_argument(
+  parser,
+  "--gwas_upload_ids_to_compare",
+  help = "Comma-separated list of GWAS upload GUIDs to include in coloc comparison",
+  type = "character",
+  default = NA
+)
 
 args <- argparser::parse_args(parser)
 
@@ -88,6 +95,30 @@ main <- function() {
         dplyr::arrange(unique_study_id)
     } else {
       existing_finemapped_studies <- data.frame()
+    }
+  }
+
+  # Load finemapped studies from additional GWAS uploads to compare with
+  gwas_upload_ids_to_compare <- character(0)
+  if (!is.na(args$gwas_upload_ids_to_compare) && nchar(trimws(args$gwas_upload_ids_to_compare)) > 0) {
+    gwas_upload_ids_to_compare <- strsplit(trimws(args$gwas_upload_ids_to_compare), "\\s*,\\s*")[[1]]
+    gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(gwas_upload_ids_to_compare) > 0]
+  }
+  for (compare_guid in gwas_upload_ids_to_compare) {
+    if (compare_guid == args$worker_guid) next
+    compare_finemapped_file <- glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{compare_guid}/{args$ld_block}/finemapped_studies.tsv")
+    if (file.exists(compare_finemapped_file)) {
+      compare_finemapped <- vroom::vroom(
+        compare_finemapped_file,
+        col_types = finemapped_column_types,
+        show_col_types = F
+      ) 
+      if (nrow(compare_finemapped) > 0) {
+        finemapped_studies <- dplyr::bind_rows(finemapped_studies, compare_finemapped) |>
+          dplyr::distinct(unique_study_id, .keep_all = TRUE) |>
+          dplyr::arrange(unique_study_id)
+        message(glue::glue("{args$ld_block}: Added {nrow(compare_finemapped)} finemapped studies from compare upload {compare_guid}"))
+      }
     }
   }
 

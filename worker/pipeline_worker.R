@@ -1,6 +1,7 @@
 setwd("pipeline_steps")
 source("../worker/redis_client.R")
 source("constants.R")
+source("gwas_calculations.R")
 source("common_extraction_functions.R")
 
 library(futile.logger)
@@ -466,12 +467,21 @@ process_single_block <- function(block, gwas_info) {
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Colocalising regions for block:", block))
+      gwas_upload_ids_to_compare <- gwas_info$metadata$gwas_upload_ids_to_compare
+      if (is.null(gwas_upload_ids_to_compare)) gwas_upload_ids_to_compare <- character(0)
+      compare_ids_arg <- if (length(gwas_upload_ids_to_compare) > 0) {
+        glue::glue(" --gwas_upload_ids_to_compare {glue::glue_collapse(gwas_upload_ids_to_compare, sep = ',')}")
+      } else {
+        ""
+      }
       coloc_regions <- glue::glue(
         "Rscript coloc_and_cluster_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {gwas_info$metadata$guid}",
-        " --worker_p_value_threshold {gwas_info$metadata$p_value_threshold} 2>&1"
+        " --worker_p_value_threshold {gwas_info$metadata$p_value_threshold}",
+        "{compare_ids_arg}",
+        " 2>&1"
       )
       output <- system(coloc_regions, wait = T, intern = T)
       check_step_complete(output_files$coloc, block, output)
@@ -606,7 +616,12 @@ compile_results <- function(gwas_info) {
 
   concatenate_file_with_lbfs(gwas_info, study_extractions)
 
-  # associations <- find_associations_for_coloc_clustered_snps(gwas_info, coloc_clustered_results, study_extractions, snp_annotations) # nolint: line_length_linter.
+  associations <- find_associations_for_coloc_clustered_snps(
+    gwas_info,
+    coloc_clustered_results,
+    study_extractions,
+    snp_annotations
+  )
 
   study_extractions <- study_extractions |>
     dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
@@ -615,19 +630,16 @@ compile_results <- function(gwas_info) {
   vroom::vroom_write(study_extractions, compiled_study_extractions_file)
   vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
   vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
-  # vroom::vroom_write(associations, compiled_associations_file)
+  vroom::vroom_write(associations, compiled_associations_file)
 
   return(list(
     coloc_pairwise_results = coloc_pairwise_results,
     study_extractions = study_extractions,
     coloc_clustered_results = coloc_clustered_results,
-    associations = NULL
+    associations = associations
   ))
 }
 
-# TODO: go through this, make sure it's working... it's NOT
-# TOOD: How do we get the summary stats?  I think we need to pull down the file_with_lbfs from the oracle bucket... ewwwww. # nolint: line_length_linter.
-# TODO: Either that or also save BETA and P into the _1 files.
 find_associations_for_coloc_clustered_snps <- function(
   gwas_info,
   coloc_clustered_results,
@@ -636,32 +648,28 @@ find_associations_for_coloc_clustered_snps <- function(
 ) {
   if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
     finemapped_studies <- study_extractions |>
-      dplyr::select(unique_study_id, file_with_lbfs, ld_block) |>
+      dplyr::select(unique_study_id, study, file, ld_block) |>
       dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
 
     coloc_snps <- coloc_clustered_results |>
       dplyr::filter(unique_study_id %in% finemapped_studies$unique_study_id) |>
-      dplyr::select(unique_study_id, snp, coloc_group_id, ld_block)
+      dplyr::select(unique_study_id, snp, ld_block)
 
     if (nrow(coloc_snps) > 0 && nrow(finemapped_studies) > 0) {
-      # Join to get file paths
       coloc_snps_with_files <- coloc_snps |>
         dplyr::left_join(finemapped_studies, by = c("unique_study_id", "ld_block"))
 
-      # Group by file to read each file once
       files_to_read <- coloc_snps_with_files |>
-        dplyr::group_by(file_with_lbfs) |>
+        dplyr::group_by(file) |>
         dplyr::group_split()
 
-      # Read each file and extract relevant SNPs
       associations_list <- lapply(files_to_read, function(file_group) {
-        file_path <- file_group$file_with_lbfs[1]
+        file_path <- file_group$file[1]
         snp_mapping <- file_group |>
-          dplyr::select(snp, unique_study_id, coloc_group_id) |>
+          dplyr::select(snp, study) |>
           dplyr::distinct()
         target_snps <- unique(snp_mapping$snp)
 
-        # Handle relative paths
         if (!grepl("^/", file_path) && !grepl("^study", file_path)) {
           file_path <- file.path(data_dir, file_path)
         } else if (grepl("^study", file_path)) {
@@ -673,15 +681,18 @@ find_associations_for_coloc_clustered_snps <- function(
           return(data.frame())
         }
 
-        file_associations <- vroom::vroom(file_path, show_col_types = FALSE) |>
-          dplyr::filter(SNP %in% target_snps) |>
-          dplyr::select(dplyr::any_of(c("SNP", "CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "IMPUTED", "Z"))) |>
-          dplyr::rename(snp = SNP)
-
-        # Add unique_study_id and coloc_group_id by joining with snp_mapping
-        file_associations <- file_associations |>
+        file_associations <- vroom::vroom(
+          file_path,
+          show_col_types = FALSE,
+          col_select = c("SNP", "BETA", "SE", "EAF", "IMPUTED")
+        ) |>
+          dplyr::filter(
+            SNP %in% target_snps,
+          ) |>
+          dplyr::mutate(p = beta_se_to_p(BETA, SE)) |>
+          dplyr::rename(snp = SNP) |>
           dplyr::left_join(snp_mapping, by = "snp") |>
-          dplyr::filter(!is.na(unique_study_id))
+          dplyr::filter(!is.na(study))
 
         return(file_associations)
       })
@@ -689,15 +700,18 @@ find_associations_for_coloc_clustered_snps <- function(
       associations <- dplyr::bind_rows(associations_list)
 
       if (nrow(associations) > 0) {
-        # Join with snp_annotations to add display_snp and rsid
         associations <- associations |>
           dplyr::left_join(snp_annotations, by = "snp") |>
           dplyr::select(
-            unique_study_id,
-            coloc_group_id,
             snp,
-            dplyr::any_of(c("rsid", "display_snp", "CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "IMPUTED", "Z"))
-          )
+            study,
+            beta = BETA,
+            se = SE,
+            p,
+            eaf = EAF,
+            imputed = IMPUTED
+          ) |>
+          dplyr::rename(study_name = study)
 
         flog.info(paste(
           gwas_info$metadata$guid,
@@ -777,7 +791,8 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
       success = success,
       coloc_pairs = results$coloc_pairwise_results,
       study_extractions = results$study_extractions,
-      coloc_groups = results$coloc_clustered_results
+      coloc_groups = results$coloc_clustered_results,
+      associations = results$associations
     )
   } else {
     put_body <- list(

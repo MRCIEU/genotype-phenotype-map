@@ -102,6 +102,15 @@ convert_lbf_to_p_value <- function(lbf, se, prior_v = 50) {
   return(p)
 }
 
+#' Calculate two-tailed p-value from BETA and SE
+#'
+#' @param beta Effect estimate
+#' @param se Standard error
+#' @return Two-tailed p-value from Wald test (Z = beta/se)
+beta_se_to_p <- function(beta, se) {
+  return(2 * pnorm(-abs(beta / se)))
+}
+
 #' Convert log Bayes Factor to summary stats
 #'
 #' @param gwas of summary statistics, with EAF as a mandatory column (allele frequencies for each SNP)

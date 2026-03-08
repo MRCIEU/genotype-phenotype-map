@@ -64,6 +64,66 @@ update_files_with_lbfs <- function() {
   return()
 }
 
+#' Populate BETA column in finemapped summary stats files from file_with_lbfs.
+#' The 'file' in finemapped_studies.tsv is a tsv of summary stats that may lack BETA;
+#' this function adds BETA from the corresponding file_with_lbfs for each SNP and saves.
+populate_beta_in_finemapped_files <- function() {
+  ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  blocks <- ld_info$block
+
+  resolve_path <- function(path) {
+    if (file.exists(path)) return(path)
+    full_path <- file.path(data_dir, sub("^/", "", path))
+    if (file.exists(full_path)) return(full_path)
+    return(path)
+  }
+
+  parallel::mclapply(blocks, mc.cores = 30, function(block) {
+    tryCatch({
+      finemapped_studies <- vroom::vroom(
+        glue::glue("{ld_block_data_dir}/{block}/finemapped_studies.tsv"),
+        show_col_types = F
+      )
+      message(glue::glue("Processing {nrow(finemapped_studies)} finemapped studies in {block}"))
+
+      for (i in seq_len(nrow(finemapped_studies))) {
+        row <- finemapped_studies[i, ]
+        if (is.na(row$file_with_lbfs) || is.na(row$file)) next
+        file_path <- resolve_path(row$file)
+        file_with_lbfs_path <- resolve_path(row$file_with_lbfs)
+
+        if (!file.exists(file_path) || !file.exists(file_with_lbfs_path)) {
+          message(glue::glue("Skipping {row$unique_study_id}: file or file_with_lbfs not found"))
+          next
+        }
+
+        finemapped_gwas <- vroom::vroom(file_path, show_col_types = F)
+        if ("BETA" %in% colnames(finemapped_gwas)) {
+          next
+        }
+
+        lbfs_gwas <- vroom::vroom(
+          file_with_lbfs_path,
+          show_col_types = F,
+          col_select = c("SNP", "BETA")
+        )
+
+        finemapped_gwas <- finemapped_gwas |>
+          dplyr::left_join(lbfs_gwas, by = "SNP") |>
+          dplyr::select(dplyr::any_of(c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")), dplyr::everything())
+
+        vroom::vroom_write(finemapped_gwas, file_path)
+      }
+      return(invisible(NULL))
+    }, error = function(e) {
+      message(glue::glue("Error in {block}: {e$message}"))
+    })
+  })
+  return()
+}
+
 fix_missing_bp_values <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -1913,4 +1973,4 @@ print_alleles_to_flip <- function() {
 }
 
 
-cleanup_all_problematic_snps()
+populate_beta_in_finemapped_files()

@@ -64,8 +64,10 @@ test_that("Pipeline worker runs for TSV file", {
   compiled_files <- c(
     glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv"),
     glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv"),
-    glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv")
+    glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv"),
+    glue::glue("{extracted_study_dir}/compiled_associations.tsv")
   )
+
   for (file in compiled_files) {
     expect_true(file.exists(file), info = glue::glue("Compiled file should exist: {file}"))
     results <- vroom::vroom(file, show_col_types = FALSE)

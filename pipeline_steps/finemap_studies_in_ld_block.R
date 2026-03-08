@@ -357,7 +357,7 @@ process_unfinemapped_gwas <- function(
   failed_finemap_file <- glue::glue("{finemap_file_prefix}_1.tsv.gz")
   unique_id <- glue::glue('{study["study"]}_{args$ld_block}_1')
 
-  finemap_gwas <- dplyr::select(gwas, dplyr::any_of(c("SNP", "CHR", "BP", "SE", "EAF", "Z", "IMPUTED", "LBF")))
+  finemap_gwas <- dplyr::select(gwas, dplyr::any_of(c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")))
   vroom::vroom_write(finemap_gwas, failed_finemap_file)
 
   file_with_lbfs <- glue::glue("{finemap_file_prefix}_with_lbf.tsv.gz")
@@ -421,7 +421,7 @@ split_susie_result_into_conditional_gwases <- function(
     credible_set_rows <- susie_result$sets$cs[paste0("L", i)][[1]]
     credible_set_snps <- gwas$SNP[credible_set_rows]
 
-    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, SE, EAF, P, IMPUTED) |>
+    conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, BETA, SE, EAF, P, IMPUTED) |>
       dplyr::mutate(LBF = susie_result$lbf_variable[i, ]) |>
       dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE)) |>
       dplyr::mutate(in_credible_set = SNP %in% credible_set_snps)
@@ -483,7 +483,8 @@ split_susie_result_into_conditional_gwases <- function(
       }
     }
 
-    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_P)
+    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_P) |>
+      dplyr::select(dplyr::any_of(c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")), dplyr::everything())
     vroom::vroom_write(conditioned_gwas, finemap_file)
   }
 

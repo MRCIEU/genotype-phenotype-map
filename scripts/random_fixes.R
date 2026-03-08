@@ -110,16 +110,19 @@ populate_beta_in_finemapped_files <- function() {
           col_select = c("SNP", "BETA")
         )
 
+        all_columns <- c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")
         finemapped_gwas <- finemapped_gwas |>
           dplyr::left_join(lbfs_gwas, by = "SNP") |>
-          dplyr::select(dplyr::any_of(c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")), dplyr::everything())
+          dplyr::select(dplyr::any_of(all_columns), dplyr::everything())
 
         vroom::vroom_write(finemapped_gwas, file_path)
       }
       return(invisible(NULL))
     }, error = function(e) {
       message(glue::glue("Error in {block}: {e$message}"))
+      return(invisible(NULL))
     })
+    return(invisible(NULL))
   })
   return()
 }

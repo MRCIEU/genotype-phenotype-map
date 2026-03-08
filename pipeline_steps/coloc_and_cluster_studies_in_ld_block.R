@@ -106,18 +106,22 @@ main <- function() {
   }
   for (compare_guid in gwas_upload_ids_to_compare) {
     if (compare_guid == args$worker_guid) next
-    compare_finemapped_file <- glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{compare_guid}/{args$ld_block}/finemapped_studies.tsv")
+    compare_finemapped_file <- glue::glue(
+      "{gwas_upload_dir}ld_blocks/gwas_upload/{compare_guid}/{args$ld_block}/finemapped_studies.tsv"
+    )
     if (file.exists(compare_finemapped_file)) {
       compare_finemapped <- vroom::vroom(
         compare_finemapped_file,
         col_types = finemapped_column_types,
         show_col_types = F
-      ) 
+      )
       if (nrow(compare_finemapped) > 0) {
         finemapped_studies <- dplyr::bind_rows(finemapped_studies, compare_finemapped) |>
           dplyr::distinct(unique_study_id, .keep_all = TRUE) |>
           dplyr::arrange(unique_study_id)
-        message(glue::glue("{args$ld_block}: Added {nrow(compare_finemapped)} finemapped studies from compare upload {compare_guid}"))
+        message(glue::glue(
+          "{args$ld_block}: Added {nrow(compare_finemapped)} finemapped studies from compare upload {compare_guid}"
+        ))
       }
     }
   }

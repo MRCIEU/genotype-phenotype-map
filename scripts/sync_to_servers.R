@@ -182,23 +182,36 @@ sync_upload_server_data <- function() {
     recursive = TRUE
   )
 
+  files_to_include_from_rsync <- character()
+
   for (file in finemapped_src_files) {
     finemapped_studies <- vroom::vroom(file, show_col_types = F, delim = "\t")
-    if (!is.na(args$block_list) && file.exists(args$block_list)) {
+    if (is.character(args$block_list) && length(args$block_list) > 0 && file.exists(args$block_list[1])) {
       block_list <- vroom::vroom(args$block_list, show_col_types = F)
       block_regexes <- block_list$study_regex
-      finemapped_studies <- finemapped_studies |>
-        dplyr::filter(!grepl(paste(block_regexes, collapse = "|"), study))
+      block_exclude <- grepl(paste(block_regexes, collapse = "|"), finemapped_studies$study)
+    } else {
+      block_exclude <- rep(FALSE, nrow(finemapped_studies))
     }
+
+    finemapped_studies <- finemapped_studies |>
+      dplyr::filter(!block_exclude) |>
+      dplyr::filter(min_p <= 1e-5)
 
     finemapped_studies$file <- gsub(paste0("^", data_dir), "", finemapped_studies$file)
     finemapped_studies$svg_file <- gsub(paste0("^", data_dir), "", finemapped_studies$svg_file)
     finemapped_studies$file_with_lbfs <- gsub(paste0("^", data_dir), "", finemapped_studies$file_with_lbfs)
 
+    if (nrow(finemapped_studies) > 0) {
+      include_paths <- finemapped_studies$file[!is.na(finemapped_studies$file) & nchar(finemapped_studies$file) > 0]
+      files_to_include_from_rsync <- c(files_to_include_from_rsync, include_paths)
+    }
+
     rsync_file <- gsub(ld_block_data_dir, ld_blocks_rsync_dir, file)
-    print(rsync_file)
     vroom::vroom_write(finemapped_studies, rsync_file)
   }
+
+  files_to_include_from_rsync <- unique(files_to_include_from_rsync)
 
   message("rsyncing ld_blocks to oracle server")
   old_wd <- getwd()
@@ -219,20 +232,25 @@ sync_upload_server_data <- function() {
   )
 
   message("rsyncing finemapped files to oracle server")
-  # rsync doesn't support brace expansion, so we need separate include patterns for each number
-  extra_study_dir_args <- c("--include=*/")
-  for (i in 1:10) {
-    extra_study_dir_args <- c(extra_study_dir_args, paste0("--include=*finemapped/*_", i, ".tsv.gz"))
-  }
-  extra_study_dir_args <- c(extra_study_dir_args, "--exclude=*")
+  if (length(files_to_include_from_rsync) > 0) {
+    rsync_include_paths <- sub(
+      "^study/", "", files_to_include_from_rsync[grepl("^study/", files_to_include_from_rsync)]
+    )
+    if (length(rsync_include_paths) > 0) {
+      include_file <- tempfile("rsync_include", fileext = ".txt")
+      on.exit(unlink(include_file, force = TRUE), add = TRUE)
+      writeLines(rsync_include_paths, include_file)
+      message(glue::glue("Syncing {length(rsync_include_paths)} finemapped files via --files-from"))
 
-  run_rsync(
-    src = extracted_study_dir,
-    server = oracle_upload_server,
-    dest = file.path(upload_server_data_dir, "study"),
-    flags = "-avu --prune-empty-dirs",
-    extra_args = extra_study_dir_args
-  )
+      run_rsync(
+        src = paste0(extracted_study_dir, "/"),
+        server = oracle_upload_server,
+        dest = file.path(upload_server_data_dir, "study"),
+        flags = "-avu",
+        extra_args = paste0("--files-from=", include_file)
+      )
+    }
+  }
   return()
 }
 

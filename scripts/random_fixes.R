@@ -1,6 +1,8 @@
 source("../pipeline_steps/constants.R")
 options(dplyr.width = Inf)
 
+
+
 update_files_with_lbfs <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -64,6 +66,65 @@ update_files_with_lbfs <- function() {
   return()
 }
 
+
+
+#' Recreate _with_lbf.tsv.gz file from imputed and finemapped files.
+#' Use this to fix empty or corrupted file_with_lbfs.
+#'
+#' @param imputed_file Path to imputed GWAS file (e.g. imputed/ancestry_chr_bp.tsv.gz)
+#' @param finemapped_files Vector of paths to finemapped GWAS files (block_1.tsv.gz, block_2.tsv.gz, ...).
+#'   Each file must have SNP and LBF columns. Order determines LBF_1, LBF_2, etc.
+#' @param output_file Path to write the _with_lbf.tsv.gz file
+#' @return Invisibly, the path to the written file
+recreate_file_with_lbfs <- function(imputed_file, finemapped_files, output_file) {
+  resolve_path <- function(path) {
+    if (file.exists(path)) return(path)
+    full_path <- file.path(data_dir, sub("^/", "", path))
+    if (file.exists(full_path)) return(full_path)
+    return(path)
+  }
+
+  imputed_path <- resolve_path(imputed_file)
+  if (!file.exists(imputed_path)) {
+    stop(glue::glue("Imputed file not found: {imputed_file}"))
+  }
+
+  base_cols <- c("SNP", "CHR", "BP", "EA", "OA", "EAF", "Z", "BETA", "SE", "P", "IMPUTED")
+  imputed_gwas <- vroom::vroom(imputed_path, show_col_types = FALSE) |>
+    dplyr::select(dplyr::any_of(base_cols))
+
+  if (!"IMPUTED" %in% colnames(imputed_gwas)) {
+    imputed_gwas$IMPUTED <- FALSE
+  }
+  if (!"Z" %in% colnames(imputed_gwas) && all(c("BETA", "SE") %in% colnames(imputed_gwas))) {
+    imputed_gwas$Z <- imputed_gwas$BETA / replace(imputed_gwas$SE, imputed_gwas$SE == 0, 0.00001)
+  }
+
+  for (i in seq_along(finemapped_files)) {
+    finemap_path <- resolve_path(finemapped_files[i])
+    if (!file.exists(finemap_path)) {
+      stop(glue::glue("Finemapped file not found: {finemapped_files[i]}"))
+    }
+    lbf_col_name <- glue::glue("LBF_{i}")
+    finemapped_gwas <- vroom::vroom(finemap_path, show_col_types = FALSE) |>
+      dplyr::select(SNP, LBF)
+    imputed_gwas <- imputed_gwas |>
+      dplyr::left_join(finemapped_gwas, by = "SNP") |>
+      dplyr::rename(!!lbf_col_name := LBF)
+  }
+
+  imputed_gwas <- imputed_gwas |>
+    dplyr::filter(!is.na(CHR) & !is.na(BP) & !is.na(EA) & !is.na(OA) & !is.na(EAF))
+
+  if (any(is.na(imputed_gwas$SNP) | is.na(imputed_gwas$BETA) | is.na(imputed_gwas$SE))) {
+    stop(glue::glue("Missing SNP, BETA, or SE in output for {output_file}"))
+  }
+
+  vroom::vroom_write(imputed_gwas, output_file)
+  message(glue::glue("Wrote {nrow(imputed_gwas)} rows to {output_file}"))
+  return(invisible(output_file))
+}
+
 #' Populate BETA column in finemapped summary stats files from file_with_lbfs.
 #' The 'file' in finemapped_studies.tsv is a tsv of summary stats that may lack BETA;
 #' this function adds BETA from the corresponding file_with_lbfs for each SNP and saves.
@@ -72,6 +133,7 @@ populate_beta_in_finemapped_files <- function() {
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
   blocks <- ld_info$block
+  blocks <- c("EUR/9/28885932-31590323", "EUR/12/99424032-103736758")
 
   resolve_path <- function(path) {
     if (file.exists(path)) return(path)
@@ -103,6 +165,7 @@ populate_beta_in_finemapped_files <- function() {
         if ("BETA" %in% colnames(finemapped_gwas)) {
           next
         }
+        print(glue::glue("Updating {row$unique_study_id} in {block}"))
 
         lbfs_gwas <- vroom::vroom(
           file_with_lbfs_path,

@@ -161,6 +161,13 @@ process_message <- function(original_gwas_info) {
         return()
       }
 
+      gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
+      if (!"EAF" %in% colnames(gwas)) {
+        gwas$EAF <- NA
+        vroom::vroom_write(gwas, gwas_info$metadata$file_location)
+        flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))
+      }
+
       flog.info(paste(gwas_info$metadata$guid, "Extracting regions"))
       extract_regions <- glue::glue(
         "Rscript extract_regions_from_summary_stats.R",
@@ -315,7 +322,7 @@ verify_gwas_data <- function(gwas_info, gwas) {
   }, gwas_info$metadata$column_names)
 
   gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
-  mandatory_columns <- c("CHR", "BP", "P", "EA", "OA", "EAF")
+  mandatory_columns <- c("CHR", "BP", "P", "EA", "OA")
   beta_columns <- c("BETA", "SE")
   or_columns <- c("OR", "OR_LB", "OR_UB")
 
@@ -355,8 +362,12 @@ verify_gwas_data <- function(gwas_info, gwas) {
     error_checks <- paste(error_checks, "Some SNPs have negative P-values, ")
   }
 
-  if (any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
+  if ("EAF" %in% colnames(gwas) && any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
     error_checks <- paste(error_checks, "Some SNPs have EAF values out of range, ")
+  }
+
+  if ("EAF" %in% colnames(gwas) && any(is.na(gwas$EAF))) {
+    error_checks <- paste(error_checks, "Some SNPs have missing EAF values, ")
   }
 
   if (has_beta && any(gwas$SE < 0, na.rm = T)) {

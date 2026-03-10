@@ -524,7 +524,6 @@ compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     (\(dirs) dirs[!dirs %in% dirname(dirs[-1])])()
 
-
   compiled_coloc_pairwise_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv")
   compiled_study_extractions_file <- glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv")
   compiled_coloc_clustered_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv")
@@ -535,22 +534,35 @@ compile_results <- function(gwas_info) {
     function(file) file.exists(file),
     glue::glue("{ld_block_dirs}/finemapped_studies.tsv")
   )
+  compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
+  if (is.null(compare_guids)) compare_guids <- character(0)
+  compare_guids <- setdiff(compare_guids, gwas_info$metadata$guid)
+  if (length(compare_guids) > 0) {
+    ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
+    compare_files <- as.character(outer(
+      compare_guids,
+      ld_blocks,
+      function(guid, block) glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{guid}/{block}/finemapped_studies.tsv")
+    ))
+    finemapped_studies_files <- c(finemapped_studies_files, Filter(file.exists, compare_files))
+  }
 
   if (length(finemapped_studies_files) > 0) {
-    study_extractions <- lapply(finemapped_studies_files, function(file) {
+    all_finemapped_studies <- lapply(finemapped_studies_files, function(file) {
       se_result <- data.table::fread(
         file,
         showProgress = FALSE,
         colClasses = list(character = c("chr", "snp", "study", "unique_study_id"))
       ) |>
-        dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold)
       return(se_result)
     }) |>
       data.table::rbindlist(fill = TRUE)
+    study_extractions <- all_finemapped_studies |> dplyr::filter(study == gwas_info$metadata$guid)
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.table::data.table()
+    all_finemapped_studies <- data.table::data.table()
   }
 
   all_snps_in_ld_blocks <- study_extractions |>
@@ -630,7 +642,7 @@ compile_results <- function(gwas_info) {
   associations <- find_associations_for_coloc_clustered_snps(
     gwas_info,
     coloc_clustered_results,
-    study_extractions,
+    all_finemapped_studies,
     snp_annotations
   )
 
@@ -654,11 +666,11 @@ compile_results <- function(gwas_info) {
 find_associations_for_coloc_clustered_snps <- function(
   gwas_info,
   coloc_clustered_results,
-  study_extractions,
+  all_finemapped_studies,
   snp_annotations
 ) {
-  if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
-    finemapped_studies <- study_extractions |>
+  if (nrow(coloc_clustered_results) > 0 && nrow(all_finemapped_studies) > 0) {
+    finemapped_studies <- all_finemapped_studies |>
       dplyr::select(unique_study_id, study, file, ld_block) |>
       dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
 

@@ -537,20 +537,21 @@ compile_results <- function(gwas_info) {
   )
 
   if (length(finemapped_studies_files) > 0) {
-    study_extractions <- lapply(finemapped_studies_files, function(file) {
+    all_finemapped_studies <- lapply(finemapped_studies_files, function(file) {
       se_result <- data.table::fread(
         file,
         showProgress = FALSE,
         colClasses = list(character = c("chr", "snp", "study", "unique_study_id"))
       ) |>
-        dplyr::filter(study == gwas_info$metadata$guid) |>
         dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold)
       return(se_result)
     }) |>
       data.table::rbindlist(fill = TRUE)
+    study_extractions <- all_finemapped_studies |> dplyr::filter(study == gwas_info$metadata$guid)
   } else {
     flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
     study_extractions <- data.table::data.table()
+    all_finemapped_studies <- data.table::data.table()
   }
 
   all_snps_in_ld_blocks <- study_extractions |>
@@ -630,7 +631,7 @@ compile_results <- function(gwas_info) {
   associations <- find_associations_for_coloc_clustered_snps(
     gwas_info,
     coloc_clustered_results,
-    study_extractions,
+    all_finemapped_studies,
     snp_annotations
   )
 
@@ -654,11 +655,11 @@ compile_results <- function(gwas_info) {
 find_associations_for_coloc_clustered_snps <- function(
   gwas_info,
   coloc_clustered_results,
-  study_extractions,
+  all_finemapped_studies,
   snp_annotations
 ) {
-  if (nrow(coloc_clustered_results) > 0 && length(study_extractions) > 0) {
-    finemapped_studies <- study_extractions |>
+  if (nrow(coloc_clustered_results) > 0 && nrow(all_finemapped_studies) > 0) {
+    finemapped_studies <- all_finemapped_studies |>
       dplyr::select(unique_study_id, study, file, ld_block) |>
       dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
 

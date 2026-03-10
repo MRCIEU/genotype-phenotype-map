@@ -524,7 +524,6 @@ compile_results <- function(gwas_info) {
   ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
     (\(dirs) dirs[!dirs %in% dirname(dirs[-1])])()
 
-
   compiled_coloc_pairwise_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv")
   compiled_study_extractions_file <- glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv")
   compiled_coloc_clustered_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv")
@@ -535,6 +534,18 @@ compile_results <- function(gwas_info) {
     function(file) file.exists(file),
     glue::glue("{ld_block_dirs}/finemapped_studies.tsv")
   )
+  compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
+  if (is.null(compare_guids)) compare_guids <- character(0)
+  compare_guids <- setdiff(compare_guids, gwas_info$metadata$guid)
+  if (length(compare_guids) > 0) {
+    ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
+    compare_files <- as.character(outer(
+      compare_guids,
+      ld_blocks,
+      function(guid, block) glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{guid}/{block}/finemapped_studies.tsv")
+    ))
+    finemapped_studies_files <- c(finemapped_studies_files, Filter(file.exists, compare_files))
+  }
 
   if (length(finemapped_studies_files) > 0) {
     all_finemapped_studies <- lapply(finemapped_studies_files, function(file) {

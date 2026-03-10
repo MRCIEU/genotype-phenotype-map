@@ -61,10 +61,6 @@ main <- function() {
       ) {
         return()
       }
-      # TODO: Remove this once we want to ingest UK Biobank PPP trans-only studies
-      if (!is.na(study[["cis_trans"]]) && study[["cis_trans"]] == cis_trans$trans_only) {
-        return()
-      }
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time))

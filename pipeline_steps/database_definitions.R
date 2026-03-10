@@ -424,5 +424,19 @@ gwas_upload_db <- list(
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
       h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1)
     )")
+  ),
+  associations = list(
+    name = "associations",
+    query = "CREATE TABLE associations (
+      gwas_upload_id INTEGER NOT NULL,
+      snp_id INTEGER NOT NULL,
+      study_id INTEGER,
+      existing_study_id INTEGER,
+      beta REAL NOT NULL,
+      se REAL NOT NULL CHECK (se > 0),
+      p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
+      eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
+      imputed BOOLEAN NOT NULL
+    )"
   )
 )

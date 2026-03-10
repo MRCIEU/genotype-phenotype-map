@@ -157,6 +157,13 @@ test_that("Pipeline execution and file validation", {
         file.size(extraction$file) > 0,
         info = glue::glue("Extracted file should not be empty: {extraction$file}")
       )
+      extracted_snps <- vroom::vroom(extraction$file, show_col_types = FALSE)
+      expect_true(nrow(extracted_snps) > 0, info = glue::glue("Extracted file should not be empty: {extraction$file}"))
+      expected_columns <- c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")
+      expect_true(
+        all(expected_columns %in% colnames(extracted_snps)),
+        info = glue::glue("Extracted file should have all columns present: {extraction$file}")
+      )
       expect_true(
         file.exists(extraction$svg_file),
         info = glue::glue("Extracted file should exist: {extraction$svg_file}")
@@ -172,6 +179,11 @@ test_that("Pipeline execution and file validation", {
       expect_true(
         file.size(extraction$file_with_lbfs) > 0,
         info = glue::glue("Extracted file should not be empty: {extraction$file_with_lbfs}")
+      )
+      extracted_snps_with_lbfs <- vroom::vroom(extraction$file_with_lbfs, show_col_types = FALSE)
+      expect_true(
+        any(grepl("^LBF_\\d+$", colnames(extracted_snps_with_lbfs))),
+        info = glue::glue("Extracted file should have at least one LBF_* column: {extraction$file_with_lbfs}")
       )
       return()
     })

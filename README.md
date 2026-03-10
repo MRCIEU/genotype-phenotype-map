@@ -68,3 +68,7 @@ See [the wiki](https://github.com/MRCIEU/genotype-phenotype-map/wiki) for:
 - Formatting data into BESD format
 - More detailed data architecture information
 - More detailed information of the results
+
+## Licence
+
+We have released the GPMap under the [AGPLv3 licence](LICENCE).  However, if you wish to use the GPMap commercially, please [reach out to us](https://gpmap.opengwas.io/contact.html)

@@ -107,18 +107,23 @@ load_results_data <- function(specific_results_dir) {
   studies_db_file <- file.path(specific_results_dir, 'studies.db')
 
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
-  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'coloc_pairs_full.db'), read_only = TRUE)
-  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'coloc_pairs.db'), read_only = TRUE)
+  coloc_pairs_full_file <- file.path(specific_results_dir, 'coloc_pairs_full.db')
+  coloc_pairs_db_file <- file.path(specific_results_dir, 'coloc_pairs.db')
+  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_file, read_only = TRUE)
+  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_db_file, read_only = TRUE)
   associations_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'associations.db'), read_only = TRUE)
   ld_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'ld.db'), read_only = TRUE)
 
   dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
+  dont_print <- DBI::dbExecute(coloc_pairs_significant_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
 
   # imputed studies are not stored in the database, so we need to load them from the file
   return(list(
     studies_conn = studies_conn,
     coloc_pairs_conn = coloc_pairs_conn,
     coloc_pairs_significant_conn = coloc_pairs_significant_conn,
+    coloc_pairs_full_file = coloc_pairs_full_file,
+    coloc_pairs_db_file = coloc_pairs_db_file,
     associations_conn = associations_conn,
     ld_conn = ld_conn
   ))
@@ -209,7 +214,7 @@ unique_data_types <- unique(latest_study_extractions$data_type)
 ```
 
 Broken down by data source:
-```{r data-source, echo=F, eval=F, fig.cap="Number of traits by data source"}
+```{r data-source, echo=F, fig.cap="Number of traits by data source"}
 
 latest_sources <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_sources.name, COUNT(studies.*) as num_studies
   FROM studies
@@ -789,7 +794,7 @@ if (nrow(finemap_viz) > 0) {
 ### Number of coloc pairs with H4 > 0.8 per data type
 
 ```{r coloc_pairs_summary_by_data_type, echo=F}
-latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_conn, 'SELECT
+coloc_pairs_with_studies_query <- 'SELECT
   coloc_pairs.*,
   -- Study extraction A details
   study_extraction_a.unique_study_id AS study_extraction_a_unique_study_id,
@@ -833,7 +838,13 @@ latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_conn, 'S
   JOIN studies.traits AS trait_b ON study_b.trait_id = trait_b.id
   JOIN studies.snp_annotations AS snp_annotation_b ON study_extraction_b.snp_id = snp_annotation_b.id
   WHERE coloc_pairs.h4 > 0.8 OR coloc_pairs.h3 > 0.8
-')
+'
+# Use coloc_pairs_full.db when it exists and has data; otherwise fall back to coloc_pairs.db
+# (e.g. when using create_test_db_from_results which only creates coloc_pairs.db)
+latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_conn, coloc_pairs_with_studies_query)
+if (nrow(latest_coloc_pair_results) == 0 && file.exists(latest_results$coloc_pairs_db_file)) {
+  latest_coloc_pair_results <- DBI::dbGetQuery(latest_results$coloc_pairs_significant_conn, coloc_pairs_with_studies_query)
+}
 
 all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
   snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
@@ -857,7 +868,7 @@ all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_g
 
 coloc_pair_summary_by_p_val <- function(p_val_threshold) {
   coloc_summary <- lapply(unique_data_types, function(this_data_type) {
-    data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common' & min_p < p_val_threshold)
+    data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common' & min_p <= p_val_threshold)
     coloc_results <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8 & (data_type_a == this_data_type | data_type_b == this_data_type))
 
     unique_coloc_study_extractions <- unique(c(coloc_results$study_extraction_a_id, coloc_results$study_extraction_b_id))
@@ -882,7 +893,7 @@ coloc_pair_summary_by_p_val <- function(p_val_threshold) {
       percent_extractions_not_in_coloc_pairs = if (num_study_extractions > 0) num_study_extractions_not_in_coloc / num_study_extractions else NA_real_,
       coloc_pairs_not_in_coloc_group = num_coloc_pairs_not_in_coloc_group,
       unique_coloc_study_extractions = length(unique_coloc_study_extractions),
-      percent_coloc_pairs_not_in_coloc_group = num_coloc_pairs_not_in_coloc_group / length(unique_coloc_study_extractions),
+      percent_coloc_pairs_not_in_coloc_group = if (length(unique_coloc_study_extractions) > 0) num_coloc_pairs_not_in_coloc_group / length(unique_coloc_study_extractions) else NA_real_,
       studies = num_studies,
       studies_not_in_colocs = num_studies_not_in_coloc,
       studies_in_colocs = num_studies - num_studies_not_in_coloc,
@@ -898,7 +909,7 @@ coloc_pair_summary_by_p_val <- function(p_val_threshold) {
       study_extractions_in_coloc = sum(study_extractions_in_coloc, na.rm = TRUE),
       unique_coloc_study_extractions = sum(unique_coloc_study_extractions, na.rm = TRUE),
       coloc_pairs_not_in_coloc_group = sum(coloc_pairs_not_in_coloc_group, na.rm = TRUE),
-      percent_coloc_pairs_not_in_coloc_group = sum(coloc_pairs_not_in_coloc_group, na.rm = TRUE) / sum(unique_coloc_study_extractions),
+      percent_coloc_pairs_not_in_coloc_group = if (sum(unique_coloc_study_extractions, na.rm = TRUE) > 0) sum(coloc_pairs_not_in_coloc_group, na.rm = TRUE) / sum(unique_coloc_study_extractions) else NA_real_,
       studies = sum(studies, na.rm = TRUE),
       studies_not_in_colocs = sum(studies_not_in_colocs, na.rm = TRUE),
       studies_in_colocs = sum(studies_in_colocs, na.rm = TRUE),
@@ -908,7 +919,7 @@ coloc_pair_summary_by_p_val <- function(p_val_threshold) {
       data_type = "summary",
       percent_extractions_not_in_coloc_pairs = if (study_extractions > 0) study_extractions_not_in_coloc / study_extractions else NA_real_,
       percent_studies_not_in_colocs = if (studies > 0) studies_not_in_colocs / studies else NA_real_,
-      percent_coloc_pairs_not_in_coloc_group = sum(coloc_pairs_not_in_coloc_group, na.rm = TRUE) / sum(unique_coloc_study_extractions)
+      percent_coloc_pairs_not_in_coloc_group = if (unique_coloc_study_extractions > 0) coloc_pairs_not_in_coloc_group / unique_coloc_study_extractions else NA_real_
     ) |>
     dplyr::select(any_of(names(coloc_summary)))
 
@@ -930,7 +941,8 @@ coloc_pair_summary_by_p_val <- function(p_val_threshold) {
 }
 
 significant_coloc_summary <- coloc_pair_summary_by_p_val(5e-8)
-coloc_summary_important_rows <- dplyr::select(significant_coloc_summary, data_type, study_extractions, coloc_pairs, study_extractions_not_in_coloc, study_extractions_in_coloc, percent_extractions_not_in_coloc_pairs, percent_coloc_pairs_not_in_coloc_group)
+# coloc_summary_important_rows <- dplyr::select(significant_coloc_summary, data_type, study_extractions, coloc_pairs, study_extractions_not_in_coloc, study_extractions_in_coloc, percent_coloc_pairs_not_in_coloc_group)
+coloc_summary_important_rows <- dplyr::select(significant_coloc_summary, data_type, study_extractions, coloc_pairs, percent_coloc_pairs_not_in_coloc_group)
 
 knitr::kable(coloc_summary_important_rows, caption = "Breakdown for results for 5e-8 p-value threshold")
 
@@ -938,7 +950,7 @@ knitr::kable(coloc_summary_important_rows, caption = "Breakdown for results for 
 significant_coloc_summary_numeric <- coloc_pair_summary_by_p_val(5e-8)
 # Recalculate without formatting
 coloc_summary_viz <- lapply(unique_data_types, function(this_data_type) {
-  data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common' & min_p < 5e-8)
+  data_type_study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type & variant_type == 'common' & min_p <= 5e-8)
   coloc_results <- dplyr::filter(latest_coloc_pair_results, h4 > 0.8 & (data_type_a == this_data_type | data_type_b == this_data_type))
   
   unique_coloc_study_extractions <- unique(c(coloc_results$study_extraction_a_id, coloc_results$study_extraction_b_id))
@@ -1217,9 +1229,9 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
 ggsave(file.path(results_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
 ```
 
-<!-- ### Genome-wide phenotype hits with strong H3/H4 support -->
+### Genome-wide phenotype hits with strong H3/H4 support
 
-```{r phenotype_h3_h4_rates_by_trait_category, echo=F, eval=F}
+```{r phenotype_h3_h4_rates_by_trait_category, echo=F}
 phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
   dplyr::filter(
     data_type_a == "phenotype" & min_p_a <= 5e-8 & data_type_b != "phenotype" & min_p_b <= 5e-8
@@ -1295,7 +1307,7 @@ h3_h4_support_numeric <- phenotype_hits_with_probs |>
   dplyr::summarise(
     total_hits = dplyr::n(),
     hits_h4 = sum(has_h4),
-    hits_h3 = sum(has_h3),
+    # hits_h3 = sum(has_h3),
     .groups = "drop"
   )
 
@@ -1303,10 +1315,10 @@ h3_h4_table_main <- h3_h4_support_numeric |>
   dplyr::arrange(dplyr::desc(hits_h4)) |>
   dplyr::mutate(
     pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
-    pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    # pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
     total_hits = scales::comma(total_hits),
     hits_h4 = scales::comma(hits_h4),
-    hits_h3 = scales::comma(hits_h3)
+    # hits_h3 = scales::comma(hits_h3)
   )
 
 h3_h4_totals_row <- h3_h4_support_numeric |>
@@ -1314,21 +1326,23 @@ h3_h4_totals_row <- h3_h4_support_numeric |>
     trait_category = "Total",
     total_hits = sum(total_hits),
     hits_h4 = sum(hits_h4),
-    hits_h3 = sum(hits_h3),
+    # hits_h3 = sum(hits_h3),
     .groups = "drop"
   ) |>
   dplyr::mutate(
     pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
-    pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    # pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
     total_hits = scales::comma(total_hits),
     hits_h4 = scales::comma(hits_h4),
-    hits_h3 = scales::comma(hits_h3)
+    # hits_h3 = scales::comma(hits_h3)
   )
 
 h3_h4_table <- dplyr::bind_rows(h3_h4_table_main, h3_h4_totals_row)
 
 knitr::kable(h3_h4_table, caption = "Genome-wide phenotype hits with strong colocalization support by trait category")
+```
 
+```{r h3_h4_full_table, echo=F, eval=FALSE}
 h3_h4_full_hits <- all_phenotype_study_extractions |>
   dplyr::select(id, trait_category, study_id, trait_name) |>
   dplyr::left_join(full_h3_h4_by_hit, by = c("id" = "phenotype_study_extraction_id", "trait_category" = "phenotype_trait_category")) |>
@@ -1375,7 +1389,7 @@ h3_h4_full_totals_row <- h3_h4_full_support_numeric |>
 
 h3_h4_full_table <- dplyr::bind_rows(h3_h4_full_table_main, h3_h4_full_totals_row)
 
-knitr::kable(h3_h4_full_table, caption = "Genome-wide phenotype hits with any H3/H4 support (full threshold) by trait category")
+# knitr::kable(h3_h4_full_table, caption = "Genome-wide phenotype hits with any H3/H4 support (full threshold) by trait category")
 
 h3_h4_plot_data <- h3_h4_support_numeric |>
   dplyr::mutate(

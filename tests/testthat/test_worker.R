@@ -61,18 +61,36 @@ test_that("Pipeline worker runs for TSV file", {
     expect_true(nrow(results) > 0, info = glue::glue("Results file should have rows: {file}"))
   }
 
-  compiled_files <- c(
+  compiled_coloc_pairwise_results <- vroom::vroom(
     glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv"),
+    show_col_types = FALSE
+  )
+  expect_true(nrow(compiled_coloc_pairwise_results) > 0, info = "Compiled coloc pairwise results file should have rows")
+
+  compiled_extracted_studies <- vroom::vroom(
     glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv"),
+    show_col_types = FALSE
+  )
+  expect_true(nrow(compiled_extracted_studies) > 0, info = "Compiled extracted studies file should have rows")
+
+  compiled_coloc_clustered_results <- vroom::vroom(
     glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv"),
-    glue::glue("{extracted_study_dir}/compiled_associations.tsv")
+    show_col_types = FALSE
+  )
+  expect_true(
+    nrow(compiled_coloc_clustered_results) > 0,
+    info = "Compiled coloc clustered results file should have rows"
   )
 
-  for (file in compiled_files) {
-    expect_true(file.exists(file), info = glue::glue("Compiled file should exist: {file}"))
-    results <- vroom::vroom(file, show_col_types = FALSE)
-    expect_true(nrow(results) > 0, info = glue::glue("Compiled file should have rows: {file}"))
-  }
+  compiled_associations <- vroom::vroom(
+    glue::glue("{extracted_study_dir}/compiled_associations.tsv"),
+    show_col_types = FALSE
+  )
+  expect_true(nrow(compiled_associations) > 0, info = "Compiled associations file should have rows")
+  expect_true(
+    nrow(compiled_associations) == nrow(compiled_coloc_clustered_results),
+    info = "Compiled associations file should have the same number of rows as compiled coloc clustered results file"
+  )
 })
 
 test_that("Pipeline worker runs for VCF file", {

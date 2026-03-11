@@ -161,7 +161,7 @@ process_message <- function(original_gwas_info) {
         return()
       }
 
-      gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
+      updated_gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
       if (!"EAF" %in% colnames(gwas)) {
         gwas$EAF <- NA
         vroom::vroom_write(gwas, gwas_info$metadata$file_location)
@@ -195,8 +195,7 @@ process_message <- function(original_gwas_info) {
       check_step_complete(ld_blocks_to_colocalise_file, "updated_ld_blocks_to_colocalise.tsv", output)
 
       # cleaning up memory, so it utilises less in the parallel processes
-      rm(gwas)
-      rm(gwas_data)
+      rm(gwas, updated_gwas, gwas_data)
       gc()
 
       ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)

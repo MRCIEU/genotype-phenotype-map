@@ -1,4 +1,21 @@
 library(testthat)
+library(argparser)
+
+parser <- argparser::arg_parser("Run tests")
+parser <- argparser::add_argument(
+  parser,
+  "--only",
+  help = "Run only one test file: 'worker' or 'pipeline'",
+  type = "character",
+  default = NA
+)
+args <- argparser::parse_args(parser)
+
+only_test <- if (!is.na(args$only) && nchar(trimws(args$only)) > 0) {
+  match.arg(trimws(args$only), c("worker", "pipeline"))
+} else {
+  NULL
+}
 
 TEST_DIR <- "./tests/testthat"
 OUTPUT_FILE_PATH <- "./tests/testing_complete.txt"
@@ -35,9 +52,17 @@ dir.create(latest_results_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(results_analysis_dir, showWarnings = FALSE, recursive = TRUE)
 
 message(paste("Starting tests in:", normalizePath(TEST_DIR)))
+if (!is.null(only_test)) {
+  message(paste("Running only:", only_test))
+}
 tryCatch(
   {
-    testthat::test_dir(TEST_DIR, reporter = "progress", stop_on_failure = TRUE)
+    if (!is.null(only_test)) {
+      test_file <- file.path(TEST_DIR, paste0("test_", only_test, ".R"))
+      testthat::test_file(test_file, reporter = "progress", stop_on_failure = TRUE)
+    } else {
+      testthat::test_dir(TEST_DIR, reporter = "progress", stop_on_failure = TRUE)
+    }
 
     branch_name <- trimws(system("git rev-parse --abbrev-ref HEAD", intern = TRUE)[1])
     status_message <- paste("SUCCESS: All tests passed on branch:", branch_name)

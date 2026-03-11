@@ -46,8 +46,16 @@ parser <- argparser::add_argument(
   type = "character",
   default = NA
 )
+parser <- argparser::add_argument(
+  parser,
+  "--block_list",
+  help = "CSV of studies to exclude from clustering (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
 
 args <- argparser::parse_args(parser)
+
 
 main <- function() {
   start_time <- Sys.time()
@@ -130,6 +138,19 @@ main <- function() {
     message(glue::glue("{args$ld_block}: Nothing to coloc, skipping."))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
+  }
+
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0) {
+    blocked <- is_study_blocked(block_list, finemapped_studies$study, finemapped_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      finemapped_studies <- finemapped_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from clustering"))
+    }
   }
 
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)

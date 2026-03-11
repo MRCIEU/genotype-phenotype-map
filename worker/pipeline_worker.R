@@ -582,6 +582,10 @@ compile_results <- function(gwas_info) {
     study_extractions <- merge(study_extractions, snp_annotations, by = "snp", all.x = TRUE)
   }
 
+  study_extractions <- study_extractions |>
+    dplyr::select(study, unique_study_id, snp, chr, bp, min_p, ld_block, file, file_with_lbfs)
+  vroom::vroom_write(study_extractions, compiled_study_extractions_file)
+
   coloc_clustered_results_files <- Filter(
     function(file) file.exists(file),
     glue::glue("{ld_block_dirs}/coloc_clustered_results.tsv.gz")
@@ -604,6 +608,7 @@ compile_results <- function(gwas_info) {
   } else {
     coloc_clustered_results <- data.table::data.table()
   }
+  vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
 
   coloc_pairwise_results_files <- Filter(
     function(file) file.exists(file),
@@ -636,6 +641,7 @@ compile_results <- function(gwas_info) {
   } else {
     coloc_pairwise_results <- data.table::data.table()
   }
+  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
 
   concatenate_file_with_lbfs(gwas_info, study_extractions)
 
@@ -646,13 +652,6 @@ compile_results <- function(gwas_info) {
     snp_annotations
   )
 
-  study_extractions <- study_extractions |>
-    dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
-
-  flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
-  vroom::vroom_write(study_extractions, compiled_study_extractions_file)
-  vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
-  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
   vroom::vroom_write(associations, compiled_associations_file)
 
   return(list(
@@ -704,6 +703,7 @@ find_associations_for_coloc_clustered_snps <- function(
           return(data.frame())
         }
 
+        flog.info(paste(gwas_info$metadata$guid, "Reading association file:", file_path))
         file_associations <- vroom::vroom(
           file_path,
           show_col_types = FALSE,

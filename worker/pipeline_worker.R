@@ -145,6 +145,19 @@ process_message <- function(original_gwas_info) {
     {
       update_directories_for_worker(original_gwas_info$metadata$guid)
 
+      if (dir.exists(extracted_study_dir)) {
+        unlink(extracted_study_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous extracted_study_dir"))
+      }
+      if (dir.exists(ld_block_data_dir)) {
+        unlink(ld_block_data_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous ld_block_data_dir"))
+      }
+      if (dir.exists(pipeline_metadata_dir)) {
+        unlink(pipeline_metadata_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous pipeline_metadata_dir"))
+      }
+
       dir.create(pipeline_metadata_dir, recursive = T, showWarnings = F)
       dir.create(extracted_study_dir, recursive = T, showWarnings = F)
       dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
@@ -162,7 +175,7 @@ process_message <- function(original_gwas_info) {
       }
 
       updated_gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
-      if (!"EAF" %in% colnames(gwas)) {
+      if (!"EAF" %in% colnames(updated_gwas)) {
         gwas$EAF <- NA
         vroom::vroom_write(gwas, gwas_info$metadata$file_location)
         flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))

@@ -9,6 +9,12 @@ parser <- argparser::add_argument(
   type = "character",
   default = NA
 )
+parser <- argparser::add_argument(
+  parser,
+  "--dont_delete",
+  flag = TRUE,
+  help = "Don't delete the test data"
+)
 args <- argparser::parse_args(parser)
 
 only_test <- if (!is.na(args$only) && nchar(trimws(args$only)) > 0) {
@@ -30,26 +36,28 @@ Sys.setenv("BACKUP_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/b
 
 source("pipeline_steps/constants.R")
 
-# Cleanup previous test run
-system(
-  glue::glue("rm -r {data_dir}pipeline_metadata/studies_to_process.tsv"),
-  ignore.stdout = TRUE,
-  ignore.stderr = TRUE
-)
-system(glue::glue("rm -r {data_dir}study/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-system(glue::glue("rm -r {data_dir}ld_blocks/*/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-system(
-  glue::glue("rm -r {data_dir}pipeline_metadata/updated_ld_blocks_to_colocalise.tsv"),
-  ignore.stdout = TRUE,
-  ignore.stderr = TRUE
-)
-system(glue::glue("rm -r {results_dir}latest/studies_processed.tsv.gz"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-system(glue::glue("rm -r {results_dir}/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-system(glue::glue("rm -r {gwas_upload_dir}gwas_upload/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-system(glue::glue("rm -r {data_dir}ld_blocks/gwas_upload/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
-dir.create(current_results_dir, showWarnings = FALSE, recursive = TRUE)
-dir.create(latest_results_dir, showWarnings = FALSE, recursive = TRUE)
-dir.create(results_analysis_dir, showWarnings = FALSE, recursive = TRUE)
+if (!args$dont_delete) {
+  # Cleanup previous test run
+  system(
+    glue::glue("rm -r {data_dir}pipeline_metadata/studies_to_process.tsv"),
+    ignore.stdout = TRUE,
+    ignore.stderr = TRUE
+  )
+  system(glue::glue("rm -r {data_dir}study/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  system(glue::glue("rm -r {data_dir}ld_blocks/*/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  system(
+    glue::glue("rm -r {data_dir}pipeline_metadata/updated_ld_blocks_to_colocalise.tsv"),
+    ignore.stdout = TRUE,
+    ignore.stderr = TRUE
+  )
+  system(glue::glue("rm -r {results_dir}latest/studies_processed.tsv.gz"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  system(glue::glue("rm -r {results_dir}/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  system(glue::glue("rm -r {gwas_upload_dir}gwas_upload/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  system(glue::glue("rm -r {data_dir}ld_blocks/gwas_upload/*"), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  dir.create(current_results_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(latest_results_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(results_analysis_dir, showWarnings = FALSE, recursive = TRUE)
+}
 
 message(paste("Starting tests in:", normalizePath(TEST_DIR)))
 if (!is.null(only_test)) {
@@ -72,6 +80,7 @@ tryCatch(
   },
   error = function(e) {
     message("\n❌ FAILURE: Some tests failed or had errors.")
+    writeLines(e$message, con = OUTPUT_FILE_PATH)
     return()
   }
 )

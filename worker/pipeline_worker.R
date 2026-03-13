@@ -22,6 +22,7 @@ parser <- argparser::add_argument(
   default = NULL
 )
 args <- argparser::parse_args(parser)
+parallel_block_processing <- 6
 
 if (!is_test_run) {
   tryCatch(
@@ -222,7 +223,6 @@ process_message <- function(original_gwas_info) {
       ]
 
       flog.info(paste(gwas_info$metadata$guid, "Processing", length(blocks_parallel), "blocks in parallel"))
-      parallel_block_processing <- 6
       processed_blocks_parallel <- parallel::mclapply(
         blocks_parallel,
         mc.cores = parallel_block_processing,
@@ -492,8 +492,12 @@ process_single_block <- function(block, gwas_info) {
       flog.info(paste(gwas_info$metadata$guid, "Colocalising regions for block:", block))
       gwas_upload_ids_to_compare <- gwas_info$metadata$gwas_upload_ids_to_compare
       if (is.null(gwas_upload_ids_to_compare)) gwas_upload_ids_to_compare <- character(0)
+      gwas_upload_ids_to_compare <- as.character(unlist(gwas_upload_ids_to_compare))
+      gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(trimws(gwas_upload_ids_to_compare)) > 0]
+      flog.info(paste(gwas_info$metadata$guid, "GWASs to compare:", paste(gwas_upload_ids_to_compare, collapse = ", ")))
       compare_ids_arg <- if (length(gwas_upload_ids_to_compare) > 0) {
-        glue::glue(" --gwas_upload_ids_to_compare {glue::glue_collapse(gwas_upload_ids_to_compare, sep = ',')}")
+        compare_val <- paste(gwas_upload_ids_to_compare, collapse = ",")
+        glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
       } else {
         ""
       }
@@ -507,6 +511,7 @@ process_single_block <- function(block, gwas_info) {
         " 2>&1"
       )
       output <- system(coloc_regions, wait = T, intern = T)
+      flog.info(paste(gwas_info$metadata$guid, "Coloc regions output:", output))
       check_step_complete(output_files$coloc, block, output)
 
       flog.info(paste(gwas_info$metadata$guid, "Time taken for block:", block, diff_time_taken(start_time)))
@@ -548,6 +553,7 @@ compile_results <- function(gwas_info) {
   )
   compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
   if (is.null(compare_guids)) compare_guids <- character(0)
+  compare_guids <- as.character(unlist(compare_guids))
   compare_guids <- setdiff(compare_guids, gwas_info$metadata$guid)
   if (length(compare_guids) > 0) {
     ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
@@ -626,6 +632,16 @@ compile_results <- function(gwas_info) {
     function(file) file.exists(file),
     glue::glue("{ld_block_dirs}/coloc_pairwise_results.tsv.gz")
   )
+  if (length(compare_guids) > 0) {
+    ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
+    compare_pairwise_files <- as.character(outer(
+      compare_guids,
+      ld_blocks,
+      function(guid, block) paste0(gwas_upload_dir, "ld_blocks/gwas_upload/", guid, "/", block, "/coloc_pairwise_results.tsv.gz")
+    ))
+    coloc_pairwise_results_files <- c(coloc_pairwise_results_files, Filter(file.exists, compare_pairwise_files))
+  }
+
   if (length(coloc_pairwise_results_files) > 0) {
     coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
       cp_result <- data.table::fread(file, showProgress = FALSE) |>
@@ -680,6 +696,7 @@ find_associations_for_coloc_clustered_snps <- function(
   all_finemapped_studies,
   snp_annotations
 ) {
+  flog.info(paste(gwas_info$metadata$guid, "Finding associations for coloc clustered SNPs"))
   if (nrow(coloc_clustered_results) == 0 || nrow(all_finemapped_studies) == 0) {
     return(data.frame())
   }
@@ -708,13 +725,9 @@ find_associations_for_coloc_clustered_snps <- function(
   )
   data.table::setkey(snp_mapping, snp)
 
-  temp_assoc_file <- tempfile(fileext = ".tsv.gz")
-  on.exit(if (file.exists(temp_assoc_file)) unlink(temp_assoc_file), add = TRUE)
-  write_header <- TRUE
-
-  for (i in seq_along(files_to_read)) {
-    file_group <- files_to_read[[i]]
+  process_one_assoc_file <- function(file_group) {
     file_path <- file_group$file[1]
+    study_for_file <- file_group$study[1]
     target_snps <- unique(file_group$snp)
 
     if (!grepl("^/", file_path) && !grepl("^study", file_path)) {
@@ -723,17 +736,11 @@ find_associations_for_coloc_clustered_snps <- function(
       file_path <- file.path(data_dir, file_path)
     }
 
-    if (!file.exists(file_path)) {
-      flog.warn(paste(gwas_info$metadata$guid, "Association file not found:", file_path))
-      next
-    }
+    if (!file.exists(file_path)) return(NULL)
 
     avail_cols <- names(data.table::fread(file_path, nrows = 0, showProgress = FALSE))
     required <- c("SNP", "BETA", "SE", "EAF")
-    if (!all(required %in% avail_cols)) {
-      flog.warn(paste(gwas_info$metadata$guid, "Association file missing required columns:", file_path))
-      next
-    }
+    if (!all(required %in% avail_cols)) return(NULL)
     cols_to_read <- c(required, if ("IMPUTED" %in% avail_cols) "IMPUTED")
 
     gwas <- data.table::fread(
@@ -742,39 +749,29 @@ find_associations_for_coloc_clustered_snps <- function(
       showProgress = FALSE,
       nThread = 1
     )
+
     gwas <- gwas[SNP %in% target_snps]
-    if (nrow(gwas) == 0) {
-      rm(gwas)
-      gc(verbose = FALSE)
-      next
-    }
+    if (nrow(gwas) == 0) return(NULL)
 
     gwas[, p := beta_se_to_p(BETA, SE)]
     if (!"IMPUTED" %in% colnames(gwas)) gwas[, IMPUTED := FALSE]
-    gwas <- gwas[snp_mapping, on = c(SNP = "snp"), nomatch = 0]
+    snp_mapping_this_study <- snp_mapping[study == study_for_file]
+    gwas <- gwas[snp_mapping_this_study, on = c(SNP = "snp"), nomatch = 0]
 
-    if (nrow(gwas) > 0) {
-      out_cols <- c("SNP", "study", "BETA", "SE", "p", "EAF", "IMPUTED")
-      data.table::fwrite(
-        gwas[, ..out_cols],
-        temp_assoc_file,
-        append = !write_header,
-        compress = "gzip",
-        sep = "\t"
-      )
-      write_header <- FALSE
-    }
-    rm(gwas)
-    gc(verbose = FALSE)
+    if (nrow(gwas) == 0) return(NULL)
+    return(gwas[, .(SNP, study, BETA, SE, p, EAF, IMPUTED)])
   }
 
-  if (write_header) {
+  assoc_chunks <- parallel::mclapply(
+    files_to_read,
+    process_one_assoc_file,
+    mc.cores = parallel_block_processing
+  )
+  valid_chunks <- Filter(Negate(is.null), assoc_chunks)
+  if (length(valid_chunks) == 0) {
     return(data.frame())
   }
-
-  associations <- data.table::fread(temp_assoc_file, showProgress = FALSE)
-  unlink(temp_assoc_file)
-  gc(verbose = FALSE)
+  associations <- data.table::rbindlist(valid_chunks)
 
   if (nrow(associations) == 0) {
     return(data.frame())
@@ -890,11 +887,11 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
 delete_gwas <- function(guid) {
   flog.info(paste(guid, "Deleting GWAS"))
   all_delete_status <- c()
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}ld_blocks/gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "ld_blocks/gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}pipeline_metadata/gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "pipeline_metadata/gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
 
   if (any(all_delete_status != 0)) {

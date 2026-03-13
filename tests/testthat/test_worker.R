@@ -3,6 +3,7 @@ library(testthat)
 setwd("../../")
 source("pipeline_steps/constants.R")
 ld_block_of_interest <- "EUR/1/101384499-103762931"
+study_to_compare <- "22d5cdd8-ac0b-bb58-d2c3-c342ac8ec78b"
 
 setup({
   real_ld_block_data_dir <- sub("/test/", "/", ld_block_data_dir)
@@ -12,20 +13,17 @@ setup({
     glue::glue("{real_ld_block_data_dir}/{existing_finemapped_studies}"),
     glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv")
   )
+  if (dir.exists(glue::glue("{data_dir}/gwas_upload"))) {
+    unlink(glue::glue("{data_dir}/gwas_upload"), recursive = TRUE)
+  }
+  fs::dir_copy(
+    glue::glue("{data_dir}/gwas_upload_test_setup"),
+    glue::glue("{data_dir}/gwas_upload")
+  )
 })
 
-
-# test_that("Pipeline worker fails and sends message to DLQ for bad data", {
-#   redis_payload <- '/home/pipeline/tests/data/hg38_tsv_redis_message_bad_data.json'
-#   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),
-#     wait = TRUE,
-#     intern = TRUE,
-#     ignore.stdout = FALSE,
-#     ignore.stderr = FALSE
-#   )
-# })
-
 test_that("Pipeline worker runs for TSV file", {
+  # redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message_compare.json"
   redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message.json"
   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),
     wait = TRUE,
@@ -36,6 +34,10 @@ test_that("Pipeline worker runs for TSV file", {
 
   redis_message <- jsonlite::fromJSON(redis_payload)
   gwas_info <- jsonlite::fromJSON(redis_message[[2]])
+
+  output_file <- glue::glue("{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/output_worker_error.log")
+  writeLines(output, output_file)
+  print(glue::glue("Output written to {output_file}"))
 
   has_errors <- grepl("error", output, ignore.case = TRUE)
   if (any(has_errors)) {
@@ -88,8 +90,12 @@ test_that("Pipeline worker runs for TSV file", {
   )
   expect_true(nrow(compiled_associations) > 0, info = "Compiled associations file should have rows")
   expect_true(
-    nrow(compiled_associations) == nrow(compiled_coloc_clustered_results),
-    info = "Compiled associations file should have the same number of rows as compiled coloc clustered results file"
+    any(compiled_associations$study_name == gwas_info$metadata$guid),
+    info = "Compiled associations file should contain the study name"
+  )
+  expect_true(
+    any(compiled_associations$study_name == study_to_compare),
+    info = "Compiled associations file should contain the study name to compare"
   )
 })
 

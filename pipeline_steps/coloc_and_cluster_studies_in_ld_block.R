@@ -83,8 +83,12 @@ main <- function() {
   }
 
   if (!is.na(args$worker_guid)) {
-    existing_finemapped_studies_file <- glue::glue("{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv")
+    finemapped_studies <- finemapped_studies |>
+      dplyr::filter(study == args$worker_guid) |>
+      dplyr::filter(min_p <= args$worker_p_value_threshold)
+    worker_guid_bp <- finemapped_studies$bp[finemapped_studies$study == args$worker_guid]
 
+    existing_finemapped_studies_file <- glue::glue("{data_dir}/ld_blocks/{args$ld_block}/finemapped_studies.tsv")
     if (file.exists(existing_finemapped_studies_file)) {
       if (!is.na(args$worker_p_value_threshold)) {
         finemapped_studies <- finemapped_studies |>
@@ -97,7 +101,7 @@ main <- function() {
         col_types = finemapped_column_types,
         show_col_types = F
       ) |>
-        dplyr::filter(min_p <= min_p_allowed_for_worker)
+        dplyr::filter(min_p <= min_p_allowed_for_worker & abs(min(worker_guid_bp) - bp) <= bp_range)
 
       finemapped_studies <- dplyr::bind_rows(finemapped_studies, existing_finemapped_studies) |>
         dplyr::arrange(unique_study_id)
@@ -108,9 +112,13 @@ main <- function() {
 
   # Load finemapped studies from additional GWAS uploads to compare with
   gwas_upload_ids_to_compare <- character(0)
-  if (!is.na(args$gwas_upload_ids_to_compare) && nchar(trimws(args$gwas_upload_ids_to_compare)) > 0) {
-    gwas_upload_ids_to_compare <- strsplit(trimws(args$gwas_upload_ids_to_compare), "\\s*,\\s*")[[1]]
+  raw_compare_arg <- args$gwas_upload_ids_to_compare
+  if (!is.na(raw_compare_arg) && nchar(trimws(raw_compare_arg)) > 0) {
+    gwas_upload_ids_to_compare <- strsplit(trimws(raw_compare_arg), "\\s*,\\s*")[[1]]
     gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(gwas_upload_ids_to_compare) > 0]
+    message(glue::glue(
+      "{args$ld_block}: Received gwas_upload_ids_to_compare: {raw_compare_arg} -> {length(gwas_upload_ids_to_compare)} GUIDs")
+    )
   }
   for (compare_guid in gwas_upload_ids_to_compare) {
     if (compare_guid == args$worker_guid) next
@@ -122,7 +130,8 @@ main <- function() {
         compare_finemapped_file,
         col_types = finemapped_column_types,
         show_col_types = F
-      )
+      ) |>
+        dplyr::filter(study == compare_guid)
       if (nrow(compare_finemapped) > 0) {
         finemapped_studies <- dplyr::bind_rows(finemapped_studies, compare_finemapped) |>
           dplyr::distinct(unique_study_id, .keep_all = TRUE) |>
@@ -156,7 +165,7 @@ main <- function() {
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
 
   # Get all possible pairs within bp_range, excluding already calculated pairs
-  study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results, args$worker_guid)
+  study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results)
   message(
     glue::glue("{args$ld_block}: Found {nrow(study_pairs)} study pairs to coloc in {diff_time_taken(start_time)}")
   )
@@ -347,11 +356,10 @@ main <- function() {
 #' and returns a list of study pairs to colocalise
 #' @param studies: list of finemapped studies to colocalise
 #' @param existing_results: list of existing coloc results
-#' @param worker_guid: worker GUID
 #' @returns list of study pairs to colocalise, with the bp distance between the studies
 #' @import data.table
 #' @export
-get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
+get_study_pairs_to_coloc <- function(studies, existing_results) {
   studies <- dplyr::mutate(studies, id = dplyr::row_number()) |>
     dplyr::filter(min_p <= lowest_p_value_threshold | !ignore)
   studies <- data.table::as.data.table(studies)
@@ -373,11 +381,6 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid) {
     )
   ] |>
     tibble::as_tibble()
-
-  if (!is.na(worker_guid)) {
-    pairs_filtered <- pairs_filtered |>
-      dplyr::filter((study_a == worker_guid | study_b == worker_guid) & !ignore)
-  }
 
   existing_results <- data.table::as.data.table(existing_results)
   if (nrow(existing_results) > 0) {

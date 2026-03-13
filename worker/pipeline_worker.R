@@ -613,7 +613,12 @@ compile_results <- function(gwas_info) {
       data.table::rbindlist(fill = TRUE)
 
     if (nrow(coloc_clustered_results) > 0) {
+      worker_unique_study_ids <- study_extractions$unique_study_id
+      components_with_worker <- coloc_clustered_results |>
+        dplyr::filter(unique_study_id %in% worker_unique_study_ids) |>
+        dplyr::distinct(ld_block, component)
       coloc_clustered_results <- coloc_clustered_results |>
+        dplyr::inner_join(components_with_worker, by = c("ld_block", "component")) |>
         dplyr::group_by(ld_block, component) |>
         dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
         dplyr::ungroup() |>

@@ -1,1 +1,1 @@
-Test failures.
+SUCCESS: All tests passed on branch: bug/debug-bad-data-gwas-upload

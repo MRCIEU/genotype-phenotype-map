@@ -635,7 +635,9 @@ compile_results <- function(gwas_info) {
     compare_pairwise_files <- as.character(outer(
       compare_guids,
       ld_blocks,
-      function(guid, block) paste0(gwas_upload_dir, "ld_blocks/gwas_upload/", guid, "/", block, "/coloc_pairwise_results.tsv.gz")
+      function(guid, block) {
+        return(paste0(gwas_upload_dir, "ld_blocks/gwas_upload/", guid, "/", block, "/coloc_pairwise_results.tsv.gz"))
+      }
     ))
     coloc_pairwise_results_files <- c(coloc_pairwise_results_files, Filter(file.exists, compare_pairwise_files))
   }

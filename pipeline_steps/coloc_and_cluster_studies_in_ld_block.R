@@ -116,9 +116,6 @@ main <- function() {
   if (!is.na(raw_compare_arg) && nchar(trimws(raw_compare_arg)) > 0) {
     gwas_upload_ids_to_compare <- strsplit(trimws(raw_compare_arg), "\\s*,\\s*")[[1]]
     gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(gwas_upload_ids_to_compare) > 0]
-    message(glue::glue(
-      "{args$ld_block}: Received gwas_upload_ids_to_compare: {raw_compare_arg} -> {length(gwas_upload_ids_to_compare)} GUIDs")
-    )
   }
   for (compare_guid in gwas_upload_ids_to_compare) {
     if (compare_guid == args$worker_guid) next
@@ -165,7 +162,12 @@ main <- function() {
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
 
   # Get all possible pairs within bp_range, excluding already calculated pairs
-  study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results, args$worker_guid, gwas_upload_ids_to_compare)
+  study_pairs <- get_study_pairs_to_coloc(
+    finemapped_studies,
+    coloc_results,
+    args$worker_guid,
+    gwas_upload_ids_to_compare
+  )
   message(
     glue::glue("{args$ld_block}: Found {nrow(study_pairs)} study pairs to coloc in {diff_time_taken(start_time)}")
   )
@@ -320,7 +322,7 @@ main <- function() {
 #' @returns coloc_results with new coloc pairs and (when worker) main pipeline pairs for clustering
 #' @export
 run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_results,
-                                     worker_guid, ld_block, start_time) {
+                                      worker_guid, ld_block, start_time) {
   results <- lapply(seq_len(nrow(study_pairs)), function(i) {
     pair <- study_pairs[i, ]
     first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
@@ -429,7 +431,7 @@ get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid, com
     )
   ] |>
     tibble::as_tibble()
-  
+
   if (!is.na(worker_guid) && length(compare_guids) == 0) {
     pairs_filtered <- pairs_filtered |> dplyr::filter(study_a == worker_guid | study_b == worker_guid)
   } else if (!is.na(worker_guid) && length(compare_guids) > 0) {

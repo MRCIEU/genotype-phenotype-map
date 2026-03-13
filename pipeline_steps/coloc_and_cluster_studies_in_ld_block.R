@@ -376,22 +376,23 @@ run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_
   if (!is.na(worker_guid) && nrow(study_pairs) > 0) {
     main_pipeline_coloc_file <- glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz")
     if (file.exists(main_pipeline_coloc_file)) {
-    main_pipeline_coloc <- vroom::vroom(
-      glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz"),
-      delim = "\t",
-      show_col_types = FALSE
-    )
-
-    studies_in_pairs <- unique(c(study_pairs$unique_study_a, study_pairs$unique_study_b))
-    main_pipeline_coloc <- main_pipeline_coloc |>
-      dplyr::filter(
-        unique_study_a %in% studies_in_pairs & unique_study_b %in% studies_in_pairs
+      main_pipeline_coloc <- vroom::vroom(
+        glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz"),
+        delim = "\t",
+        show_col_types = FALSE
       )
 
-    coloc_results <- dplyr::bind_rows(coloc_results, main_pipeline_coloc)
-    message(glue::glue(
-      "{ld_block}: Added {nrow(main_pipeline_coloc)} main pipeline coloc pairs for clustering"
-    ))
+      studies_in_pairs <- unique(c(study_pairs$unique_study_a, study_pairs$unique_study_b))
+      main_pipeline_coloc <- main_pipeline_coloc |>
+        dplyr::filter(
+          unique_study_a %in% studies_in_pairs & unique_study_b %in% studies_in_pairs
+        )
+
+      coloc_results <- dplyr::bind_rows(coloc_results, main_pipeline_coloc)
+      message(glue::glue(
+        "{ld_block}: Added {nrow(main_pipeline_coloc)} main pipeline coloc pairs for clustering"
+      ))
+    }
   }
 
   return(coloc_results)

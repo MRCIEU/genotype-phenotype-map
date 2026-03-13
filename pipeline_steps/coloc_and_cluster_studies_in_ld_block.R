@@ -359,7 +359,7 @@ main <- function() {
 #' @returns list of study pairs to colocalise, with the bp distance between the studies
 #' @import data.table
 #' @export
-get_study_pairs_to_coloc <- function(studies, existing_results) {
+get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid, compare_guids) {
   studies <- dplyr::mutate(studies, id = dplyr::row_number()) |>
     dplyr::filter(min_p <= lowest_p_value_threshold | !ignore)
   studies <- data.table::as.data.table(studies)
@@ -381,6 +381,15 @@ get_study_pairs_to_coloc <- function(studies, existing_results) {
     )
   ] |>
     tibble::as_tibble()
+  
+  if (!is.na(worker_guid) && length(compare_guids) == 0) {
+    pairs_filtered <- pairs_filtered |> dplyr::filter(study_a == worker_guid | study_b == worker_guid)
+  } else if (!is.na(worker_guid) && length(compare_guids) > 0) {
+    pairs_filtered <- pairs_filtered |>
+      dplyr::filter(
+        study_a == worker_guid | study_b == worker_guid | study_a %in% compare_guids | study_b %in% compare_guids
+      )
+  }
 
   existing_results <- data.table::as.data.table(existing_results)
   if (nrow(existing_results) > 0) {

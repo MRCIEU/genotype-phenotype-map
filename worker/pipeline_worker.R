@@ -494,7 +494,6 @@ process_single_block <- function(block, gwas_info) {
       if (is.null(gwas_upload_ids_to_compare)) gwas_upload_ids_to_compare <- character(0)
       gwas_upload_ids_to_compare <- as.character(unlist(gwas_upload_ids_to_compare))
       gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(trimws(gwas_upload_ids_to_compare)) > 0]
-      flog.info(paste(gwas_info$metadata$guid, "GWASs to compare:", paste(gwas_upload_ids_to_compare, collapse = ", ")))
       compare_ids_arg <- if (length(gwas_upload_ids_to_compare) > 0) {
         compare_val <- paste(gwas_upload_ids_to_compare, collapse = ",")
         glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
@@ -511,7 +510,6 @@ process_single_block <- function(block, gwas_info) {
         " 2>&1"
       )
       output <- system(coloc_regions, wait = T, intern = T)
-      flog.info(paste(gwas_info$metadata$guid, "Coloc regions output:", output))
       check_step_complete(output_files$coloc, block, output)
 
       flog.info(paste(gwas_info$metadata$guid, "Time taken for block:", block, diff_time_taken(start_time)))

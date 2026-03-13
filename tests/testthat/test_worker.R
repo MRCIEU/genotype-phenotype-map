@@ -20,11 +20,15 @@ setup({
     glue::glue("{data_dir}/gwas_upload_test_setup"),
     glue::glue("{data_dir}/gwas_upload")
   )
+  fs::dir_copy(
+    glue::glue("{data_dir}/gwas_upload_test_setup/ld_blocks/gwas_upload/{study_to_compare}"),
+    glue::glue("{data_dir}/ld_blocks/gwas_upload/{study_to_compare}")
+  )
 })
 
 test_that("Pipeline worker runs for TSV file", {
   # redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message_compare.json"
-  redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message.json"
+  redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message_compare.json"
   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),
     wait = TRUE,
     intern = TRUE,
@@ -34,10 +38,6 @@ test_that("Pipeline worker runs for TSV file", {
 
   redis_message <- jsonlite::fromJSON(redis_payload)
   gwas_info <- jsonlite::fromJSON(redis_message[[2]])
-
-  output_file <- glue::glue("{gwas_upload_dir}gwas_upload/{gwas_info$metadata$guid}/output_worker_error.log")
-  writeLines(output, output_file)
-  print(glue::glue("Output written to {output_file}"))
 
   has_errors <- grepl("error", output, ignore.case = TRUE)
   if (any(has_errors)) {

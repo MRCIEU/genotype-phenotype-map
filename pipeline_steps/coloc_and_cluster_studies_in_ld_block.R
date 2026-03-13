@@ -165,7 +165,7 @@ main <- function() {
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
 
   # Get all possible pairs within bp_range, excluding already calculated pairs
-  study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results)
+  study_pairs <- get_study_pairs_to_coloc(finemapped_studies, coloc_results, args$worker_guid, gwas_upload_ids_to_compare)
   message(
     glue::glue("{args$ld_block}: Found {nrow(study_pairs)} study pairs to coloc in {diff_time_taken(start_time)}")
   )
@@ -226,58 +226,16 @@ main <- function() {
 
   gc(verbose = FALSE)
 
-  results <- lapply(seq_len(nrow(study_pairs)), function(i) {
-    pair <- study_pairs[i, ]
-    first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
-    second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
-
-    tryCatch(
-      {
-        result <- pairwise_coloc_analysis(first_gwas, second_gwas)
-      },
-      error = function(e) {
-        message(glue::glue("Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}"))
-        stop(glue::glue("Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}"))
-      }
-    )
-    if (is.null(result)) {
-      result <- data.frame(
-        unique_study_a = pair$unique_study_a,
-        study_a = NA,
-        unique_study_b = pair$unique_study_b,
-        study_b = NA,
-        bp_distance = NA,
-        ignore = T,
-        false_positive = F,
-        false_negative = F,
-        nsnps = NA,
-        hit1 = NA,
-        hit2 = NA,
-        PP.H0.abf = NA,
-        PP.H1.abf = NA,
-        PP.H2.abf = NA,
-        PP.H3.abf = NA,
-        PP.H4.abf = NA,
-        idx1 = NA,
-        idx2 = NA,
-        h4 = NA,
-        ld_block = args$ld_block
-      )
-      return(result)
-    }
-
-    result <- dplyr::bind_cols(pair, result)
-    return(result)
-  })
-  new_coloc_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
-
-  message(
-    glue::glue("{args$ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}")
+  coloc_results <- run_coloc_for_study_pairs(
+    study_pairs = study_pairs,
+    studies_to_colocalise = studies_to_colocalise,
+    coloc_results = coloc_results,
+    worker_guid = args$worker_guid,
+    ld_block = args$ld_block,
+    start_time = start_time
   )
 
-  if ((!is.null(nrow(new_coloc_results)) && nrow(new_coloc_results) > 0) || args$force_clustering == TRUE) {
-    coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
-
+  if ((!is.null(nrow(coloc_results)) && nrow(coloc_results) > 0) || args$force_clustering == TRUE) {
     can_cluster <- nrow(coloc_results) > 0 && "unique_study_a" %in% colnames(coloc_results)
 
     if (can_cluster) {
@@ -352,10 +310,99 @@ main <- function() {
   return()
 }
 
+#' Run coloc for study pairs and merge with main pipeline results when worker
+#' @param study_pairs: tibble of pairs to colocalise
+#' @param studies_to_colocalise: named list of LBF vectors per unique_study_id
+#' @param coloc_results: existing coloc pairwise results
+#' @param worker_guid: worker GUID if worker run, NA otherwise
+#' @param ld_block: LD block string
+#' @param start_time: start time for timing messages
+#' @returns coloc_results with new coloc pairs and (when worker) main pipeline pairs for clustering
+#' @export
+run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_results,
+                                     worker_guid, ld_block, start_time) {
+  results <- lapply(seq_len(nrow(study_pairs)), function(i) {
+    pair <- study_pairs[i, ]
+    first_gwas <- studies_to_colocalise[[pair$unique_study_a]]
+    second_gwas <- studies_to_colocalise[[pair$unique_study_b]]
+
+    tryCatch(
+      {
+        result <- pairwise_coloc_analysis(first_gwas, second_gwas)
+      },
+      error = function(e) {
+        message(glue::glue("Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}"))
+        stop(glue::glue("Error colocating {pair$unique_study_a} and {pair$unique_study_b}: {e}"))
+      }
+    )
+    if (is.null(result)) {
+      result <- data.frame(
+        unique_study_a = pair$unique_study_a,
+        study_a = NA,
+        unique_study_b = pair$unique_study_b,
+        study_b = NA,
+        bp_distance = NA,
+        ignore = T,
+        false_positive = F,
+        false_negative = F,
+        nsnps = NA,
+        hit1 = NA,
+        hit2 = NA,
+        PP.H0.abf = NA,
+        PP.H1.abf = NA,
+        PP.H2.abf = NA,
+        PP.H3.abf = NA,
+        PP.H4.abf = NA,
+        idx1 = NA,
+        idx2 = NA,
+        h4 = NA,
+        ld_block = ld_block
+      )
+      return(result)
+    }
+
+    result <- dplyr::bind_cols(pair, result)
+    return(result)
+  })
+  new_coloc_results <- dplyr::bind_rows(results[!sapply(results, is.null)])
+
+  message(
+    glue::glue("{ld_block}: Colocated {nrow(new_coloc_results)} study pairs in {diff_time_taken(start_time)}")
+  )
+
+  coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
+
+  # Add main pipeline coloc pairs for clustering if this is a worker run
+  if (!is.na(worker_guid) && nrow(study_pairs) > 0) {
+    main_pipeline_coloc_file <- glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz")
+    if (file.exists(main_pipeline_coloc_file)) {
+    main_pipeline_coloc <- vroom::vroom(
+      glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz"),
+      delim = "\t",
+      show_col_types = FALSE
+    )
+
+    studies_in_pairs <- unique(c(study_pairs$unique_study_a, study_pairs$unique_study_b))
+    main_pipeline_coloc <- main_pipeline_coloc |>
+      dplyr::filter(
+        unique_study_a %in% studies_in_pairs & unique_study_b %in% studies_in_pairs
+      )
+
+    coloc_results <- dplyr::bind_rows(coloc_results, main_pipeline_coloc)
+    message(glue::glue(
+      "{ld_block}: Added {nrow(main_pipeline_coloc)} main pipeline coloc pairs for clustering"
+    ))
+  }
+
+  return(coloc_results)
+}
+
 #' get_study_pairs_to_coloc takes a list of studies and a list of existing coloc results,
 #' and returns a list of study pairs to colocalise
 #' @param studies: list of finemapped studies to colocalise
 #' @param existing_results: list of existing coloc results
+#' @param worker_guid: worker GUID if worker run, NA otherwise
+#' @param compare_guids: list of GWAS upload GUIDs to include in coloc comparison
 #' @returns list of study pairs to colocalise, with the bp distance between the studies
 #' @import data.table
 #' @export

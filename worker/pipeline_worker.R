@@ -511,6 +511,7 @@ process_single_block <- function(block, gwas_info) {
       )
       output <- system(coloc_regions, wait = T, intern = T)
       check_step_complete(output_files$coloc, block, output)
+      flog.info(paste(gwas_info$metadata$guid, "Coloc output:", paste(output, collapse = "\n")))
 
       flog.info(paste(gwas_info$metadata$guid, "Time taken for block:", block, diff_time_taken(start_time)))
       return(block)

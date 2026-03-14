@@ -117,11 +117,13 @@ main <- function() {
     gwas_upload_ids_to_compare <- strsplit(trimws(raw_compare_arg), "\\s*,\\s*")[[1]]
     gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(gwas_upload_ids_to_compare) > 0]
   }
+  message(glue::glue("Comparing {length(gwas_upload_ids_to_compare)} GWAS uploads: {paste(gwas_upload_ids_to_compare, collapse = ', ')}"))
   for (compare_guid in gwas_upload_ids_to_compare) {
     if (compare_guid == args$worker_guid) next
     compare_finemapped_file <- glue::glue(
-      "{gwas_upload_dir}ld_blocks/gwas_upload/{compare_guid}/{args$ld_block}/finemapped_studies.tsv"
+      "{gwas_upload_dir}/ld_blocks/gwas_upload/{compare_guid}/{args$ld_block}/finemapped_studies.tsv"
     )
+    message(glue::glue("Comparing {compare_guid} in {compare_finemapped_file}"))
     if (file.exists(compare_finemapped_file)) {
       compare_finemapped <- vroom::vroom(
         compare_finemapped_file,
@@ -129,6 +131,7 @@ main <- function() {
         show_col_types = F
       ) |>
         dplyr::filter(study == compare_guid)
+      message(glue::glue("Found {nrow(compare_finemapped)} finemapped studies in {compare_finemapped_file}"))
       if (nrow(compare_finemapped) > 0) {
         finemapped_studies <- dplyr::bind_rows(finemapped_studies, compare_finemapped) |>
           dplyr::distinct(unique_study_id, .keep_all = TRUE) |>
@@ -137,6 +140,8 @@ main <- function() {
           "{args$ld_block}: Added {nrow(compare_finemapped)} finemapped studies from compare upload {compare_guid}"
         ))
       }
+    } else {
+      message(glue::glue("Compare file {compare_finemapped_file} does not exist"))
     }
   }
 

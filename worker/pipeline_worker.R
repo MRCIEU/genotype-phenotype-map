@@ -490,15 +490,15 @@ process_single_block <- function(block, gwas_info) {
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Colocalising regions for block:", block))
-      gwas_upload_ids_to_compare <- gwas_info$metadata$gwas_upload_ids_to_compare
+      gwas_upload_ids_to_compare <- gwas_info$metadata$compare_with_upload_guids
       if (is.null(gwas_upload_ids_to_compare)) gwas_upload_ids_to_compare <- character(0)
       gwas_upload_ids_to_compare <- as.character(unlist(gwas_upload_ids_to_compare))
-      gwas_upload_ids_to_compare <- gwas_upload_ids_to_compare[nchar(trimws(gwas_upload_ids_to_compare)) > 0]
-      compare_ids_arg <- if (length(gwas_upload_ids_to_compare) > 0) {
+
+      if (length(gwas_upload_ids_to_compare) > 0) {
         compare_val <- paste(gwas_upload_ids_to_compare, collapse = ",")
-        glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
+        compare_ids_arg <_ glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
       } else {
-        ""
+        compare_ids_arg <- ""
       }
       coloc_regions <- glue::glue(
         "Rscript coloc_and_cluster_studies_in_ld_block.R",
@@ -551,6 +551,7 @@ compile_results <- function(gwas_info) {
     glue::glue("{ld_block_dirs}/finemapped_studies.tsv")
   )
   compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
+  if (is.null(compare_guids)) compare_guids <- gwas_info$metadata$compare_with_upload_guids
   if (is.null(compare_guids)) compare_guids <- character(0)
   compare_guids <- as.character(unlist(compare_guids))
   compare_guids <- setdiff(compare_guids, gwas_info$metadata$guid)

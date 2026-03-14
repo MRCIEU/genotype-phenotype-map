@@ -496,7 +496,7 @@ process_single_block <- function(block, gwas_info) {
 
       if (length(gwas_upload_ids_to_compare) > 0) {
         compare_val <- paste(gwas_upload_ids_to_compare, collapse = ",")
-        compare_ids_arg <_ glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
+        compare_ids_arg <- glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
       } else {
         compare_ids_arg <- ""
       }

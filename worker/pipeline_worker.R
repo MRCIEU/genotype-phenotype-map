@@ -102,13 +102,13 @@ main <- function() {
               gwas_info <- jsonlite::fromJSON(payload)
               flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 
-              processed <- process_message(gwas_info)
+              processed <- process_message(gwas_info, payload)
 
               if (!is.null(processed)) {
                 flog.error(paste(gwas_info$metadata$guid, "Failed to process message"))
 
                 message_and_error <- list(
-                  original_message = gwas_info,
+                  original_message = payload,
                   error = processed,
                   timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
                 )
@@ -141,7 +141,7 @@ main <- function() {
   return()
 }
 
-process_message <- function(original_gwas_info) {
+process_message <- function(original_gwas_info, original_payload = NULL) {
   return(tryCatch(
     {
       update_directories_for_worker(original_gwas_info$metadata$guid)
@@ -270,14 +270,13 @@ process_message <- function(original_gwas_info) {
       }
 
       # Create error details
-      error_details <- list(
-        original_message = original_gwas_info,
+      message_and_error <- list(
+        original_message = original_payload,
         error = error_msg,
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
       )
 
-      send_to_dlq(redis_conn, jsonlite::toJSON(error_details, auto_unbox = TRUE))
-
+      send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
       send_update_gwas_upload(original_gwas_info, FALSE, error_msg)
 
       return(error_msg)

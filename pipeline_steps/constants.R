@@ -283,3 +283,22 @@ replace_except_first_two_dashes <- function(x) {
   }
   return(result)
 }
+
+is_study_blocked <- function(block_list, study_name, cis_trans) {
+  if (is.null(block_list) || nrow(block_list) == 0) return(rep(FALSE, length(study_name)))
+
+  return(vapply(seq_along(study_name), function(i) {
+    s <- study_name[i]
+    c <- cis_trans[i]
+
+    return(any(vapply(seq_len(nrow(block_list)), function(j) {
+      pattern <- block_list[["id_pattern"]][j]
+      pattern_regex <- gsub("\\.", "\\\\.", gsub("\\*", ".*", pattern))
+
+      if (!grepl(pattern_regex, s)) return(FALSE)
+      block_cis <- block_list[["cis_trans"]][j]
+      if (is.na(block_cis) || identical(block_cis, "NA") || trimws(as.character(block_cis)) == "") return(TRUE)
+      return(identical(as.character(c), as.character(block_cis)))
+    }, logical(1))))
+  }, logical(1)))
+}

@@ -377,7 +377,8 @@ verify_gwas_data <- function(gwas_info, gwas) {
     error_checks <- paste(error_checks, "Some SNPs have EAF values out of range, ")
   }
 
-  if ("EAF" %in% colnames(gwas) && any(is.na(gwas$EAF))) {
+  # Fail only when mix of present and missing EAF - all missing is OK (filled from LD panel)
+  if ("EAF" %in% colnames(gwas) && !all(is.na(gwas$EAF)) && any(is.na(gwas$EAF))) {
     error_checks <- paste(error_checks, "Some SNPs have missing EAF values, ")
   }
 

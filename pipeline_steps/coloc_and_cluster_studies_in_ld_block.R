@@ -128,7 +128,7 @@ main <- function() {
         col_types = finemapped_column_types,
         show_col_types = F
       ) |>
-        dplyr::filter(study == compare_guid)
+        dplyr::filter(study == compare_guid & min_p <= p_value_threshold)
       message(glue::glue("Found {nrow(compare_finemapped)} finemapped studies in {compare_finemapped_file}"))
       if (nrow(compare_finemapped) > 0) {
         finemapped_studies <- dplyr::bind_rows(finemapped_studies, compare_finemapped) |>

@@ -6,7 +6,7 @@
 #' * compiled_coloc_clustered_results.tsv
 #' * compiled_associations.tsv
 #' * gwas_with_lbfs.tsv.gz
-#' 
+#'
 #' The files are written to the extracted_study_dir directory and also uploaded to the Oracle bucket.
 #'
 #' @param gwas_info A list containing the GWAS information.

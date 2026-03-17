@@ -783,7 +783,7 @@ find_associations_for_coloc_clustered_snps <- function(
     return(data.frame())
   }
 
-  associations <- associations[, .(
+  associations <- unique(associations[, .(
     snp = SNP,
     study_name = study,
     beta = BETA,
@@ -791,7 +791,7 @@ find_associations_for_coloc_clustered_snps <- function(
     p,
     eaf = EAF,
     imputed = IMPUTED
-  )]
+  )], by = c("study_name", "snp"))
 
   flog.info(paste(
     gwas_info$metadata$guid,

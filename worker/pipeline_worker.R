@@ -3,6 +3,7 @@ source("../worker/redis_client.R")
 source("constants.R")
 source("gwas_calculations.R")
 source("common_extraction_functions.R")
+source("compile_pipeline_results.R")
 
 library(futile.logger)
 
@@ -22,6 +23,7 @@ parser <- argparser::add_argument(
   default = NULL
 )
 args <- argparser::parse_args(parser)
+parallel_block_processing <- 6
 
 if (!is_test_run) {
   tryCatch(
@@ -101,13 +103,13 @@ main <- function() {
               gwas_info <- jsonlite::fromJSON(payload)
               flog.info(paste(gwas_info$metadata$guid, "Received new message from queue"))
 
-              processed <- process_message(gwas_info)
+              processed <- process_message(gwas_info, payload)
 
               if (!is.null(processed)) {
                 flog.error(paste(gwas_info$metadata$guid, "Failed to process message"))
 
                 message_and_error <- list(
-                  original_message = gwas_info,
+                  original_message = payload,
                   error = processed,
                   timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
                 )
@@ -140,16 +142,29 @@ main <- function() {
   return()
 }
 
-process_message <- function(original_gwas_info) {
+process_message <- function(original_gwas_info, original_payload = NULL) {
   return(tryCatch(
     {
       update_directories_for_worker(original_gwas_info$metadata$guid)
+
+      if (dir.exists(extracted_study_dir)) {
+        unlink(extracted_study_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous extracted_study_dir"))
+      }
+      if (dir.exists(ld_block_data_dir)) {
+        unlink(ld_block_data_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous ld_block_data_dir"))
+      }
+      if (dir.exists(pipeline_metadata_dir)) {
+        unlink(pipeline_metadata_dir, recursive = TRUE)
+        flog.info(paste(original_gwas_info$metadata$guid, "Cleaned up previous pipeline_metadata_dir"))
+      }
 
       dir.create(pipeline_metadata_dir, recursive = T, showWarnings = F)
       dir.create(extracted_study_dir, recursive = T, showWarnings = F)
       dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
-      gwas_data <- get_gwas_data(original_gwas_info)
+      gwas_data <- get_gwas_data_from_oracle(original_gwas_info)
       gwas_info <- gwas_data$gwas_info
       gwas <- gwas_data$gwas
 
@@ -161,8 +176,8 @@ process_message <- function(original_gwas_info) {
         return()
       }
 
-      gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
-      if (!"EAF" %in% colnames(gwas)) {
+      updated_gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
+      if (!"EAF" %in% colnames(updated_gwas)) {
         gwas$EAF <- NA
         vroom::vroom_write(gwas, gwas_info$metadata$file_location)
         flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))
@@ -195,8 +210,7 @@ process_message <- function(original_gwas_info) {
       check_step_complete(ld_blocks_to_colocalise_file, "updated_ld_blocks_to_colocalise.tsv", output)
 
       # cleaning up memory, so it utilises less in the parallel processes
-      rm(gwas)
-      rm(gwas_data)
+      rm(gwas, updated_gwas, gwas_data)
       gc()
 
       ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
@@ -210,7 +224,6 @@ process_message <- function(original_gwas_info) {
       ]
 
       flog.info(paste(gwas_info$metadata$guid, "Processing", length(blocks_parallel), "blocks in parallel"))
-      parallel_block_processing <- 6
       processed_blocks_parallel <- parallel::mclapply(
         blocks_parallel,
         mc.cores = parallel_block_processing,
@@ -258,14 +271,13 @@ process_message <- function(original_gwas_info) {
       }
 
       # Create error details
-      error_details <- list(
-        original_message = original_gwas_info,
+      message_and_error <- list(
+        original_message = original_payload,
         error = error_msg,
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
       )
 
-      send_to_dlq(redis_conn, jsonlite::toJSON(error_details, auto_unbox = TRUE))
-
+      send_to_dlq(redis_conn, jsonlite::toJSON(message_and_error, auto_unbox = TRUE))
       send_update_gwas_upload(original_gwas_info, FALSE, error_msg)
 
       return(error_msg)
@@ -273,47 +285,6 @@ process_message <- function(original_gwas_info) {
   ))
 }
 
-get_gwas_data <- function(gwas_info) {
-  if (is_test_run) {
-    gwas_info$metadata$file_location <- gwas_info$file_location
-    gwas_info$metadata$file_type <- extraction_file_types$csv
-    gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
-    return(list(gwas_info = gwas_info, gwas = gwas))
-  }
-
-  local_file_path <- file.path(extracted_study_dir, basename(gwas_info$file_location))
-  dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
-
-  download_cmd <- paste(
-    "oci os object get",
-    "--auth", "instance_principal",
-    "--bucket-name", shQuote(oracle_bucket_name),
-    "--name", shQuote(gwas_info$file_location),
-    "--file", shQuote(local_file_path)
-  )
-
-  download_status <- system(download_cmd, wait = TRUE)
-
-  if (download_status != 0 || !file.exists(local_file_path)) {
-    error_msg <- paste(gwas_info$metadata$guid, "Failed to download file from Oracle bucket:", gwas_info$file_location)
-    flog.error(error_msg)
-    send_update_gwas_upload(gwas_info, FALSE, error_msg)
-    stop(error_msg)
-  }
-
-  gwas_info$metadata$file_location <- local_file_path
-  gwas_info$file_location <- local_file_path
-
-  if (grepl(".vcf", local_file_path, ignore.case = TRUE)) {
-    # TODO: Implement VCF support
-    stop("Caught error: VCF support not yet implemented")
-  } else {
-    gwas_info$metadata$file_type <- extraction_file_types$csv
-    gwas <- vroom::vroom(local_file_path, show_col_types = F)
-  }
-
-  return(list(gwas_info = gwas_info, gwas = gwas))
-}
 
 verify_gwas_data <- function(gwas_info, gwas) {
   gwas_info$metadata$column_names <- Filter(\(column) {
@@ -366,7 +337,8 @@ verify_gwas_data <- function(gwas_info, gwas) {
     error_checks <- paste(error_checks, "Some SNPs have EAF values out of range, ")
   }
 
-  if ("EAF" %in% colnames(gwas) && any(is.na(gwas$EAF))) {
+  # Fail only when mix of present and missing EAF - all missing is OK (filled from LD panel)
+  if ("EAF" %in% colnames(gwas) && !all(is.na(gwas$EAF)) && any(is.na(gwas$EAF))) {
     error_checks <- paste(error_checks, "Some SNPs have missing EAF values, ")
   }
 
@@ -478,12 +450,15 @@ process_single_block <- function(block, gwas_info) {
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Colocalising regions for block:", block))
-      gwas_upload_ids_to_compare <- gwas_info$metadata$gwas_upload_ids_to_compare
+      gwas_upload_ids_to_compare <- gwas_info$metadata$compare_with_upload_guids
       if (is.null(gwas_upload_ids_to_compare)) gwas_upload_ids_to_compare <- character(0)
-      compare_ids_arg <- if (length(gwas_upload_ids_to_compare) > 0) {
-        glue::glue(" --gwas_upload_ids_to_compare {glue::glue_collapse(gwas_upload_ids_to_compare, sep = ',')}")
+      gwas_upload_ids_to_compare <- as.character(unlist(gwas_upload_ids_to_compare))
+
+      if (length(gwas_upload_ids_to_compare) > 0) {
+        compare_val <- paste(gwas_upload_ids_to_compare, collapse = ",")
+        compare_ids_arg <- glue::glue(' --gwas_upload_ids_to_compare {shQuote(compare_val, type = "sh")}')
       } else {
-        ""
+        compare_ids_arg <- ""
       }
       coloc_regions <- glue::glue(
         "Rscript coloc_and_cluster_studies_in_ld_block.R",
@@ -495,7 +470,7 @@ process_single_block <- function(block, gwas_info) {
         " 2>&1"
       )
       output <- system(coloc_regions, wait = T, intern = T)
-      check_step_complete(output_files$coloc, block, output)
+      check_pipeline_step_complete(output_files$coloc, block, output)
 
       flog.info(paste(gwas_info$metadata$guid, "Time taken for block:", block, diff_time_taken(start_time)))
       return(block)
@@ -507,7 +482,7 @@ process_single_block <- function(block, gwas_info) {
   ))
 }
 
-check_step_complete <- function(output_file, ld_block, output) {
+check_pipeline_step_complete <- function(output_file, ld_block, output) {
   cmd_failed <- !is.null(attr(output, "status")) && attr(output, "status") != 0
   file_missing <- !file.exists(output_file)
 
@@ -520,262 +495,46 @@ check_step_complete <- function(output_file, ld_block, output) {
   }
 }
 
-compile_results <- function(gwas_info) {
-  ld_block_dirs <- list.dirs(ld_block_data_dir, recursive = TRUE, full.names = TRUE) |>
-    (\(dirs) dirs[!dirs %in% dirname(dirs[-1])])()
-
-  compiled_coloc_pairwise_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_pairwise_results.tsv")
-  compiled_study_extractions_file <- glue::glue("{extracted_study_dir}/compiled_extracted_studies.tsv")
-  compiled_coloc_clustered_results_file <- glue::glue("{extracted_study_dir}/compiled_coloc_clustered_results.tsv")
-  compiled_associations_file <- glue::glue("{extracted_study_dir}/compiled_associations.tsv")
-  lbfs_concatenated_file <- glue::glue("{extracted_study_dir}/gwas_with_lbfs.tsv.gz")
-
-  finemapped_studies_files <- Filter(
-    function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/finemapped_studies.tsv")
-  )
-  compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
-  if (is.null(compare_guids)) compare_guids <- character(0)
-  compare_guids <- setdiff(compare_guids, gwas_info$metadata$guid)
-  if (length(compare_guids) > 0) {
-    ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
-    compare_files <- as.character(outer(
-      compare_guids,
-      ld_blocks,
-      function(guid, block) glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{guid}/{block}/finemapped_studies.tsv")
-    ))
-    finemapped_studies_files <- c(finemapped_studies_files, Filter(file.exists, compare_files))
+get_gwas_data_from_oracle <- function(gwas_info) {
+  if (is_test_run) {
+    gwas_info$metadata$file_location <- gwas_info$file_location
+    gwas_info$metadata$file_type <- extraction_file_types$csv
+    gwas <- vroom::vroom(gwas_info$file_location, show_col_types = F)
+    return(list(gwas_info = gwas_info, gwas = gwas))
   }
 
-  if (length(finemapped_studies_files) > 0) {
-    all_finemapped_studies <- lapply(finemapped_studies_files, function(file) {
-      se_result <- data.table::fread(
-        file,
-        showProgress = FALSE,
-        colClasses = list(character = c("chr", "snp", "study", "unique_study_id"))
-      ) |>
-        dplyr::filter(min_p <= gwas_info$metadata$p_value_threshold)
-      return(se_result)
-    }) |>
-      data.table::rbindlist(fill = TRUE)
-    study_extractions <- all_finemapped_studies |> dplyr::filter(study == gwas_info$metadata$guid)
+  local_file_path <- file.path(extracted_study_dir, basename(gwas_info$file_location))
+  dir.create(dirname(local_file_path), recursive = TRUE, showWarnings = FALSE)
+
+  download_cmd <- paste(
+    "oci os object get",
+    "--auth", "instance_principal",
+    "--bucket-name", shQuote(oracle_bucket_name),
+    "--name", shQuote(gwas_info$file_location),
+    "--file", shQuote(local_file_path)
+  )
+
+  download_status <- system(download_cmd, wait = TRUE)
+
+  if (download_status != 0 || !file.exists(local_file_path)) {
+    error_msg <- paste(gwas_info$metadata$guid, "Failed to download file from Oracle bucket:", gwas_info$file_location)
+    flog.error(error_msg)
+    send_update_gwas_upload(gwas_info, FALSE, error_msg)
+    stop(error_msg)
+  }
+
+  gwas_info$metadata$file_location <- local_file_path
+  gwas_info$file_location <- local_file_path
+
+  if (grepl(".vcf", local_file_path, ignore.case = TRUE)) {
+    # TODO: Implement VCF support
+    stop("Caught error: VCF support not yet implemented")
   } else {
-    flog.warn(paste(gwas_info$metadata$guid, "No finemapped study files found"))
-    study_extractions <- data.table::data.table()
-    all_finemapped_studies <- data.table::data.table()
+    gwas_info$metadata$file_type <- extraction_file_types$csv
+    gwas <- vroom::vroom(local_file_path, show_col_types = F)
   }
 
-  all_snps_in_ld_blocks <- study_extractions |>
-    dplyr::distinct(snp) |>
-    dplyr::pull(snp)
-
-  snp_annotations <- data.table::fread(
-    file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
-    select = c("snp", "rsid", "display_snp"),
-    showProgress = FALSE,
-    colClasses = list(character = c("snp", "rsid", "display_snp"))
-  ) |>
-    dplyr::mutate(snp = trimws(snp)) |>
-    dplyr::filter(snp %in% all_snps_in_ld_blocks)
-
-  if (nrow(study_extractions) > 0) {
-    study_extractions <- merge(study_extractions, snp_annotations, by = "snp", all.x = TRUE)
-  }
-
-  coloc_clustered_results_files <- Filter(
-    function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/coloc_clustered_results.tsv.gz")
-  )
-  if (length(coloc_clustered_results_files) > 0) {
-    coloc_clustered_results <- lapply(coloc_clustered_results_files, function(file) {
-      return(data.table::fread(file, showProgress = FALSE))
-    }) |>
-      data.table::rbindlist(fill = TRUE)
-
-    if (nrow(coloc_clustered_results) > 0) {
-      coloc_clustered_results <- coloc_clustered_results |>
-        dplyr::group_by(ld_block, component) |>
-        dplyr::mutate(coloc_group_id = dplyr::cur_group_id()) |>
-        dplyr::ungroup() |>
-        dplyr::arrange(coloc_group_id) |>
-        dplyr::select(unique_study_id, coloc_group_id, snp, ld_block, h4_connectedness, h3_connectedness) |>
-        data.table::as.data.table()
-    }
-  } else {
-    coloc_clustered_results <- data.table::data.table()
-  }
-
-  coloc_pairwise_results_files <- Filter(
-    function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/coloc_pairwise_results.tsv.gz")
-  )
-  if (length(coloc_pairwise_results_files) > 0) {
-    coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
-      cp_result <- data.table::fread(file, showProgress = FALSE) |>
-        dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
-        dplyr::select(
-          unique_study_a,
-          unique_study_b,
-          PP.H3.abf,
-          PP.H4.abf,
-          ld_block,
-          false_positive,
-          false_negative,
-          ignore
-        )
-      return(cp_result)
-    }) |>
-      data.table::rbindlist(fill = TRUE)
-
-    if (nrow(coloc_pairwise_results) > 0) {
-      data.table::setnames(coloc_pairwise_results,
-        old = c("unique_study_a", "unique_study_b", "PP.H3.abf", "PP.H4.abf"),
-        new = c("unique_study_id_a", "unique_study_id_b", "h3", "h4")
-      )
-    }
-  } else {
-    coloc_pairwise_results <- data.table::data.table()
-  }
-
-  concatenate_file_with_lbfs(gwas_info, study_extractions)
-
-  associations <- find_associations_for_coloc_clustered_snps(
-    gwas_info,
-    coloc_clustered_results,
-    all_finemapped_studies,
-    snp_annotations
-  )
-
-  study_extractions <- study_extractions |>
-    dplyr::select(study, unique_study_id, snp, file, chr, bp, min_p, ld_block)
-
-  flog.info(paste(gwas_info$metadata$guid, "Writing compiled results to files"))
-  vroom::vroom_write(study_extractions, compiled_study_extractions_file)
-  vroom::vroom_write(coloc_clustered_results, compiled_coloc_clustered_results_file)
-  vroom::vroom_write(coloc_pairwise_results, compiled_coloc_pairwise_results_file)
-  vroom::vroom_write(associations, compiled_associations_file)
-
-  return(list(
-    coloc_pairwise_results = coloc_pairwise_results,
-    study_extractions = study_extractions,
-    coloc_clustered_results = coloc_clustered_results,
-    associations = associations
-  ))
-}
-
-find_associations_for_coloc_clustered_snps <- function(
-  gwas_info,
-  coloc_clustered_results,
-  all_finemapped_studies,
-  snp_annotations
-) {
-  if (nrow(coloc_clustered_results) > 0 && nrow(all_finemapped_studies) > 0) {
-    finemapped_studies <- all_finemapped_studies |>
-      dplyr::select(unique_study_id, study, file, ld_block) |>
-      dplyr::filter(unique_study_id %in% coloc_clustered_results$unique_study_id)
-
-    coloc_snps <- coloc_clustered_results |>
-      dplyr::filter(unique_study_id %in% finemapped_studies$unique_study_id) |>
-      dplyr::select(unique_study_id, snp, ld_block)
-
-    if (nrow(coloc_snps) > 0 && nrow(finemapped_studies) > 0) {
-      coloc_snps_with_files <- coloc_snps |>
-        dplyr::left_join(finemapped_studies, by = c("unique_study_id", "ld_block"))
-
-      files_to_read <- coloc_snps_with_files |>
-        dplyr::group_by(file) |>
-        dplyr::group_split()
-
-      associations_list <- lapply(files_to_read, function(file_group) {
-        file_path <- file_group$file[1]
-        snp_mapping <- file_group |>
-          dplyr::select(snp, study) |>
-          dplyr::distinct()
-        target_snps <- unique(snp_mapping$snp)
-
-        if (!grepl("^/", file_path) && !grepl("^study", file_path)) {
-          file_path <- file.path(data_dir, file_path)
-        } else if (grepl("^study", file_path)) {
-          file_path <- file.path(data_dir, file_path)
-        }
-
-        if (!file.exists(file_path)) {
-          flog.warn(paste(gwas_info$metadata$guid, "Association file not found:", file_path))
-          return(data.frame())
-        }
-
-        file_associations <- vroom::vroom(
-          file_path,
-          show_col_types = FALSE,
-          col_select = c("SNP", "BETA", "SE", "EAF", "IMPUTED")
-        ) |>
-          dplyr::filter(
-            SNP %in% target_snps,
-          ) |>
-          dplyr::mutate(p = beta_se_to_p(BETA, SE)) |>
-          dplyr::rename(snp = SNP) |>
-          dplyr::left_join(snp_mapping, by = "snp") |>
-          dplyr::filter(!is.na(study))
-
-        return(file_associations)
-      })
-
-      associations <- dplyr::bind_rows(associations_list)
-
-      if (nrow(associations) > 0) {
-        associations <- associations |>
-          dplyr::left_join(snp_annotations, by = "snp") |>
-          dplyr::select(
-            snp,
-            study,
-            beta = BETA,
-            se = SE,
-            p,
-            eaf = EAF,
-            imputed = IMPUTED
-          ) |>
-          dplyr::rename(study_name = study)
-
-        flog.info(paste(
-          gwas_info$metadata$guid,
-          "Extracted",
-          nrow(associations),
-          "associations for coloc clustered SNPs"
-        ))
-        return(associations)
-      }
-    }
-  }
-}
-
-concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
-  lbfs_concatenated_file <- glue::glue("{extracted_study_dir}/gwas_with_lbfs.tsv.gz")
-  if (nrow(study_extractions) > 0) {
-    flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
-
-    lbf_files <- unique(study_extractions$file_with_lbfs)
-    lbf_files <- lbf_files[!is.na(lbf_files)]
-
-    if (length(lbf_files) > 0) {
-      if (file.exists(lbfs_concatenated_file)) unlink(lbfs_concatenated_file)
-
-      for (i in seq_along(lbf_files)) {
-        file_path <- glue::glue("{data_dir}/{lbf_files[i]}")
-        if (!file.exists(file_path)) next
-
-        dt <- data.table::fread(file_path, showProgress = FALSE)
-        if (nrow(dt) > 0) {
-          data.table::fwrite(dt, lbfs_concatenated_file,
-            append = TRUE,
-            compress = "gzip", sep = "\t"
-          )
-        }
-        rm(dt)
-        gc(verbose = FALSE)
-      }
-    }
-  }
-  return(NULL)
+  return(list(gwas_info = gwas_info, gwas = gwas))
 }
 
 upload_results <- function(results, gwas_info) {
@@ -839,11 +598,11 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
 delete_gwas <- function(guid) {
   flog.info(paste(guid, "Deleting GWAS"))
   all_delete_status <- c()
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}ld_blocks/gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "ld_blocks/gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
-  delete_status <- system(glue::glue("rm -rf {gwas_upload_dir}pipeline_metadata/gwas_upload/{guid}"), wait = TRUE)
+  delete_status <- system(paste0("rm -rf ", gwas_upload_dir, "pipeline_metadata/gwas_upload/", guid), wait = TRUE)
   all_delete_status <- c(all_delete_status, delete_status)
 
   if (any(all_delete_status != 0)) {

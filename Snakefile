@@ -53,7 +53,7 @@ rare_results = f'{current_results_dir}/rare_results.tsv.gz'
 study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
 new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
 new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
-static_web_files_ready_file = f'{STATIC_WEB_DIR}/static_web_files_ready'
+static_web_files_ready_file = f'{STATIC_WEB_DIR}static_web_files_ready'
 
 studies_db_file = f'{current_results_dir}/studies.db'
 associations_full_db_file = f'{current_results_dir}/associations_full.db'

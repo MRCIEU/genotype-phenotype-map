@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: bug/all-gwas-upload-associations
+SUCCESS: All tests passed on branch: bug/debug-bad-data-gwas-upload

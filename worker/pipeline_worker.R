@@ -1,9 +1,9 @@
 setwd("pipeline_steps")
 source("../worker/redis_client.R")
+source("../worker/compile_pipeline_results.R")
 source("constants.R")
 source("gwas_calculations.R")
 source("common_extraction_functions.R")
-source("compile_pipeline_results.R")
 
 library(futile.logger)
 

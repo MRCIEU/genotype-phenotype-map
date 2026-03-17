@@ -189,7 +189,7 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1"
       )
       output <- system(extract_regions, wait = T, intern = T)
-      check_step_complete(glue::glue("{extracted_study_dir}/extracted_snps.tsv"), "extracted_snps.tsv", output)
+      check_pipeline_step_complete(glue::glue("{extracted_study_dir}/extracted_snps.tsv"), "extracted_snps.tsv", output)
 
       if (file.info(glue::glue("{extracted_study_dir}/extracted_snps.tsv"))$size == 0) {
         flog.error(paste(gwas_info$metadata$guid, "No regions extracted"))
@@ -207,7 +207,7 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1"
       )
       output <- system(organise_ld_blocks, wait = T, intern = T)
-      check_step_complete(ld_blocks_to_colocalise_file, "updated_ld_blocks_to_colocalise.tsv", output)
+      check_pipeline_step_complete(ld_blocks_to_colocalise_file, "updated_ld_blocks_to_colocalise.tsv", output)
 
       # cleaning up memory, so it utilises less in the parallel processes
       rm(gwas, updated_gwas, gwas_data)
@@ -424,7 +424,7 @@ process_single_block <- function(block, gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1"
       )
       output <- system(standardise_regions, wait = T, intern = T)
-      check_step_complete(output_files$standardised, block, output)
+      check_pipeline_step_complete(output_files$standardised, block, output)
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Imputing regions for block:", block))
@@ -435,7 +435,7 @@ process_single_block <- function(block, gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1"
       )
       output <- system(impute_regions, wait = T, intern = T)
-      check_step_complete(output_files$imputed, block, output)
+      check_pipeline_step_complete(output_files$imputed, block, output)
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Finemapping regions for block:", block))
@@ -446,7 +446,7 @@ process_single_block <- function(block, gwas_info) {
         " --worker_guid {gwas_info$metadata$guid} 2>&1"
       )
       output <- system(finemap_regions, wait = T, intern = T)
-      check_step_complete(output_files$finemapped, block, output)
+      check_pipeline_step_complete(output_files$finemapped, block, output)
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Colocalising regions for block:", block))

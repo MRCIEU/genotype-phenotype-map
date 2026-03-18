@@ -333,3 +333,24 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
     return(data.frame())
   }
 }
+
+#' convert_or_to_beta: Given an OR and lower and upper bounds,
+#'   calculates the BETA, and SE.
+#'   based on this answer: https://stats.stackexchange.com/a/327684
+#'
+#' @param gwas: dataframe with the following columns: OR, LB (lower bound), UB (upper bound)
+#' @return gwas with new columns BETA and SE
+#' @import stats
+#' @export
+convert_or_to_beta <- function(gwas) {
+  gwas <- get_file_or_dataframe(gwas)
+  if (!all(c("OR", "OR_LB", "OR_UB") %in% colnames(gwas))) {
+    stop("Need OR, OR_LB + OR_UB to complete conversion")
+  }
+
+  z_score <- stats::qnorm(.975, mean = 0, sd = 1) #1.96
+  gwas$BETA <- log(gwas$OR)
+  gwas$SE <- (log(gwas$OR_LB) - gwas$BETA) / -z_score
+
+  return(gwas)
+}

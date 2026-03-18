@@ -114,6 +114,8 @@ coverage_types <- list(dense = "dense", sparse = "sparse")
 
 standardised_gwas_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "SNP", "Z", "GENE")
 required_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P")
+beta_columns <- c("BETA", "SE")
+or_columns <- c("OR", "OR_LB", "OR_UB")
 
 standardised_column_types <- vroom::cols(
   chr = vroom::col_character(),

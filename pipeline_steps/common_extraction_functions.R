@@ -169,17 +169,14 @@ use_bed_file_to_update_gwas <- function(gwas, bed_file) {
   return(gwas)
 }
 
-standardise_columns <- function(gwas, N) {
+standardise_columns <- function(gwas) {
   gwas_columns <- colnames(gwas)
 
-  if (!all(c("CHR", "BP") %in% gwas_columns)) {
-    if (all(grepl("\\d:\\d", gwas$SNP))) {
-      gwas <- tidyr::separate(data = gwas, col = "SNP", into = c("CHR", "BP"), sep = "[:_]", remove = F)
-      gwas$BP <- as.numeric(gwas$BP)
-    }
-  }
+  chr_numeric <- suppressWarnings(as.numeric(gsub("^chr", "", as.character(gwas$CHR))))
+  gwas <- gwas[chr_numeric %in% 1:22, ]
+  gwas$CHR <- chr_numeric[chr_numeric %in% 1:22]
 
-  if (all(c("OR", "OR_LB", "OR_UB") %in% gwas_columns) && !all(c("BETA", "SE") %in% colnames(gwas))) {
+  if (all(c("OR", "OR_LB", "OR_UB") %in% gwas_columns) && !all(c("BETA", "SE") %in% gwas_columns)) {
     gwas <- convert_or_to_beta(gwas)
   }
 
@@ -191,21 +188,15 @@ standardise_columns <- function(gwas, N) {
     gwas <- convert_z_score_to_beta(gwas)
   }
 
-  if ("BP" %in% gwas_columns) gwas$BP <- as.numeric(gwas$BP)
-  if ("P" %in% gwas_columns) {
-    gwas$P <- as.numeric(gwas$P)
-    gwas$P[gwas$P == 0] <- .Machine$double.xmin
-  }
-  if ("BETA" %in% gwas_columns) {
-    gwas$BETA <- as.numeric(gwas$BETA)
-  }
-
-  if ("BETA" %in% gwas_columns) {
-    gwas$BETA <- as.numeric(gwas$BETA)
-  }
+  gwas$BP <- as.numeric(gwas$BP)
+  gwas$BETA <- as.numeric(gwas$BETA)
+  gwas$P <- as.numeric(gwas$P)
+  gwas$P[gwas$P == 0] <- .Machine$double.xmin
 
   return(gwas)
 }
+
+
 standardise_alleles <- function(gwas) {
   gwas$EA <- toupper(gwas$EA)
   gwas$OA <- toupper(gwas$OA)
@@ -343,7 +334,6 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
 #' @import stats
 #' @export
 convert_or_to_beta <- function(gwas) {
-  gwas <- get_file_or_dataframe(gwas)
   if (!all(c("OR", "OR_LB", "OR_UB") %in% colnames(gwas))) {
     stop("Need OR, OR_LB + OR_UB to complete conversion")
   }

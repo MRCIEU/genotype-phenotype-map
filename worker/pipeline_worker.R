@@ -182,9 +182,6 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         vroom::vroom_write(gwas, gwas_info$metadata$file_location)
         flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))
       }
-      if (all(or_columns %in% colnames(updated_gwas)) && !all(beta_columns %in% colnames(updated_gwas))) {
-        updated_gwas <- convert_or_to_beta(updated_gwas)
-      }
 
       flog.info(paste(gwas_info$metadata$guid, "Extracting regions"))
       extract_regions <- glue::glue(

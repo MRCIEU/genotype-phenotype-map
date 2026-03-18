@@ -182,6 +182,9 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         vroom::vroom_write(gwas, gwas_info$metadata$file_location)
         flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))
       }
+      if (all(or_columns %in% colnames(updated_gwas)) && !all(beta_columns %in% colnames(updated_gwas))) {
+        updated_gwas <- convert_or_to_beta(updated_gwas)
+      }
 
       flog.info(paste(gwas_info$metadata$guid, "Extracting regions"))
       extract_regions <- glue::glue(
@@ -294,8 +297,6 @@ verify_gwas_data <- function(gwas_info, gwas) {
 
   gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
   mandatory_columns <- c("CHR", "BP", "P", "EA", "OA")
-  beta_columns <- c("BETA", "SE")
-  or_columns <- c("OR", "OR_LB", "OR_UB")
 
   has_beta <- all(beta_columns %in% colnames(gwas))
   has_or <- all(or_columns %in% colnames(gwas))

@@ -17,5 +17,5 @@ remotes::install_version("RcppEigen", version = "0.3.3.9.3")
 devtools::install_github("jrs95/hyprcoloc", upgrade = "never")
 devtools::install_github("MRCIEU/gwasglue", upgrade = "never")
 
-biocmanager_install <- c("Homo.sapiens", "GenomicRanges", "biomaRt")
+biocmanager_install <- c("Homo.sapiens", "GenomicRanges", "biomaRt", "STRINGdb")
 BiocManager::install(biocmanager_install)

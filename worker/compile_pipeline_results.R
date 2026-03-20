@@ -278,6 +278,8 @@ find_associations_for_coloc_clustered_snps <- function(
     imputed = IMPUTED
   )], by = c("study_name", "snp"))
 
+  associations <- stats::na.omit(associations)
+
   flog.info(paste(
     gwas_info$metadata$guid,
     "Extracted",

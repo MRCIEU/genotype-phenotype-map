@@ -55,12 +55,21 @@ main <- function() {
 
       result <- perform_standardisation(study, ld_matrix_info)
 
-      if (nrow(result$gwas) < minimum_extraction_size &&
+      if (nrow(result$gwas) < minimum_extraction_size_for_dense_coverage &&
           study[["variant_type"]] == variant_types$common &&
           study[["coverage"]] == coverage_types$dense
       ) {
         return()
       }
+
+
+      if (nrow(result$gwas) < minimum_extraction_size_for_sparse_coverage &&
+          study[["variant_type"]] == variant_types$common &&
+          study[["coverage"]] == coverage_types$sparse
+      ) {
+        return()
+      }
+
       vroom::vroom_write(result$gwas, result$study$file)
 
       result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time))

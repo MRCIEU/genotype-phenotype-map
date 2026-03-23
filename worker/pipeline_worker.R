@@ -584,7 +584,8 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
   response <- httr::PUT(
     url = api_url,
     body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
-    httr::add_headers("Content-Type" = "application/json")
+    httr::add_headers("Content-Type" = "application/json"),
+    httr::timeout(1200)
   )
   if (httr::status_code(response) != 200) {
     error_msg <- paste(gwas_info$metadata$guid, "Error updating GWAS:", httr::content(response, "text"))

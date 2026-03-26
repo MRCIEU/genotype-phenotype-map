@@ -133,6 +133,7 @@ studies_db <- list(
       min_p DOUBLE CHECK (min_p BETWEEN 0 AND 1),
       cis_trans TEXT,
       ld_block TEXT,
+      credible_set INTEGER,
       gene_id INTEGER,
       situated_gene_id INTEGER,
       FOREIGN KEY (study_id) REFERENCES studies(id),

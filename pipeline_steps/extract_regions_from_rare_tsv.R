@@ -67,7 +67,7 @@ main <- function() {
     vars_regions <- split_into_regions(gwas, study, p_value_threshold)
     vroom::vroom_write(vars_regions, args$extracted_output_file)
   }
-  return()
+  return(invisible(NULL))
 }
 
 check_gwas <- function(gwas) {
@@ -156,4 +156,4 @@ split_into_regions <- function(gwas, study, p_value_threshold) {
   return(extracted_regions)
 }
 
-main()
+invisible(main())

@@ -44,8 +44,10 @@ main <- function() {
     existing_standardised_studies <- empty_standardised_studies()
   }
 
+  new_standardised_studies <- empty_standardised_studies()
+
   if (nrow(extracted_studies) > 0) {
-    standardised_studies <- apply(extracted_studies, 1, function(study) {
+    new_standardised_studies <- apply(extracted_studies, 1, function(study) {
       start_time <- Sys.time()
       standardised_file <- sub("extracted", "standardised", study[["file"]])
 
@@ -78,16 +80,18 @@ main <- function() {
       dplyr::bind_rows() |>
       type.convert(as.is = T)
 
-    if (nrow(standardised_studies) > 0) {
-      standardised_studies$chr <- as.character(standardised_studies$chr)
+    if (nrow(new_standardised_studies) > 0) {
+      new_standardised_studies$chr <- as.character(new_standardised_studies$chr)
     }
   }
 
-  if (nrow(standardised_studies) > 0) {
-    standardised_studies <- dplyr::bind_rows(existing_standardised_studies, standardised_studies) |>
+  if (nrow(new_standardised_studies) > 0) {
+    standardised_studies <- dplyr::bind_rows(existing_standardised_studies, new_standardised_studies) |>
       dplyr::distinct()
 
     vroom::vroom_write(standardised_studies, standardised_studies_file)
+  } else if (nrow(existing_standardised_studies) > 0) {
+    vroom::vroom_write(existing_standardised_studies, standardised_studies_file)
   } else {
     vroom::vroom_write(empty_standardised_studies(), standardised_studies_file)
   }
@@ -217,4 +221,4 @@ filter_gwas <- function(gwas, is_rare_study = F) {
   return(gwas)
 }
 
-main()
+invisible(main())

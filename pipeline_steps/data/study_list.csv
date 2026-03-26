@@ -14,7 +14,5 @@ ukb-d-*,phenotype,ukb,opengwas,none,/local-scratch/data/opengwas/igd,EUR,GRCh37,
 *,gene_expression,eqtlgen,besd,none,/local-scratch/data/hg38/eqtlgen,EUR,GRCh38,1.5e-4,common,json,dense
 *,methylation,godmc,besd,godmc,/local-scratch/data/hg38/godmc,EUR,GRCh38,1.5e-4,common,json,sparse
 european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/ukb-ppp,EUR,GRCh38,1.5e-4,common,json,dense
-*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval/cis/eqtl,EUR,GRCh38,1.5e-4,common,json,dense
-*,splice_variant,interval,besd,none,/local-scratch/data/hg38/interval/cis/sqtl,EUR,GRCh38,1.5e-4,common,json,dense
-eqtl*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval/trans,EUR,GRCh38,1.5e-4,common,json,sparse
-sqtl*,splice_variant,interval,besd,none,/local-scratch/data/hg38/interval/trans,EUR,GRCh38,1.5e-4,common,json,sparse
+cis*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,EUR,GRCh38,1.5e-4,common,json,dense
+cis*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,dense

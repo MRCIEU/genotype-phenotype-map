@@ -90,4 +90,4 @@ main <- function() {
   return()
 }
 
-main()
+invisible(main())

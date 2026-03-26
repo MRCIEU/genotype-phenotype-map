@@ -114,17 +114,17 @@ aggregate_data_produced_by_pipeline <- function(
   extracted_studies_files <- Filter(
     function(file) file.exists(file), glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
   )
-  extracted_studies <- vroom::vroom(extracted_studies_files, show_col_types = F)
+  extracted_studies <- lapply(extracted_studies_files, function(file) {
+    vroom::vroom(file, show_col_types = F)
+  }) |> dplyr::bind_rows()
 
   standardised_studies_files <- Filter(
     function(file) file.exists(file),
     glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
   )
-  standardised_studies <- vroom::vroom(
-    standardised_studies_files,
-    show_col_types = F,
-    col_types = standardised_column_types
-  )
+  standardised_studies <- lapply(standardised_studies_files, function(file) {
+    vroom::vroom(file, show_col_types = F, col_types = standardised_column_types)
+  }) |> dplyr::bind_rows()
 
   imputed_studies_files <- Filter(
     function(file) file.exists(file),
@@ -138,7 +138,9 @@ aggregate_data_produced_by_pipeline <- function(
     function(file) file.exists(file),
     glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
   )
-  finemapped_studies <- vroom::vroom(finemapped_studies_files, show_col_types = F, col_types = finemapped_column_types)
+  finemapped_studies <- lapply(finemapped_studies_files, function(file) {
+    vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types)
+  }) |> dplyr::bind_rows()
 
   pairwise_coloc_input_files <- Filter(
     function(file) file.exists(file),
@@ -246,11 +248,12 @@ create_study_extractions <- function(pipeline_data) {
     dplyr::mutate(
       file = sub("//", "/", file),
       svg_file = sub("//", "/", svg_file),
-      file_with_lbfs = sub("//", "/", file_with_lbfs)
+      file_with_lbfs = sub("//", "/", file_with_lbfs),
+      credible_set = as.numeric(sub(".*_", "", unique_study_id))
     ) |>
     dplyr::select(
       study, unique_study_id, file, snp, chr, bp, min_p,
-      cis_trans, ld_block, svg_file, file_with_lbfs, ignore
+      cis_trans, ld_block, svg_file, file_with_lbfs, ignore, credible_set
     )
 
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[
@@ -264,7 +267,7 @@ create_study_extractions <- function(pipeline_data) {
 
   if (nrow(pipeline_data$rare_results) > 0) {
     rare_studies <- pipeline_data$rare_results |>
-      dplyr::mutate(candidate_snp = trimws(candidate_snp)) |>
+      dplyr::mutate(candidate_snp = trimws(candidate_snp), credible_set = NA) |>
       tidyr::separate_rows(traits, min_ps, genes, files, sep = ", ") |>
       dplyr::rename(
         unique_study_id = traits, min_p = min_ps,
@@ -284,7 +287,7 @@ create_study_extractions <- function(pipeline_data) {
       ) |>
       dplyr::select(
         study, unique_study_id, file, snp, chr, bp, min_p,
-        cis_trans, ld_block, file_with_lbfs, svg_file, ignore,
+        cis_trans, ld_block, file_with_lbfs, svg_file, ignore, credible_set,
         known_gene, situated_gene
       )
   } else {
@@ -300,4 +303,4 @@ is_study_blocked <- function(study_name) {
   return(vapply(study_name, function(s) any(vapply(block_regexes, function(p) grepl(p, s), logical(1))), logical(1)))
 }
 
-main()
+invisible(main())

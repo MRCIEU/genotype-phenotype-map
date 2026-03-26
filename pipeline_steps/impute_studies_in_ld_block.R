@@ -186,4 +186,5 @@ verify_imputation_results <- function(gwas, imputed_file) {
     stop(glue::glue("P: NA or < 0 or > 1 in imputed study {imputed_file}"))
   }
 }
-main()
+
+invisible(main())

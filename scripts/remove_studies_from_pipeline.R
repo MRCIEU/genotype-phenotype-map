@@ -1,33 +1,11 @@
 source("../pipeline_steps/constants.R")
 
-studies_to_remove <- c(
-  "ukb-wes-az-00012120",
-  "ukb-wes-az-00012169",
-  "ukb-wes-az-00012250",
-  "ukb-wes-az-00012421",
-  "ukb-wes-az-00012651",
-  "ukb-wes-az-00012662",
-  "ukb-wes-az-00012803",
-  "ukb-wes-az-00012824",
-  "ukb-wes-az-00012906",
-  "ukb-wes-az-00013036",
-  "ukb-wes-az-00013098",
-  "ukb-wes-az-00013514",
-  "ukb-wes-az-00013569",
-  "ukb-wes-az-00013727",
-  "ukb-wes-az-00013994",
-  "ukb-wes-az-00014119",
-  "ukb-wes-az-00014434",
-  "ukb-wes-az-00014451",
-  "ukb-wes-az-00014481",
-  "ukb-wes-az-00014636",
-  "ukb-wes-az-00014727",
-  "ukb-wes-az-00014728",
-  "ukb-wes-az-00014729",
-  "ukb-wes-az-00014734",
-  "ukb-wes-az-00014817"
-)
+
+studies_to_remove <- c() #vroom::vroom(glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"), show_col_types = F)
+
 message(paste("Removing", length(studies_to_remove), "studies from pipeline"))
+print(head(studies_to_remove))
+print(tail(studies_to_remove))
 
 ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -73,49 +51,49 @@ main <- function() {
       return()
     }
 
-    # imputed_studies <- vroom::vroom(imputed_studies_file, col_types = imputed_column_types, show_col_types = F)
-    # entries <- nrow(imputed_studies)
-    # imputed_studies <- dplyr::filter(imputed_studies, !study %in% studies_to_remove)
-    # if (!entries - nrow(imputed_studies) == 0) {
-    #   print(paste('removed', entries - nrow(imputed_studies), 'rows from imputed_studies'))
-    #   vroom::vroom_write(imputed_studies, imputed_studies_file)
-    # }
+    imputed_studies <- vroom::vroom(imputed_studies_file, col_types = imputed_column_types, show_col_types = F)
+    entries <- nrow(imputed_studies)
+    imputed_studies <- dplyr::filter(imputed_studies, !study %in% studies_to_remove)
+    if (!entries - nrow(imputed_studies) == 0) {
+      print(paste('removed', entries - nrow(imputed_studies), 'rows from imputed_studies'))
+      vroom::vroom_write(imputed_studies, imputed_studies_file)
+    }
 
-    # finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
-    # if (!file.exists(finemapped_studies_file) || file.size(finemapped_studies_file) == 0) {
-    #   print(paste('FINEMAPPED STUDIES FILE MISSING:', finemapped_studies_file))
-    #   return()
-    # }
+    finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
+    if (!file.exists(finemapped_studies_file) || file.size(finemapped_studies_file) == 0) {
+      print(paste('FINEMAPPED STUDIES FILE MISSING:', finemapped_studies_file))
+      return()
+    }
 
-    # finemapped_studies <- vroom::vroom(finemapped_studies_file, col_types = finemapped_column_types, show_col_types = F) # nolint: line_length_linter.
-    # entries <- nrow(finemapped_studies)
-    # finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove)
-    # if (!entries - nrow(finemapped_studies) == 0) {
-    #   print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
-    #   vroom::vroom_write(finemapped_studies, finemapped_studies_file)
-    # }
+    finemapped_studies <- vroom::vroom(finemapped_studies_file, col_types = finemapped_column_types, show_col_types = F) # nolint: line_length_linter.
+    entries <- nrow(finemapped_studies)
+    finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove)
+    if (!entries - nrow(finemapped_studies) == 0) {
+      print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
+      vroom::vroom_write(finemapped_studies, finemapped_studies_file)
+    }
 
-    # coloc_results_file <- paste0(ld_block, '/coloc_pairwise_results.tsv.gz')
-    # if (!file.exists(coloc_results_file) || file.size(coloc_results_file) == 0) {
-    #   print(paste('COLOC PAIRWISE RESULTS FILE MISSING:', coloc_results_file))
-    #   return()
-    # }
-    # coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
-    # entries <- nrow(coloc_results)
-    # coloc_results <- dplyr::filter(coloc_results, !study_a %in% studies_to_remove & !study_b %in% studies_to_remove)
-    # if (!entries - nrow(coloc_results) == 0) {
-    #   print(paste('removed', entries - nrow(coloc_results), 'rows from coloc_pairwise_results'))
-    #   vroom::vroom_write(coloc_results, coloc_results_file)
-    # }
+    coloc_results_file <- paste0(ld_block, '/coloc_pairwise_results.tsv.gz')
+    if (!file.exists(coloc_results_file) || file.size(coloc_results_file) == 0) {
+      print(paste('COLOC PAIRWISE RESULTS FILE MISSING:', coloc_results_file))
+      return()
+    }
+    coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
+    entries <- nrow(coloc_results)
+    coloc_results <- dplyr::filter(coloc_results, !study_a %in% studies_to_remove & !study_b %in% studies_to_remove)
+    if (!entries - nrow(coloc_results) == 0) {
+      print(paste('removed', entries - nrow(coloc_results), 'rows from coloc_pairwise_results'))
+      vroom::vroom_write(coloc_results, coloc_results_file)
+    }
 
     # No need to remove from coloc_clustered_results.tsv.gz as gets recreated every time
   })
 
-  # delete_study_directories <- lapply(studies_to_remove, function(study) {
-  #   extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
-  #   print(paste('deleting:', study))
-  #   unlink(extracted_study_dir, recursive = T)
-  # })
+  delete_study_directories <- lapply(studies_to_remove, function(study) {
+    extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
+    print(paste('deleting:', study))
+    unlink(extracted_study_dir, recursive = T)
+  })
 
   # and then delete them from the results
   studies_processed_file <- glue::glue("{current_results_dir}/studies_processed.tsv.gz")
@@ -138,8 +116,9 @@ main <- function() {
   traits_processed <- dplyr::filter(traits_processed, !study_name %in% studies_to_remove)
   print(paste("removed", entries - nrow(traits_processed), "rows from traits_processed file"))
   vroom::vroom_write(traits_processed, traits_processed_file)
+
   return()
 }
 
 
-main()
+invisible(main())

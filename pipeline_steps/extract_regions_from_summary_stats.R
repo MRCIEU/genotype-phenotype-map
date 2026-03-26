@@ -56,7 +56,7 @@ main <- function() {
     extracted_regions <- split_into_regions(gwas, ld_blocks, study_metadata, p_value_threshold)
     extracted_output_file <- glue::glue("{extracted_study_dir}/extracted_snps.tsv")
     vroom::vroom_write(extracted_regions, extracted_output_file)
-    return()
+    return(invisible(NULL))
   } else {
     stop(paste(c(
       "Error: file type", study_metadata$file_type, "not recocognised.",
@@ -65,4 +65,4 @@ main <- function() {
   }
 }
 
-main()
+invisible(main())

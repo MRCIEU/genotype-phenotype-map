@@ -13,7 +13,7 @@ min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 
-minimum_extraction_size <- 150
+minimum_extraction_size_for_dense_coverage <- 150
 minimum_extraction_size_for_sparse_coverage <- 50
 
 posterior_prob_h4_threshold <- 0.8
@@ -42,7 +42,12 @@ oracle_bucket_name <- Sys.getenv("ORACLE_BUCKET_NAME")
 server_sync_dir <- file.path(data_dir, "rsync_to_server")
 oracle_data_dir <- "/oradiskvdb1/data/"
 
-bespoke_parsing_options <- list(none = "none", gtex_sqtl = "gtex_sqtl")
+bespoke_parsing_options <- list(
+  none = "none",
+  gtex_sqtl = "gtex_sqtl",
+  interval_sqtl = "interval_sqtl",
+  godmc = "godmc"
+)
 
 data_types <- list(
   splice_variant = "splice_variant",

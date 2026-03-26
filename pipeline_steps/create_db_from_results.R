@@ -1055,4 +1055,4 @@ get_table_column_names <- function(table) {
   return(table_column_names)
 }
 
-main()
+invisible(main())

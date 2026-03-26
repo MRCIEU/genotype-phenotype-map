@@ -621,4 +621,4 @@ populate_beta_with_known_z_scores <- function(gwas, sample_size) {
   return(gwas)
 }
 
-main()
+invisible(main())

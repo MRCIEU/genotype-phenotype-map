@@ -876,4 +876,4 @@ find_snp_and_connectedness_per_cluster <- function(coloc_groups, studies_to_colo
   return(snp_and_connectedness_per_cluster)
 }
 
-main()
+invisible(main())

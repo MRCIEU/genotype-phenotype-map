@@ -64,7 +64,6 @@ main <- function() {
         return()
       }
 
-
       if (nrow(result$gwas) < minimum_extraction_size_for_sparse_coverage &&
           study[["variant_type"]] == variant_types$common &&
           study[["coverage"]] == coverage_types$sparse

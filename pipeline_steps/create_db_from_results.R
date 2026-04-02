@@ -251,12 +251,17 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(gene, id) |>
     dplyr::rename(gene_id = id)
 
+  ld_blocks_subset <- studies_db$ld_blocks$data |>
+    dplyr::select(ld_block, id) |>
+    dplyr::rename(ld_block_id = id)
+
   studies_db$snp_annotations$data <- vroom::vroom(
     file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
     show_col_types = F
   ) |>
     resolve_ids_for_table(studies_db$snp_annotations$existing_ids, studies_db$snp_annotations$persist_id_from) |>
     dplyr::left_join(gene_subset, by = c("gene" = "gene")) |>
+    dplyr::left_join(ld_blocks_subset, by = c("ld_block" = "ld_block")) |>
     dplyr::mutate(snp = trimws(snp)) |>
     dplyr::mutate(rsid = sub(",.*", "", rsid)) |>
     dplyr::select(get_table_column_names(studies_db$snp_annotations))
@@ -732,15 +737,13 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 
   variant_annotations_subset_lead <- data.table::as.data.table(
     studies_db$snp_annotations$data
-  )[, .(snp, lead_flipped = flipped, lead_snp_id = id)]
+  )[, .(snp, lead_flipped = flipped, lead_snp_id = id, ld_block_id)]
   variant_annotations_subset_variant <- data.table::as.data.table(
     studies_db$snp_annotations$data
-  )[, .(snp, variant_flipped = flipped, variant_snp_id = id)]
-  ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
+  )[, .(snp, variant_flipped = flipped, variant_snp_id = id, ld_block_id)]
 
   ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
   ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
-  ld_data <- ld_blocks_subset[ld_data, on = "ld_block"]
 
   ld_data$r <- ld_data$r * ifelse(ld_data$lead_flipped, -1, 1) * ifelse(ld_data$variant_flipped, -1, 1)
 

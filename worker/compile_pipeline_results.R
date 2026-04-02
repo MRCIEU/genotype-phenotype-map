@@ -128,7 +128,7 @@ compile_results <- function(gwas_info) {
     coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
       cp_result <- data.table::fread(file, showProgress = FALSE) |>
         dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
-        dplyr::filter(PP.H4.abf >= posterior_prob_threshold_minimum) |>
+        dplyr::filter(PP.H4.abf >= posterior_prob_threshold_minimum & ignore == FALSE) |>
         dplyr::select(
           unique_study_a,
           unique_study_b,

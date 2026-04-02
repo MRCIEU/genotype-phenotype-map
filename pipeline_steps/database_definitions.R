@@ -81,6 +81,7 @@ studies_db <- list(
     persist_id_from = "snp",
     query = "CREATE TABLE snp_annotations (
       id INTEGER PRIMARY KEY,
+      ld_block_id INTEGER NOT NULL,
       snp TEXT NOT NULL,
       display_snp TEXT,
       chr INTEGER NOT NULL,
@@ -110,7 +111,8 @@ studies_db <- list(
       eas_af REAL CHECK (eas_af BETWEEN 0 AND 1),
       sas_af REAL CHECK (sas_af BETWEEN 0 AND 1),
       afr_af REAL CHECK (afr_af BETWEEN 0 AND 1),
-      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id),
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )"
   ),
   study_extractions = list(

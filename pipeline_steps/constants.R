@@ -14,7 +14,7 @@ genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 
 minimum_extraction_size_for_dense_coverage <- 150
-minimum_extraction_size_for_sparse_coverage <- 50
+minimum_extraction_size_for_sparse_coverage <- 5
 
 posterior_prob_h4_threshold <- 0.8
 posterior_prob_threshold_minimum <- 0.5

@@ -19,8 +19,10 @@ process_file <- function(data) {
   file <- fread(file_path, select = c(1:4, 7:13))
   file$SNP <- paste(file$chr, file$pos_b38, sep = ":")
 
-  colnames(file) <- c("phenotype_id", "variant_id", "splicemid_distance", "Freq", "pval_nominal",
-                      "b", "se", "chr", "pos_b38", "A1", "A2", "SNP")
+  colnames(file) <- c(
+    "phenotype_id", "variant_id", "splicemid_distance", "Freq", "pval_nominal",
+    "b", "se", "chr", "pos_b38", "A1", "A2", "SNP"
+  )
 
   # Standardise alleles
   standardise_alleles <- function(qtl) {
@@ -40,11 +42,14 @@ process_file <- function(data) {
 
   dat_flipped <- standardise_alleles(file)
 
-  dat_clean <- dat_flipped[,
+  dat_clean <- dat_flipped[
+    ,
     c("chr", "SNP", "pos_b38", "A1", "A2", "Freq", "b", "se", "pval_nominal", "splicemid_distance", "phenotype_id")
   ]
-  colnames(dat_clean) <- c("Chr", "SNP", "Bp", "A1", "A2", "Freq",
-                           "Beta", "se", "p", "splicemid_distance", "probe")
+  colnames(dat_clean) <- c(
+    "Chr", "SNP", "Bp", "A1", "A2", "Freq",
+    "Beta", "se", "p", "splicemid_distance", "probe"
+  )
   dat_clean$Bp <- as.numeric(dat_clean$Bp)
   setDT(dat_clean)
 

@@ -38,7 +38,8 @@ out_studies <- common_studies |>
 # Write out:
 data.table::fwrite(
   out_studies,
-  "/local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/commonstudies_nonsensetraits.txt", sep = "\t"
+  "/local-scratch/projects/genotype-phenotype-map/data/trait_cleaning/commonstudies_nonsensetraits.txt",
+  sep = "\t"
 )
 
 common_studies <- common_studies |> filter(!(study_name %in% out_studies$study_name)) # 980 removed (5281 remaining)
@@ -167,12 +168,13 @@ common_rare_union <- inner_join(common_union, rare_union,
   relocate(data_type, study_name_common, study_name_rare, trait_common, trait_rare) # 56 direct matches
 
 # ----------- Direct string matches ---------- #
-common_rare_match <- inner_join(common_studies_remaining[, c(
-  "data_type",
-  "study_name",
-  "trait"
-)], rare_studies[, c("data_type", "study_name", "trait", "fieldID")],
-by = c("data_type", "trait"), suffix = c("_common", "_rare")
+common_rare_match <- inner_join(
+  common_studies_remaining[, c(
+    "data_type",
+    "study_name",
+    "trait"
+  )], rare_studies[, c("data_type", "study_name", "trait", "fieldID")],
+  by = c("data_type", "trait"), suffix = c("_common", "_rare")
 ) |>
   rename(trait_common = trait) |>
   mutate(trait_rare = trait_common) |>

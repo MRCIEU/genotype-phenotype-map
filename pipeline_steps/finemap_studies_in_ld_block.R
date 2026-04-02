@@ -102,7 +102,8 @@ main <- function() {
             return(unfinemapped_results)
           }
 
-          results <- run_susie_finemapping(gwas,
+          results <- run_susie_finemapping(
+            gwas,
             study,
             ld_matrix_info,
             ld_matrix,
@@ -123,13 +124,15 @@ main <- function() {
           # if there are a lot of susie results, run DENTIST, to see if there are any bad SNPs,
           # then rerun susie if any SNPs are removed
           if (length(results$susie_result$sets$cs_index) > number_finemapped_results_threshold &&
-                is.na(args$worker_guid)) {
+              is.na(args$worker_guid)
+          ) {
             message("performing qc")
             qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
             study <- qc_results$study
 
             if (study["snps_removed_by_qc"] > 0) {
-              results <- run_susie_finemapping(qc_results$gwas,
+              results <- run_susie_finemapping(
+                qc_results$gwas,
                 study,
                 ld_matrix_info,
                 ld_matrix,
@@ -164,7 +167,8 @@ main <- function() {
           )
           saveRDS(susie_result_to_save, glue::glue("{finemap_file_prefix}_results.rds"))
 
-          succeeded_finemap_info <- split_susie_result_into_conditional_gwases(results$susie_result,
+          succeeded_finemap_info <- split_susie_result_into_conditional_gwases(
+            results$susie_result,
             gwas,
             study,
             sample_size,

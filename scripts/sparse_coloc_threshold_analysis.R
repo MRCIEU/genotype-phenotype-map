@@ -7,14 +7,16 @@ parser <- argparser::arg_parser(
     "(mimics released sumstats cutoffs; uses finemapped regional files with LBF only)."
   )
 )
-parser <- argparser::add_argument(parser, "--ld_block", help = "LD block identifier (e.g. EUR/15/63808593-67097074)", type = "character")
-parser <- argparser::add_argument(parser, "--sparse_study", help = "unique_study_id of sparse study (finemapped_studies.tsv)", type = "character")
-parser <- argparser::add_argument(parser, "--output_file", help = "Path to save results TSV", type = "character", default = NA)
+parser <- argparser::add_argument(parser, "--ld_block", help = "LD block identifier", type = "character")
+parser <- argparser::add_argument(parser, "--sparse_study", help = "unique_study_id", type = "character")
+parser <- argparser::add_argument(parser, "--output_file", type = "character", default = NA)
 args <- argparser::parse_args(parser)
 # args$sparse_study <- "godmc-methylation-cg00768179_EUR/1/7451118-9307591_1"
 
 ensure_p_column <- function(gwas) {
-  if ("P" %in% names(gwas)) return(gwas)
+  if ("P" %in% names(gwas)) {
+    return(gwas)
+  }
   if (all(c("BETA", "SE") %in% names(gwas))) {
     b <- as.numeric(gwas$BETA)
     s <- as.numeric(gwas$SE)
@@ -35,14 +37,14 @@ mask_lbf_by_p_threshold <- function(gwas, real_indices, p_reporting) {
   if (length(pad_idx) > 0) {
     out$LBF[pad_idx] <- 0
   }
-  out
+  return(out)
 }
 
 lbf_vector_from_gwas <- function(gwas) {
   v <- as.numeric(gwas$LBF)
   names(v) <- gwas$SNP
   v[is.na(v)] <- 0
-  v
+  return(v)
 }
 
 #' Read coloc_pairwise_results for one sparse study: partner unique_study_ids and file H4 per partner.
@@ -51,7 +53,7 @@ pairwise_file_h4_lookup <- function(pairwise_path, ld_block, sparse_uid) {
   if (!file.exists(pairwise_path)) {
     stop(
       "Missing ", pairwise_path, ". ",
-      "coloc_pairwise_results.tsv.gz is required to choose control studies (pipeline pairs involving the sparse trait).",
+      "coloc_pairwise_results.tsv.gz is required to choose control studies.",
       call. = FALSE
     )
   }
@@ -87,17 +89,18 @@ pairwise_file_h4_lookup <- function(pairwise_path, ld_block, sparse_uid) {
     )
   }
 
-  list(
+  return(list(
     h4_by_control = h4_by_control,
     control_study_ids = unique(h4_by_control$control_study)
-  )
+  ))
 }
 
 main <- function() {
   ld_info <- ld_block_dirs(args$ld_block)
 
   finemapped_studies <- vroom::vroom(
-    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv"), show_col_types = FALSE,
+    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv"),
+    show_col_types = FALSE,
     col_types = finemapped_column_types
   )
 
@@ -158,7 +161,7 @@ main <- function() {
   skipped_partners <- setdiff(control_names, control_finemapped$unique_study_id)
   if (length(skipped_partners) > 0) {
     message(glue::glue(
-      "{length(skipped_partners)} coloc_pairwise partner(s) skipped (not finemapped, ignored, or min_p > p_value_threshold)."
+      "{length(skipped_partners)} coloc_pairwise partner(s) skipped."
     ))
   }
 
@@ -176,8 +179,10 @@ main <- function() {
 
   control_lbfs <- lapply(seq_len(nrow(control_finemapped)), function(i) {
     gwas <- vroom::vroom(control_finemapped$file[i], show_col_types = FALSE)
-    if (!"LBF" %in% colnames(gwas)) return(NULL)
-    lbf_vector_from_gwas(gwas)
+    if (!"LBF" %in% colnames(gwas)) {
+      return(NULL)
+    }
+    return(lbf_vector_from_gwas(gwas))
   })
   names(control_lbfs) <- control_finemapped$unique_study_id
   control_lbfs <- control_lbfs[!sapply(control_lbfs, is.null)]
@@ -186,7 +191,7 @@ main <- function() {
   message(glue::glue("Loaded LBF vectors for {length(control_lbfs)} control studies"))
 
   count_signal_snps <- function(gwas, idx = real_indices) {
-    sum(gwas$LBF[idx] != 0, na.rm = TRUE)
+    return(sum(gwas$LBF[idx] != 0, na.rm = TRUE))
   }
 
   run_one_mask <- function(test_gwas, p_label, p_reporting) {
@@ -194,10 +199,27 @@ main <- function() {
 
     test_lbf <- lbf_vector_from_gwas(test_gwas)
 
-    lapply(names(control_lbfs), function(ctrl_id) {
-      ctrl_lbf <- control_lbfs[[ctrl_id]]
-      shared_snps <- sort(intersect(names(test_lbf), names(ctrl_lbf)))
-      if (length(shared_snps) < 50) {
+    return(
+      lapply(names(control_lbfs), function(ctrl_id) {
+        ctrl_lbf <- control_lbfs[[ctrl_id]]
+        shared_snps <- sort(intersect(names(test_lbf), names(ctrl_lbf)))
+        if (length(shared_snps) < 50) {
+          return(data.frame(
+            control_study = ctrl_id,
+            sparse_unique_study_id = sparse_finemapped$unique_study_id,
+            p_reporting_threshold = p_reporting,
+            p_reporting_label = p_label,
+            n_real_data_points = n_lbf_nonzero,
+            n_shared_snps = length(shared_snps),
+            PP.H0.abf = NA, PP.H1.abf = NA, PP.H2.abf = NA, PP.H3.abf = NA, PP.H4.abf = NA
+          ))
+        }
+
+        result <- coloc::coloc.bf_bf(
+          bf1 = test_lbf[shared_snps],
+          bf2 = ctrl_lbf[shared_snps]
+        )
+
         return(data.frame(
           control_study = ctrl_id,
           sparse_unique_study_id = sparse_finemapped$unique_study_id,
@@ -205,29 +227,14 @@ main <- function() {
           p_reporting_label = p_label,
           n_real_data_points = n_lbf_nonzero,
           n_shared_snps = length(shared_snps),
-          PP.H0.abf = NA, PP.H1.abf = NA, PP.H2.abf = NA, PP.H3.abf = NA, PP.H4.abf = NA
+          PP.H0.abf = result$summary$PP.H0.abf,
+          PP.H1.abf = result$summary$PP.H1.abf,
+          PP.H2.abf = result$summary$PP.H2.abf,
+          PP.H3.abf = result$summary$PP.H3.abf,
+          PP.H4.abf = result$summary$PP.H4.abf
         ))
-      }
-
-      result <- coloc::coloc.bf_bf(
-        bf1 = test_lbf[shared_snps],
-        bf2 = ctrl_lbf[shared_snps]
-      )
-
-      data.frame(
-        control_study = ctrl_id,
-        sparse_unique_study_id = sparse_finemapped$unique_study_id,
-        p_reporting_threshold = p_reporting,
-        p_reporting_label = p_label,
-        n_real_data_points = n_lbf_nonzero,
-        n_shared_snps = length(shared_snps),
-        PP.H0.abf = result$summary$PP.H0.abf,
-        PP.H1.abf = result$summary$PP.H1.abf,
-        PP.H2.abf = result$summary$PP.H2.abf,
-        PP.H3.abf = result$summary$PP.H3.abf,
-        PP.H4.abf = result$summary$PP.H4.abf
-      )
-    }) |> dplyr::bind_rows()
+      }) |> dplyr::bind_rows()
+    )
   }
 
   message("  Baseline (finemapped LBF as-is)...")
@@ -290,7 +297,7 @@ main <- function() {
     dplyr::arrange(dplyr::desc(is.na(p_reporting_threshold)), dplyr::desc(sort_key)) |>
     dplyr::select(-sort_key)
 
-  message("\n=== Summary: H4 by reporting p-threshold (vs pipeline coloc_pairwise_results; fractions use pairs with non-NA pairwise_file_h4) ===")
+  message("\n=== Summary: H4 by reporting p-threshold ===")
   print(as.data.frame(summary_tbl), row.names = FALSE)
 
   baseline_h4 <- summary_tbl$mean_h4[summary_tbl$p_reporting_label == "baseline"]
@@ -332,6 +339,7 @@ main <- function() {
   }
   vroom::vroom_write(results, output_file)
   message(glue::glue("\nFull results written to {output_file}"))
+  return(invisible(NULL))
 }
 
 main()

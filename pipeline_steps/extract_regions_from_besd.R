@@ -55,7 +55,7 @@ main <- function() {
   }
 
   if (metadata$cis_trans == cis_trans$trans_only ||
-    (metadata$cis_trans == cis_trans$cis_trans && !is.null(cis_results))
+      (metadata$cis_trans == cis_trans$cis_trans && !is.null(cis_results))
   ) {
     trans_results <- extract_trans_regions(cis_results$snp_data, study, p_value_threshold)
   }

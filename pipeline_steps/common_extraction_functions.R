@@ -231,7 +231,8 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
   for (name in names(columns)) {
     # Skip if the mapping value is empty, NULL, or zero-length
     if (is.null(columns[[name]]) || length(columns[[name]]) == 0 ||
-          (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)) {
+        (is.character(columns[[name]]) && nchar(columns[[name]]) == 0)
+    ) {
       next
     }
 
@@ -338,7 +339,7 @@ convert_or_to_beta <- function(gwas) {
     stop("Need OR, OR_LB + OR_UB to complete conversion")
   }
 
-  z_score <- stats::qnorm(.975, mean = 0, sd = 1) #1.96
+  z_score <- stats::qnorm(.975, mean = 0, sd = 1) # 1.96
   gwas$BETA <- log(gwas$OR)
   gwas$SE <- (log(gwas$OR_LB) - gwas$BETA) / -z_score
 

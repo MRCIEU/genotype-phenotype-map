@@ -2,7 +2,6 @@ source("../pipeline_steps/constants.R")
 options(dplyr.width = Inf)
 
 
-
 update_files_with_lbfs <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -10,62 +9,69 @@ update_files_with_lbfs <- function() {
   blocks <- ld_info$block
 
   parallel::mclapply(blocks, mc.cores = 30, function(block) {
-    tryCatch({
-      finemapped_studies <- vroom::vroom(
-        glue::glue("{ld_block_data_dir}/{block}/finemapped_studies.tsv"), show_col_types = F
-      ) |>
-        dplyr::filter(file.info(file_with_lbfs)$mtime < "2025-11-03")
+    tryCatch(
+      {
+        finemapped_studies <- vroom::vroom(
+          glue::glue("{ld_block_data_dir}/{block}/finemapped_studies.tsv"),
+          show_col_types = F
+        ) |>
+          dplyr::filter(file.info(file_with_lbfs)$mtime < "2025-11-03")
 
-      imputed_studies <- vroom::vroom(glue::glue("{ld_block_data_dir}/{block}/imputed_studies.tsv"), show_col_types = F)
-      studies_to_update <- unique(finemapped_studies$study)
-
-      safe_lapply(studies_to_update, function(imputed_study) {
-        this_imputed_study <- dplyr::filter(imputed_studies, study == imputed_study)
-        if (nrow(this_imputed_study) != 1) stop(glue::glue("Imputed study not found: {imputed_study} in {block}"))
-        print(glue::glue("Updating {this_imputed_study$file}"))
-        if (file.info(this_imputed_study$file)$size == 0) {
-          return()
-        }
-        imputed_gwas_with_lbfs <- vroom::vroom(this_imputed_study$file,
-          show_col_types = F,
-          col_select = c("SNP", "CHR", "BP", "EA", "OA", "EAF", "Z", "BETA", "SE", "P")
+        imputed_studies <- vroom::vroom(
+          glue::glue("{ld_block_data_dir}/{block}/imputed_studies.tsv"),
+          show_col_types = F
         )
-        if (!"IMPUTED" %in% colnames(imputed_gwas_with_lbfs)) {
-          imputed_gwas_with_lbfs$IMPUTED <- FALSE
-        }
-        original_nrow <- nrow(imputed_gwas_with_lbfs)
+        studies_to_update <- unique(finemapped_studies$study)
 
-        finemapped_for_study <- dplyr::filter(finemapped_studies, study == imputed_study)
-        file_with_lbf_name <- finemapped_for_study$file_with_lbfs[1]
-        for (i in seq_len(nrow(finemapped_for_study))) {
-          this_finemap_study <- finemapped_for_study[i, ]
-          finemap_number <- as.numeric(stringr::str_extract(this_finemap_study$unique_study_id, "(?<=_)\\d+$"))
-          lbf_column_name <- glue::glue("LBF_{finemap_number}")
-          finemapped_gwas <- vroom::vroom(this_finemap_study$file, show_col_types = F) |>
-            dplyr::select(SNP, LBF)
-          imputed_gwas_with_lbfs <- dplyr::left_join(imputed_gwas_with_lbfs, finemapped_gwas, by = "SNP") |>
-            dplyr::rename(!!lbf_column_name := LBF)
-        }
-        if (any(is.na(imputed_gwas_with_lbfs$SNP) |
-                is.na(imputed_gwas_with_lbfs$BETA) |
-                is.na(imputed_gwas_with_lbfs$SE)
-            ) | nrow(imputed_gwas_with_lbfs) != original_nrow) {
-          stop(glue::glue("Missing SNP, BETA, or SE in {file_with_lbf_name} for {imputed_study} in {block}"))
-        }
-        vroom::vroom_write(imputed_gwas_with_lbfs, file_with_lbf_name)
-        return()
-      })
-      return(invisible(NULL))
-    },
-    error = function(e) {
-      print(glue::glue("Error in {block}: {e}"))
-      stop(glue::glue("Error in {block}: {e}"))
-    })
+        safe_lapply(studies_to_update, function(imputed_study) {
+          this_imputed_study <- dplyr::filter(imputed_studies, study == imputed_study)
+          if (nrow(this_imputed_study) != 1) stop(glue::glue("Imputed study not found: {imputed_study} in {block}"))
+          print(glue::glue("Updating {this_imputed_study$file}"))
+          if (file.info(this_imputed_study$file)$size == 0) {
+            return()
+          }
+          imputed_gwas_with_lbfs <- vroom::vroom(this_imputed_study$file,
+            show_col_types = F,
+            col_select = c("SNP", "CHR", "BP", "EA", "OA", "EAF", "Z", "BETA", "SE", "P")
+          )
+          if (!"IMPUTED" %in% colnames(imputed_gwas_with_lbfs)) {
+            imputed_gwas_with_lbfs$IMPUTED <- FALSE
+          }
+          original_nrow <- nrow(imputed_gwas_with_lbfs)
+
+          finemapped_for_study <- dplyr::filter(finemapped_studies, study == imputed_study)
+          file_with_lbf_name <- finemapped_for_study$file_with_lbfs[1]
+          for (i in seq_len(nrow(finemapped_for_study))) {
+            this_finemap_study <- finemapped_for_study[i, ]
+            finemap_number <- as.numeric(stringr::str_extract(this_finemap_study$unique_study_id, "(?<=_)\\d+$"))
+            lbf_column_name <- glue::glue("LBF_{finemap_number}")
+            finemapped_gwas <- vroom::vroom(this_finemap_study$file, show_col_types = F) |>
+              dplyr::select(SNP, LBF)
+            imputed_gwas_with_lbfs <- dplyr::left_join(imputed_gwas_with_lbfs, finemapped_gwas, by = "SNP") |>
+              dplyr::rename(!!lbf_column_name := LBF)
+          }
+          if (
+              any(
+                is.na(imputed_gwas_with_lbfs$SNP) |
+                  is.na(imputed_gwas_with_lbfs$BETA) |
+                  is.na(imputed_gwas_with_lbfs$SE)
+              ) | nrow(imputed_gwas_with_lbfs) != original_nrow) {
+            stop(glue::glue("Missing SNP, BETA, or SE in {file_with_lbf_name} for {imputed_study} in {block}"))
+          }
+          vroom::vroom_write(imputed_gwas_with_lbfs, file_with_lbf_name)
+          return()
+        })
+        return(invisible(NULL))
+      },
+      error = function(e) {
+        print(glue::glue("Error in {block}: {e}"))
+        stop(glue::glue("Error in {block}: {e}"))
+      }
+    )
     return(invisible(NULL))
   })
   return()
 }
-
 
 
 #' Recreate _with_lbf.tsv.gz file from imputed and finemapped files.
@@ -78,9 +84,13 @@ update_files_with_lbfs <- function() {
 #' @return Invisibly, the path to the written file
 recreate_file_with_lbfs <- function(imputed_file, finemapped_files, output_file) {
   resolve_path <- function(path) {
-    if (file.exists(path)) return(path)
+    if (file.exists(path)) {
+      return(path)
+    }
     full_path <- file.path(data_dir, sub("^/", "", path))
-    if (file.exists(full_path)) return(full_path)
+    if (file.exists(full_path)) {
+      return(full_path)
+    }
     return(path)
   }
 
@@ -136,55 +146,62 @@ populate_beta_in_finemapped_files <- function() {
   blocks <- c("EUR/9/28885932-31590323", "EUR/12/99424032-103736758")
 
   resolve_path <- function(path) {
-    if (file.exists(path)) return(path)
+    if (file.exists(path)) {
+      return(path)
+    }
     full_path <- file.path(data_dir, sub("^/", "", path))
-    if (file.exists(full_path)) return(full_path)
+    if (file.exists(full_path)) {
+      return(full_path)
+    }
     return(path)
   }
 
   parallel::mclapply(blocks, mc.cores = 30, function(block) {
-    tryCatch({
-      finemapped_studies <- vroom::vroom(
-        glue::glue("{ld_block_data_dir}/{block}/finemapped_studies.tsv"),
-        show_col_types = F
-      )
-      message(glue::glue("Processing {nrow(finemapped_studies)} finemapped studies in {block}"))
-
-      for (i in seq_len(nrow(finemapped_studies))) {
-        row <- finemapped_studies[i, ]
-        if (is.na(row$file_with_lbfs) || is.na(row$file)) next
-        file_path <- resolve_path(row$file)
-        file_with_lbfs_path <- resolve_path(row$file_with_lbfs)
-
-        if (!file.exists(file_path) || !file.exists(file_with_lbfs_path)) {
-          message(glue::glue("Skipping {row$unique_study_id}: file or file_with_lbfs not found"))
-          next
-        }
-
-        finemapped_gwas <- vroom::vroom(file_path, show_col_types = F)
-        if ("BETA" %in% colnames(finemapped_gwas)) {
-          next
-        }
-        print(glue::glue("Updating {row$unique_study_id} in {block}"))
-
-        lbfs_gwas <- vroom::vroom(
-          file_with_lbfs_path,
-          show_col_types = F,
-          col_select = c("SNP", "BETA")
+    tryCatch(
+      {
+        finemapped_studies <- vroom::vroom(
+          glue::glue("{ld_block_data_dir}/{block}/finemapped_studies.tsv"),
+          show_col_types = F
         )
+        message(glue::glue("Processing {nrow(finemapped_studies)} finemapped studies in {block}"))
 
-        all_columns <- c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")
-        finemapped_gwas <- finemapped_gwas |>
-          dplyr::left_join(lbfs_gwas, by = "SNP") |>
-          dplyr::select(dplyr::any_of(all_columns), dplyr::everything())
+        for (i in seq_len(nrow(finemapped_studies))) {
+          row <- finemapped_studies[i, ]
+          if (is.na(row$file_with_lbfs) || is.na(row$file)) next
+          file_path <- resolve_path(row$file)
+          file_with_lbfs_path <- resolve_path(row$file_with_lbfs)
 
-        vroom::vroom_write(finemapped_gwas, file_path)
+          if (!file.exists(file_path) || !file.exists(file_with_lbfs_path)) {
+            message(glue::glue("Skipping {row$unique_study_id}: file or file_with_lbfs not found"))
+            next
+          }
+
+          finemapped_gwas <- vroom::vroom(file_path, show_col_types = F)
+          if ("BETA" %in% colnames(finemapped_gwas)) {
+            next
+          }
+          print(glue::glue("Updating {row$unique_study_id} in {block}"))
+
+          lbfs_gwas <- vroom::vroom(
+            file_with_lbfs_path,
+            show_col_types = F,
+            col_select = c("SNP", "BETA")
+          )
+
+          all_columns <- c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")
+          finemapped_gwas <- finemapped_gwas |>
+            dplyr::left_join(lbfs_gwas, by = "SNP") |>
+            dplyr::select(dplyr::any_of(all_columns), dplyr::everything())
+
+          vroom::vroom_write(finemapped_gwas, file_path)
+        }
+        return(invisible(NULL))
+      },
+      error = function(e) {
+        message(glue::glue("Error in {block}: {e$message}"))
+        return(invisible(NULL))
       }
-      return(invisible(NULL))
-    }, error = function(e) {
-      message(glue::glue("Error in {block}: {e$message}"))
-      return(invisible(NULL))
-    })
+    )
     return(invisible(NULL))
   })
   return()
@@ -412,7 +429,8 @@ remove_additional_unneeded_colocs_pairs <- function() {
     finemapped_studies_low_p <- dplyr::filter(finemapped_studies, min_p > lowest_p_value_threshold)
     print(head(dplyr::pull(finemapped_studies_low_p, unique_study_id), n = 30))
     print(
-      glue::glue("{nrow(finemapped_studies) - nrow(finemapped_studies_filtered)}",
+      glue::glue(
+        "{nrow(finemapped_studies) - nrow(finemapped_studies_filtered)}",
         " / {nrow(finemapped_studies)} finemapped studies that are weak"
       )
     ) # nolint: line_length_linter.
@@ -609,13 +627,17 @@ cleanup_bad_snps <- function(block) {
     show_col_types = F
   )
   new_coloc_pairwise_results <- coloc_pairwise_results |>
-    dplyr::filter(!(
-      (PP.H4.abf > 0.5 | PP.H3.abf > 0.5) &
-        # (study_a %in% imputed_snps_to_remove$study | study_b %in% imputed_snps_to_remove$study |
-        (study_a %in% altered_studies | study_b %in% altered_studies |
-           unique_study_a %in% non_significant_finemapped_studies$unique_study_id |
-           unique_study_b %in% non_significant_finemapped_studies$unique_study_id)
-    ))
+    dplyr::filter(
+      !(
+        (PP.H4.abf > 0.5 | PP.H3.abf > 0.5) &
+          (
+            study_a %in% altered_studies |
+              study_b %in% altered_studies |
+              unique_study_a %in% non_significant_finemapped_studies$unique_study_id |
+              unique_study_b %in% non_significant_finemapped_studies$unique_study_id
+          )
+      )
+    )
   print(glue::glue("{block}: Removing {nrow(coloc_pairwise_results) - nrow(new_coloc_pairwise_results)} coloc pairwise results out of {nrow(coloc_pairwise_results)}")) # nolint: line_length_linter.
   vroom::vroom_write(
     new_coloc_pairwise_results,

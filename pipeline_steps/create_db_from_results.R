@@ -169,6 +169,15 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   return(table)
 }
 
+#' Maps each SNP to a single LD block by interval overlap (same logic as ld_blocks.tsv).
+assign_ld_block_from_coords <- function(snps, ld_blocks_data) {
+  data.table::setDT(snps)
+  data.table::setDT(ld_blocks_data)
+
+  snps[ld_blocks_data, ld_block := i.ld_block, on = .(chr, bp >= start, bp <= stop)]
+
+  return(as.data.frame(snps))
+}
 
 load_data_for_studies_db <- function(studies_db, studies_conn) {
   studies_db$study_sources$data <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F) |>
@@ -261,7 +270,9 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
   ) |>
     resolve_ids_for_table(studies_db$snp_annotations$existing_ids, studies_db$snp_annotations$persist_id_from) |>
     dplyr::left_join(gene_subset, by = c("gene" = "gene")) |>
+    assign_ld_block_from_coords(studies_db$ld_blocks$data) |>
     dplyr::left_join(ld_blocks_subset, by = c("ld_block" = "ld_block")) |>
+    dplyr::filter(!is.na(.data$ld_block_id)) |>
     dplyr::mutate(snp = trimws(snp)) |>
     dplyr::mutate(rsid = sub(",.*", "", rsid)) |>
     dplyr::select(get_table_column_names(studies_db$snp_annotations))

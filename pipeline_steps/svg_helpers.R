@@ -145,7 +145,8 @@ create_svgs_from_gwas <- function(study, gwas) {
     ) |>
     dplyr::arrange(CHR, BP) |>
     dplyr::left_join(
-      chr_ranges |> dplyr::select(CHR, bp_cumulative_start, bp_min), by = "CHR"
+      chr_ranges |> dplyr::select(CHR, bp_cumulative_start, bp_min),
+      by = "CHR"
     ) |>
     dplyr::mutate(BP_cumulative = BP - bp_min + bp_cumulative_start) |>
     # Add a flag for non-adjacent points
@@ -165,7 +166,8 @@ create_svgs_from_gwas <- function(study, gwas) {
     ) |>
     dplyr::arrange(CHR, BP) |>
     dplyr::left_join(
-      chr_ranges |> dplyr::select(CHR, bp_cumulative_start, bp_min), by = "CHR"
+      chr_ranges |> dplyr::select(CHR, bp_cumulative_start, bp_min),
+      by = "CHR"
     ) |>
     dplyr::mutate(BP_cumulative = BP - bp_min + bp_cumulative_start)
 
@@ -382,23 +384,25 @@ prepare_svg_files_for_use <- function(studies_db_file, do_all = FALSE) {
 
   # zip the svg extractions by coloc group
   completed <- parallel::mclapply(unique_coloc_group_ids, mc.cores = 10, function(group_id) {
-    tryCatch({
-      zip_file <- glue::glue("coloc_group_{group_id}_svgs.zip")
-      # if (file.exists(zip_file)) return()
+    tryCatch(
+      {
+        zip_file <- glue::glue("coloc_group_{group_id}_svgs.zip")
+        # if (file.exists(zip_file)) return()
 
-      specific_coloc_group <- coloc_groups |>
-        dplyr::filter(coloc_group_id == group_id)
+        specific_coloc_group <- coloc_groups |>
+          dplyr::filter(coloc_group_id == group_id)
 
-      extraction_ids_in_group <- specific_coloc_group$study_extraction_id
-      svg_files <- paste0(svg_dir, "/extractions/", extraction_ids_in_group, ".svg")
+        extraction_ids_in_group <- specific_coloc_group$study_extraction_id
+        svg_files <- paste0(svg_dir, "/extractions/", extraction_ids_in_group, ".svg")
 
-      zip::zipr(glue::glue("coloc_group_{group_id}_svgs.zip"), svg_files)
-      return()
-    },
-    error = function(e) {
-      message(glue::glue('Error zipping group {group_id}: {e$message}, {paste(svg_files, collapse = ", ")}'))
-      return()
-    })
+        zip::zipr(glue::glue("coloc_group_{group_id}_svgs.zip"), svg_files)
+        return()
+      },
+      error = function(e) {
+        message(glue::glue('Error zipping group {group_id}: {e$message}, {paste(svg_files, collapse = ", ")}'))
+        return()
+      }
+    )
     return()
   })
   print(warnings())

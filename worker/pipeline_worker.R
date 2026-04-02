@@ -39,7 +39,9 @@ if (!is_test_run) {
   flog.appender(appender.console())
   redis_conn <- list(
     BRPOP = function(queue, timeout = 0.1) {
-      if (queue == delete_gwas_queue) return(NULL)
+      if (queue == delete_gwas_queue) {
+        return(NULL)
+      }
       raw_payload <- paste(readLines(args$custom_message_file, warn = FALSE), collapse = "\n")
       parsed_payload <- tryCatch(jsonlite::fromJSON(raw_payload), error = function(e) NULL)
       if (!is.character(parsed_payload) || length(parsed_payload) < 2) {
@@ -47,7 +49,9 @@ if (!is_test_run) {
       }
       file_queue_name <- parsed_payload[[1]]
       payload <- parsed_payload[[2]]
-      if (queue == file_queue_name) return(list(queue, payload))
+      if (queue == file_queue_name) {
+        return(list(queue, payload))
+      }
       return(NULL)
     },
     LPUSH = function(queue, message) {
@@ -179,7 +183,18 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       updated_gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
       if (!"EAF" %in% colnames(updated_gwas)) {
         gwas$EAF <- NA
-        vroom::vroom_write(gwas, gwas_info$metadata$file_location)
+        write_path <- gwas_summary_writable_path(gwas_info$metadata$file_location)
+        vroom::vroom_write(gwas, write_path)
+        if (write_path != gwas_info$metadata$file_location) {
+          gwas_info$metadata$file_location <- write_path
+          gwas_info$file_location <- write_path
+          create_study_metadata_files(gwas_info)
+          flog.info(paste(
+            gwas_info$metadata$guid,
+            "Wrote expanded summary stats to TSV (archives are read-only for vroom_write):",
+            write_path
+          ))
+        }
         flog.info(paste(gwas_info$metadata$guid, "Added EAF column (NA) for LD panel fill-in during standardisation"))
       }
 
@@ -262,12 +277,13 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       }
     },
     error = function(e) {
-      error_msg <- e$message
+      error_msg <- conditionMessage(e)
+      guid <- original_gwas_info$metadata$guid
 
-      flog.error(paste(gwas_info$metadata$guid, "Error processing message:", error_msg))
-      flog.error(paste(gwas_info$metadata$guid, "Error class:", class(e)[1]))
+      flog.error(paste(guid, "Error processing message:", error_msg))
+      flog.error(paste(guid, "Error class:", class(e)[1]))
       if (!is.null(e$call)) {
-        flog.error(paste(gwas_info$metadata$guid, "Error call:", deparse(e$call)))
+        flog.error(paste(guid, "Error call:", deparse(e$call)))
       }
 
       # Create error details
@@ -288,8 +304,9 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
 
 verify_gwas_data <- function(gwas_info, gwas) {
   gwas_info$metadata$column_names <- Filter(\(column) {
-    return(!is.null(column) && length(column) > 0 &&
-             (is.character(column) && nchar(column) > 0 || !is.character(column)))
+    return(
+      !is.null(column) && length(column) > 0 && (is.character(column) && nchar(column) > 0 || !is.character(column))
+    )
   }, gwas_info$metadata$column_names)
 
   gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
@@ -327,8 +344,8 @@ verify_gwas_data <- function(gwas_info, gwas) {
     error_checks <- paste(error_checks, "Some SNPs have missing BP values, ")
   }
 
-  if (any(gwas$P < 0, na.rm = T)) {
-    error_checks <- paste(error_checks, "Some SNPs have negative P-values, ")
+  if (any(gwas$P < 0 | gwas$P > 1, na.rm = T)) {
+    error_checks <- paste(error_checks, "Some SNPs have P-values outside accepted range (0-1), ")
   }
 
   if ("EAF" %in% colnames(gwas) && any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
@@ -491,6 +508,19 @@ check_pipeline_step_complete <- function(output_file, ld_block, output) {
     flog.error(error_msg)
     stop(error_msg)
   }
+}
+
+#' vroom can read .zip via archive connectivity but cannot write into archives.
+#' @return Path to use with vroom_write (`.tsv` next to the archive when input is `.zip`).
+gwas_summary_writable_path <- function(path) {
+  if (!grepl("\\.zip$", path, ignore.case = TRUE)) {
+    return(path)
+  }
+  writable_path <- file.path(
+    dirname(path),
+    paste0(tools::file_path_sans_ext(basename(path)), ".tsv")
+  )
+  return(writable_path)
 }
 
 get_gwas_data_from_oracle <- function(gwas_info) {

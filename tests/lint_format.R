@@ -2,7 +2,8 @@
 # Auto-fix linting issues using styler
 # Usage: Rscript scripts/lint_format.R
 #
-# Step 1: styler — tidyverse formatting (spacing, indentation, braces)
+# Step 1: styler — tidyverse formatting (spacing, indention, line breaks, tokens)
+#          Tokens includes string quote normalization (lintr quotes_linter / double-quotes).
 # Step 2: Trailing whitespace / tab cleanup
 # Step 3: Report remaining lint issues
 
@@ -22,7 +23,7 @@ styler::style_dir(
   exclude_dirs = exclude_dirs,
   transformers = styler::tidyverse_style(
     indent_by = 2,
-    scope = "spaces",
+    scope = I(c("spaces", "tokens")),
     strict = TRUE
   )
 )

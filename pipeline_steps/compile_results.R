@@ -115,7 +115,7 @@ aggregate_data_produced_by_pipeline <- function(
     function(file) file.exists(file), glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
   )
   extracted_studies <- lapply(extracted_studies_files, function(file) {
-    vroom::vroom(file, show_col_types = F)
+    return(vroom::vroom(file, show_col_types = F))
   }) |> dplyr::bind_rows()
 
   standardised_studies_files <- Filter(
@@ -123,7 +123,7 @@ aggregate_data_produced_by_pipeline <- function(
     glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
   )
   standardised_studies <- lapply(standardised_studies_files, function(file) {
-    vroom::vroom(file, show_col_types = F, col_types = standardised_column_types)
+    return(vroom::vroom(file, show_col_types = F, col_types = standardised_column_types))
   }) |> dplyr::bind_rows()
 
   imputed_studies_files <- Filter(
@@ -139,7 +139,7 @@ aggregate_data_produced_by_pipeline <- function(
     glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
   )
   finemapped_studies <- lapply(finemapped_studies_files, function(file) {
-    vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types)
+    return(vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types))
   }) |> dplyr::bind_rows()
 
   pairwise_coloc_input_files <- Filter(
@@ -214,7 +214,8 @@ aggregate_data_produced_by_pipeline <- function(
     traits_processed <- traits_processed |> dplyr::filter(!is_study_blocked(study_name))
 
     coloc_pairwise_results <- coloc_pairwise_results |>
-      dplyr::filter(!is_study_blocked(sub("_.*", "", unique_study_a)) &
+      dplyr::filter(
+        !is_study_blocked(sub("_.*", "", unique_study_a)) &
           !is_study_blocked(sub("_.*", "", unique_study_b))
       )
 
@@ -299,7 +300,9 @@ create_study_extractions <- function(pipeline_data) {
 }
 
 is_study_blocked <- function(study_name) {
-  if (length(block_regexes) == 0) return(rep(FALSE, length(study_name)))
+  if (length(block_regexes) == 0) {
+    return(rep(FALSE, length(study_name)))
+  }
   return(vapply(study_name, function(s) any(vapply(block_regexes, function(p) grepl(p, s), logical(1))), logical(1)))
 }
 

@@ -100,8 +100,10 @@ filter_snps <- function(gwas) {
   gwas_filt <- gwas |>
     dplyr::filter(
       CHR %in% seq(1, 22),
-      ((EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
-         (1 - EAF <= eaf_max_threshold & 1 - EAF >= eaf_min_threshold))
+      (
+        (EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
+          (1 - EAF <= eaf_max_threshold & 1 - EAF >= eaf_min_threshold)
+      )
     ) |>
     dplyr::arrange(CHR, BP)
   return(gwas_filt)

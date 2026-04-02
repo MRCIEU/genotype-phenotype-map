@@ -1,7 +1,7 @@
 source("../pipeline_steps/constants.R")
 
 
-studies_to_remove <- c() #vroom::vroom(glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"), show_col_types = F)
+studies_to_remove <- c()
 
 message(paste("Removing", length(studies_to_remove), "studies from pipeline"))
 print(head(studies_to_remove))
@@ -55,13 +55,13 @@ main <- function() {
     entries <- nrow(imputed_studies)
     imputed_studies <- dplyr::filter(imputed_studies, !study %in% studies_to_remove)
     if (!entries - nrow(imputed_studies) == 0) {
-      print(paste('removed', entries - nrow(imputed_studies), 'rows from imputed_studies'))
+      print(paste("removed", entries - nrow(imputed_studies), "rows from imputed_studies"))
       vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
 
-    finemapped_studies_file <- paste0(ld_block, '/finemapped_studies.tsv')
+    finemapped_studies_file <- paste0(ld_block, "/finemapped_studies.tsv")
     if (!file.exists(finemapped_studies_file) || file.size(finemapped_studies_file) == 0) {
-      print(paste('FINEMAPPED STUDIES FILE MISSING:', finemapped_studies_file))
+      print(paste("FINEMAPPED STUDIES FILE MISSING:", finemapped_studies_file))
       return()
     }
 
@@ -69,30 +69,32 @@ main <- function() {
     entries <- nrow(finemapped_studies)
     finemapped_studies <- dplyr::filter(finemapped_studies, !study %in% studies_to_remove)
     if (!entries - nrow(finemapped_studies) == 0) {
-      print(paste('removed', entries - nrow(finemapped_studies), 'rows from finemapped_studies'))
+      print(paste("removed", entries - nrow(finemapped_studies), "rows from finemapped_studies"))
       vroom::vroom_write(finemapped_studies, finemapped_studies_file)
     }
 
-    coloc_results_file <- paste0(ld_block, '/coloc_pairwise_results.tsv.gz')
+    coloc_results_file <- paste0(ld_block, "/coloc_pairwise_results.tsv.gz")
     if (!file.exists(coloc_results_file) || file.size(coloc_results_file) == 0) {
-      print(paste('COLOC PAIRWISE RESULTS FILE MISSING:', coloc_results_file))
+      print(paste("COLOC PAIRWISE RESULTS FILE MISSING:", coloc_results_file))
       return()
     }
     coloc_results <- vroom::vroom(coloc_results_file, show_col_types = F)
     entries <- nrow(coloc_results)
     coloc_results <- dplyr::filter(coloc_results, !study_a %in% studies_to_remove & !study_b %in% studies_to_remove)
     if (!entries - nrow(coloc_results) == 0) {
-      print(paste('removed', entries - nrow(coloc_results), 'rows from coloc_pairwise_results'))
+      print(paste("removed", entries - nrow(coloc_results), "rows from coloc_pairwise_results"))
       vroom::vroom_write(coloc_results, coloc_results_file)
     }
 
     # No need to remove from coloc_clustered_results.tsv.gz as gets recreated every time
+    return()
   })
 
   delete_study_directories <- lapply(studies_to_remove, function(study) {
-    extracted_study_dir <- glue::glue('{extracted_study_dir}{study}')
-    print(paste('deleting:', study))
+    extracted_study_dir <- glue::glue("{extracted_study_dir}{study}")
+    print(paste("deleting:", study))
     unlink(extracted_study_dir, recursive = T)
+    return()
   })
 
   # and then delete them from the results

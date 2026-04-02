@@ -22,8 +22,10 @@ process_file <- function(data) {
   file <- fread(file_path, select = c(1:4, 7:13))
   file$SNP <- paste(file$chr, file$pos_b38, sep = ":")
 
-  colnames(file) <- c("phenotype_id", "variant_id", "tss_distance", "Freq", "pval_nominal",
-                      "b", "se", "chr", "pos_b38", "A1", "A2", "SNP")
+  colnames(file) <- c(
+    "phenotype_id", "variant_id", "tss_distance", "Freq", "pval_nominal",
+    "b", "se", "chr", "pos_b38", "A1", "A2", "SNP"
+  )
 
   # Standardise alleles
   standardise_alleles <- function(qtl) {
@@ -43,7 +45,8 @@ process_file <- function(data) {
 
   dat_flipped <- standardise_alleles(file)
 
-  dat_clean <- dat_flipped[,
+  dat_clean <- dat_flipped[
+    ,
     c("chr", "SNP", "pos_b38", "A1", "A2", "Freq", "b", "se", "pval_nominal", "tss_distance", "phenotype_id")
   ]
   colnames(dat_clean) <- c("Chr", "SNP", "Bp", "A1", "A2", "Freq", "Beta", "se", "p", "tss_distance", "probe")
@@ -62,7 +65,8 @@ process_file <- function(data) {
   colnames(flist_dat) <- c("Chr", "ProbeID", "ProbeBp", "PathOfEsd")
   flist_dat$GeneticDistance <- 0
   write.table(unique(flist_dat), file.path(flist_dir, paste0("flist_", chromosome, ".draft.txt")),
-              col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+    col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE
+  )
 
 
   # Split by gene and write ESDs
@@ -74,7 +78,6 @@ process_file <- function(data) {
   }
 
   return(paste("Completed:", data))
-
 }
 
 results <- mclapply(chrs, process_file, mc.cores = 12)

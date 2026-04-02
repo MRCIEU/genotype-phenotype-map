@@ -228,11 +228,15 @@ find_associations_for_coloc_clustered_snps <- function(
       file_path <- file.path(data_dir, file_path)
     }
 
-    if (!file.exists(file_path)) return(NULL)
+    if (!file.exists(file_path)) {
+      return(NULL)
+    }
 
     avail_cols <- names(data.table::fread(file_path, nrows = 0, showProgress = FALSE))
     required <- c("SNP", "BETA", "SE", "EAF")
-    if (!all(required %in% avail_cols)) return(NULL)
+    if (!all(required %in% avail_cols)) {
+      return(NULL)
+    }
     cols_to_read <- c(required, if ("IMPUTED" %in% avail_cols) "IMPUTED")
 
     gwas <- data.table::fread(
@@ -243,14 +247,18 @@ find_associations_for_coloc_clustered_snps <- function(
     )
 
     gwas <- gwas[SNP %in% target_snps]
-    if (nrow(gwas) == 0) return(NULL)
+    if (nrow(gwas) == 0) {
+      return(NULL)
+    }
 
     gwas[, p := beta_se_to_p(BETA, SE)]
     if (!"IMPUTED" %in% colnames(gwas)) gwas[, IMPUTED := FALSE]
     snp_mapping_this_study <- snp_mapping[study == study_for_file]
     gwas <- gwas[snp_mapping_this_study, on = c(SNP = "snp"), nomatch = 0]
 
-    if (nrow(gwas) == 0) return(NULL)
+    if (nrow(gwas) == 0) {
+      return(NULL)
+    }
     return(gwas[, .(SNP, study, BETA, SE, p, EAF, IMPUTED)])
   }
 

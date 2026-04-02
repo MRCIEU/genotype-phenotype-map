@@ -410,14 +410,6 @@ a2 <- readRDS("pc2.rds")
 str(a2)
 
 
-
-
-
-
-
-
-
-
 bfile <- "/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/9/31590323-32738472"
 sfile <- "/local-scratch/projects/genotype-phenotype-map/test/data/study/ebi-a-GCST90002304/standardised/EUR_9_32450189.tsv.gz" # nolint: line_length_linter.
 
@@ -488,7 +480,6 @@ table(temp$dat$mask)
 table(is.na(temp$dat$X))
 
 
-
 Y <- s$BETA
 Y[is.na(Y)] <- temp$dat$X[is.na(Y)]
 X <- Y
@@ -509,7 +500,6 @@ s2$BETA <- X
 
 o <- perform_imputation(s2, ld, clump_gwas(s$Z, ld, zthresh = qnorm(1e-4, low = F)))
 cor(o$gwas$BETA[m], Y[m])
-
 
 
 bfile <- "/local-scratch/projects/genotype-phenotype-map/data/ld_reference_panel_hg38/EUR/9/31590323-32738472"
@@ -730,8 +720,6 @@ pt2 <- run_test_eig(testdat, subset(param, sfile == a[1]))
 
 pt
 pt2
-
-
 
 
 p1 <- ggplot(z, aes(a, b, col = abs(log(r)))) +

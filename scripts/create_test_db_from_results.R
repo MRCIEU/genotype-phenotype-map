@@ -160,16 +160,16 @@ main <- function() {
   )
   DBI::dbAppendTable(studies_con, "rare_results_wide", rare_results)
 
-  snp_ids_to_keep <- unique(c(study_extractions$snp_id, coloc_groups$snp_id, rare_results$snp_id))
+  variant_ids_to_keep <- unique(c(study_extractions$variant_id, coloc_groups$variant_id, rare_results$variant_id))
 
-  snp_annotations <- DBI::dbGetQuery(
+  variant_annotations <- DBI::dbGetQuery(
     orig_studies_con,
     sprintf(
-      "SELECT * FROM snp_annotations WHERE id IN (%s)",
-      paste(snp_ids_to_keep, collapse = ",")
+      "SELECT * FROM variant_annotations WHERE id IN (%s)",
+      paste(variant_ids_to_keep, collapse = ",")
     )
   )
-  DBI::dbAppendTable(studies_con, "snp_annotations", snp_annotations)
+  DBI::dbAppendTable(studies_con, "variant_annotations", variant_annotations)
 
   genes_to_keep <- unique(na.omit(c(study_extractions$gene_id, rare_results$gene_id, studies$gene_id)))
 
@@ -182,14 +182,14 @@ main <- function() {
   )
   DBI::dbAppendTable(studies_con, "gene_annotations", gene_annotations)
 
-  snp_pleiotropy <- DBI::dbGetQuery(
+  variant_pleiotropy <- DBI::dbGetQuery(
     orig_studies_con,
     sprintf(
-      "SELECT * FROM snp_pleiotropy WHERE snp_id IN (%s)",
-      paste(snp_ids_to_keep, collapse = ",")
+      "SELECT * FROM variant_pleiotropy WHERE variant_id IN (%s)",
+      paste(variant_ids_to_keep, collapse = ",")
     )
   )
-  DBI::dbAppendTable(studies_con, "snp_pleiotropy", snp_pleiotropy)
+  DBI::dbAppendTable(studies_con, "variant_pleiotropy", variant_pleiotropy)
 
   gene_pleiotropy <- DBI::dbGetQuery(
     orig_studies_con,
@@ -216,8 +216,8 @@ main <- function() {
   associations <- DBI::dbGetQuery(
     orig_associations_con,
     sprintf(
-      "SELECT * FROM associations WHERE snp_id IN (%s) AND study_id IN (%s)",
-      paste(snp_ids_to_keep, collapse = ","),
+      "SELECT * FROM associations WHERE variant_id IN (%s) AND study_id IN (%s)",
+      paste(variant_ids_to_keep, collapse = ","),
       paste(studies$id, collapse = ",")
     )
   )
@@ -231,9 +231,9 @@ main <- function() {
     associations <- DBI::dbGetQuery(
       orig_associations_full_con,
       sprintf(
-        "SELECT * FROM %s WHERE snp_id IN (%s) AND study_id IN (%s)",
+        "SELECT * FROM %s WHERE variant_id IN (%s) AND study_id IN (%s)",
         table_name,
-        paste(snp_ids_to_keep, collapse = ","),
+        paste(variant_ids_to_keep, collapse = ","),
         paste(studies$id, collapse = ",")
       )
     )
@@ -242,8 +242,8 @@ main <- function() {
   all_associations <- do.call(rbind, all_associations)
   DBI::dbAppendTable(associations_full_con, "associations_1", all_associations)
   associations_metadata <- data.frame(
-    start_snp_id = 1,
-    stop_snp_id = .Machine$integer.max,
+    start_variant_id = 1,
+    stop_variant_id = .Machine$integer.max,
     associations_table_name = "associations_1"
   )
   DBI::dbAppendTable(associations_full_con, "associations_metadata", associations_metadata)
@@ -251,9 +251,9 @@ main <- function() {
   ld_to_keep <- DBI::dbGetQuery(
     orig_ld_con,
     sprintf(
-      "SELECT * FROM ld WHERE lead_snp_id IN (%s) OR variant_snp_id IN (%s)",
-      paste(snp_ids_to_keep, collapse = ","),
-      paste(snp_ids_to_keep, collapse = ",")
+      "SELECT * FROM ld WHERE lead_variant_id IN (%s) OR proxy_variant_id IN (%s)",
+      paste(variant_ids_to_keep, collapse = ","),
+      paste(variant_ids_to_keep, collapse = ",")
     )
   )
   DBI::dbAppendTable(ld_con, "ld", ld_to_keep)

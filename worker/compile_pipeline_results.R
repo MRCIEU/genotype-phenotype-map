@@ -62,7 +62,7 @@ compile_results <- function(gwas_info) {
     dplyr::distinct(snp) |>
     dplyr::pull(snp)
 
-  snp_annotations <- data.table::fread(
+  variant_annotations <- data.table::fread(
     file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
     select = c("snp", "rsid", "display_snp"),
     showProgress = FALSE,
@@ -72,7 +72,7 @@ compile_results <- function(gwas_info) {
     dplyr::filter(snp %in% all_snps_in_ld_blocks)
 
   if (nrow(study_extractions) > 0) {
-    study_extractions <- merge(study_extractions, snp_annotations, by = "snp", all.x = TRUE)
+    study_extractions <- merge(study_extractions, variant_annotations, by = "snp", all.x = TRUE)
   }
 
   study_extractions <- study_extractions |>
@@ -160,7 +160,7 @@ compile_results <- function(gwas_info) {
     gwas_info,
     coloc_clustered_results,
     all_finemapped_studies,
-    snp_annotations
+    variant_annotations
   )
 
   vroom::vroom_write(associations, compiled_associations_file)
@@ -180,13 +180,13 @@ compile_results <- function(gwas_info) {
 #' @param gwas_info A list containing the GWAS information.
 #' @param coloc_clustered_results A data frame containing the coloc clustered results.
 #' @param all_finemapped_studies A data frame containing the all finemapped studies.
-#' @param snp_annotations A data frame containing the SNP annotations.
+#' @param variant_annotations A data frame containing the SNP annotations.
 #' @return A data frame containing the associations.
 find_associations_for_coloc_clustered_snps <- function(
   gwas_info,
   coloc_clustered_results,
   all_finemapped_studies,
-  snp_annotations
+  variant_annotations
 ) {
   flog.info(paste(gwas_info$metadata$guid, "Finding associations for coloc clustered SNPs"))
   if (nrow(coloc_clustered_results) == 0 || nrow(all_finemapped_studies) == 0) {

@@ -157,12 +157,12 @@ num_coloc_pairs <- nrow(dplyr::filter(coloc_pairs, h4 >= 0.8))
 
 coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT * FROM coloc_groups")
 num_coloc_groups <- max(coloc_groups$coloc_group_id)
-num_snps_in_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT COUNT(DISTINCT snp_id) as num_snps FROM coloc_groups")
+num_snps_in_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT COUNT(DISTINCT variant_id) as num_snps FROM coloc_groups")
 num_coloc_groups_with_same_snp <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT COUNT(*) AS repeated_snp_count
   FROM (
-      SELECT snp_id
+      SELECT variant_id
       FROM coloc_groups
-      GROUP BY snp_id
+      GROUP BY variant_id
       HAVING COUNT(DISTINCT coloc_group_id) > 1
   ) as repeated_snps;")
 
@@ -174,7 +174,7 @@ average_h4_connectedness <- mean(average_h4_connectedness$h4_connectedness)
 rare_results <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT * FROM rare_results")
 num_rare_results <- max(rare_results$rare_result_group_id)
 
-unique_variants_in_coloc <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups")
+unique_variants_in_coloc <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT DISTINCT variant_id FROM coloc_groups")
 ```
 
 
@@ -387,11 +387,11 @@ ggsave(file.path(results_analysis_dir, 'data_type_variant_type.png'), p2b, width
 
 ```{r study-extractions-by-tissue, echo=F, eval=F}
 all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
+  variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+  variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+  variant_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
   FROM coloc_groups
-  JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+  JOIN variant_annotations ON coloc_groups.variant_id = variant_annotations.id
   JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
   JOIN studies ON coloc_groups.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
@@ -803,7 +803,7 @@ coloc_pairs_with_studies_query <- 'SELECT
   study_extraction_a.bp AS bp_a,
   study_extraction_a.chr AS chr_a,
   study_extraction_a.file AS file_a,
-  snp_annotation_a.snp AS snp_a,
+  variant_annotation_a.snp AS snp_a,
   -- Study A details
   study_a.study_name AS study_name_a,
   study_a.id AS study_id_a,
@@ -818,7 +818,7 @@ coloc_pairs_with_studies_query <- 'SELECT
   study_extraction_b.bp AS bp_b,
   study_extraction_b.chr AS chr_b,
   study_extraction_b.file AS file_b,
-  snp_annotation_b.snp AS snp_b,
+  variant_annotation_b.snp AS snp_b,
   -- Study B details
   study_b.study_name AS study_name_b,
   study_b.id AS study_id_b,
@@ -831,12 +831,12 @@ coloc_pairs_with_studies_query <- 'SELECT
   JOIN studies.study_extractions AS study_extraction_a ON coloc_pairs.study_extraction_a_id = study_extraction_a.id
   JOIN studies.studies AS study_a ON study_extraction_a.study_id = study_a.id
   JOIN studies.traits AS trait_a ON study_a.trait_id = trait_a.id
-  JOIN studies.snp_annotations AS snp_annotation_a ON study_extraction_a.snp_id = snp_annotation_a.id
+  JOIN studies.variant_annotations AS variant_annotation_a ON study_extraction_a.variant_id = variant_annotation_a.id
   -- Join for study extraction B
   JOIN studies.study_extractions AS study_extraction_b ON coloc_pairs.study_extraction_b_id = study_extraction_b.id
   JOIN studies.studies AS study_b ON study_extraction_b.study_id = study_b.id
   JOIN studies.traits AS trait_b ON study_b.trait_id = trait_b.id
-  JOIN studies.snp_annotations AS snp_annotation_b ON study_extraction_b.snp_id = snp_annotation_b.id
+  JOIN studies.variant_annotations AS variant_annotation_b ON study_extraction_b.variant_id = variant_annotation_b.id
   WHERE coloc_pairs.h4 > 0.8 OR coloc_pairs.h3 > 0.8
 '
 # Use coloc_pairs_full.db when it exists and has data; otherwise fall back to coloc_pairs.db
@@ -847,11 +847,11 @@ if (nrow(latest_coloc_pair_results) == 0 && file.exists(latest_results$coloc_pai
 }
 
 all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
+  variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+  variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+  variant_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
   FROM coloc_groups
-  JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+  JOIN variant_annotations ON coloc_groups.variant_id = variant_annotations.id
   JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
   JOIN studies ON coloc_groups.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
@@ -1020,13 +1020,13 @@ ggsave(file.path(results_analysis_dir, 'coloc_pairs_by_data_type.png'), p4b, wid
 ### Breakdown of phenotype coloc rates by trait category
 ```{r phenotype_coloc_rates_by_trait_category, echo=F}
 all_phenotype_study_extractions <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT study_extractions.*,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
+  variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+  variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+  variant_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
   FROM study_extractions
   JOIN studies ON study_extractions.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
-  JOIN snp_annotations ON study_extractions.snp_id = snp_annotations.id
+  JOIN variant_annotations ON study_extractions.variant_id = variant_annotations.id
   WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common' and study_extractions.min_p <= 5e-8
 ")
 

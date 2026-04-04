@@ -182,10 +182,10 @@ p_gene_pleiotropy_dist <- ggplot(gene_pleiotropy_bin_counts, aes(x = protein_cod
 ggsave(p_gene_pleiotropy_dist, filename = file.path(results_analysis_dir, "pleiotropy_gene_protein_coding_genes_distribution.png"), width = 8, height = 6)
 print(p_gene_pleiotropy_dist)
 
-snp_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM snp_pleiotropy")
+variant_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM variant_pleiotropy")
 
 # Fit linear model for SNP pleiotropy
-lm_snp <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = snp_pleiotropy_scores)
+lm_snp <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = variant_pleiotropy_scores)
 lm_snp_summary <- summary(lm_snp)
 snp_r2 <- lm_snp_summary$r.squared
 snp_p <- pf(lm_snp_summary$fstatistic[1], lm_snp_summary$fstatistic[2], lm_snp_summary$fstatistic[3], lower.tail = FALSE)
@@ -198,7 +198,7 @@ snp_stats_text <- paste0(
   "p = ", formatC(snp_p, format = "e", digits = 2)
 )
 
-p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
+p_variant_pleiotropy <- ggplot(variant_pleiotropy_scores, aes(x = distinct_trait_categories, y = distinct_protein_coding_genes)) +
   geom_point(alpha = 0.6, size = 2) +
   geom_smooth(method = "lm", se = TRUE, color = cb_blue) +
   annotate("label", x = Inf, y = Inf, label = snp_stats_text, 
@@ -213,10 +213,10 @@ p_snp_pleiotropy <- ggplot(snp_pleiotropy_scores, aes(x = distinct_trait_categor
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
-ggsave(p_snp_pleiotropy, filename = file.path(results_analysis_dir, "snp_pleiotropy_plot.png"), width = 8, height = 6)
-print(p_snp_pleiotropy)
+ggsave(p_variant_pleiotropy, filename = file.path(results_analysis_dir, "variant_pleiotropy_plot.png"), width = 8, height = 6)
+print(p_variant_pleiotropy)
 
-plei <- DBI::dbGetQuery(studies_conn, "select * from snp_pleiotropy order by snp_id;")
+plei <- DBI::dbGetQuery(studies_conn, "select * from variant_pleiotropy order by variant_id;")
 
 plei_summary <- plei |>
   mutate(genecat = cut(distinct_protein_coding_genes, breaks = c(0, 1, 2, 5, 10, 1000))) |>
@@ -235,7 +235,7 @@ plei_summary <- plei |>
             .groups = 'drop') |>
   mutate(n_label = paste0("n=", scales::comma(n)))
 
-p_snp_pleiotropy_gene_distribution <- ggplot(plei_summary, aes(x = genecat, y = m)) +
+p_variant_pleiotropy_gene_distribution <- ggplot(plei_summary, aes(x = genecat, y = m)) +
   geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
   geom_errorbar(aes(ymin = lci, ymax = uci), width = 0.2) +
   geom_text(aes(y = 0, label = n_label), vjust = -0.5, size = 8 / .pt, color = "black") +
@@ -249,8 +249,8 @@ p_snp_pleiotropy_gene_distribution <- ggplot(plei_summary, aes(x = genecat, y = 
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold")
   )
-ggsave(p_snp_pleiotropy_gene_distribution, filename = file.path(results_analysis_dir, "snp_pleiotropy_gene_distribution.png"), width = 8, height = 6)
-print(p_snp_pleiotropy_gene_distribution)
+ggsave(p_variant_pleiotropy_gene_distribution, filename = file.path(results_analysis_dir, "variant_pleiotropy_gene_distribution.png"), width = 8, height = 6)
+print(p_variant_pleiotropy_gene_distribution)
 
 coloc_group_members <- DBI::dbGetQuery(sig_coloc_pairs_conn, "
   SELECT cg.coloc_group_id, cg.study_extraction_id, cg.ld_block_id
@@ -329,7 +329,7 @@ sig_coloc_pairs <- DBI::dbGetQuery(sig_coloc_pairs_conn,
 )
 
 unused_sig_coloc_pairs <- sig_coloc_pairs %>%
-  filter(is.na(snp_id))
+  filter(is.na(variant_id))
 
 # Recreate h4_connectedness per coloc group from pairwise data
 # 1. Get coloc group membership (GW-sig study extractions only)
@@ -523,7 +523,7 @@ Does combining the trait categories from all SNPs associated with a gene signifi
 # We want the distinct list of trait categories per SNP and per Gene
 # We allow gene_id and trait_category to be NULL initially to capture all relevant data
 raw_coloc_data <- DBI::dbGetQuery(studies_conn, "
-  SELECT snp_id, gene_id, trait_category 
+  SELECT variant_id, gene_id, trait_category 
   FROM coloc_groups_wide 
   WHERE data_type != 'methylation'
 ")
@@ -532,7 +532,7 @@ raw_coloc_data <- DBI::dbGetQuery(studies_conn, "
 # We filter for non-null trait_category here to count actual pleiotropy
 snp_trait_lists <- raw_coloc_data %>%
   filter(!is.na(trait_category)) %>%
-  group_by(snp_id) %>%
+  group_by(variant_id) %>%
   summarise(
     snp_trait_categories = list(unique(trait_category)),
     num_snp_traits = n_distinct(trait_category),
@@ -543,11 +543,11 @@ snp_trait_lists <- raw_coloc_data %>%
 # We need a mapping of SNPs to Genes. A SNP can be associated with multiple genes.
 snp_to_gene_map <- raw_coloc_data %>%
   filter(!is.na(gene_id)) %>%
-  select(snp_id, gene_id) %>%
+  select(variant_id, gene_id) %>%
   distinct()
 
 gene_amalgamation <- snp_to_gene_map %>%
-  inner_join(snp_trait_lists, by = "snp_id") %>%
+  inner_join(snp_trait_lists, by = "variant_id") %>%
   group_by(gene_id) %>%
   summarise(
     num_snps = n(),
@@ -1423,7 +1423,7 @@ knitr::kable(h3_h4_ratio, caption = "Ratio of H3 > 0.8 to H4 > 0.8 between data 
 
 ### How often Causal SNPs are in LD with each other
 ```{r causal_snps_in_ld, echo=F}
-# Find snp_ids that are in coloc_groups table under different coloc_group_ids
+# Find variant_ids that are in coloc_groups table under different coloc_group_ids
 snp_with_multiple_coloc_groups <- DBI::dbGetQuery(
   studies_conn,
   "
@@ -1433,27 +1433,27 @@ snp_with_multiple_coloc_groups <- DBI::dbGetQuery(
     GROUP BY coloc_group_id
     HAVING COUNT(*) > 5
   )
-  SELECT snp_id, COUNT(DISTINCT coloc_group_id) AS num_coloc_groups
+  SELECT variant_id, COUNT(DISTINCT coloc_group_id) AS num_coloc_groups
   FROM coloc_groups
   WHERE coloc_group_id IN (SELECT coloc_group_id FROM coloc_groups_with_many_entries)
-  GROUP BY snp_id
+  GROUP BY variant_id
   HAVING COUNT(DISTINCT coloc_group_id) > 1
   "
 )
 
 # Print number of such SNPs and preview data
 num_snps_multiple_groups <- nrow(snp_with_multiple_coloc_groups)
-cat('Number of snp_ids found in multiple coloc_group_ids:', num_snps_multiple_groups, '\n')
+cat('Number of variant_ids found in multiple coloc_group_ids:', num_snps_multiple_groups, '\n')
 
-all_causal_snps <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups")
+all_causal_snps <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT variant_id FROM coloc_groups")
 
 dont_print <- DBI::dbExecute(ld_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
 
-formatted_snp_ids <- paste0(all_causal_snps$snp_id, collapse = ",")
+formatted_variant_ids <- paste0(all_causal_snps$variant_id, collapse = ",")
 snp_pair_ld_scores <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT ld.*, studies.ld_blocks.ld_block AS ld_block FROM ld
   JOIN studies.ld_blocks ON ld.ld_block_id = studies.ld_blocks.id
-  WHERE lead_snp_id IN ({formatted_snp_ids})
-  AND variant_snp_id IN ({formatted_snp_ids})
+  WHERE lead_variant_id IN ({formatted_variant_ids})
+  AND proxy_variant_id IN ({formatted_variant_ids})
   "
 ))
 
@@ -1463,12 +1463,12 @@ r2_thresholds <- c(0.8, 0.9, 0.95, 0.99)
 
 ld_results <- lapply(r2_thresholds, function(r2_threshold) {
   snp_pairs_in_ld <- snp_pair_ld_scores[snp_pair_ld_scores$r2 > r2_threshold, ]
-  unique_causal_snps_in_ld <- length(unique(snp_pairs_in_ld$lead_snp_id))
+  unique_causal_snps_in_ld <- length(unique(snp_pairs_in_ld$lead_variant_id))
   return(data.frame(
     r2_threshold = r2_threshold,
     unique_causal_snps_in_ld = unique_causal_snps_in_ld,
     number_of_snp_pairs_in_ld = nrow(snp_pairs_in_ld),
-    percentage_of_causal_snps_in_ld = unique_causal_snps_in_ld / length(all_causal_snps$snp_id)
+    percentage_of_causal_snps_in_ld = unique_causal_snps_in_ld / length(all_causal_snps$variant_id)
   ))
 })
 
@@ -1598,22 +1598,22 @@ knitr::kable(trait_category_counts_per_coloc_group, caption = "Distinct trait ca
 
 ```{r gwas_hits_no_molecular_trait, echo=F}
 all_phenotype_study_extractions <- DBI::dbGetQuery(studies_conn, "SELECT study_extractions.*,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
+  variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+  variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+  variant_annotations.gene as snp_gene, traits.trait_name as trait_name, traits.trait_category as trait_category
   FROM study_extractions
   JOIN studies ON study_extractions.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id
-  JOIN snp_annotations ON study_extractions.snp_id = snp_annotations.id
+  JOIN variant_annotations ON study_extractions.variant_id = variant_annotations.id
   WHERE studies.data_type = 'phenotype' and studies.variant_type = 'common' and study_extractions.min_p < 5e-8
 ")
 
 all_coloc_groups <- DBI::dbGetQuery(studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
-  snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-  snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-  snp_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
+  variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+  variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+  variant_annotations.gene as snp_gene, traits.trait_category as trait_category, traits.trait_name as trait_name
   FROM coloc_groups
-  JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+  JOIN variant_annotations ON coloc_groups.variant_id = variant_annotations.id
   JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
   JOIN studies ON coloc_groups.study_id = studies.id
   JOIN traits ON studies.trait_id = traits.id

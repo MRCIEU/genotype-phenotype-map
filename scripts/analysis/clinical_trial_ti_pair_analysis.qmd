@@ -172,7 +172,7 @@ pull_ti_colocs <- function(target, trait){
       res$pQTL_support <- ifelse(any(evidence %in% "Protein"), TRUE, ifelse("protein" %in% insight, FALSE, NA))
       res$n_coloc_groups <- length(unique(coloc_wtarget$coloc_group_id))
       res$coloc_groups <- paste(unique(coloc_wtarget$coloc_group_id), collapse = ";")
-      res$candidate_snpid <- paste(unique(coloc_wtarget$snp_id), collapse = ";")
+      res$candidate_snpid <- paste(unique(coloc_wtarget$variant_id), collapse = ";")
     } else {
       res$GC_support <- FALSE
       res$eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)

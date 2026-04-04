@@ -76,10 +76,10 @@ studies_db <- list(
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
     )")
   ),
-  snp_annotations = list(
-    name = "snp_annotations",
+  variant_annotations = list(
+    name = "variant_annotations",
     persist_id_from = "snp",
-    query = "CREATE TABLE snp_annotations (
+    query = "CREATE TABLE variant_annotations (
       id INTEGER PRIMARY KEY,
       ld_block_id INTEGER NOT NULL,
       snp TEXT NOT NULL,
@@ -121,7 +121,7 @@ studies_db <- list(
     query = "CREATE TABLE study_extractions (
       id INTEGER PRIMARY KEY,
       study_id INTEGER NOT NULL,
-      snp_id INTEGER NOT NULL,
+      variant_id INTEGER NOT NULL,
       display_snp TEXT NOT NULL NOT NULL,
       rsid TEXT NOT NULL NOT NULL,
       ld_block_id INTEGER NOT NULL,
@@ -139,7 +139,7 @@ studies_db <- list(
       gene_id INTEGER,
       situated_gene_id INTEGER,
       FOREIGN KEY (study_id) REFERENCES studies(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (variant_id) REFERENCES variant_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id),
       FOREIGN KEY (situated_gene_id) REFERENCES gene_annotations(id)
@@ -153,14 +153,14 @@ studies_db <- list(
       coloc_group_id INTEGER NOT NULL,
       study_id INTEGER NOT NULL,
       study_extraction_id INTEGER NOT NULL,
-      snp_id INTEGER NOT NULL,
+      variant_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
       h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1),
       PRIMARY KEY (coloc_group_id, study_extraction_id),
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (variant_id) REFERENCES variant_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
     )")
   ),
@@ -171,23 +171,23 @@ studies_db <- list(
       rare_result_group_id INTEGER,
       study_id INTEGER NOT NULL,
       study_extraction_id INTEGER NOT NULL,
-      snp_id INTEGER NOT NULL,
+      variant_id INTEGER NOT NULL,
       gene_id INTEGER,
       situated_gene_id INTEGER,
       ld_block_id INTEGER NOT NULL,
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
-      FOREIGN KEY (snp_id) REFERENCES snp_annotations(id),
+      FOREIGN KEY (variant_id) REFERENCES variant_annotations(id),
       FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
       FOREIGN KEY (gene_id) REFERENCES gene_annotations(id),
       FOREIGN KEY (situated_gene_id) REFERENCES gene_annotations(id)
     )"
   ),
-  snp_pleiotropy = list(
-    name = "snp_pleiotropy",
+  variant_pleiotropy = list(
+    name = "variant_pleiotropy",
     persist_id_from = NA,
-    query = "CREATE TABLE snp_pleiotropy (
-      snp_id INTEGER PRIMARY KEY NOT NULL,
+    query = "CREATE TABLE variant_pleiotropy (
+      variant_id INTEGER PRIMARY KEY NOT NULL,
       distinct_trait_categories INTEGER NOT NULL,
       distinct_protein_coding_genes INTEGER NOT NULL
     )"
@@ -209,13 +209,13 @@ additional_studies_tables <- list(
     name = "coloc_groups_wide",
     query = "CREATE TABLE coloc_groups_wide AS
       SELECT coloc_groups.*,
-        snp_annotations.chr, snp_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
-        study_extractions.ld_block, snp_annotations.display_snp, snp_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
+        variant_annotations.chr, variant_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
+        study_extractions.ld_block, variant_annotations.display_snp, variant_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
         traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM coloc_groups
       JOIN studies ON coloc_groups.study_id = studies.id
-      JOIN snp_annotations on coloc_groups.snp_id = snp_annotations.id
+      JOIN variant_annotations on coloc_groups.variant_id = variant_annotations.id
       JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
       LEFT JOIN gene_annotations on studies.gene_id = gene_annotations.id
       JOIN traits ON studies.trait_id = traits.id
@@ -227,12 +227,12 @@ additional_studies_tables <- list(
     name = "rare_results_wide",
     query = "CREATE TABLE rare_results_wide AS
       SELECT rare_results.*,
-        study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans, snp_annotations.display_snp, snp_annotations.rsid,
+        study_extractions.chr, study_extractions.bp, study_extractions.min_p, study_extractions.cis_trans, variant_annotations.display_snp, variant_annotations.rsid,
         gene_annotation.gene AS gene, situated_gene_annotation.gene AS situated_gene, traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         ld_blocks.ld_block, study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM rare_results
       JOIN studies ON rare_results.study_id = studies.id
-      JOIN snp_annotations ON rare_results.snp_id = snp_annotations.id
+      JOIN variant_annotations ON rare_results.variant_id = variant_annotations.id
       JOIN study_extractions ON rare_results.study_extraction_id = study_extractions.id
       LEFT JOIN gene_annotations AS gene_annotation ON rare_results.gene_id = gene_annotation.id
       LEFT JOIN gene_annotations AS situated_gene_annotation ON rare_results.situated_gene_id = situated_gene_annotation.id
@@ -253,7 +253,7 @@ additional_studies_tables <- list(
     indexes = "CREATE INDEX idx_study_extractions_wide_id ON study_extractions_wide(id);
       CREATE INDEX idx_study_extractions_wide_study_id ON study_extractions_wide(study_id);
       CREATE INDEX idx_study_extractions_wide_gene_id ON study_extractions_wide(gene_id);
-      CREATE INDEX idx_study_extractions_wide_snp_id ON study_extractions_wide(snp_id);
+      CREATE INDEX idx_study_extractions_wide_variant_id ON study_extractions_wide(variant_id);
       CREATE INDEX idx_study_extractions_wide_ld_block_id ON study_extractions_wide(ld_block_id);"
   )
 )
@@ -262,11 +262,11 @@ additional_studies_tables <- list(
 ld_table <- list(
   name = "ld",
   query = "CREATE TABLE ld (
-    lead_snp_id INTEGER,
-    variant_snp_id INTEGER,
+    lead_variant_id INTEGER,
+    proxy_variant_id INTEGER,
     ld_block_id INTEGER,
     r REAL CHECK (r BETWEEN -1 AND 1),
-    PRIMARY KEY (lead_snp_id, variant_snp_id)
+    PRIMARY KEY (lead_variant_id, proxy_variant_id)
   )"
 )
 
@@ -290,7 +290,7 @@ coloc_pairs_full_table <- list(
 coloc_pairs_significant_table <- list(
   name = "coloc_pairs",
   query = "CREATE TABLE coloc_pairs (
-    snp_id INTEGER,
+    variant_id INTEGER,
     study_extraction_a_id INTEGER NOT NULL,
     study_extraction_b_id INTEGER NOT NULL,
     ld_block_id INTEGER NOT NULL,
@@ -303,22 +303,22 @@ coloc_pairs_significant_table <- list(
   indexes = "CREATE INDEX idx_coloc_pairs_study_extraction_a_id ON coloc_pairs (study_extraction_a_id);
     CREATE INDEX idx_coloc_pairs_study_extraction_b_id ON coloc_pairs (study_extraction_b_id);
     CREATE INDEX idx_coloc_pairs_ld_block_id ON coloc_pairs (ld_block_id);
-    CREATE INDEX idx_coloc_pairs_snp_id ON coloc_pairs (snp_id);"
+    CREATE INDEX idx_coloc_pairs_variant_id ON coloc_pairs (variant_id);"
 )
 
 coloc_pairs_significant_db <- list(
   coloc_pairs_metadata = list(
     name = "coloc_pairs_metadata",
     query = "CREATE TABLE coloc_pairs_metadata (
-      start_snp_id INTEGER,
-      stop_snp_id INTEGER,
+      start_variant_id INTEGER,
+      stop_variant_id INTEGER,
       coloc_pairs_table_name TEXT NOT NULL
     )"
   ),
   coloc_pairs = list(
     name = "coloc_pairs",
     query = "CREATE TABLE table_name (
-    snp_id INTEGER NOT NULL,
+    variant_id INTEGER NOT NULL,
     study_extraction_a_id INTEGER NOT NULL,
     study_extraction_b_id INTEGER NOT NULL,
     ld_block_id INTEGER NOT NULL,
@@ -331,7 +331,7 @@ coloc_pairs_significant_db <- list(
     indexes = "CREATE INDEX idx_table_name_study_extraction_a_id ON table_name (study_extraction_a_id);
     CREATE INDEX idx_table_name_study_extraction_b_id ON table_name (study_extraction_b_id);
     CREATE INDEX idx_table_name_ld_block_id ON table_name (ld_block_id);
-    CREATE INDEX idx_table_name_snp_id ON table_name (snp_id);"
+    CREATE INDEX idx_table_name_variant_id ON table_name (variant_id);"
   )
 )
 
@@ -339,22 +339,22 @@ associations_db <- list(
   associations_metadata = list(
     name = "associations_metadata",
     query = "CREATE TABLE associations_metadata (
-      start_snp_id INTEGER,
-      stop_snp_id INTEGER,
+      start_variant_id INTEGER,
+      stop_variant_id INTEGER,
       associations_table_name TEXT NOT NULL
     )"
   ),
   associations = list(
     name = "associations",
     query = "CREATE TABLE table_name (
-      snp_id INTEGER,
+      variant_id INTEGER,
       study_id INTEGER,
       beta REAL NOT NULL,
       se REAL NOT NULL CHECK (se > 0),
       p DOUBLE CHECK (p BETWEEN 0 AND 1) NOT NULL,
       eaf REAL CHECK (eaf BETWEEN 0 AND 1) NOT NULL,
       imputed BOOLEAN NOT NULL,
-      PRIMARY KEY (snp_id, study_id)
+      PRIMARY KEY (variant_id, study_id)
     )"
   )
 )
@@ -387,7 +387,7 @@ gwas_upload_db <- list(
     CREATE TABLE study_extractions (
       id INTEGER PRIMARY KEY DEFAULT nextval('study_extractions_id_sequence'),
       gwas_upload_id INTEGER,
-      snp_id INTEGER,
+      variant_id INTEGER,
       snp TEXT NOT NULL,
       ld_block_id INTEGER,
       unique_study_id TEXT NOT NULL,
@@ -422,7 +422,7 @@ gwas_upload_db <- list(
       coloc_group_id INTEGER NOT NULL,
       existing_study_extraction_id INTEGER,
       study_extraction_id INTEGER,
-      snp_id INTEGER NOT NULL,
+      variant_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
       h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1)
@@ -432,7 +432,7 @@ gwas_upload_db <- list(
     name = "associations",
     query = "CREATE TABLE associations (
       gwas_upload_id INTEGER NOT NULL,
-      snp_id INTEGER NOT NULL,
+      variant_id INTEGER NOT NULL,
       study_id INTEGER,
       existing_study_id INTEGER,
       beta REAL NOT NULL,

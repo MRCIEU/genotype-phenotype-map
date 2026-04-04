@@ -165,14 +165,14 @@ dat1 <- tissue_res %>%
   )
 
 
-dat1 <- dat1[,c("snp_id","trait_a", "study_extraction_a_id", "trait_b", "study_extraction_b_id", "source_b", "tissue_b", "h3", "h4")]
+dat1 <- dat1[,c("variant_id","trait_a", "study_extraction_a_id", "trait_b", "study_extraction_b_id", "source_b", "tissue_b", "h3", "h4")]
 
 dat1 <- dat1 %>%
   mutate(tissue_b = if_else(tissue_b == "Blood", "Whole Blood", tissue_b))
 
 
 ## merge with trait effect estimates 
-effs <- bmi_effs[,c("snp_id", "study_extraction_id", "min_p", "display_snp","rsid", "beta", "se", "p", "eaf", "imputed")]
+effs <- bmi_effs[,c("variant_id", "study_extraction_id", "min_p", "display_snp","rsid", "beta", "se", "p", "eaf", "imputed")]
 
 
 ## rm rows missing summ stats 
@@ -180,14 +180,14 @@ effs <- effs %>%
   filter(!is.na(beta))
 
 
-dat2 <- merge(dat1, effs, by = c("snp_id"))
+dat2 <- merge(dat1, effs, by = c("variant_id"))
 
 # filter cell line dat 
 cells <- c("Cells EBV transformed lymphocytes", "Cells Cultured fibroblasts")
 dat2 <- dat2[!(dat2$tissue_b %in% cells),] 
 
 
-print(paste0("Number of BMI loci which with evidence for colocalization with a tissue eQTL: ", NROW(unique(dat2$snp_id)))) 
+print(paste0("Number of BMI loci which with evidence for colocalization with a tissue eQTL: ", NROW(unique(dat2$variant_id)))) 
 
 ```
 
@@ -199,15 +199,15 @@ Identify tissues which contribute most..
 # how many snps per tissue 
 tbl <- dat2 %>%
   group_by(tissue_b) %>%
-  summarise(n_unique_snps = n_distinct(snp_id)) %>%
+  summarise(n_unique_snps = n_distinct(variant_id)) %>%
   arrange(desc(n_unique_snps))
 
 print(tbl)
 
 
 ## subset dat2 
-tp_snps <- dat2[,c("tissue_b", "trait_b", "source_b", "snp_id", "display_snp","rsid", "study_extraction_a_id", "beta", "se", "p", "eaf", "h4")]
-colnames(tp_snps) <- c("tissue", "gene", "source", "snp_id", "display_snp","rsid", "study_extraction_id_trait", "beta", "se", "p", "eaf", "h4")
+tp_snps <- dat2[,c("tissue_b", "trait_b", "source_b", "variant_id", "display_snp","rsid", "study_extraction_a_id", "beta", "se", "p", "eaf", "h4")]
+colnames(tp_snps) <- c("tissue", "gene", "source", "variant_id", "display_snp","rsid", "study_extraction_id_trait", "beta", "se", "p", "eaf", "h4")
 
 ```
 
@@ -219,7 +219,7 @@ Upset plot..
 
 # data source combined 
 snp_matrix <- tp_snps %>%
-  select(snp_id, tissue) %>%
+  select(variant_id, tissue) %>%
   distinct() %>%  # avoid duplicates
   mutate(present = 1) %>%
   pivot_wider(
@@ -229,8 +229,8 @@ snp_matrix <- tp_snps %>%
   )
 
 upset_data <- as.data.frame(snp_matrix)
-rownames(upset_data) <- upset_data$snp_id
-upset_data$snp_id <- NULL
+rownames(upset_data) <- upset_data$variant_id
+upset_data$variant_id <- NULL
 
 # plot
 upp1 <- upset(
@@ -319,10 +319,10 @@ expsres <- unique(df$tissue)
 
 print(paste0("Number of BMI loci incorporated into TPMR across tissues: ", NROW(unique(df$rsid))))
 
-snps <- unique(df$snp_id)
+snps <- unique(df$variant_id)
 
 ## get the BMI/complex trait profile for these SNPs 
-pheno_dat <- bmi_coloc_annotated[which(bmi_coloc_annotated$snp_id %in% snps),]
+pheno_dat <- bmi_coloc_annotated[which(bmi_coloc_annotated$variant_id %in% snps),]
 pheno_dat <- pheno_dat %>% 
   filter(is.na(tissue_a))
 srcs1 <- c("GoDMC", "eQTLGen", "UK Biobank Proteomics", "OneK1K")
@@ -356,12 +356,12 @@ df2 <- df1[,c(1,2,3,4,5,6)]
 
 ## tissue by trait matrix 
 df2_sub <- df2 %>%
-  select(snp_id, tissue) %>%
+  select(variant_id, tissue) %>%
   distinct()
 
 
 tissue_trait_counts <- df2_sub %>%
-  inner_join(pheno_sub, by = "snp_id") %>%
+  inner_join(pheno_sub, by = "variant_id") %>%
   count(tissue, trait_b) %>%
   pivot_wider(
     names_from = trait_b,
@@ -380,7 +380,7 @@ mat_nz <- mat[, apply(mat, 2, sd) != 0]
 
 ## snp counts 
 snp_counts <- df2_sub %>%
-   distinct(tissue, snp_id) %>%
+   distinct(tissue, variant_id) %>%
    count(tissue, name = "n_snps")
 
 pca_res <- prcomp(mat_nz, scale. = TRUE) # tissue*trait snp count matrix scaled by tissue
@@ -485,19 +485,19 @@ pcap1
 ```{r}
 ## tissue pleiotropy table  
 snps_per_tissue <- df2_sub %>%
-  distinct(tissue, snp_id)
+  distinct(tissue, variant_id)
 
 
 pheno_links <- pheno_dat %>%
-  select(snp_id, trait_b) %>%
+  select(variant_id, trait_b) %>%
   distinct()
 
 
 summary <- snps_per_tissue %>%
-  left_join(pheno_links, by = "snp_id") %>%
+  left_join(pheno_links, by = "variant_id") %>%
   group_by(tissue) %>%
   summarise(
-    n_snps   = n_distinct(snp_id),
+    n_snps   = n_distinct(variant_id),
     n_traits = n_distinct(trait_b, na.rm = TRUE),
     .groups = "drop"
   )
@@ -600,12 +600,12 @@ df$effect_allele  <- sub(".+ ([A-Z]+)/([A-Z]+)$", "\\2", df$display_snp)
 
 
 brain1 <-  df[which(df$tissue == top_tissues[1]),]
-brain1 <- brain1[,c("tissue", "source", "snp_id", "rsid", "h4", "beta", "se", "p", "eaf", "effect_allele", "other_allele")]
+brain1 <- brain1[,c("tissue", "source", "variant_id", "rsid", "h4", "beta", "se", "p", "eaf", "effect_allele", "other_allele")]
 
 ## drop duplicated snps  - preferentially keep rows from Meta brain because higher power 
 brain1 <- brain1 %>%
   arrange(factor(source, levels = c("Brain Meta", "Brain eMeta"))) %>% 
-  distinct(snp_id, .keep_all = TRUE)
+  distinct(variant_id, .keep_all = TRUE)
 
 
 
@@ -619,18 +619,18 @@ Format all tp-BMI exposures...
 
 # reference tissue 
 brain1 <- brain1 %>%
-  select(tissue, snp_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele)
+  select(tissue, variant_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele)
 
 tissue_name <- top_tissues[2]
 
 tissue_df <- df %>%
     filter(tissue == tissue_name) %>%
-    select(tissue, snp_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele) %>%
-    distinct(snp_id, .keep_all = TRUE)
+    select(tissue, variant_id, rsid, h4, beta, se, p, eaf, effect_allele, other_allele) %>%
+    distinct(variant_id, .keep_all = TRUE)
   
   # harmonise: add missing snps from one to the other
   add_b1 <- tissue_df %>%
-    filter(!snp_id %in% brain1$snp_id) %>%
+    filter(!variant_id %in% brain1$variant_id) %>%
     mutate(
       tissue = unique(brain1$tissue)[1],
       h4 = 0.001
@@ -639,7 +639,7 @@ tissue_df <- df %>%
   brain_tmp <- bind_rows(brain1, add_b1)
   
   add_t1 <- brain_tmp %>%
-    filter(!snp_id %in% tissue_df$snp_id) %>%
+    filter(!variant_id %in% tissue_df$variant_id) %>%
     mutate(
       tissue = unique(tissue_df$tissue)[1],
       h4 = 0.001

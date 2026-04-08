@@ -8,7 +8,7 @@ parser <- argparser::add_argument(
   "--results_dir",
   help = "Results directory to be used (default: current results directory)",
   type = "character",
-  default = current_results_dir
+  default = as.character(current_results_dir)
 )
 parser <- argparser::add_argument(
   parser,

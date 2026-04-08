@@ -20,22 +20,29 @@ parser <- argparser::add_argument(parser,
   type = "character",
   nargs = Inf
 )
+parser <- argparser::add_argument(
+  parser,
+  "--results_dir",
+  help = "Results directory to be used (default: current results directory)",
+  type = "character",
+  default = as.character(latest_results_dir)
+)
 args <- argparser::parse_args(parser)
 
 main <- function() {
   study_ids <- split_string_into_vector(args$study_ids)
 
-  orig_studies_db_file <- file.path(latest_results_dir, "studies.db")
-  orig_ld_db_file <- file.path(latest_results_dir, "ld.db")
-  orig_associations_db_file <- file.path(latest_results_dir, "associations.db")
-  orig_associations_full_db_file <- file.path(latest_results_dir, "associations_full.db")
-  orig_coloc_pairs_db_file <- file.path(latest_results_dir, "coloc_pairs.db")
+  orig_studies_db_file <- file.path(args$results_dir, "studies.db")
+  orig_ld_db_file <- file.path(args$results_dir, "ld.db")
+  orig_associations_db_file <- file.path(args$results_dir, "associations.db")
+  orig_associations_full_db_file <- file.path(args$results_dir, "associations_full.db")
+  orig_coloc_pairs_db_file <- file.path(args$results_dir, "coloc_pairs.db")
 
-  studies_db_file <- file.path(latest_results_dir, "studies_small.db")
-  ld_db_file <- file.path(latest_results_dir, "ld_small.db")
-  associations_db_file <- file.path(latest_results_dir, "associations_small.db")
-  associations_full_db_file <- file.path(latest_results_dir, "associations_full_small.db")
-  coloc_pairs_db_file <- file.path(latest_results_dir, "coloc_pairs_small.db")
+  studies_db_file <- file.path(args$results_dir, "studies_small.db")
+  ld_db_file <- file.path(args$results_dir, "ld_small.db")
+  associations_db_file <- file.path(args$results_dir, "associations_small.db")
+  associations_full_db_file <- file.path(args$results_dir, "associations_full_small.db")
+  coloc_pairs_db_file <- file.path(args$results_dir, "coloc_pairs_small.db")
 
   unlink(studies_db_file)
   unlink(ld_db_file)

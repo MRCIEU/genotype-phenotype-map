@@ -253,6 +253,7 @@ find_associations_for_coloc_clustered_snps <- function(
 
     gwas[, p := beta_se_to_p(BETA, SE)]
     if (!"IMPUTED" %in% colnames(gwas)) gwas[, IMPUTED := FALSE]
+    gwas[is.na(IMPUTED), IMPUTED := FALSE]
     snp_mapping_this_study <- snp_mapping[study == study_for_file]
     gwas <- gwas[snp_mapping_this_study, on = c(SNP = "snp"), nomatch = 0]
 
@@ -277,6 +278,8 @@ find_associations_for_coloc_clustered_snps <- function(
     return(data.frame())
   }
 
+  # Prefer non-NA effect estimates when deduplicating (unique keeps first row)
+  data.table::setorder(associations, study, SNP, BETA, p)
   associations <- unique(associations[, .(
     snp = SNP,
     study_name = study,
@@ -287,7 +290,11 @@ find_associations_for_coloc_clustered_snps <- function(
     imputed = IMPUTED
   )], by = c("study_name", "snp"))
 
-  associations <- stats::na.omit(associations)
+  associations[is.na(imputed), imputed := FALSE]
+  associations <- associations[
+    !is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf) &
+      is.finite(beta) & is.finite(se) & is.finite(p) & is.finite(eaf)
+  ]
 
   flog.info(paste(
     gwas_info$metadata$guid,

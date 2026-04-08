@@ -613,7 +613,7 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
 
   response <- httr::PUT(
     url = api_url,
-    body = jsonlite::toJSON(put_body, auto_unbox = TRUE),
+    body = jsonlite::toJSON(put_body, auto_unbox = TRUE, na = "null"),
     httr::add_headers("Content-Type" = "application/json"),
     httr::timeout(1200)
   )

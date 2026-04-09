@@ -6,7 +6,7 @@ minimum_snps_in_opengwas_study <- 1000000
 study_list <- vroom::vroom("data/study_list.csv", show_col_types = F)
 studies_to_ignore <- vroom::vroom("data/ignore_studies.tsv", delim = "\t", show_col_types = F)
 rare_studies_to_ignore <- vroom::vroom("data/ignore_studies_rare.tsv", delim = "\t", show_col_types = F)
-studies_processed_file <- glue::glue("{latest_results_dir}/studies_processed.tsv.gz")
+studies_processed_file <- glue::glue("{current_results_dir}/studies_processed.tsv.gz")
 
 if (!is.na(TEST_RUN)) {
   study_list <- vroom::vroom("../tests/data/study_list.csv", show_col_types = F)
@@ -57,6 +57,9 @@ validate_study_list <- function(study_list) {
   if (!all(study_list$data_format %in% data_formats)) stop("Error: some data_format values in study_list are not valid")
   if (!all(study_list$variant_type %in% variant_types)) {
     stop("Error: some variant_type values in study_list are not valid")
+  }
+  if (!all(study_list$bespoke_parsing %in% bespoke_parsing_options)) {
+    stop("Error: some bespoke_parsing values in study_list are not valid")
   }
   if (!all(study_list$reference_build %in% reference_builds)) {
     stop("Error: some reference_build values in study_list are not valid")
@@ -128,13 +131,8 @@ calculate_besd_studies_to_process <- function(entries) {
     studies <- gsub("_", "-", studies)
     studies <- gsub("\\.", "-", studies)
     traits <- studies
-    if (besd_study["bespoke_parsing"] == "godmc") {
-      genes <- NA
-      trait_names <- glue::glue('{metadata$tissue} {probes} {data_type_names[[besd_study["data_type"]]]}')
-    } else {
-      genes <- epi$X5
-      trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
-    }
+
+    trait_names <- create_besd_trait_names(studies, besd_study, metadata, probes, genes, epi)
 
     data_study_dir <- glue::glue("{data_dir}study/{studies}/")
 
@@ -307,6 +305,28 @@ calculate_tsv_studies_to_process <- function(entries) {
     dplyr::bind_rows()
 
   return(expanded_studies)
+}
+
+create_besd_trait_names <- function(studies, besd_study, metadata, probes, genes, epi) {
+  if (besd_study["bespoke_parsing"] == "interval_sqtl") {
+    if (metadata$cis_trans == cis_trans$cis_only) {
+      interval_loc <- sub("^.*cis-(chr[^:]+-[^:]+:[^:]+).*$", "\\1", studies)
+      interval_loc <- gsub("-", ":", interval_loc)
+    } else if (metadata$cis_trans == cis_trans$trans_only) {
+      interval_loc <- sub("^.*trans-(.*):clu.*$", "\\1", studies)
+      interval_loc <- gsub("-", ":", interval_loc)
+      interval_loc <- glue::glue("chr{interval_loc}")
+    }
+    trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]} {interval_loc}')
+  } else if (besd_study["bespoke_parsing"] == "godmc") {
+    genes <- NA
+    trait_names <- glue::glue('{metadata$tissue} {probes} {data_type_names[[besd_study["data_type"]]]}')
+  } else {
+    genes <- epi$X5
+    trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]}')
+  }
+
+  return(trait_names)
 }
 
 main()

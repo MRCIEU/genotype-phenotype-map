@@ -44,7 +44,7 @@ main <- function() {
   create_svgs(study, vcf_file)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
-  return()
+  return(invisible(NULL))
 }
 
 convert_reference_build <- function(study,
@@ -238,7 +238,7 @@ create_svgs <- function(study, vcf_file) {
   colnames(gwas) <- c("RSID", "CHR", "BP", "LP")
   gwas <- gwas |> dplyr::mutate(LP = as.numeric(LP))
   create_svgs_from_gwas(study, gwas)
-  return()
+  return(invisible(NULL))
 }
 
-main()
+invisible(main())

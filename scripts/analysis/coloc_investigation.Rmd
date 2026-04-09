@@ -136,16 +136,16 @@ unique_phenotype_with_coloc_associations <- phenotype_with_coloc_associations %>
 ### What about the connectedness of the coloc groups?
 
 ```{r connectedness_of_coloc_groups, echo=F}
-h4_breakdown <- function(snp_id) {
+h4_breakdown <- function(variant_id) {
   coloc_groups <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
-    snp_annotations.feature_type, snp_annotations.consequence, snp_annotations.impact, snp_annotations.cdna_position,
-    snp_annotations.cds_position, snp_annotations.protein_position, snp_annotations.amino_acids, snp_annotations.codons,
-    snp_annotations.gene as snp_gene
+    variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
+    variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
+    variant_annotations.gene as snp_gene
     FROM coloc_groups
-    JOIN snp_annotations ON coloc_groups.snp_id = snp_annotations.id
+    JOIN variant_annotations ON coloc_groups.variant_id = variant_annotations.id
     JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
     JOIN studies ON coloc_groups.study_id = studies.id
-    WHERE coloc_groups.snp_id = {snp_id}
+    WHERE coloc_groups.variant_id = {variant_id}
     AND coloc_groups.group_threshold = 'strong'
   "))
 

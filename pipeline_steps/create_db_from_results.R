@@ -5,6 +5,13 @@ source("gwas_calculations.R")
 parser <- argparser::arg_parser("Create DuckDB from pipeline results")
 parser <- argparser::add_argument(
   parser,
+  "--results_dir",
+  help = "Results directory to be used (default: current results directory)",
+  type = "character",
+  default = as.character(current_results_dir)
+)
+parser <- argparser::add_argument(
+  parser,
   "--studies_db_file",
   help = "Studies DB file",
   type = "character"
@@ -169,6 +176,15 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   return(table)
 }
 
+#' Maps each SNP to a single LD block by interval overlap (same logic as ld_blocks.tsv).
+assign_ld_block_from_coords <- function(snps, ld_blocks_data) {
+  data.table::setDT(snps)
+  data.table::setDT(ld_blocks_data)
+
+  snps[ld_blocks_data, ld_block := i.ld_block, on = .(chr, bp >= start, bp <= stop)]
+
+  return(as.data.frame(snps))
+}
 
 load_data_for_studies_db <- function(studies_db, studies_conn) {
   studies_db$study_sources$data <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F) |>
@@ -188,7 +204,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(get_table_column_names(studies_db$gene_annotations))
 
   studies_db$study_extractions$data <- vroom::vroom(
-    file.path(current_results_dir, "study_extractions.tsv.gz"),
+    file.path(args$results_dir, "study_extractions.tsv.gz"),
     show_col_types = F
   )
 
@@ -206,7 +222,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
 
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- vroom::vroom(
-    file.path(current_results_dir, "studies_processed.tsv.gz"),
+    file.path(args$results_dir, "studies_processed.tsv.gz"),
     show_col_types = F,
     col_types = studies_processed_column_types
   ) |>
@@ -229,7 +245,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
 
   # Remove the traits that don't have any study extractions
   studies_db$traits$data <- vroom::vroom(
-    file.path(current_results_dir, "traits_processed.tsv.gz"),
+    file.path(args$results_dir, "traits_processed.tsv.gz"),
     show_col_types = F
   ) |>
     dplyr::filter(study_name %in% studies_db$studies$data$study_name) |>
@@ -251,27 +267,37 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(gene, id) |>
     dplyr::rename(gene_id = id)
 
-  studies_db$snp_annotations$data <- vroom::vroom(
+  ld_blocks_subset <- studies_db$ld_blocks$data |>
+    dplyr::select(ld_block, id) |>
+    dplyr::rename(ld_block_id = id)
+
+  studies_db$variant_annotations$data <- vroom::vroom(
     file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
     show_col_types = F
   ) |>
-    resolve_ids_for_table(studies_db$snp_annotations$existing_ids, studies_db$snp_annotations$persist_id_from) |>
+    resolve_ids_for_table(
+      studies_db$variant_annotations$existing_ids,
+      studies_db$variant_annotations$persist_id_from
+    ) |>
     dplyr::left_join(gene_subset, by = c("gene" = "gene")) |>
+    assign_ld_block_from_coords(studies_db$ld_blocks$data) |>
+    dplyr::left_join(ld_blocks_subset, by = c("ld_block" = "ld_block")) |>
+    dplyr::filter(!is.na(.data$ld_block_id)) |>
     dplyr::mutate(snp = trimws(snp)) |>
     dplyr::mutate(rsid = sub(",.*", "", rsid)) |>
-    dplyr::select(get_table_column_names(studies_db$snp_annotations))
+    dplyr::select(get_table_column_names(studies_db$variant_annotations))
 
   studies_db$study_extractions$data <- studies_db$study_extractions$data |>
     format_study_extractions(studies_db)
 
   studies_db$coloc_groups$data <- vroom::vroom(
-    file.path(current_results_dir, "coloc_clustered_results.tsv.gz"),
+    file.path(args$results_dir, "coloc_clustered_results.tsv.gz"),
     show_col_types = F
   ) |>
     format_clustered_colocs(studies_db)
 
   studies_db$rare_results$data <- vroom::vroom(
-    file.path(current_results_dir, "rare_results.tsv.gz"),
+    file.path(args$results_dir, "rare_results.tsv.gz"),
     show_col_types = F
   ) |>
     dplyr::rename_with(tolower) |>
@@ -290,9 +316,9 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::select(gene, id) |>
     dplyr::rename(gene_id = id)
 
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
+  variant_annotations_subset <- studies_db$variant_annotations$data |>
     dplyr::select(snp, display_snp, rsid, id) |>
-    dplyr::rename(snp_id = id)
+    dplyr::rename(variant_id = id)
 
   studies_subset <- studies_db$studies$data |>
     dplyr::select(study_name, id) |>
@@ -300,16 +326,16 @@ format_study_extractions <- function(study_extractions, studies_db) {
 
   duplicate_studies <- studies_db$studies$data[duplicated(studies_db$studies$data$study_name), ]
   if (nrow(duplicate_studies) > 0) {
-    vroom::vroom_write(duplicate_studies, file.path(current_results_dir, "duplicate_studies.tsv"))
+    vroom::vroom_write(duplicate_studies, file.path(args$results_dir, "duplicate_studies.tsv"))
     stop(
       "ERROR: Found ", nrow(duplicate_studies),
       " rows with duplicate study_name values.  Saving to current results dir"
     )
   }
 
-  duplicate_snps <- studies_db$snp_annotations$data[duplicated(studies_db$snp_annotations$data$snp), ]
+  duplicate_snps <- studies_db$variant_annotations$data[duplicated(studies_db$variant_annotations$data$snp), ]
   if (nrow(duplicate_snps) > 0) {
-    vroom::vroom_write(duplicate_snps, file.path(current_results_dir, "duplicate_snps.tsv"))
+    vroom::vroom_write(duplicate_snps, file.path(args$results_dir, "duplicate_snps.tsv"))
     stop(
       "ERROR: Found ", nrow(duplicate_snps),
       " rows with duplicate display_snp values.  Saving to current results dir"
@@ -318,7 +344,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
 
   duplicate_genes <- studies_db$gene_annotations$data[duplicated(studies_db$gene_annotations$data$gene), ]
   if (nrow(duplicate_genes) > 0) {
-    vroom::vroom_write(duplicate_genes, file.path(current_results_dir, "duplicate_genes.tsv"))
+    vroom::vroom_write(duplicate_genes, file.path(args$results_dir, "duplicate_genes.tsv"))
     stop("ERROR: Found ", nrow(duplicate_genes), " rows with duplicate gene values.  Saving to current results dir")
   }
 
@@ -341,14 +367,14 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::left_join(gene_subset, by = c("situated_gene" = "gene")) |>
     dplyr::rename(situated_gene_id = gene_id) |>
     dplyr::left_join(gene_subset, by = "gene") |>
-    dplyr::left_join(snp_annotations_subset, by = "snp") |>
+    dplyr::left_join(variant_annotations_subset, by = "snp") |>
     populate_missing_row_ids("id") |>
     dplyr::select(get_table_column_names(studies_db$study_extractions))
 
   duplicates <- study_extractions[duplicated(study_extractions$unique_study_id), ]
 
   if (nrow(duplicates) > 0) {
-    vroom::vroom_write(duplicates, file.path(current_results_dir, "duplicate_study_extractions.tsv"))
+    vroom::vroom_write(duplicates, file.path(args$results_dir, "duplicate_study_extractions.tsv"))
     stop(
       "ERROR: Found ", nrow(duplicates),
       " rows with duplicate unique_study_id values.  Saving to current results dir"
@@ -356,17 +382,17 @@ format_study_extractions <- function(study_extractions, studies_db) {
   }
 
   missing_snps <- study_extractions |>
-    dplyr::filter(is.na(snp_id) | is.null(snp_id) | is.na(study_id) | is.null(study_id))
+    dplyr::filter(is.na(variant_id) | is.null(variant_id) | is.na(study_id) | is.null(study_id))
 
   if (nrow(missing_snps) > 0) {
     message(
       "WARNING: Found ", nrow(missing_snps),
-      " rows with missing snp_id values.  Removing study extractions with missing snp_id values"
+      " rows with missing variant_id values.  Removing study extractions with missing variant_id values"
     )
-    vroom::vroom_write(missing_snps, file.path(current_results_dir, "missing_snps_in_study_extractions.tsv"))
+    vroom::vroom_write(missing_snps, file.path(args$results_dir, "missing_snps_in_study_extractions.tsv"))
     study_extractions <- study_extractions[
-      !is.na(study_extractions$snp_id) &
-        !is.null(study_extractions$snp_id) &
+      !is.na(study_extractions$variant_id) &
+        !is.null(study_extractions$variant_id) &
         !is.na(study_extractions$study_id) &
         !is.null(study_extractions$study_id),
     ]
@@ -380,27 +406,27 @@ format_clustered_colocs <- function(clustered_colocs, studies_db) {
     dplyr::select(id, study_id, unique_study_id, ld_block_id) |>
     dplyr::rename(study_extraction_id = id)
 
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
+  variant_annotations_subset <- studies_db$variant_annotations$data |>
     dplyr::select(snp, id) |>
-    dplyr::rename(snp_id = id)
+    dplyr::rename(variant_id = id)
 
   clustered_colocs <- clustered_colocs |>
     dplyr::arrange(coloc_group_id) |>
     dplyr::left_join(study_extractions_subset, by = c("unique_study_id" = "unique_study_id")) |>
-    dplyr::left_join(snp_annotations_subset, by = "snp")
+    dplyr::left_join(variant_annotations_subset, by = "snp")
 
   missing_stuff <- clustered_colocs |>
-    dplyr::filter(is.na(study_extraction_id) | is.na(snp_id))
+    dplyr::filter(is.na(study_extraction_id) | is.na(variant_id))
 
   if (nrow(missing_stuff) > 0) {
     message(
       "WARNING: Found ", nrow(missing_stuff),
-      " rows with missing study_extraction_id or snp_id values.  Removing rows with missing data."
+      " rows with missing study_extraction_id or variant_id values.  Removing rows with missing data."
     )
-    vroom::vroom_write(missing_stuff, file.path(current_results_dir, "missing_stuff_in_clustered_colocs.tsv"))
+    vroom::vroom_write(missing_stuff, file.path(args$results_dir, "missing_stuff_in_clustered_colocs.tsv"))
     clustered_colocs <- clustered_colocs[
       !is.na(clustered_colocs$study_extraction_id) &
-        !is.na(clustered_colocs$snp_id),
+        !is.na(clustered_colocs$variant_id),
     ]
   }
 
@@ -416,9 +442,9 @@ format_rare_results <- function(rare_results, studies_db) {
     dplyr::select(id, unique_study_id, ld_block_id, study_id, gene_id, situated_gene_id) |>
     dplyr::rename(study_extraction_id = id)
 
-  snp_annotations_subset <- studies_db$snp_annotations$data |>
+  variant_annotations_subset <- studies_db$variant_annotations$data |>
     dplyr::select(snp, id) |>
-    dplyr::rename(snp_id = id)
+    dplyr::rename(variant_id = id)
 
   gene_annotations_subset <- studies_db$gene_annotations$data |>
     dplyr::select(gene, id) |>
@@ -435,9 +461,11 @@ format_rare_results <- function(rare_results, studies_db) {
       files = trimws(files)
     ) |>
     dplyr::left_join(study_extractions_subset, by = "unique_study_id") |>
-    dplyr::left_join(snp_annotations_subset, by = c("candidate_snp" = "snp"), relationship = "many-to-many")
+    dplyr::left_join(variant_annotations_subset, by = c("candidate_snp" = "snp"), relationship = "many-to-many")
 
-  missing_study_extractions <- dplyr::filter(rare_results, is.na(study_extraction_id) | is.na(snp_id) | is.na(study_id))
+  missing_study_extractions <- rare_results |>
+    dplyr::filter(is.na(study_extraction_id) | is.na(variant_id) | is.na(study_id))
+
   if (nrow(missing_study_extractions) > 0) {
     message(
       "WARNING: Found ", nrow(missing_study_extractions),
@@ -445,11 +473,11 @@ format_rare_results <- function(rare_results, studies_db) {
     )
     vroom::vroom_write(
       missing_study_extractions,
-      file.path(current_results_dir, "missing_study_extractions_in_rare_results.tsv")
+      file.path(args$results_dir, "missing_study_extractions_in_rare_results.tsv")
     )
     rare_results <- rare_results[
       !is.na(rare_results$study_extraction_id) &
-        !is.na(rare_results$snp_id) &
+        !is.na(rare_results$variant_id) &
         !is.na(rare_results$study_id),
     ]
   }
@@ -511,13 +539,13 @@ format_pleiotropy_scores <- function(studies_db) {
     dplyr::filter(data_type != data_types$methylation) |>
     dplyr::filter(gene_biotype == "protein_coding" | is.na(gene_biotype))
 
-  studies_db$snp_pleiotropy$data <- pleiotropy_data |>
-    dplyr::group_by(snp_id) |>
+  studies_db$variant_pleiotropy$data <- pleiotropy_data |>
+    dplyr::group_by(variant_id) |>
     dplyr::summarise(
       distinct_trait_categories = dplyr::n_distinct(trait_category, na.rm = TRUE),
       distinct_protein_coding_genes = dplyr::n_distinct(gene_id, na.rm = TRUE)
     ) |>
-    dplyr::select(get_table_column_names(studies_db$snp_pleiotropy))
+    dplyr::select(get_table_column_names(studies_db$variant_pleiotropy))
 
   gene_coloc_groups <- pleiotropy_data |>
     dplyr::filter(!is.na(gene_id)) |>
@@ -551,7 +579,7 @@ format_pleiotropy_scores <- function(studies_db) {
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {
-  pairwise_colocs <- data.table::fread(file.path(current_results_dir, "coloc_pairwise_results.tsv.gz"))
+  pairwise_colocs <- data.table::fread(file.path(args$results_dir, "coloc_pairwise_results.tsv.gz"))
   pairwise_colocs <- pairwise_colocs[!is.na(PP.H4.abf) & ignore == FALSE]
   print(paste("Found", nrow(pairwise_colocs), "pairwise colocs"))
 
@@ -595,7 +623,7 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
     )
     data.table::fwrite(
       missing_study_extractions,
-      file.path(current_results_dir, "missing_study_extractions_in_pairwise_colocs.tsv")
+      file.path(args$results_dir, "missing_study_extractions_in_pairwise_colocs.tsv")
     )
     pairwise_colocs <- pairwise_colocs[!is.na(study_extraction_a_id) & !is.na(study_extraction_b_id)]
   }
@@ -610,30 +638,30 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
   print(paste("Found", nrow(significant_colocs), "significant pairwise colocs"))
 
   study_extraction_snp_map <- studies_db$coloc_groups$data |>
-    dplyr::select(study_extraction_id, snp_id) |>
+    dplyr::select(study_extraction_id, variant_id) |>
     dplyr::distinct()
 
   significant_colocs <- significant_colocs |>
     dplyr::left_join(study_extraction_snp_map, by = c("study_extraction_a_id" = "study_extraction_id")) |>
     dplyr::select(get_table_column_names(coloc_pairs_significant_table)) |>
-    dplyr::arrange(snp_id, study_extraction_a_id, study_extraction_b_id)
+    dplyr::arrange(variant_id, study_extraction_a_id, study_extraction_b_id)
 
   DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_table$name, significant_colocs)
 
   # print(paste('Found', nrow(significant_colocs), 'pairwise colocs after selecting columns'))
   # significant_colocs_filtered <- significant_colocs |>
-  #   dplyr::filter(!is.na(snp_id))
+  #   dplyr::filter(!is.na(variant_id))
   # print(paste('Found', nrow(significant_colocs_filtered),
   #   'significant pairwise colocs after filtering things not found in coloc groups'))
 
 
-  # significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "snp_id")
+  # significant_colocs_chunk_info <- split_large_dataframe_into_chunks(significant_colocs, "variant_id")
   # DBI::dbExecute(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$query)
 
   # DBI::dbAppendTable(coloc_pairs_significant_conn, coloc_pairs_significant_db$coloc_pairs_metadata$name,
   #   data.frame(
-  #     start_snp_id = significant_colocs_chunk_info$dataframe_metadata$start_snp_id,
-  #     stop_snp_id = significant_colocs_chunk_info$dataframe_metadata$end_snp_id,
+  #     start_variant_id = significant_colocs_chunk_info$dataframe_metadata$start_variant_id,
+  #     stop_variant_id = significant_colocs_chunk_info$dataframe_metadata$end_variant_id,
   #     coloc_pairs_table_name = glue::glue("coloc_pairs_{1:nrow(significant_colocs_chunk_info$dataframe_metadata)}")
   #   )
   # )
@@ -659,24 +687,24 @@ load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_sig
 # Find relevant snps: all coloc SNPs, all rare association SNPs and all
 # finemapped SNPs that colocalise with nothing (at genome wide significance)
 find_relevant_snps <- function(studies_db) {
-  snp_annotations_subset <- data.table::as.data.table(
-    studies_db$snp_annotations$data
-  )[, .(candidate_snp = snp, snp_id = id)]
+  variant_annotations_subset <- data.table::as.data.table(
+    studies_db$variant_annotations$data
+  )[, .(candidate_snp = snp, variant_id = id)]
   ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
   studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(variant_type, study_name, study_id = id)]
 
-  colocalising_snps <- data.table::as.data.table(studies_db$coloc_groups$data)[, .(snp_id, study_id, ld_block_id)]
+  colocalising_snps <- data.table::as.data.table(studies_db$coloc_groups$data)[, .(variant_id, study_id, ld_block_id)]
   colocalising_snps <- unique(colocalising_snps)
-  colocalising_snps <- snp_annotations_subset[colocalising_snps, on = "snp_id"]
+  colocalising_snps <- variant_annotations_subset[colocalising_snps, on = "variant_id"]
   colocalising_snps <- ld_blocks_subset[colocalising_snps, on = "ld_block_id"]
   colocalising_snps <- studies_subset[colocalising_snps, on = "study_id"]
   colocalising_snps$variant_type <- variant_types$common
   colocalising_snps$study_id <- NULL
 
 
-  rare_results_snps <- data.table::as.data.table(studies_db$rare_results$data)[, .(snp_id, study_id, ld_block_id)]
+  rare_results_snps <- data.table::as.data.table(studies_db$rare_results$data)[, .(variant_id, study_id, ld_block_id)]
   rare_results_snps <- unique(rare_results_snps)
-  rare_results_snps <- snp_annotations_subset[rare_results_snps, on = "snp_id"]
+  rare_results_snps <- variant_annotations_subset[rare_results_snps, on = "variant_id"]
   rare_results_snps <- ld_blocks_subset[rare_results_snps, on = "ld_block_id"]
   rare_results_snps <- studies_subset[rare_results_snps, on = "study_id"]
   rare_results_snps$variant_type <- variant_types$rare_exome
@@ -684,10 +712,10 @@ find_relevant_snps <- function(studies_db) {
 
   study_extractions_snps <- data.table::as.data.table(
     studies_db$study_extractions$data
-  )[, .(id, min_p, snp_id, study_id, ld_block_id)]
+  )[, .(id, min_p, variant_id, study_id, ld_block_id)]
   study_extractions_snps <- unique(study_extractions_snps)
   study_extractions_snps <- study_extractions_snps[min_p <= lowest_p_value_threshold]
-  study_extractions_snps <- snp_annotations_subset[study_extractions_snps, on = "snp_id"]
+  study_extractions_snps <- variant_annotations_subset[study_extractions_snps, on = "variant_id"]
   study_extractions_snps <- ld_blocks_subset[study_extractions_snps, on = "ld_block_id"]
   study_extractions_snps <- studies_subset[study_extractions_snps, on = "study_id"]
   study_extractions_snps$study_id <- NULL
@@ -731,21 +759,19 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
   }) |> data.table::rbindlist(fill = TRUE)
 
   variant_annotations_subset_lead <- data.table::as.data.table(
-    studies_db$snp_annotations$data
-  )[, .(snp, lead_flipped = flipped, lead_snp_id = id)]
+    studies_db$variant_annotations$data
+  )[, .(snp, lead_flipped = flipped, lead_variant_id = id, ld_block_id)]
   variant_annotations_subset_variant <- data.table::as.data.table(
-    studies_db$snp_annotations$data
-  )[, .(snp, variant_flipped = flipped, variant_snp_id = id)]
-  ld_blocks_subset <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
+    studies_db$variant_annotations$data
+  )[, .(snp, variant_flipped = flipped, proxy_variant_id = id, ld_block_id)]
 
   ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
   ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
-  ld_data <- ld_blocks_subset[ld_data, on = "ld_block"]
 
   ld_data$r <- ld_data$r * ifelse(ld_data$lead_flipped, -1, 1) * ifelse(ld_data$variant_flipped, -1, 1)
 
-  ld_data <- ld_data[, .(lead_snp_id, variant_snp_id, ld_block_id, r)]
-  ld_data <- ld_data[order(lead_snp_id, variant_snp_id)]
+  ld_data <- ld_data[, .(lead_variant_id, proxy_variant_id, ld_block_id, r)]
+  ld_data <- ld_data[order(lead_variant_id, proxy_variant_id)]
 
   DBI::dbAppendTable(ld_conn, ld_table$name, ld_data)
   return()
@@ -774,19 +800,19 @@ generate_ld_obj <- function(ld_block, snps) {
 
 match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
   r2_threshold <- 0.99
-  causal_snps <- unique(DBI::dbGetQuery(studies_conn, "SELECT DISTINCT snp_id FROM coloc_groups"))
+  causal_snps <- unique(DBI::dbGetQuery(studies_conn, "SELECT DISTINCT variant_id FROM coloc_groups"))
 
-  formatted_snp_ids <- paste0(unique(causal_snps$snp_id), collapse = ",")
-  snp_pair_ld_scores <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT lead_snp_id, variant_snp_id
+  formatted_variant_ids <- paste0(unique(causal_snps$variant_id), collapse = ",")
+  snp_pair_ld_scores <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT lead_variant_id, proxy_variant_id
     FROM ld
-    WHERE lead_snp_id IN ({formatted_snp_ids})
-    AND variant_snp_id IN ({formatted_snp_ids})
+    WHERE lead_variant_id IN ({formatted_variant_ids})
+    AND proxy_variant_id IN ({formatted_variant_ids})
     AND r*r >= {r2_threshold}"))
 
   # Ensure only unique, non-redundant pairs are used for the undirected graph
   ld_edges <- snp_pair_ld_scores |>
     dplyr::rowwise() |>
-    dplyr::mutate(s1 = min(lead_snp_id, variant_snp_id), s2 = max(lead_snp_id, variant_snp_id)) |>
+    dplyr::mutate(s1 = min(lead_variant_id, proxy_variant_id), s2 = max(lead_variant_id, proxy_variant_id)) |>
     dplyr::ungroup() |>
     dplyr::distinct(s1, s2) |>
     dplyr::select(s1, s2)
@@ -794,20 +820,20 @@ match_causal_snps_in_high_ld <- function(ld_conn, studies_conn, studies_db) {
   snp_graph <- igraph::graph_from_data_frame(ld_edges, directed = FALSE)
   clusters <- igraph::components(snp_graph)
   snp_mapping_intermediate <- tibble::tibble(
-    snp_id = as.integer(names(clusters$membership)),
+    variant_id = as.integer(names(clusters$membership)),
     cluster_id = clusters$membership
   )
 
   snp_mapping <- snp_mapping_intermediate |>
     dplyr::group_by(cluster_id) |>
-    dplyr::mutate(representative_snp_id = min(snp_id)) |>
+    dplyr::mutate(representative_variant_id = min(variant_id)) |>
     dplyr::ungroup() |>
-    dplyr::select(snp_id, representative_snp_id)
+    dplyr::select(variant_id, representative_variant_id)
 
   studies_db$coloc_groups$data <- studies_db$coloc_groups$data |>
-    dplyr::left_join(snp_mapping, by = "snp_id") |>
-    dplyr::mutate(snp_id = dplyr::coalesce(representative_snp_id, snp_id)) |>
-    dplyr::select(-representative_snp_id)
+    dplyr::left_join(snp_mapping, by = "variant_id") |>
+    dplyr::mutate(variant_id = dplyr::coalesce(representative_variant_id, variant_id)) |>
+    dplyr::select(-representative_variant_id)
 
   # Update the DuckDB coloc_groups table
   DBI::dbExecute(studies_conn, "DROP TABLE coloc_groups")
@@ -850,17 +876,17 @@ load_data_into_associations_db <- function(
   associations <- data.table::rbindlist(associations, fill = TRUE)
 
   associations <- flip_alleles(associations, associations$flipped)
-  associations <- associations[, .(snp_id, study_id, beta = BETA, se = SE, imputed, p, eaf = EAF, general)]
-  associations <- unique(associations, by = c("snp_id", "study_id", "general"))
+  associations <- associations[, .(variant_id, study_id, beta = BETA, se = SE, imputed, p, eaf = EAF, general)]
+  associations <- unique(associations, by = c("variant_id", "study_id", "general"))
 
   original_num_rows <- nrow(associations)
   associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
   message("Removed ", original_num_rows - nrow(associations), " rows with missing values")
 
-  associations <- unique(associations, by = c("snp_id", "study_id", "general"))
-  associations <- associations[order(snp_id, study_id)]
-  associations_general <- associations[general == TRUE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
-  associations_specific <- associations[general == FALSE, .(snp_id, study_id, beta, se, imputed, p, eaf)]
+  associations <- unique(associations, by = c("variant_id", "study_id", "general"))
+  associations <- associations[order(variant_id, study_id)]
+  associations_general <- associations[general == TRUE, .(variant_id, study_id, beta, se, imputed, p, eaf)]
+  associations_specific <- associations[general == FALSE, .(variant_id, study_id, beta, se, imputed, p, eaf)]
 
   # Writing specific associations to specific DB
   create_table_query <- sub("table_name", associations_db$associations$name, associations_db$associations$query)
@@ -868,13 +894,13 @@ load_data_into_associations_db <- function(
   DBI::dbAppendTable(associations_specific_conn, associations_db$associations$name, associations_specific)
 
   # Writing general associations to full DB
-  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "snp_id")
+  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "variant_id")
   DBI::dbExecute(associations_conn, associations_db$associations_metadata$query)
   DBI::dbAppendTable(
     associations_conn, associations_db$associations_metadata$name,
     data.frame(
-      start_snp_id = association_chunk_info$dataframe_metadata$start_snp_id,
-      stop_snp_id = association_chunk_info$dataframe_metadata$end_snp_id,
+      start_variant_id = association_chunk_info$dataframe_metadata$start_variant_id,
+      stop_variant_id = association_chunk_info$dataframe_metadata$end_variant_id,
       associations_table_name = glue::glue("associations_{seq_len(nrow(association_chunk_info$dataframe_metadata))}")
     )
   )
@@ -891,7 +917,10 @@ load_data_into_associations_db <- function(
 }
 
 extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, association_snps, studies_db) {
-  snp_annotations_subset <- data.table::as.data.table(studies_db$snp_annotations$data)[, .(snp, flipped, snp_id = id)]
+  variant_annotations_subset <- data.table::as.data.table(
+    studies_db$variant_annotations$data
+  )[, .(snp, flipped, variant_id = id)]
+
   studies_subset <- data.table::as.data.table(studies_db$studies$data)[, .(study_name, study_id = id)]
 
   return(tryCatch(
@@ -983,9 +1012,11 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
       }
       associations <- data.table::rbindlist(associations, fill = TRUE)
 
-      associations <- snp_annotations_subset[associations, on = "snp"]
+      associations <- variant_annotations_subset[associations, on = "snp"]
       associations <- studies_subset[associations, on = c("study_name" = "study_name")]
-      associations <- associations[, .(snp_id, study_id, BETA = beta, SE = se, imputed, p, EAF = eaf, flipped, general)]
+      associations <- associations[,
+        .(variant_id, study_id, BETA = beta, SE = se, imputed, p, EAF = eaf, flipped, general)
+      ]
 
       message(
         "Extracted ", nrow(associations[general == TRUE]),
@@ -1055,4 +1086,4 @@ get_table_column_names <- function(table) {
   return(table_column_names)
 }
 
-main()
+invisible(main())

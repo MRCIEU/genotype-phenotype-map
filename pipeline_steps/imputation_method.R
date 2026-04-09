@@ -93,7 +93,16 @@ perform_imputation <- function(file, gwas, pc, thresh = 0.9, eval_frac = 0.5) {
   z_adj <- adjust(z, z_sim, npoly = 3)
 
   gwas$Z_IMPUTED <- z_adj$adj
-  stopifnot(all(!is.na(gwas$Z_IMPUTED)))
+  if (any(is.na(gwas$Z_IMPUTED))) {
+    warning(
+      glue::glue("{file}: Z adjustment still has NA after poly fit, skipping imputation.")
+    )
+    return(list(
+      gwas = unaltered_gwas, b_cor = NA, se_cor = NA,
+      z_adj_coef1 = NA, se_adj_coef1 = NA,
+      indices = NA, rows_imputed = 0
+    ))
+  }
 
   gwas$BETA_IMPUTED <- gwas$Z_IMPUTED * gwas$SE_IMPUTED
 

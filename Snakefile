@@ -16,7 +16,11 @@ LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
 STATIC_WEB_DIR = RESULTS_DIR + 'current/static_web/'
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
-studies_to_process = pd.read_csv(studies_to_process_file , sep='\t')
+studies_to_process = pd.read_csv(
+    studies_to_process_file ,
+    sep='\t',
+    dtype={'cell_type': str, 'ensg': str}
+)
 
 if len(studies_to_process) == 0:
     print('No studies to process, exiting.')

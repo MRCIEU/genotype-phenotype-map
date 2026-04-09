@@ -13,7 +13,8 @@ min_p_allowed_for_worker <- 1e-6
 genome_wide_p_value_threshold <- 5e-8
 lowest_p_value_threshold <- 1.5e-4
 
-minimum_extraction_size <- 150
+minimum_extraction_size_for_dense_coverage <- 150
+minimum_extraction_size_for_sparse_coverage <- 4
 
 posterior_prob_h4_threshold <- 0.8
 posterior_prob_threshold_minimum <- 0.5
@@ -41,7 +42,12 @@ oracle_bucket_name <- Sys.getenv("ORACLE_BUCKET_NAME")
 server_sync_dir <- file.path(data_dir, "rsync_to_server")
 oracle_data_dir <- "/oradiskvdb1/data/"
 
-bespoke_parsing_options <- list(none = "none", gtex_sqtl = "gtex_sqtl")
+bespoke_parsing_options <- list(
+  none = "none",
+  gtex_sqtl = "gtex_sqtl",
+  interval_sqtl = "interval_sqtl",
+  godmc = "godmc"
+)
 
 data_types <- list(
   splice_variant = "splice_variant",
@@ -287,7 +293,9 @@ replace_except_first_two_dashes <- function(x) {
 }
 
 is_study_blocked <- function(block_list, study_name, cis_trans) {
-  if (is.null(block_list) || nrow(block_list) == 0) return(rep(FALSE, length(study_name)))
+  if (is.null(block_list) || nrow(block_list) == 0) {
+    return(rep(FALSE, length(study_name)))
+  }
 
   return(vapply(seq_along(study_name), function(i) {
     s <- study_name[i]
@@ -297,9 +305,13 @@ is_study_blocked <- function(block_list, study_name, cis_trans) {
       pattern <- block_list[["id_pattern"]][j]
       pattern_regex <- gsub("\\.", "\\\\.", gsub("\\*", ".*", pattern))
 
-      if (!grepl(pattern_regex, s)) return(FALSE)
+      if (!grepl(pattern_regex, s)) {
+        return(FALSE)
+      }
       block_cis <- block_list[["cis_trans"]][j]
-      if (is.na(block_cis) || identical(block_cis, "NA") || trimws(as.character(block_cis)) == "") return(TRUE)
+      if (is.na(block_cis) || identical(block_cis, "NA") || trimws(as.character(block_cis)) == "") {
+        return(TRUE)
+      }
       return(identical(as.character(c), as.character(block_cis)))
     }, logical(1))))
   }, logical(1)))

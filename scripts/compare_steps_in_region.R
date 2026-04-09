@@ -26,7 +26,8 @@ main <- function() {
     dplyr::mutate(SNP = RSID)
 
   standardised_study <- vroom::vroom(
-    glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv"), show_col_types = F
+    glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv"),
+    show_col_types = F
   ) |>
     dplyr::filter(study == args$study)
   standardised_gwas <- vroom::vroom(standardised_study$file, show_col_types = F)
@@ -36,7 +37,8 @@ main <- function() {
   imputed_gwas <- vroom::vroom(imputed_study$file, show_col_types = F)
 
   finemapped_studies <- vroom::vroom(
-    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv"), show_col_types = F
+    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv"),
+    show_col_types = F
   ) |>
     dplyr::filter(study == args$study)
 

@@ -67,7 +67,7 @@ main <- function() {
     vars_regions <- split_into_regions(gwas, study, p_value_threshold)
     vroom::vroom_write(vars_regions, args$extracted_output_file)
   }
-  return()
+  return(invisible(NULL))
 }
 
 check_gwas <- function(gwas) {
@@ -100,8 +100,10 @@ filter_snps <- function(gwas) {
   gwas_filt <- gwas |>
     dplyr::filter(
       CHR %in% seq(1, 22),
-      ((EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
-         (1 - EAF <= eaf_max_threshold & 1 - EAF >= eaf_min_threshold))
+      (
+        (EAF <= eaf_max_threshold & EAF >= eaf_min_threshold) |
+          (1 - EAF <= eaf_max_threshold & 1 - EAF >= eaf_min_threshold)
+      )
     ) |>
     dplyr::arrange(CHR, BP)
   return(gwas_filt)
@@ -156,4 +158,4 @@ split_into_regions <- function(gwas, study, p_value_threshold) {
   return(extracted_regions)
 }
 
-main()
+invisible(main())

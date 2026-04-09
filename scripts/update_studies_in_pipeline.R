@@ -42,7 +42,7 @@ update_study_dirs <- function() {
 
 update_ld_blocks <- function() {
   source("../pipeline_steps/gwas_calculations.R")
-  # snp_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |> # nolint: line_length_linter.
+  # variant_annotations <- vroom::vroom(file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"), show_col_types =  F) |> # nolint: line_length_linter.
   # dplyr::select(chr, bp, snp)
   blocks <- ld_info$ld_block_data
 

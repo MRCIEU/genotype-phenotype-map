@@ -62,7 +62,7 @@ compile_results <- function(gwas_info) {
     dplyr::distinct(snp) |>
     dplyr::pull(snp)
 
-  snp_annotations <- data.table::fread(
+  variant_annotations <- data.table::fread(
     file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
     select = c("snp", "rsid", "display_snp"),
     showProgress = FALSE,
@@ -72,7 +72,7 @@ compile_results <- function(gwas_info) {
     dplyr::filter(snp %in% all_snps_in_ld_blocks)
 
   if (nrow(study_extractions) > 0) {
-    study_extractions <- merge(study_extractions, snp_annotations, by = "snp", all.x = TRUE)
+    study_extractions <- merge(study_extractions, variant_annotations, by = "snp", all.x = TRUE)
   }
 
   study_extractions <- study_extractions |>
@@ -128,6 +128,7 @@ compile_results <- function(gwas_info) {
     coloc_pairwise_results <- lapply(coloc_pairwise_results_files, function(file) {
       cp_result <- data.table::fread(file, showProgress = FALSE) |>
         dplyr::filter(study_a == gwas_info$metadata$guid | study_b == gwas_info$metadata$guid) |>
+        dplyr::filter(PP.H4.abf >= posterior_prob_threshold_minimum & ignore == FALSE) |>
         dplyr::select(
           unique_study_a,
           unique_study_b,
@@ -159,7 +160,7 @@ compile_results <- function(gwas_info) {
     gwas_info,
     coloc_clustered_results,
     all_finemapped_studies,
-    snp_annotations
+    variant_annotations
   )
 
   vroom::vroom_write(associations, compiled_associations_file)
@@ -179,13 +180,13 @@ compile_results <- function(gwas_info) {
 #' @param gwas_info A list containing the GWAS information.
 #' @param coloc_clustered_results A data frame containing the coloc clustered results.
 #' @param all_finemapped_studies A data frame containing the all finemapped studies.
-#' @param snp_annotations A data frame containing the SNP annotations.
+#' @param variant_annotations A data frame containing the SNP annotations.
 #' @return A data frame containing the associations.
 find_associations_for_coloc_clustered_snps <- function(
   gwas_info,
   coloc_clustered_results,
   all_finemapped_studies,
-  snp_annotations
+  variant_annotations
 ) {
   flog.info(paste(gwas_info$metadata$guid, "Finding associations for coloc clustered SNPs"))
   if (nrow(coloc_clustered_results) == 0 || nrow(all_finemapped_studies) == 0) {
@@ -227,11 +228,15 @@ find_associations_for_coloc_clustered_snps <- function(
       file_path <- file.path(data_dir, file_path)
     }
 
-    if (!file.exists(file_path)) return(NULL)
+    if (!file.exists(file_path)) {
+      return(NULL)
+    }
 
     avail_cols <- names(data.table::fread(file_path, nrows = 0, showProgress = FALSE))
     required <- c("SNP", "BETA", "SE", "EAF")
-    if (!all(required %in% avail_cols)) return(NULL)
+    if (!all(required %in% avail_cols)) {
+      return(NULL)
+    }
     cols_to_read <- c(required, if ("IMPUTED" %in% avail_cols) "IMPUTED")
 
     gwas <- data.table::fread(
@@ -242,14 +247,19 @@ find_associations_for_coloc_clustered_snps <- function(
     )
 
     gwas <- gwas[SNP %in% target_snps]
-    if (nrow(gwas) == 0) return(NULL)
+    if (nrow(gwas) == 0) {
+      return(NULL)
+    }
 
     gwas[, p := beta_se_to_p(BETA, SE)]
     if (!"IMPUTED" %in% colnames(gwas)) gwas[, IMPUTED := FALSE]
+    gwas[is.na(IMPUTED), IMPUTED := FALSE]
     snp_mapping_this_study <- snp_mapping[study == study_for_file]
     gwas <- gwas[snp_mapping_this_study, on = c(SNP = "snp"), nomatch = 0]
 
-    if (nrow(gwas) == 0) return(NULL)
+    if (nrow(gwas) == 0) {
+      return(NULL)
+    }
     return(gwas[, .(SNP, study, BETA, SE, p, EAF, IMPUTED)])
   }
 
@@ -268,6 +278,8 @@ find_associations_for_coloc_clustered_snps <- function(
     return(data.frame())
   }
 
+  # Prefer non-NA effect estimates when deduplicating (unique keeps first row)
+  data.table::setorder(associations, study, SNP, BETA, p)
   associations <- unique(associations[, .(
     snp = SNP,
     study_name = study,
@@ -278,7 +290,11 @@ find_associations_for_coloc_clustered_snps <- function(
     imputed = IMPUTED
   )], by = c("study_name", "snp"))
 
-  associations <- stats::na.omit(associations)
+  associations[is.na(imputed), imputed := FALSE]
+  associations <- associations[
+    !is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf) &
+      is.finite(beta) & is.finite(se) & is.finite(p) & is.finite(eaf)
+  ]
 
   flog.info(paste(
     gwas_info$metadata$guid,

@@ -240,6 +240,5 @@ print(result$ss[is.na(gwas_to_impute$BETA), c(2, 6, 7, 8, 11, 12)])
 print(result)
 
 
-
 # Gib's example:
 # load(url("https://github.com/explodecomputer/lab-book/raw/refs/heads/main/posts/2024-09-18-conditional-summary-stats/1kg_region.rdata")) # nolint: line_length_linter.

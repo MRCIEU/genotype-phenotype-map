@@ -41,7 +41,6 @@ main <- function() {
   dir.create(glue::glue("{study$extracted_location}/imputed"), showWarnings = F, recursive = T)
   dir.create(glue::glue("{study$extracted_location}/finemapped"), showWarnings = F, recursive = T)
 
-
   extracted_cis_snps <- extracted_trans_snps <- data.frame(
     chr = character(),
     bp = numeric(),
@@ -56,7 +55,8 @@ main <- function() {
   }
 
   if (metadata$cis_trans == cis_trans$trans_only ||
-        (metadata$cis_trans == cis_trans$cis_trans && !is.null(cis_results))) {
+      (metadata$cis_trans == cis_trans$cis_trans && !is.null(cis_results))
+  ) {
     trans_results <- extract_trans_regions(cis_results$snp_data, study, p_value_threshold)
   }
 
@@ -65,7 +65,7 @@ main <- function() {
 
   extracted_snps <- dplyr::bind_rows(cis_results$snp_data, trans_results$snp_data)
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
-  return()
+  return(invisible(NULL))
 }
 
 extract_cis_region <- function(study, p_value_threshold) {
@@ -263,4 +263,4 @@ format_gwas <- function(gwas) {
   return(gwas)
 }
 
-main()
+invisible(main())

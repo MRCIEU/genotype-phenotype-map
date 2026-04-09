@@ -54,6 +54,13 @@ parser <- argparser::add_argument(
   type = "logical",
   flag = TRUE
 )
+parser <- argparser::add_argument(
+  parser,
+  "--results_dir",
+  help = "Results directory to be used for DB files sync (default: latest results directory)",
+  type = "character",
+  default = as.character(latest_results_dir)
+)
 
 args <- argparser::parse_args(parser)
 
@@ -108,7 +115,7 @@ sync_db_files <- function() {
   )
 
   for (src_file in names(db_files)) {
-    src_path <- file.path(latest_results_dir, src_file)
+    src_path <- file.path(args$results_dir, src_file)
     dest_file <- db_files[[src_file]]
     dest_path <- file.path(api_server_db_dir, dest_file)
 

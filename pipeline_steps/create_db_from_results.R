@@ -852,7 +852,7 @@ load_data_into_associations_db <- function(
   all_joined_snps <- dplyr::bind_rows(all_relevant_snps$association_snps, all_relevant_snps$study_extractions_snps)
   relevant_snps_per_ld_block <- split(all_joined_snps, all_joined_snps$ld_block)
 
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores = 20, \(ld_block) {
+  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores = 15, \(ld_block) {
     gc()
     current_ld_block <- ld_block # Store in variable to avoid ambiguity with column name
     relevant_snps <- relevant_snps_per_ld_block[[current_ld_block]]

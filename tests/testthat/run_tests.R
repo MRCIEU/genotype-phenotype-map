@@ -29,7 +29,6 @@ OUTPUT_FILE_PATH <- "./tests/testing_complete.txt"
 
 # Test setup: set env vars if not already set
 Sys.setenv("TEST_RUN" = "test")
-Sys.setenv("TIMESTAMP" = "test")
 Sys.setenv("DATA_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/data/")
 Sys.setenv("RESULTS_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/results/")
 Sys.setenv("BACKUP_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/backup/")

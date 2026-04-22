@@ -2,6 +2,9 @@
 title: "Current State of GP Map Data"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_fragment
+params:
+  # Path to a pipeline results directory (contains studies.db, etc.). Empty string uses current_results_dir from constants.R.
+  results_dir: "/local-scratch/projects/genotype-phenotype-map/results/1.0.0"
 ---
 
 
@@ -17,8 +20,14 @@ cb_light_orange <- "#F3CF80"
 ```
 
 ```{r load-data, echo=F}
-source('../../pipeline_steps/constants.R')
-source('../../pipeline_steps/gwas_calculations.R')
+source("../../pipeline_steps/constants.R")
+source("../../pipeline_steps/gwas_calculations.R")
+
+report_results_dir <- params$results_dir
+report_analysis_dir <- file.path(report_results_dir, "analysis")
+dir.create(report_analysis_dir, recursive = TRUE, showWarnings = FALSE)
+message("Using results_dir: ", report_results_dir)
+message("Analysis figures: ", report_analysis_dir)
 
 ld_blocks <- vroom::vroom('../../pipeline_steps/data/ld_blocks.tsv', show_col_types = F)
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
@@ -129,7 +138,7 @@ load_results_data <- function(specific_results_dir) {
   ))
 }
 
-latest_results <- load_results_data(current_results_dir)
+latest_results <- load_results_data(report_results_dir)
 # last_two_pipeline_runs <- head(sort(list.files(results_dir, pattern = "^20", include.dirs=T), decreasing=T), 2)
 # previous_results <- load_results_data(last_two_pipeline_runs[2])
 ```
@@ -257,7 +266,7 @@ p1 <- ggplot(latest_sources, aes(x = ordered_name, y = num_studies)) +
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.1))) +
   scale_color_manual(values = c("inside" = "white", "outside" = "black"))
 
-ggsave(file.path(results_analysis_dir, 'summary_a_data_source.png'), p1, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_a_data_source.png'), p1, width = 10, height = 6, dpi = 300)
 
 ```
 
@@ -353,7 +362,7 @@ p2 <- ggplot(data_types_viz, aes(x = reorder(data_type, count), y = count, fill 
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.15))) +
   scale_fill_brewer(palette = "Set2")
 
-ggsave(file.path(results_analysis_dir, 'data_type.png'), p2, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'data_type.png'), p2, width = 10, height = 6, dpi = 300)
 
 # Create stacked bar chart for variant types
 variant_types_viz <- latest_data_types |>
@@ -382,7 +391,7 @@ p2b <- ggplot(variant_types_viz, aes(x = reorder(data_type, count), y = count, f
   scale_y_continuous(labels = scales::comma) +
   scale_fill_brewer(palette = "Dark2")
 
-ggsave(file.path(results_analysis_dir, 'data_type_variant_type.png'), p2b, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'data_type_variant_type.png'), p2b, width = 10, height = 6, dpi = 300)
 ```
 
 ```{r study-extractions-by-tissue, echo=F, eval=F}
@@ -586,8 +595,8 @@ p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, f
     "No Coloc" = cb_light_blue
   ))
 
-ggsave(file.path(results_analysis_dir, 'summary_f_study_extractions_by_tissue_pvalue.png'), p_tissue_counts, width = 10, height = 6, dpi = 300)
-ggsave(file.path(results_analysis_dir, 'summary_g_study_extractions_by_tissue_coloc.png'), p_tissue_coloc, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_f_study_extractions_by_tissue_pvalue.png'), p_tissue_counts, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_g_study_extractions_by_tissue_coloc.png'), p_tissue_coloc, width = 10, height = 6, dpi = 300)
 ```
 
 
@@ -661,7 +670,7 @@ p3a <- ggplot(cis_trans_viz, aes(x = reorder(data_type, count), y = count, fill 
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.15))) +
   scale_fill_brewer(palette = "Accent")
 
-ggsave(file.path(results_analysis_dir, 'study_extractions_cis_trans.png'), p3a, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'study_extractions_cis_trans.png'), p3a, width = 10, height = 6, dpi = 300)
 
 # Prepare data for p-value threshold visualization
 friendly_data_type_names <- unlist(data_type_names)
@@ -727,7 +736,7 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
     guide = guide_legend(reverse = TRUE)
   )
 
-ggsave(file.path(results_analysis_dir, 'summary_b_study_extractions_p_value_threshold.png'), p3b, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_b_study_extractions_p_value_threshold.png'), p3b, width = 10, height = 6, dpi = 300)
 
 # Prepare data for p-value threshold visualization by trait category (phenotype only)
 phenotype_pval_variant_viz <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT 
@@ -787,7 +796,7 @@ if (nrow(finemap_viz) > 0) {
           panel.grid.minor = element_blank()) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1)))
   
-  ggsave(file.path(results_analysis_dir, 'study_extractions_finemap_ratio.png'), p3c, width = 10, height = 6, dpi = 300)
+  ggsave(file.path(report_analysis_dir, 'study_extractions_finemap_ratio.png'), p3c, width = 10, height = 6, dpi = 300)
 }
 ```
 
@@ -998,7 +1007,7 @@ p4a <- ggplot(extractions_coloc_viz, aes(x = reorder(data_type, count), y = coun
   scale_y_continuous(labels = scales::comma) +
   scale_fill_manual(values = c("In Coloc" = cb_blue, "Not in Coloc" = cb_orange))
 
-ggsave(file.path(results_analysis_dir, 'study_extractions_in_coloc_vs_not_in_coloc.png'), p4a, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'study_extractions_in_coloc_vs_not_in_coloc.png'), p4a, width = 10, height = 6, dpi = 300)
 
 # Create visualization for coloc pairs
 p4b <- ggplot(coloc_summary_viz, aes(x = reorder(data_type, coloc_pairs), y = coloc_pairs)) +
@@ -1014,7 +1023,7 @@ p4b <- ggplot(coloc_summary_viz, aes(x = reorder(data_type, coloc_pairs), y = co
         panel.grid.minor = element_blank()) +
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.1)))
 
-ggsave(file.path(results_analysis_dir, 'coloc_pairs_by_data_type.png'), p4b, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'coloc_pairs_by_data_type.png'), p4b, width = 10, height = 6, dpi = 300)
 ```
 
 ### Breakdown of phenotype coloc rates by trait category
@@ -1138,11 +1147,11 @@ if (nrow(gwas_hits_numeric) > 0) {
                         names_to = "coloc_type", values_to = "percentage") |>
     dplyr::mutate(
       coloc_type = dplyr::case_when(
-        coloc_type == "percent_with_no_coloc" ~ "No Coloc",
-        coloc_type == "percent_with_molecular_coloc" ~ "With Molecular Coloc",
-        coloc_type == "percent_without_molecular_coloc" ~ "Without Molecular Coloc"
+        coloc_type == "percent_with_no_coloc" ~ "No Colocalization",
+        coloc_type == "percent_with_molecular_coloc" ~ "Phenotype-Molecular Colocalization",
+        coloc_type == "percent_without_molecular_coloc" ~ "Phenotype-Only Colocalization"
       ),
-      coloc_type = factor(coloc_type, levels = c("No Coloc", "Without Molecular Coloc", "With Molecular Coloc")),
+      coloc_type = factor(coloc_type, levels = c("No Colocalization", "Phenotype-Only Colocalization", "Phenotype-Molecular Colocalization")),
       trait_category = factor(trait_category, levels = rev(shared_trait_category_order))
     )
 
@@ -1152,8 +1161,8 @@ if (nrow(gwas_hits_numeric) > 0) {
               position = position_stack(vjust = 0.5),
               size = 3, color = "white") +
     coord_flip() +
-    labs(x = "", y = "Percentage", fill = "Colocalization Type",
-         title = "Clustered Molecular Colocalization Rates") +
+    labs(x = "", y = "Percentage", fill = "Locus Colocalization Status",
+         title = "Colocalization Profiles of Fine-Mapped Loci Across Trait Categories") +
     theme_minimal(base_size = 12) +
     theme(
       plot.title = element_text(hjust = 0.5, face = "bold"),
@@ -1173,13 +1182,13 @@ if (nrow(gwas_hits_numeric) > 0) {
     ) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
     scale_fill_manual(values = c(
-      "With Molecular Coloc" = cb_blue,
-      "Without Molecular Coloc" = cb_light_blue,
-      "No Coloc" = cb_orange
+      "Phenotype-Molecular Colocalization" = cb_blue,
+      "Phenotype-Only Colocalization" = cb_light_blue,
+      "No Colocalization" = cb_orange
     )) +
     guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
-  ggsave(file.path(results_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
+  ggsave(file.path(report_analysis_dir, 'summary_e_phenotype_coloc_rates_by_trait_category.png'), p5, width = 10, height = 6, dpi = 300)
 } else {
   cat("No phenotype colocalizations found to analyze by trait category.\n")
   shared_trait_category_order <- character(0)
@@ -1226,7 +1235,7 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
     guide = guide_legend(reverse = TRUE)
   )
 
-ggsave(file.path(results_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
 ```
 
 ### Genome-wide phenotype hits with strong H3/H4 support
@@ -1456,7 +1465,7 @@ p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = suppo
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
-ggsave(file.path(results_analysis_dir, 'summary_d_phenotype_h3_h4_rates_by_trait_category.png'), p_h3h4, width = 10, height = 6, dpi = 300)
+ggsave(file.path(report_analysis_dir, 'summary_d_phenotype_h3_h4_rates_by_trait_category.png'), p_h3h4, width = 10, height = 6, dpi = 300)
 ```
 
 <!-- ### Proximal pairs (≤ 1 kb): H3 vs H4 by pair type
@@ -1546,7 +1555,7 @@ if (nrow(h3_proximal) > 0) {
   # Convert LBF + SE to p-value, then keep smallest P per (file, snp)
   lbf_results[, p_lookup := convert_lbf_to_p_value(LBF, SE)]
   pval_results <- lbf_results[, .(p_lookup = min(p_lookup, na.rm = TRUE)), by = .(file, snp)]
-  saveRDS(pval_results, file.path(results_analysis_dir, 'pval_results.rds'))
+  saveRDS(pval_results, file.path(report_analysis_dir, 'pval_results.rds'))
 
   # Join: lead-SNP P in file_a and file_b
   lookup_a <- pval_results |> tibble::as_tibble() |>
@@ -1698,7 +1707,7 @@ p_prox_pair_type <- ggplot(prox_pair_viz, aes(x = pair_type, y = percentage, fil
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
-ggsave(file.path(results_analysis_dir, 'summary_d2_h3_h4_by_pair_type_proximal.png'),
+ggsave(file.path(report_analysis_dir, 'summary_d2_h3_h4_by_pair_type_proximal.png'),
        p_prox_pair_type, width = 10, height = 6, dpi = 300)
 ```
 
@@ -1806,7 +1815,7 @@ p_prox_tc <- ggplot(prox_tc_viz, aes(x = trait_category, y = pct, fill = outcome
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 
-ggsave(filename = file.path(results_analysis_dir, 'summary_d3_proximal_h3_h4_by_trait_category.png'),
+ggsave(filename = file.path(report_analysis_dir, 'summary_d3_proximal_h3_h4_by_trait_category.png'),
        plot = p_prox_tc, width = 10, height = 6, dpi = 300)
 
 knitr::knit_exit()
@@ -1904,5 +1913,5 @@ p7 <- ggplot(latest_coloc_pairs, aes(x = reorder(coloc_threshold, num_results), 
         panel.grid.minor = element_blank()) +
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.1)))
 
-ggsave(filename = file.path(results_analysis_dir, 'coloc_pairs_by_h4_threshold.png'), plot = p7, width = 10, height = 6, dpi = 300)
+ggsave(filename = file.path(report_analysis_dir, 'coloc_pairs_by_h4_threshold.png'), plot = p7, width = 10, height = 6, dpi = 300)
 ```

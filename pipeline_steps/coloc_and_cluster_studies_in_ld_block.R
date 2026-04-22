@@ -174,6 +174,7 @@ main <- function() {
   message(
     glue::glue("{args$ld_block}: Found {nrow(study_pairs)} study pairs to coloc in {diff_time_taken(start_time)}")
   )
+  message(glue::glue("Existing pairs: {nrow(coloc_results)}"))
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue("{args$ld_block}: No study pairs to coloc, skipping."))

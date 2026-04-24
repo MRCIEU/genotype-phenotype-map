@@ -298,7 +298,9 @@ main <- function() {
       block_list_name <- NULL
       if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
         block_list_name <- get_block_list_name(args$block_list)
-        igraph_clustered_results_file <- glue::glue("{ld_info$ld_block_data}/igraph_clustered_results_{block_list_name}.rds")
+        igraph_clustered_results_file <- glue::glue(
+          "{ld_info$ld_block_data}/igraph_clustered_results_{block_list_name}.rds"
+        )
       }
       saveRDS(clustered_results, igraph_clustered_results_file)
     } else {
@@ -318,7 +320,9 @@ main <- function() {
     block_list_name <- NULL
     if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
       block_list_name <- get_block_list_name(args$block_list)
-      coloc_clustered_results_file <- glue::glue("{ld_info$ld_block_data}/coloc_clustered_results_{block_list_name}.tsv.gz")
+      coloc_clustered_results_file <- glue::glue(
+        "{ld_info$ld_block_data}/coloc_clustered_results_{block_list_name}.tsv.gz"
+      )
     }
 
     vroom::vroom_write(finemapped_studies, finemapped_file)

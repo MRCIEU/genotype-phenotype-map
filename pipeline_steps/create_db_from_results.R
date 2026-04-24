@@ -854,7 +854,12 @@ load_data_into_associations_db <- function(
       nrow(association_snps), " association SNPs"
     )
 
-    associations <- extract_associations_for_ld_block(current_ld_block, study_extractions_snps, association_snps, studies_db)
+    associations <- extract_associations_for_ld_block(
+      current_ld_block,
+      study_extractions_snps,
+      association_snps,
+      studies_db
+    )
     return(associations)
   })
 

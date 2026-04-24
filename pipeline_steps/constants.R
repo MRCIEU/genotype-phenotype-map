@@ -316,3 +316,10 @@ is_study_blocked <- function(block_list, study_name, cis_trans) {
     }, logical(1))))
   }, logical(1)))
 }
+
+get_block_list_name <- function(block_list) {
+  if (!is.null(block_list) && !is.na(block_list) && file.exists(block_list)) {
+    return(sub("_block_list.csv", "", basename(block_list)))
+  }
+  return(NULL)
+}

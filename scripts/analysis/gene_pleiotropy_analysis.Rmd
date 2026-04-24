@@ -72,7 +72,7 @@ unique_data_types <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT data_type FR
 ```
 
 ```{r perturb_seq_data, echo=F}
-perturb_seq_data <- readxl::read_xlsx("41588_2025_2169_MOESM4_ESM.xlsx", sheet=2) |> janitor::clean_names() |> suppressWarnings()
+perturb_seq_data <- readxl::read_xlsx("data/41588_2025_2169_MOESM4_ESM.xlsx", sheet=2) |> janitor::clean_names() |> suppressWarnings()
 perturb_seq_data$outlier <- perturb_seq_data$transcriptome_wide_impact < perturb_seq_data$pi_deg * 0.1/10000 - 0.04
 
 ensembl_ids <- paste0("'", paste(unique(perturb_seq_data$perturbed_gene_id), collapse = "', '"), "'")

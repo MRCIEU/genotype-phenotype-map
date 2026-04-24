@@ -100,11 +100,12 @@ main <- function() {
   studies_db <- match_causal_snps_in_high_ld(ld_conn, studies_conn, studies_db)
   create_wide_tables(studies_conn)
 
+  message("Creating associations db...")
+  load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
+
   message("Creating coloc pairs db...")
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
-  message("Creating associations db...")
-  load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
 
   DBI::dbDisconnect(studies_conn, shutdown = TRUE)
   DBI::dbDisconnect(associations_full_conn, shutdown = TRUE)
@@ -174,16 +175,6 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   }
   table <- table[order(table$id), ]
   return(table)
-}
-
-#' Maps each SNP to a single LD block by interval overlap (same logic as ld_blocks.tsv).
-assign_ld_block_from_coords <- function(snps, ld_blocks_data) {
-  data.table::setDT(snps)
-  data.table::setDT(ld_blocks_data)
-
-  snps[ld_blocks_data, ld_block := i.ld_block, on = .(chr, bp >= start, bp <= stop)]
-
-  return(as.data.frame(snps))
 }
 
 load_data_for_studies_db <- function(studies_db, studies_conn) {
@@ -267,10 +258,6 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(gene, id) |>
     dplyr::rename(gene_id = id)
 
-  ld_blocks_subset <- studies_db$ld_blocks$data |>
-    dplyr::select(ld_block, id) |>
-    dplyr::rename(ld_block_id = id)
-
   studies_db$variant_annotations$data <- vroom::vroom(
     file.path(variant_annotation_dir, "vep_annotations_hg38.tsv.gz"),
     show_col_types = F
@@ -280,9 +267,6 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
       studies_db$variant_annotations$persist_id_from
     ) |>
     dplyr::left_join(gene_subset, by = c("gene" = "gene")) |>
-    assign_ld_block_from_coords(studies_db$ld_blocks$data) |>
-    dplyr::left_join(ld_blocks_subset, by = c("ld_block" = "ld_block")) |>
-    dplyr::filter(!is.na(.data$ld_block_id)) |>
     dplyr::mutate(snp = trimws(snp)) |>
     dplyr::mutate(rsid = sub(",.*", "", rsid)) |>
     dplyr::select(get_table_column_names(studies_db$variant_annotations))
@@ -760,13 +744,16 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 
   variant_annotations_subset_lead <- data.table::as.data.table(
     studies_db$variant_annotations$data
-  )[, .(snp, lead_flipped = flipped, lead_variant_id = id, ld_block_id)]
+  )[, .(snp, lead_flipped = flipped, lead_variant_id = id)]
   variant_annotations_subset_variant <- data.table::as.data.table(
     studies_db$variant_annotations$data
-  )[, .(snp, variant_flipped = flipped, proxy_variant_id = id, ld_block_id)]
+  )[, .(snp, variant_flipped = flipped, proxy_variant_id = id)]
 
   ld_data <- variant_annotations_subset_lead[ld_data, on = c("snp" = "lead")]
   ld_data <- variant_annotations_subset_variant[ld_data, on = c("snp" = "variant")]
+
+  ld_blocks_for_ld_table <- data.table::as.data.table(studies_db$ld_blocks$data)[, .(ld_block, ld_block_id = id)]
+  ld_data <- ld_blocks_for_ld_table[ld_data, on = "ld_block"]
 
   ld_data$r <- ld_data$r * ifelse(ld_data$lead_flipped, -1, 1) * ifelse(ld_data$variant_flipped, -1, 1)
 
@@ -852,9 +839,8 @@ load_data_into_associations_db <- function(
   all_joined_snps <- dplyr::bind_rows(all_relevant_snps$association_snps, all_relevant_snps$study_extractions_snps)
   relevant_snps_per_ld_block <- split(all_joined_snps, all_joined_snps$ld_block)
 
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores = 20, \(ld_block) {
+  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores = 15, \(current_ld_block) {
     gc()
-    current_ld_block <- ld_block # Store in variable to avoid ambiguity with column name
     relevant_snps <- relevant_snps_per_ld_block[[current_ld_block]]
     study_extractions_snps <- all_relevant_snps$study_extractions_snps[
       all_relevant_snps$study_extractions_snps$ld_block == current_ld_block
@@ -863,12 +849,17 @@ load_data_into_associations_db <- function(
       all_relevant_snps$association_snps$ld_block == current_ld_block
     ]
     message(
-      "Processing ld_block: ", ld_block, " - ",
+      "Processing ld_block: ", current_ld_block, " - ",
       nrow(study_extractions_snps), " study extraction SNPs, ",
       nrow(association_snps), " association SNPs"
     )
 
-    associations <- extract_associations_for_ld_block(ld_block, study_extractions_snps, association_snps, studies_db)
+    associations <- extract_associations_for_ld_block(
+      current_ld_block,
+      study_extractions_snps,
+      association_snps,
+      studies_db
+    )
     return(associations)
   })
 
@@ -927,19 +918,29 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
     {
       imputed_studies_file <- file.path(ld_block_data_dir, ld_block, "imputed_studies.tsv")
       standard_studies_file <- file.path(ld_block_data_dir, ld_block, "standardised_studies.tsv")
-      if (!file.exists(imputed_studies_file)) {
+      if (!file.exists(imputed_studies_file) && !file.exists(standard_studies_file)) {
         return(NULL)
       }
 
-      imputed_studies <- data.table::fread(imputed_studies_file, showProgress = FALSE)
-      imputed_studies <- imputed_studies[study %in% studies_db$studies$data$study_name]
-      standardised_studies <- data.table::fread(standard_studies_file, showProgress = FALSE)
-      rare_standardised_studies <- standardised_studies[
-        study %in% studies_db$studies$data$study_name &
-          variant_type != variant_types$common
-      ]
+      imputed_studies <- data.table::data.table()
+      if (file.exists(imputed_studies_file)) {
+        imputed_studies <- data.table::fread(imputed_studies_file, showProgress = FALSE)
+        imputed_studies <- imputed_studies[study %in% studies_db$studies$data$study_name]
+      }
 
-      all_studies <- rbind(imputed_studies[, .(study, file)], rare_standardised_studies[, .(study, file)])
+      rare_standardised_studies <- data.table::data.table()
+      if (file.exists(standard_studies_file)) {
+        standardised_studies <- data.table::fread(standard_studies_file, showProgress = FALSE)
+        rare_standardised_studies <- standardised_studies[
+          study %in% studies_db$studies$data$study_name &
+            variant_type != variant_types$common
+        ]
+      }
+
+      all_studies <- rbind(imputed_studies[, .(study, file)], rare_standardised_studies[, .(study, file)], fill = TRUE)
+      if (nrow(all_studies) == 0) {
+        return(NULL)
+      }
 
       associations <- apply(all_studies, 1, function(study) {
         return(tryCatch(

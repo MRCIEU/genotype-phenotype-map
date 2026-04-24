@@ -28,6 +28,7 @@ cluster_obj <- file.path(block_data_dir, "igraph_clustered_results.rds")
 problemsnp_file <- file.path(block_data_dir, "problematic_finemapped_snps.tsv")
 
 studies_file <- file.path(current_results_dir, "studies_processed.tsv.gz")
+truthset_file <- "data/tipairs_launched_truthset.tsv"
 
 message("LD Block: ", ld_block)
 message("Block data dir: ", block_data_dir)
@@ -36,14 +37,7 @@ message("Block data dir: ", block_data_dir)
 
 ```{r read_in_data}
 
-# Read in finemapped study information, cluster object and pairwise coloc results for ld block:
-# finemapped_studies.tsv
-# coloc_pairwise_results.tsv.gz
-# igraph_clustered_results.rds
-# finemapped_column_types from pipeline_steps/constants.R (setup chunk)
-
 coloc_results <- vroom::vroom(coloc_file, delim = '\t', show_col_types = F)
-# Filter on H4 threshold
 coloc_results_filt <- coloc_results |> dplyr::filter(ignore == FALSE, h4 >= h4_threshold)
 
 finemapped_studies <- vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = F) |>
@@ -60,6 +54,43 @@ if (file.exists(problemsnp_file)) {
 } else {
   problem_snps <- data.frame()
 }
+```
+
+```{r load_truthset}
+
+truthset <- vroom::vroom(truthset_file, show_col_types = F)
+
+# Build lookup: for non-phenotype studies, gene -> study_name
+gene_study_lookup <- studies_processed |>
+  dplyr::filter(data_type != "phenotype" & !is.na(gene)) |>
+  dplyr::select(study_name, gene, data_type)
+
+# Match truthset rows to finemapped studies in this block:
+# - target (gene) matches gene_study_lookup$gene -> gives study_name for the molecular study
+# - trait_gpmap matches finemapped_studies$study for the phenotype study
+block_studies <- unique(finemapped_studies$study)
+
+truthset_edges <- truthset |>
+  dplyr::filter(pairwisecoloc_support == TRUE &
+                  (gpmap_support == FALSE | preinfomap_support == FALSE)) |>
+  dplyr::inner_join(gene_study_lookup, by = c("target" = "gene"), relationship = "many-to-many") |>
+  dplyr::filter(study_name %in% block_studies & trait_gpmap %in% block_studies) |>
+  dplyr::distinct(study_name, trait_gpmap, .keep_all = TRUE)
+
+# Build set of unique_study_id pairs for edge highlighting
+# A single study can have multiple unique_study_ids (credible sets) in this block
+truthset_unique_pairs <- truthset_edges |>
+  dplyr::inner_join(
+    finemapped_studies |> dplyr::select(study, unique_study_id) |> dplyr::rename(uid_mol = unique_study_id),
+    by = c("study_name" = "study"), relationship = "many-to-many"
+  ) |>
+  dplyr::inner_join(
+    finemapped_studies |> dplyr::select(study, unique_study_id) |> dplyr::rename(uid_pheno = unique_study_id),
+    by = c("trait_gpmap" = "study"), relationship = "many-to-many"
+  )
+
+message("Truthset edges to highlight in this block: ", nrow(truthset_edges))
+message("Truthset unique_study_id pairs: ", nrow(truthset_unique_pairs))
 ```
 
 ### Coloc results:
@@ -82,23 +113,63 @@ clusters$study <- sub("_EUR.*","",clusters$unique_study_id)
 check_clusters <- clusters |> dplyr::group_by(component, study) |> dplyr::summarise(n_regions = dplyr::n())
 ```
 
+### Truthset pairs in this LD block
+
+```{r truthset_table, results='asis'}
+
+if (nrow(truthset_unique_pairs) > 0) {
+  pair_info <- truthset_unique_pairs |>
+    dplyr::left_join(
+      coloc_results |> dplyr::select(unique_study_a, unique_study_b, h4, PP.H3.abf, PP.H4.abf, ignore),
+      by = c("uid_mol" = "unique_study_a", "uid_pheno" = "unique_study_b")
+    )
+
+  # Also check reversed direction
+  pair_info_rev <- truthset_unique_pairs |>
+    dplyr::left_join(
+      coloc_results |> dplyr::select(unique_study_a, unique_study_b, h4, PP.H3.abf, PP.H4.abf, ignore),
+      by = c("uid_mol" = "unique_study_b", "uid_pheno" = "unique_study_a")
+    )
+
+  pair_info <- dplyr::bind_rows(pair_info, pair_info_rev) |>
+    dplyr::filter(!is.na(h4)) |>
+    dplyr::distinct()
+
+  # Add min_p for each study
+  min_p_lookup <- finemapped_studies |> dplyr::select(unique_study_id, min_p)
+
+  pair_info <- pair_info |>
+    dplyr::left_join(min_p_lookup |> dplyr::rename(min_p_mol = min_p), by = c("uid_mol" = "unique_study_id")) |>
+    dplyr::left_join(min_p_lookup |> dplyr::rename(min_p_pheno = min_p), by = c("uid_pheno" = "unique_study_id")) |>
+    dplyr::select(
+      target, trait_gpmap, trait_name_gpmap, data_type,
+      gpmap_support, preinfomap_support,
+      uid_mol, uid_pheno,
+      h4, PP.H3.abf, PP.H4.abf,
+      min_p_mol, min_p_pheno
+    ) |>
+    dplyr::arrange(dplyr::desc(h4))
+
+  knitr::kable(pair_info, digits = 4, caption = "Truthset pairs present in this LD block (pairwisecoloc_support=T & missing gpmap/preinfomap support)")
+} else {
+  message("No truthset pairs found in this LD block")
+}
+```
+
 ### Clustering studies:
 
 #### Original graph:
 
 ```{r plot_clustering, fig.width = 6, fig.height = 6}
 
-# Original graph of all unpruned clusters in the LD block:
 studies <- sub("_EUR.*", "", V(clustered_results$unpruned_graph)$name)
 
 g <- clustered_results$unpruned_graph
-# Membership in original components
 g_comps <- igraph::components(g)
 
 message("Number of graph verts: ", length(igraph::V(g)))
 message("Number of graph edges: ", length(igraph::E(g)))
 
-# Plot original graph
 g_layout <- igraph::layout_with_kk(g)
 
 plot(g,
@@ -114,26 +185,30 @@ plot(g,
 
 ```{r subgraphs}
 
-# Visualise original subgraphs
 csize <- table(g_comps$csize) |> as.data.frame()
 colnames(csize) <- c("Component size", "Freq")
 
 message("Original cluster size and frequency:")
 csize
 
-# Components/clusters of size > 1
 comp_num <- as.numeric(which(table(g_comps$membership) > 1))
 
-# Split full graph into disconnected subgraphs
 g_subgraphs <- lapply(comp_num, function(x){
   igraph::induced_subgraph(g, vids = igraph::V(g)[g_comps$membership == x])
 })
 
-# Calculate the edge density of each subgraph (1 = fully connected)
 g_density <- sapply(g_subgraphs, function(x){igraph::edge_density(x)})
 
-# Function to plot original subgraphs and gpmap colour pruned edges
-plot_subgraphs <- function(subgraph, colour_verts){
+# Build set of truthset edge pairs for highlighting
+truthset_highlight_pairs <- NULL
+if (nrow(truthset_unique_pairs) > 0) {
+  truthset_highlight_pairs <- rbind(
+    data.frame(V1 = truthset_unique_pairs$uid_mol, V2 = truthset_unique_pairs$uid_pheno, stringsAsFactors = FALSE),
+    data.frame(V1 = truthset_unique_pairs$uid_pheno, V2 = truthset_unique_pairs$uid_mol, stringsAsFactors = FALSE)
+  )
+}
+
+plot_subgraphs <- function(subgraph, colour_verts, highlight_pairs = NULL){
   g_density <- igraph::edge_density(subgraph)
   g_layout <- igraph::layout_with_kk(subgraph)
   
@@ -152,17 +227,32 @@ plot_subgraphs <- function(subgraph, colour_verts){
     col_edge = ifelse(col_edge == 0, "grey", "red")
     size_vert = 6
   }
+
+  # Highlight truthset edges in gold
+  edge_width <- rep(2, length(E(subgraph)))
+  if (!is.null(highlight_pairs) && nrow(highlight_pairs) > 0) {
+    el <- igraph::as_edgelist(subgraph)
+    for (k in seq_len(nrow(el))) {
+      v1 <- el[k, 1]
+      v2 <- el[k, 2]
+      match_fwd <- any(highlight_pairs$V1 == v1 & highlight_pairs$V2 == v2)
+      match_rev <- any(highlight_pairs$V1 == v2 & highlight_pairs$V2 == v1)
+      if (match_fwd || match_rev) {
+        col_edge[k] <- "gold"
+        edge_width[k] <- 4
+      }
+    }
+  }
   
   plot(subgraph,
        vertex.label = NA,
        vertex.size = size_vert,
-       edge.width = 2,
+       edge.width = edge_width,
        vertex.color = col_vert,
        edge.color = col_edge,
        layout = g_layout)
 }
 
-# Layout for plotting subgraphs
 plot_nrows <- ceiling(length(g_subgraphs)/10)
 fig_height <- plot_nrows*2
 ```
@@ -173,19 +263,15 @@ fig_height <- plot_nrows*2
 
 par(mfrow = c(1,1))
 
-# Infomap clustering of original graph
 clustered_graph <- clustered_results$pruned_graph
 gp_comps <- igraph::components(clustered_graph)
 
-# Components of size > 1
 comp_num_pruned <- as.numeric(which(table(gp_comps$membership) > 1))
 
-# Split subgraphs
 gp_subgraphs <- lapply(comp_num_pruned, function(x){
   igraph::induced_subgraph(clustered_graph, vids = igraph::V(clustered_graph)[gp_comps$membership == x])
 })
 
-## Annotate original graph with communities
 V(g)$community <- V(clustered_graph)$component[match(V(g)$name, V(clustered_graph)$name)]
 V(g)$community[is.na(V(g)$community)] <- 0
 
@@ -209,7 +295,6 @@ fig_height_set <- plot_nrows_set*4
 
 ```{r plot_subgraphs_coloured, fig.width = 20, fig.height = 28}
 
-# Remake subgraphs with edge pruning info
 g_subgraphs <- lapply(comp_num, function(x){
   igraph::induced_subgraph(g, vids = igraph::V(g)[g_comps$membership == x])
 })
@@ -217,12 +302,11 @@ g_subgraphs <- lapply(comp_num, function(x){
 lowdensity_subgraphs <- g_subgraphs[which(g_density<1)]
 
 par(mfrow = c(plot_nrows_set,5))
-invisible(sapply(lowdensity_subgraphs, plot_subgraphs, colour_verts = TRUE))
+invisible(sapply(lowdensity_subgraphs, plot_subgraphs, colour_verts = TRUE, highlight_pairs = truthset_highlight_pairs))
 ```
 
 ```{r select_split_subgraphs}
 
-# Identify subgraphs that were split into multiple communities and have < 100 nodes
 split_subgraph_info <- lapply(seq_along(lowdensity_subgraphs), function(i) {
   sg <- lowdensity_subgraphs[[i]]
   n_nodes <- length(V(sg))
@@ -254,11 +338,8 @@ if (n_to_show == 0) {
 
 ### Region overlay
 
-Overlay (scaled LBF, all studies) plus **per-study** LBF vs position panels (one plot per finemapped extraction).
-
 ```{r region_plot_functions}
 
-# Function to plot regional summary stats for all studies in a cluster (overlayed)
 plot_region <- function(subgraph){
   
   study_ids <- V(subgraph)$name
@@ -325,159 +406,13 @@ plot_region <- function(subgraph){
 
   gridExtra::arrangeGrob(p1, p2, ncol = 2, widths = c(0.55, 0.45))
 }
-
-# One LBF vs position panel per finemapped study (readable titles; no long facet labels)
-plot_region_per_study <- function(subgraph) {
-  study_ids <- V(subgraph)$name
-  finemapped <- finemapped_studies |>
-    dplyr::filter(unique_study_id %in% study_ids) |>
-    dplyr::left_join(
-      clusters |>
-        dplyr::select(unique_study_id, component, cluster_snp = snp, h4_connectedness, h3_connectedness),
-      by = "unique_study_id"
-    ) |>
-    dplyr::mutate(
-      cluster_snp_bp = suppressWarnings(as.numeric(sub(".*:(.*)_.*_.*", "\\1", cluster_snp))),
-      study_name = sub("_EUR.*", "", unique_study_id)
-    ) |>
-    dplyr::left_join(studies_processed |> dplyr::select(study_name, trait), by = "study_name")
-
-  if (!("community" %in% igraph::vertex_attr_names(subgraph))) {
-    V(subgraph)$community <- V(subgraph)$component
-  }
-  comp_map <- V(subgraph)$community
-  names(comp_map) <- V(subgraph)$name
-
-  comm_vals <- sort(unique(comp_map[comp_map > 0]))
-  pal <- stats::setNames(rainbow(length(comm_vals)), as.character(comm_vals))
-
-  plots <- list()
-  for (i in seq_len(nrow(finemapped))) {
-    sid <- as.character(finemapped$unique_study_id[[i]])
-    comp_i <- unname(comp_map[sid])
-    if (length(comp_i) == 0 || all(is.na(comp_i))) comp_i <- NA_real_
-    df <- data.table::fread(finemapped$file[[i]]) |>
-      dplyr::filter(SE != 1) |>
-      dplyr::mutate(component = comp_i)
-
-    if (nrow(df) == 0) next
-
-    k <- length(plots) + 1L
-
-    trait_lab <- finemapped$trait[[i]]
-    if (length(trait_lab) == 0 || is.na(trait_lab) || !nzchar(as.character(trait_lab))) {
-      trait_lab <- finemapped$study_name[[i]]
-    }
-
-    title <- paste0(trait_lab, " — cluster ", finemapped$component[[i]])
-    bp_line <- finemapped$cluster_snp_bp[[i]]
-
-    labs_comp <- as.character(sort(unique(stats::na.omit(df$component))))
-
-    plot_base <- function(aes_call) {
-      ggplot(df, aes_call) +
-        geom_point(size = 0.85, alpha = 0.85) +
-        geom_vline(xintercept = bp_line / 1e6, linetype = 2, colour = "grey35", na.rm = TRUE) +
-        labs(title = title, subtitle = sid, x = "Position (Mb)", y = "LBF") +
-        theme_minimal() +
-        theme(
-          plot.title = element_text(size = 11, face = "bold"),
-          plot.subtitle = element_text(size = 7, colour = "grey45"),
-          legend.position = "bottom"
-        )
-    }
-
-    if (length(labs_comp) == 0) {
-      plots[[k]] <- plot_base(aes(BP / 1e6, LBF))
-    } else {
-      pal_i <- pal[labs_comp]
-      if (any(is.na(pal_i))) {
-        na_pos <- which(is.na(pal_i))
-        pal_i[na_pos] <- grDevices::rainbow(length(na_pos))
-      }
-      names(pal_i) <- labs_comp
-
-      plots[[k]] <- plot_base(aes(BP / 1e6, LBF, colour = as.factor(component))) +
-        scale_colour_manual(values = pal_i, drop = FALSE, name = "Community")
-    }
-  }
-
-  if (length(plots) == 0) {
-    return(invisible(NULL))
-  }
-  gridExtra::grid.arrange(grobs = plots, ncol = 1)
-}
-
-plot_region_split <- function(subgraph, x_range, ncol = 1){
-  
-  study_ids <- V(subgraph)$name
-  finemapped <- finemapped_studies |> dplyr::filter(unique_study_id %in% study_ids) |>
-    dplyr::left_join(clusters |> dplyr::select(
-      unique_study_id, component, cluster_snp = snp, h4_connectedness, h3_connectedness), by = "unique_study_id") |>
-    dplyr::mutate(cluster_snp_bp = as.numeric(sub(".*:(.*)_.*_.*","\\1",cluster_snp)))
-  
-  region_files <- finemapped$file
-  regions <- lapply(region_files, function(x) {
-    stopifnot(file.exists(x))
-    data.table::fread(x)
-  })
-  names(regions) <- finemapped$study
-  regions <- mapply(function(x,y){
-    x <- x |> 
-      dplyr::mutate(study_id = y,
-                    scaled_LBF = LBF/max(LBF)) |>
-      dplyr::filter(SE != 1)
-    return(x)} , x = regions, y = finemapped$unique_study_id, SIMPLIFY = F)
-  
-  regions_combined <- data.table::rbindlist(regions, fill = TRUE) |>
-    dplyr::left_join(finemapped |> dplyr::select(unique_study_id, min_p, sample_size, component, cluster_snp, 
-                                                 cluster_snp_bp, h4_connectedness, h3_connectedness),
-              by = c("study_id" = "unique_study_id")) |>
-    dplyr::arrange(component, study_id) |>
-    dplyr::mutate(study_id = factor(study_id, levels = unique(study_id)),
-                  study_name = sub("_EUR.*","",study_id)) |>
-    dplyr::left_join(studies_processed, by = "study_name") |>
-    dplyr::mutate(
-      trait = factor(trait, levels = unique(trait)),
-      facet_label = dplyr::coalesce(
-        as.character(trait),
-        as.character(study_name),
-        as.character(study_id)
-      )
-    )
-
-  col_vert = V(subgraph)$community
-  communities <- unique(col_vert[col_vert > 0])
-  v_colours <- c("white", rainbow(length(communities)))
-  names(v_colours) <- c(0, communities)
-  
-  if(missing(x_range)){
-    x_range <- c(min(regions_combined$BP), max(regions_combined$BP))/1000000
-  }
-  
-  minp_df <- regions_combined |> dplyr::group_by(study_id) |> 
-    dplyr::summarise(minp = signif(unique(min_p),2), max_LBF = max(LBF)) |>
-    dplyr::mutate(x = mean(x_range), study_id = factor(study_id, levels = levels(regions_combined$study_id)))
-  
-  p1 <- ggplot(regions_combined,
-               aes(x = BP / 1e6, y = LBF, colour = as.factor(component))) +
-    geom_point(size = 1) +
-    facet_wrap(~facet_label, ncol = ncol, scales = "free_y", dir = "v") +
-    geom_vline(xintercept = unique(regions_combined$cluster_snp_bp)/1000000, colour="grey") +
-    geom_vline(aes(xintercept = cluster_snp_bp/1000000, colour=as.factor(component))) +
-    scale_colour_manual(name = "Cluster ID", values = v_colours) +
-    scale_x_continuous(limits = x_range) +
-    theme_minimal() +
-    theme(legend.position = "bottom") +
-    labs(x = "Position (Mb)", y = "LBF")
-  
-  p1
-}
 ```
 
 #### Exploration of selected split subgraphs
 
-```{r explore_selected_subgraphs, fig.width = 11, fig.height = 8}
+For each selected subgraph, the network graph is shown first, followed by the overlayed manhattan plot.
+
+```{r explore_selected_subgraphs, fig.width = 11, fig.height = 8, results='asis'}
 
 if (n_to_show > 0) {
   for (j in seq_len(n_to_show)) {
@@ -486,43 +421,16 @@ if (n_to_show > 0) {
     n_nodes <- selected$n_nodes[j]
     n_comms <- selected$n_communities[j]
 
-    message(
-      "Subgraph index ", idx, ": ", n_nodes, " nodes, ", n_comms, " communities, ",
-      "density ", round(selected$density[j], 3)
-    )
+    cat("\n\n##### Subgraph ", idx, ": ", n_nodes, " nodes, ", n_comms, " communities, density ",
+        round(selected$density[j], 3), "\n\n", sep = "")
 
     par(mfrow = c(1, 1))
-    plot_subgraphs(subgraph = sg, colour_verts = TRUE)
-  }
-}
-```
+    plot_subgraphs(subgraph = sg, colour_verts = TRUE, highlight_pairs = truthset_highlight_pairs)
 
-```{r explore_selected_overlays, fig.width = 12, fig.height = 5}
-
-if (n_to_show > 0) {
-  for (j in seq_len(n_to_show)) {
-    idx <- selected$index[j]
-    sg <- lowdensity_subgraphs[[idx]]
     tryCatch({
       gridExtra::grid.arrange(plot_region(subgraph = sg))
     }, error = function(e) {
       message("Overlay plot failed for subgraph ", idx, ": ", e$message)
-    })
-  }
-}
-```
-
-```{r explore_selected_per_study, fig.width = 10, fig.height = 32}
-
-# One faceted column of panels: one full-width LBF ~ BP plot per finemapped study
-if (n_to_show > 0) {
-  for (j in seq_len(n_to_show)) {
-    idx <- selected$index[j]
-    sg <- lowdensity_subgraphs[[idx]]
-    tryCatch({
-      plot_region_per_study(subgraph = sg)
-    }, error = function(e) {
-      message("Per-study Manhattan plots failed for subgraph ", idx, ": ", e$message)
     })
   }
 }

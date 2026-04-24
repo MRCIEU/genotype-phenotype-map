@@ -1,4 +1,5 @@
 import os
+import shlex
 import numpy as np
 import pandas as pd
 import subprocess
@@ -8,12 +9,15 @@ os.chdir('pipeline_steps')
 TEST_RUN = os.getenv('TEST_RUN')
 DATA_DIR = os.getenv('DATA_DIR')
 RESULTS_DIR = os.getenv('RESULTS_DIR')
-TIMESTAMP = os.getenv('TIMESTAMP')
+
+PIPELINE_VERSION = os.getenv('PIPELINE_VERSION') or 'current'
+BLOCK_LIST = os.getenv('BLOCK_LIST') or ''
 
 PIPELINE_METADATA = DATA_DIR + 'pipeline_metadata/'
 STUDY_DIR = DATA_DIR + 'study/'
 LD_BLOCK_DATA_DIR = DATA_DIR + 'ld_blocks/'
-STATIC_WEB_DIR = RESULTS_DIR + 'current/static_web/'
+version_results_dir = os.path.join(RESULTS_DIR.rstrip(os.sep), PIPELINE_VERSION)
+STATIC_WEB_DIR = os.path.join(version_results_dir, 'static_web') + os.sep
 ### INPUT DATA FILES
 studies_to_process_file = PIPELINE_METADATA + 'studies_to_process.tsv'
 studies_to_process = pd.read_csv(
@@ -48,28 +52,31 @@ compare_rare_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/compare_rare_complete'
 studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
 traits_processed_file = RESULTS_DIR + 'latest/traits_processed.tsv.gz'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
-current_results_dir = RESULTS_DIR + 'current'
-timestamped_results_dir = f'{RESULTS_DIR}{TIMESTAMP}'
 
-coloc_pairwise_results = f'{current_results_dir}/coloc_pairwise_results.tsv.gz'
-coloc_clustered_results = f'{current_results_dir}/coloc_clustered_results.tsv.gz'
-rare_results = f'{current_results_dir}/rare_results.tsv.gz'
-study_extractions = f'{current_results_dir}/study_extractions.tsv.gz'
-new_studies_processed = f'{current_results_dir}/studies_processed.tsv.gz'
-new_traits_processed = f'{current_results_dir}/traits_processed.tsv.gz'
-static_web_files_ready_file = f'{STATIC_WEB_DIR}static_web_files_ready'
+def _under_version(*parts):
+    return os.path.join(version_results_dir, *parts)
 
-studies_db_file = f'{current_results_dir}/studies.db'
-associations_full_db_file = f'{current_results_dir}/associations_full.db'
-associations_specific_db_file = f'{current_results_dir}/associations.db'
-coloc_pairs_full_db_file = f'{current_results_dir}/coloc_pairs_full.db'
-coloc_pairs_significant_db_file = f'{current_results_dir}/coloc_pairs.db'
-ld_db_file = f'{current_results_dir}/ld.db'
-gwas_upload_db_file = f'{current_results_dir}/gwas_upload.db'
-create_dbs_done_file = f'{current_results_dir}/create_dbs_done'
+coloc_pairwise_results = _under_version('coloc_pairwise_results.tsv.gz')
+coloc_clustered_results = _under_version('coloc_clustered_results.tsv.gz')
+rare_results = _under_version('rare_results.tsv.gz')
+study_extractions = _under_version('study_extractions.tsv.gz')
+new_studies_processed = _under_version('studies_processed.tsv.gz')
+new_traits_processed = _under_version('traits_processed.tsv.gz')
+static_web_files_ready_file = os.path.join(STATIC_WEB_DIR.rstrip(os.sep), 'static_web_files_ready')
 
-backup_done_file = f'{current_results_dir}/backup_done'
-sync_done_file = f'{current_results_dir}/sync_done'
+studies_db_file = _under_version('studies.db')
+associations_full_db_file = _under_version('associations_full.db')
+associations_specific_db_file = _under_version('associations.db')
+coloc_pairs_full_db_file = _under_version('coloc_pairs_full.db')
+coloc_pairs_significant_db_file = _under_version('coloc_pairs.db')
+ld_db_file = _under_version('ld.db')
+gwas_upload_db_file = _under_version('gwas_upload.db')
+create_dbs_done_file = _under_version('create_dbs_done')
+
+backup_done_file = _under_version('backup_done')
+sync_done_file = _under_version('sync_done')
+
+block_list_arg = f' --block_list {shlex.quote(BLOCK_LIST)}' if BLOCK_LIST else ''
 
 rule all:
     input: expand(extracted_study_pattern, study_location=extracted_studies),
@@ -213,7 +220,8 @@ rule coloc_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output}"
+                --completed_output_file {output} \
+                {block_list_arg}"
         subprocess.run(command, shell=True)
 
 rule compare_rare_rule:
@@ -241,6 +249,8 @@ rule compare_rare_rule:
 rule compile_results:
     input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
+    params:
+        block_list_arg=block_list_arg,
     output:
         coloc_pairwise_results = coloc_pairwise_results,
         coloc_clustered_results = coloc_clustered_results,
@@ -250,7 +260,7 @@ rule compile_results:
         new_traits_processed = new_traits_processed
     shell:
         """
-        mkdir -p $(dirname {output})
+        mkdir -p $(dirname {output.coloc_pairwise_results})
         Rscript compile_results.R \
             --studies_to_process {studies_to_process_file} \
             --studies_processed {studies_processed_file} \
@@ -260,7 +270,8 @@ rule compile_results:
             --study_extractions_file {output.study_extractions} \
             --coloc_pairwise_results_file {output.coloc_pairwise_results} \
             --coloc_clustered_results_file {output.coloc_clustered_results} \
-            --rare_results_file {output.rare_results}
+            --rare_results_file {output.rare_results} \
+            {params.block_list_arg}
 
         #  rsync -Lavzh $RESULTS_DIR $BACKUP_DIR/results/ --exclude=".*"
          """
@@ -305,25 +316,15 @@ rule create_results_db:
 rule create_static_web_files:
     input: studies_db_file, coloc_pairs_significant_db_file, associations_full_db_file, associations_specific_db_file, create_dbs_done_file
     threads: 1
+    params:
+        static_web_dir=STATIC_WEB_DIR,
     output: temporary(static_web_files_ready_file)
     shell:
         """
         Rscript create_static_web_files.R \
             --studies_db_file {studies_db_file} \
-            --static_web_dir {STATIC_WEB_DIR} \
+            --static_web_dir {params.static_web_dir} \
             --static_web_files_ready_file {output}
-        """
-
-rule copy_results_to_other_directories:
-    input: static_web_files_ready_file
-    threads: 1
-    output: timestamped_results_dir
-    shell:
-        """
-        mkdir -p {timestamped_results_dir}
-        cp -r {current_results_dir} {timestamped_results_dir}
-        #TODO: uncomment this when we have a way to handle the case where the pipeline fails
-        # cp -r {current_results_dir} {latest_results_dir}
         """
 
 onsuccess:

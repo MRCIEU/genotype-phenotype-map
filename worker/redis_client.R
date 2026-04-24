@@ -37,6 +37,9 @@ connect_to_redis <- function(max_retries = 5, initial_delay = 2) {
 }
 
 send_to_dlq <- function(redis_conn, message) {
+  if (grepl("Caught error", message, fixed = TRUE)) {
+    return(invisible(NULL))
+  }
   redis_conn$LPUSH(process_gwas_dlq, message)
   return()
 }

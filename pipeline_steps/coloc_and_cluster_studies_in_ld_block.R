@@ -174,6 +174,7 @@ main <- function() {
   message(
     glue::glue("{args$ld_block}: Found {nrow(study_pairs)} study pairs to coloc in {diff_time_taken(start_time)}")
   )
+  message(glue::glue("Existing pairs: {nrow(coloc_results)}"))
 
   if (nrow(study_pairs) == 0) {
     message(glue::glue("{args$ld_block}: No study pairs to coloc, skipping."))
@@ -292,7 +293,16 @@ main <- function() {
       }
 
       clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
-      saveRDS(clustered_results, glue::glue("{ld_info$ld_block_data}/igraph_clustered_results.rds"))
+
+      igraph_clustered_results_file <- glue::glue("{ld_info$ld_block_data}/igraph_clustered_results.rds")
+      block_list_name <- NULL
+      if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
+        block_list_name <- get_block_list_name(args$block_list)
+        igraph_clustered_results_file <- glue::glue(
+          "{ld_info$ld_block_data}/igraph_clustered_results_{block_list_name}.rds"
+        )
+      }
+      saveRDS(clustered_results, igraph_clustered_results_file)
     } else {
       clustered_results <- list(
         groups = data.frame(
@@ -306,9 +316,18 @@ main <- function() {
       )
     }
 
+    coloc_clustered_results_file <- glue::glue("{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz")
+    block_list_name <- NULL
+    if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
+      block_list_name <- get_block_list_name(args$block_list)
+      coloc_clustered_results_file <- glue::glue(
+        "{ld_info$ld_block_data}/coloc_clustered_results_{block_list_name}.tsv.gz"
+      )
+    }
+
     vroom::vroom_write(finemapped_studies, finemapped_file)
     vroom::vroom_write(coloc_results, coloc_results_file)
-    vroom::vroom_write(clustered_results$groups, glue::glue("{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz"))
+    vroom::vroom_write(clustered_results$groups, coloc_clustered_results_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)
@@ -572,7 +591,7 @@ cluster_coloc_results <- function(coloc_results, finemapped_studies, start_time)
     pruned_edge_ids <- c()
 
     if (igraph::vcount(modified_pruned_graph) > 0) {
-      clustered_graph <- igraph::cluster_infomap(modified_pruned_graph)
+      clustered_graph <- igraph::cluster_infomap(modified_pruned_graph, nb.trials = 20)
       clustered_memberships <- igraph::membership(clustered_graph)
 
       # FIrst, remove all edges between communities

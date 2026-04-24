@@ -174,7 +174,7 @@ p_gene_pleiotropy_dist <- ggplot(gene_pleiotropy_bin_counts, aes(x = protein_cod
   geom_text(aes(label = count), vjust = -0.5, size = 3) +
   scale_x_discrete(limits = c(as.character(1:20), ">20")) +
   labs(
-    title = "Distribution gene pleiotropy scores",
+    title = "Distribution of gene pleiotropy scores",
     x = "Number of protein-coding genes colocalizing with the anchor gene",
     y = "Count of genes",
     caption = paste("Total genes (with colocalizing genes):", nrow(gene_pleiotropy_filtered),

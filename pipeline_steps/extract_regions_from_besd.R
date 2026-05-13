@@ -59,6 +59,9 @@ main <- function() {
   ) {
     trans_results <- extract_trans_regions(cis_results$snp_data, study, p_value_threshold)
   }
+  else if (metadata$cis_trans == cis_trans$cis_trans && is.null(cis_results)) {
+    trans_results <- extract_trans_regions(data.frame(), study, p_value_threshold)
+  }
 
   clumped_snps <- dplyr::bind_rows(cis_results$clumped_snps, trans_results$clumped_snps)
   vroom::vroom_write(clumped_snps, glue::glue("{args$extracted_study_location}/clumped_snps.tsv"))

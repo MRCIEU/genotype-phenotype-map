@@ -104,7 +104,7 @@ rule all:
 rule extract_regions_from_studies:
     params: lambda wildcards: list(filter(bool, wildcards.study_location.split("/")))[-1]
     output: extracted_study_pattern
-    threads: 1
+    threads: 2
     retries: 1
     run:
         study = studies_to_process[studies_to_process.study_name == str(params)]

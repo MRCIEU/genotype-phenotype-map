@@ -392,13 +392,13 @@ verify_gwas_data <- function(gwas_info, gwas) {
     removed_msg <- paste0(n_removed, " rows were removed due to missing or invalid data")
   }
 
-  list(
+  return(list(
     valid = TRUE,
     error = NULL,
     gwas = gwas,
     n_removed = n_removed,
     removed_message = removed_msg
-  )
+  ))
 }
 
 create_study_metadata_files <- function(gwas_info) {

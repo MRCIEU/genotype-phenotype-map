@@ -18,3 +18,4 @@ cis*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,E
 cis*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,dense
 trans*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,EUR,GRCh38,1.5e-4,common,json,sparse
 trans*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,sparse
+*,protein,decode,besd,none,/local-scratch/data/hg38/decode,EUR,GRCh38,1.5e-4,common,json,dense

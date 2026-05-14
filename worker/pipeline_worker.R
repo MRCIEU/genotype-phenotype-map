@@ -179,6 +179,13 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         send_update_gwas_upload(gwas_info, FALSE, paste("Caught error: ", verification_result$error))
         return()
       }
+      gwas <- verification_result$gwas
+      if (!is.null(verification_result$n_removed) && verification_result$n_removed > 0) {
+        flog.info(paste(
+          gwas_info$metadata$guid,
+          verification_result$removed_message
+        ))
+      }
 
       updated_gwas <- change_column_names(gwas, gwas_info$metadata$column_names)
       if (!"EAF" %in% colnames(updated_gwas)) {
@@ -273,7 +280,13 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       if (!is_test_run) {
         flog.info(paste(gwas_info$metadata$guid, "Uploading results"))
         upload_results(results, gwas_info)
-        send_update_gwas_upload(gwas_info, TRUE, NULL, results)
+        send_update_gwas_upload(
+          gwas_info,
+          TRUE,
+          NULL,
+          results,
+          message = verification_result$removed_message
+        )
       }
     },
     error = function(e) {
@@ -334,38 +347,58 @@ verify_gwas_data <- function(gwas_info, gwas) {
     return(list(valid = FALSE, error = paste("Missing mandatory columns:", paste(missing_columns, collapse = ", "))))
   }
 
-  error_checks <- ""
+  n_before <- nrow(gwas)
 
-  if (any(is.na(gwas$CHR))) {
-    error_checks <- paste(error_checks, "Some SNPs have missing CHR values, ")
+  drop <- is.na(gwas$CHR) | is.na(gwas$BP) | is.na(gwas$P) | (!is.na(gwas$P) & (gwas$P < 0 | gwas$P > 1))
+
+  if (has_beta) {
+    drop <- drop | is.na(gwas$BETA) | gwas$BETA == Inf | gwas$BETA == -Inf
+    drop <- drop | is.na(gwas$SE) | (!is.na(gwas$SE) & gwas$SE < 0)
   }
 
-  if (any(is.na(gwas$BP))) {
-    error_checks <- paste(error_checks, "Some SNPs have missing BP values, ")
+  if ("EAF" %in% colnames(gwas)) {
+    drop <- drop | (!is.na(gwas$EAF) & (gwas$EAF < 0 | gwas$EAF > 1))
+    # Mixed NA / non-NA EAF is invalid for downstream — drop NA-EAF rows
+    if (!all(is.na(gwas$EAF)) && any(is.na(gwas$EAF))) {
+      drop <- drop | is.na(gwas$EAF)
+    }
   }
 
-  if (any(gwas$P < 0 | gwas$P > 1, na.rm = T)) {
-    error_checks <- paste(error_checks, "Some SNPs have P-values outside accepted range (0-1), ")
+  gwas <- gwas[!drop, , drop = FALSE]
+  n_removed <- n_before - nrow(gwas)
+
+  if (nrow(gwas) == 0) {
+    err_detail <- paste(
+      c(
+        "CHR, BP, and P-value",
+        if (has_beta) "SE",
+        if ("EAF" %in% colnames(gwas)) "EAF"
+      ),
+      collapse = ", "
+    )
+    return(list(
+      valid = FALSE,
+      error = paste0(
+        "All ", n_before,
+        " SNP rows were removed due to missing or invalid data (",
+        err_detail, ")."
+      ),
+      gwas = gwas
+    ))
   }
 
-  if ("EAF" %in% colnames(gwas) && any(gwas$EAF < 0 | gwas$EAF > 1, na.rm = T)) {
-    error_checks <- paste(error_checks, "Some SNPs have EAF values out of range, ")
+  removed_msg <- NULL
+  if (n_removed > 0) {
+    removed_msg <- paste0(n_removed, " rows were removed due to missing or invalid data")
   }
 
-  # Fail only when mix of present and missing EAF - all missing is OK (filled from LD panel)
-  if ("EAF" %in% colnames(gwas) && !all(is.na(gwas$EAF)) && any(is.na(gwas$EAF))) {
-    error_checks <- paste(error_checks, "Some SNPs have missing EAF values, ")
-  }
-
-  if (has_beta && any(gwas$SE < 0, na.rm = T)) {
-    error_checks <- paste(error_checks, "Some SNPs have negative SE values, ")
-  }
-
-  if (nchar(error_checks) > 0) {
-    return(list(valid = FALSE, error = error_checks))
-  }
-
-  return(list(valid = TRUE, error = NULL))
+  return(list(
+    valid = TRUE,
+    error = NULL,
+    gwas = gwas,
+    n_removed = n_removed,
+    removed_message = removed_msg
+  ))
 }
 
 create_study_metadata_files <- function(gwas_info) {
@@ -588,7 +621,7 @@ upload_results <- function(results, gwas_info) {
   return()
 }
 
-send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL) {
+send_update_gwas_upload <- function(gwas_info, success, failure_reason, results = NULL, message = NULL) {
   if (is_test_run) {
     return()
   }
@@ -604,6 +637,9 @@ send_update_gwas_upload <- function(gwas_info, success, failure_reason, results 
       coloc_groups = results$coloc_clustered_results,
       associations = results$associations
     )
+    if (!is.null(message) && nzchar(message)) {
+      put_body$message <- message
+    }
   } else {
     put_body <- list(
       success = success,

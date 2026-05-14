@@ -1,7 +1,5 @@
 ---
 params:
-  # null or empty: run every LD block that has `dir.exists(ld_block_data)`.
-  # A string, e.g. "EUR/1/93071870-95684841": run that block only (must match `ld_info$block`).
   ld_block: null
 output:
   html_document:
@@ -232,3 +230,4 @@ if (nrow(blocks_graph_struct) > 0) {
 }
 
 ```
+

@@ -79,16 +79,27 @@ main <- function() {
         vroom::vroom_write(result$gwas, imputed_file)
       } else {
         result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
-        verify_imputation_results(result$gwas, imputed_file)
-        filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
-        if ((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) ||
-            (filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold)
-        ) {
-          vroom::vroom_write(filtered_results$gwas, imputed_file)
+        if (result$rows_imputed == 0) {
+          message("Imputation skipped for ", imputed_file, ", falling back to standardised data")
+          filtered_results <- list(
+            significant_rows_imputed = NA,
+            significant_rows_filtered = NA
+          )
+          result <- pad_missing_values(gwas_to_impute)
+          vroom::vroom_write(result$gwas, imputed_file)
         } else {
-          gwas$IMPUTED <- FALSE
-          vroom::vroom_write(gwas, imputed_file)
+          verify_imputation_results(result$gwas, imputed_file)
+          filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
+
+          if ((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) ||
+              (filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold)
+          ) {
+            vroom::vroom_write(filtered_results$gwas, imputed_file)
+          } else {
+            gwas$IMPUTED <- FALSE
+            vroom::vroom_write(gwas, imputed_file)
+          }
         }
       }
 

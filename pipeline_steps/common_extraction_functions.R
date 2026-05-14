@@ -242,7 +242,7 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
     if (name %in% names(gwas) && already) {
       gwas <- gwas[, -which(names(gwas) %in% c(name))]
     }
-    names(gwas)[names(gwas) == columns[name]] <- name
+    names(gwas)[names(gwas) == columns[[name]]] <- name
   }
 
   if (remove_extra_columns) {

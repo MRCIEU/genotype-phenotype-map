@@ -106,7 +106,6 @@ main <- function() {
   message("Creating coloc pairs db...")
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
 
-
   DBI::dbDisconnect(studies_conn, shutdown = TRUE)
   DBI::dbDisconnect(associations_full_conn, shutdown = TRUE)
   DBI::dbDisconnect(associations_specific_conn, shutdown = TRUE)
@@ -288,6 +287,8 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     format_rare_results(studies_db)
 
   studies_db <- format_pleiotropy_scores(studies_db)
+
+  studies_db <- load_pathway_tables(studies_db)
 
   lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
@@ -1085,6 +1086,87 @@ get_table_column_names <- function(table) {
   ]
 
   return(table_column_names)
+}
+
+load_pathway_tables <- function(studies_db) {
+  gene_lookup <- data.table::as.data.table(studies_db$gene_annotations$data)[
+    , .(ensembl_id, gene_id = id)
+  ]
+
+  all_mappings <- data.table::data.table()
+
+  kegg_file <- file.path(variant_annotation_dir, "kegg_pathways_output.txt")
+  if (file.exists(kegg_file)) {
+    kegg <- data.table::fread(kegg_file, showProgress = FALSE)
+    data.table::setnames(kegg, "gene_id", "ensembl_id")
+    kegg <- gene_lookup[kegg, on = "ensembl_id", nomatch = NULL]
+    kegg <- kegg[, .(gene_id, term_id, source, description)]
+    all_mappings <- data.table::rbindlist(list(all_mappings, kegg))
+    message("Loaded ", nrow(kegg), " KEGG pathway mappings")
+  } else {
+    message("KEGG file not found: ", kegg_file)
+  }
+
+  string_file <- file.path(variant_annotation_dir, "9606.protein.enrichment.terms.v12.0.txt.gz")
+  ensp_file <- file.path(variant_annotation_dir, "ensg_to_ensp_mapping.tsv")
+  if (file.exists(string_file) && file.exists(ensp_file)) {
+    ensp_mapping <- data.table::fread(ensp_file, showProgress = FALSE)
+
+    string_terms <- data.table::fread(string_file, showProgress = FALSE)
+    data.table::setnames(string_terms, "#string_protein_id", "string_protein_id")
+
+    string_terms <- string_terms[grepl("^Reactome|^Human Phenotype", category)]
+
+    string_terms[grepl("Reactome", category), source := "Reactome"]
+    string_terms[grepl("Human Phenotype", category), source := "HP"]
+
+    string_terms[, ensp_id := sub("^9606\\.", "", string_protein_id)]
+
+    string_terms <- ensp_mapping[string_terms, on = "ensp_id", nomatch = NULL]
+    data.table::setnames(string_terms, "ensg_id", "ensembl_id")
+    string_terms <- gene_lookup[string_terms, on = "ensembl_id", nomatch = NULL]
+    string_terms <- string_terms[, .(gene_id, term_id = term, source, description)]
+
+    all_mappings <- data.table::rbindlist(list(all_mappings, string_terms))
+    message("Loaded ", nrow(string_terms), " STRING enrichment term mappings (Reactome + HP)")
+  } else {
+    message("STRING/ENSP files not found, skipping Reactome + HP terms")
+  }
+
+  all_mappings <- unique(all_mappings, by = c("gene_id", "term_id"))
+  studies_db$pathway_mappings$data <- all_mappings
+
+  if (nrow(all_mappings) == 0) {
+    message("No pathway data found")
+    studies_db$pathway_sizes$data <- data.table::data.table(
+      term_id = character(), source = character(), description = character(),
+      pathway_size = integer(), background_size = integer()
+    )
+    return(studies_db)
+  }
+
+  pathway_sizes <- all_mappings[
+    , .(pathway_size = data.table::uniqueN(gene_id)),
+    by = .(term_id, source, description)
+  ]
+  background_sizes <- all_mappings[
+    , .(background_size = data.table::uniqueN(gene_id)),
+    by = source
+  ]
+  pathway_sizes <- background_sizes[pathway_sizes, on = "source"]
+  data.table::setcolorder(
+    pathway_sizes,
+    c("term_id", "source", "description", "pathway_size", "background_size")
+  )
+  studies_db$pathway_sizes$data <- pathway_sizes
+
+  message(
+    "Pathway tables: ", nrow(all_mappings), " gene-pathway mappings across ",
+    nrow(pathway_sizes), " pathways (",
+    paste(unique(all_mappings$source), collapse = ", "), ")"
+  )
+
+  return(studies_db)
 }
 
 invisible(main())

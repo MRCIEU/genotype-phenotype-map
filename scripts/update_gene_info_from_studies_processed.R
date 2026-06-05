@@ -31,7 +31,18 @@ new_genes <- getBM(
   values = new_ensg_ids, mart = mart
 )
 
-new_genes <- dplyr::bind_rows(new_genes, new_transcripts)
+# Fetch canonical ENSP (protein) IDs for the new genes
+ensp_mapping <- getBM(
+  filters = c("ensembl_gene_id", "transcript_is_canonical"),
+  attributes = c("ensembl_gene_id", "ensembl_peptide_id"),
+  values = list(new_ensg_ids, TRUE),
+  mart = mart
+) |>
+  dplyr::filter(ensembl_peptide_id != "") |>
+  dplyr::distinct(ensembl_gene_id, .keep_all = TRUE)
+
+new_genes <- new_genes |>
+  dplyr::left_join(ensp_mapping, by = "ensembl_gene_id")
 
 new_genes <- new_genes |>
   dplyr::rename(
@@ -46,4 +57,81 @@ new_genes <- new_genes |>
   dplyr::distinct(ensembl_id, .keep_all = TRUE)
 
 gene_info <- dplyr::bind_rows(gene_info, new_genes)
-vroom::vroom_write(gene_info, glue::glue("{variant_annotation_dir}/gene_info.tsv"), show_col_types = F)
+
+# Backfill ENSP for existing rows that are missing it
+missing_ensp <- gene_info$ensembl_id[is.na(gene_info$ensembl_peptide_id)]
+if (length(missing_ensp) > 0) {
+  backfill_ensp <- getBM(
+    filters = c("ensembl_gene_id", "transcript_is_canonical"),
+    attributes = c("ensembl_gene_id", "ensembl_peptide_id"),
+    values = list(missing_ensp, TRUE),
+    mart = mart
+  ) |>
+    dplyr::filter(ensembl_peptide_id != "") |>
+    dplyr::distinct(ensembl_gene_id, .keep_all = TRUE)
+
+  idx <- match(backfill_ensp$ensembl_gene_id, gene_info$ensembl_id)
+  gene_info$ensembl_peptide_id[idx[!is.na(idx)]] <- backfill_ensp$ensembl_peptide_id[!is.na(idx)]
+}
+
+vroom::vroom_write(gene_info, glue::glue("{variant_annotation_dir}/gene_info.tsv"))
+
+# --- KEGG pathway mapping ---
+# Get Entrez IDs for all genes in gene_info via biomaRt
+all_ensg <- unique(gene_info$ensembl_id[!is.na(gene_info$ensembl_id)])
+entrez_mapping <- getBM(
+  filters = "ensembl_gene_id",
+  attributes = c("ensembl_gene_id", "entrezgene_id"),
+  values = all_ensg,
+  mart = mart
+) |>
+  dplyr::filter(!is.na(entrezgene_id)) |>
+  dplyr::mutate(entrezgene_id = as.character(entrezgene_id)) |>
+  dplyr::distinct(ensembl_gene_id, entrezgene_id)
+
+# Query KEGG REST API: gene → pathway mapping
+kegg_gene_to_pathway <- data.table::fread(
+  "https://rest.kegg.jp/link/hsa/pathway",
+  header = FALSE, col.names = c("pathway_id", "kegg_gene_id")
+) |>
+  dplyr::mutate(
+    pathway_id = sub("^path:", "", pathway_id),
+    entrezgene_id = sub("^hsa:", "", kegg_gene_id)
+  ) |>
+  dplyr::select(pathway_id, entrezgene_id)
+
+# Query KEGG REST API: pathway ID → pathway name
+kegg_pathway_names <- data.table::fread(
+  "https://rest.kegg.jp/list/pathway/hsa",
+  header = FALSE, col.names = c("pathway_id", "pathway_name")
+) |>
+  dplyr::mutate(pathway_name = sub(" - Homo sapiens \\(human\\)", "", pathway_name))
+
+# Join: ENSG → Entrez → KEGG pathway → pathway name
+kegg_pathways <- entrez_mapping |>
+  dplyr::inner_join(kegg_gene_to_pathway, by = "entrezgene_id") |>
+  dplyr::inner_join(kegg_pathway_names, by = "pathway_id") |>
+  dplyr::left_join(
+    gene_info |> dplyr::select(ensembl_id, gene_name, ensembl_peptide_id),
+    by = c("ensembl_gene_id" = "ensembl_id")
+  ) |>
+  dplyr::select(
+    ensembl_id = ensembl_gene_id,
+    gene_name,
+    ensembl_peptide_id,
+    entrezgene_id,
+    pathway_id,
+    pathway_name
+  ) |>
+  dplyr::distinct() |>
+  dplyr::arrange(pathway_id, ensembl_id)
+
+message(glue::glue(
+  "KEGG: {length(unique(kegg_pathways$pathway_id))} pathways, ",
+  "{length(unique(kegg_pathways$ensembl_id))} genes"
+))
+
+vroom::vroom_write(
+  kegg_pathways,
+  glue::glue("{variant_annotation_dir}/kegg_pathways.tsv")
+)

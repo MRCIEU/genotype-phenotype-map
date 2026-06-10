@@ -256,15 +256,6 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
         ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks
       ]
 
-      flog.info(paste(gwas_info$metadata$guid, "Processing", length(blocks_parallel), "blocks in parallel"))
-      processed_blocks_parallel <- parallel::mclapply(
-        blocks_parallel,
-        mc.cores = parallel_block_processing,
-        function(block) {
-          return(process_single_block(block, gwas_info))
-        }
-      )
-
       flog.info(paste(
         gwas_info$metadata$guid,
         "Processing",
@@ -274,7 +265,17 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       processed_blocks_sequential <- lapply(blocks_sequential, function(block) {
         return(process_single_block(block, gwas_info))
       })
-      processed_blocks <- c(processed_blocks_parallel, processed_blocks_sequential)
+      gc()
+
+      flog.info(paste(gwas_info$metadata$guid, "Processing", length(blocks_parallel), "blocks in parallel"))
+      processed_blocks_parallel <- parallel::mclapply(
+        blocks_parallel,
+        mc.cores = parallel_block_processing,
+        function(block) {
+          return(process_single_block(block, gwas_info))
+        }
+      )
+      processed_blocks <- c(processed_blocks_sequential, processed_blocks_parallel)
 
       successful_block_names <- unlist(processed_blocks[!sapply(processed_blocks, is.null)])
       failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, successful_block_names)
@@ -447,7 +448,7 @@ create_study_metadata_files <- function(gwas_info) {
   return()
 }
 
-identify_memory_intensive_blocks <- function(blocks, threshold = 10000, guid = NA) {
+identify_memory_intensive_blocks <- function(blocks, threshold = 8000, guid = NA) {
   memory_intensive_blocks <- c()
 
   for (block in blocks) {

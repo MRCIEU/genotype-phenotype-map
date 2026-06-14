@@ -188,11 +188,22 @@ aggregate_data_produced_by_pipeline <- function(
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
 
+  studies_with_extractions <- character(0)
+  if (nrow(extracted_studies) > 0) {
+    studies_with_extractions <- unique(extracted_studies$study)
+  }
+  studies_to_add <- studies_to_process |>
+    dplyr::filter(study_name %in% studies_with_extractions)
+  message(glue::glue(
+    "Adding {nrow(studies_to_add)} of {nrow(studies_to_process)} studies to studies_processed ",
+    "(studies with LD block extractions only)"
+  ))
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types = F)
-    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_process) |> dplyr::distinct()
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_add) |> dplyr::distinct()
   } else {
-    studies_processed <- studies_to_process
+    studies_processed <- studies_to_add
   }
 
   if (file.exists(traits_processed_file)) {

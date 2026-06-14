@@ -24,6 +24,7 @@ parser <- argparser::add_argument(
 )
 args <- argparser::parse_args(parser)
 parallel_block_processing <- 6
+memory_intensive_parallel_block_processing <- 2
 
 if (!is_test_run) {
   tryCatch(
@@ -252,19 +253,23 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       blocks_parallel <- ld_blocks_to_colocalise$ld_block[
         !ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks
       ]
-      blocks_sequential <- ld_blocks_to_colocalise$ld_block[
+      blocks_memory_intensive <- ld_blocks_to_colocalise$ld_block[
         ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks
       ]
 
       flog.info(paste(
         gwas_info$metadata$guid,
         "Processing",
-        length(blocks_sequential),
+        length(blocks_memory_intensive),
         "memory-intensive blocks sequentially"
       ))
-      processed_blocks_sequential <- lapply(blocks_sequential, function(block) {
-        return(process_single_block(block, gwas_info))
-      })
+      processed_blocks_memory_intensive <- parallel::mclapply(
+        blocks_memory_intensive,
+        mc.cores = memory_intensive_parallel_block_processing,
+        function(block) {
+          return(process_single_block(block, gwas_info))
+        }
+      )
       gc()
 
       flog.info(paste(gwas_info$metadata$guid, "Processing", length(blocks_parallel), "blocks in parallel"))
@@ -275,7 +280,7 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
           return(process_single_block(block, gwas_info))
         }
       )
-      processed_blocks <- c(processed_blocks_sequential, processed_blocks_parallel)
+      processed_blocks <- c(processed_blocks_memory_intensive, processed_blocks_parallel)
 
       successful_block_names <- unlist(processed_blocks[!sapply(processed_blocks, is.null)])
       failed_blocks <- setdiff(ld_blocks_to_colocalise$ld_block, successful_block_names)

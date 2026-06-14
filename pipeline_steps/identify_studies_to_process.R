@@ -3,13 +3,21 @@ source("constants.R")
 
 minimum_snps_in_opengwas_study <- 1000000
 
-study_list <- vroom::vroom("data/study_list.csv", show_col_types = F)
+study_list <- vroom::vroom(
+  "data/study_list.csv",
+  show_col_types = F,
+  col_types = vroom::cols(processing_complete = vroom::col_logical())
+)
 studies_to_ignore <- vroom::vroom("data/ignore_studies.tsv", delim = "\t", show_col_types = F)
 rare_studies_to_ignore <- vroom::vroom("data/ignore_studies_rare.tsv", delim = "\t", show_col_types = F)
 studies_processed_file <- glue::glue("{current_results_dir}/studies_processed.tsv.gz")
 
 if (!is.na(TEST_RUN)) {
-  study_list <- vroom::vroom("../tests/data/study_list.csv", show_col_types = F)
+  study_list <- vroom::vroom(
+    "../tests/data/study_list.csv",
+    show_col_types = F,
+    col_types = vroom::cols(processing_complete = vroom::col_logical())
+  )
 }
 if (file.exists(studies_processed_file)) {
   studies_processed <- vroom::vroom(studies_processed_file, delim = "\t", show_col_types = F)
@@ -21,9 +29,16 @@ main <- function() {
   if (!dir.exists(pipeline_metadata_dir)) dir.create(pipeline_metadata_dir)
   validate_study_list(study_list)
 
-  opengwas_entries <- dplyr::filter(study_list, data_format == data_formats$opengwas)
-  besd_entries <- dplyr::filter(study_list, data_format == data_formats$besd)
-  tsv_entries <- dplyr::filter(study_list, data_format == data_formats$tsv)
+  study_list_to_process <- study_list |>
+    dplyr::filter(isFALSE(processing_complete))
+  message(glue::glue(
+    "Processing {nrow(study_list_to_process)} of {nrow(study_list)} study_list entries ",
+    "(processing_complete = FALSE)"
+  ))
+
+  opengwas_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$opengwas)
+  besd_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$besd)
+  tsv_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$tsv)
 
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
@@ -65,6 +80,12 @@ validate_study_list <- function(study_list) {
     stop("Error: some reference_build values in study_list are not valid")
   }
   if (!all(study_list$coverage %in% coverage_types)) stop("Error: some coverage values in study_list are not valid")
+  if (!"processing_complete" %in% colnames(study_list)) {
+    stop("Error: study_list must include a processing_complete column")
+  }
+  if (!all(study_list$processing_complete %in% c(TRUE, FALSE))) {
+    stop("Error: processing_complete must be TRUE or FALSE for all study_list rows")
+  }
 }
 
 #' calculate_besd_studies_to_process

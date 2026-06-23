@@ -153,13 +153,15 @@ studies_db <- list(
       study_extraction_id INTEGER NOT NULL,
       variant_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
+      situated_gene_id INTEGER,
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),
       h3_connectedness REAL CHECK (h3_connectedness BETWEEN 0 AND 1),
       PRIMARY KEY (coloc_group_id, study_extraction_id),
       FOREIGN KEY (study_id) REFERENCES studies(id),
       FOREIGN KEY (study_extraction_id) REFERENCES study_extractions(id),
       FOREIGN KEY (variant_id) REFERENCES variant_annotations(id),
-      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id)
+      FOREIGN KEY (ld_block_id) REFERENCES ld_blocks(id),
+      FOREIGN KEY (situated_gene_id) REFERENCES gene_annotations(id)
     )")
   ),
   rare_results = list(
@@ -208,14 +210,17 @@ additional_studies_tables <- list(
     query = "CREATE TABLE coloc_groups_wide AS
       SELECT coloc_groups.*,
         variant_annotations.chr, variant_annotations.bp, study_extractions.min_p, study_extractions.cis_trans,
-        study_extractions.ld_block, variant_annotations.display_snp, variant_annotations.rsid, gene_annotations.gene, gene_annotations.id as gene_id,
+        study_extractions.ld_block, variant_annotations.display_snp, variant_annotations.rsid,
+        gene_annotation.gene AS gene, gene_annotation.id AS gene_id,
+        situated_gene_annotation.gene AS situated_gene,
         traits.id as trait_id, traits.trait_name, traits.trait_category, studies.data_type, studies.tissue, studies.cell_type,
         study_sources.id as source_id, study_sources.name as source_name, study_sources.url as source_url
       FROM coloc_groups
       JOIN studies ON coloc_groups.study_id = studies.id
       JOIN variant_annotations on coloc_groups.variant_id = variant_annotations.id
       JOIN study_extractions ON coloc_groups.study_extraction_id = study_extractions.id
-      LEFT JOIN gene_annotations on studies.gene_id = gene_annotations.id
+      LEFT JOIN gene_annotations AS gene_annotation ON studies.gene_id = gene_annotation.id
+      LEFT JOIN gene_annotations AS situated_gene_annotation ON coloc_groups.situated_gene_id = situated_gene_annotation.id
       JOIN traits ON studies.trait_id = traits.id
       JOIN study_sources ON studies.source_id = study_sources.id",
     indexes = "CREATE INDEX idx_coloc_groups_wide_study_id ON coloc_groups_wide(study_id);

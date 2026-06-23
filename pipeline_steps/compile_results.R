@@ -278,6 +278,17 @@ create_study_extractions <- function(pipeline_data) {
     match(finemapped_studies$study, pipeline_data$studies_processed$study_name)
   ]
 
+  study_data_types <- pipeline_data$studies_processed |>
+    dplyr::select(study_name, data_type, gene)
+
+  finemapped_studies <- finemapped_studies |>
+    dplyr::left_join(study_data_types, by = c("study" = "study_name")) |>
+    dplyr::mutate(
+      situated_gene = dplyr::if_else(data_type == data_types$methylation, gene, NA_character_),
+      known_gene = dplyr::if_else(data_type == data_types$methylation, NA_character_, known_gene)
+    ) |>
+    dplyr::select(-data_type, -gene)
+
   rare_genes_study_map <- pipeline_data$studies_processed |>
     dplyr::filter(variant_type != variant_types$common & !is.na(gene)) |>
     dplyr::select(study_name, gene) |>

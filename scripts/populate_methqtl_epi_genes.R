@@ -1,6 +1,6 @@
 source("../pipeline_steps/constants.R")
 
-manifest_file <- file.path(variant_annotation_dir, "MethylationEPIC_v-1-0_B4.csv")
+manifest_file <- file.path(variant_annotation_dir, "MethylationEPIC_v-1-0_B4.csv.gz")
 epi_dir <- "/local-scratch/data/hg38/GTEx-methQTL-v10"
 gene_column <- "GencodeBasicV12_NAME"
 
@@ -104,3 +104,4 @@ update_epi_file <- function(epi_file, probe_gene_map) {
 }
 
 invisible(main())
+

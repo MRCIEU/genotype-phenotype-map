@@ -30,7 +30,7 @@ main <- function() {
   validate_study_list(study_list)
 
   study_list_to_process <- study_list |>
-    dplyr::filter(isFALSE(processing_complete))
+    dplyr::filter(processing_complete == FALSE)
   message(glue::glue(
     "Processing {nrow(study_list_to_process)} of {nrow(study_list)} study_list entries ",
     "(processing_complete = FALSE)"
@@ -40,12 +40,24 @@ main <- function() {
   besd_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$besd)
   tsv_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$tsv)
 
+  if (nrow(study_list_to_process) == 0) {
+    message("Found 0 new studies to process")
+    write_studies_to_process(data.frame())
+    return()
+  }
+
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
   tsv_studies_to_process <- calculate_tsv_studies_to_process(tsv_entries)
 
   # Filter out studies that have already been processed or are to be ignored
   studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process, tsv_studies_to_process)
+
+  if (nrow(studies_to_process) == 0 || !"study_name" %in% colnames(studies_to_process)) {
+    message("Found 0 new studies to process")
+    write_studies_to_process(studies_to_process)
+    return()
+  }
 
   duplicated_study_names <- duplicated(studies_to_process$study_name)
   if (any(duplicated_study_names)) {
@@ -58,10 +70,14 @@ main <- function() {
     dplyr::filter(!study_name %in% rare_studies_to_ignore$study)
 
   message(paste("Found", nrow(studies_to_process), "new studies to process"))
-  print(glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"))
-
-  vroom::vroom_write(studies_to_process, glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"))
+  write_studies_to_process(studies_to_process)
   return()
+}
+
+write_studies_to_process <- function(studies_to_process) {
+  output_file <- glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv")
+  print(output_file)
+  vroom::vroom_write(studies_to_process, output_file)
 }
 
 validate_study_list <- function(study_list) {

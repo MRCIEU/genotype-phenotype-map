@@ -355,7 +355,7 @@ create_besd_trait_names <- function(studies, besd_study, metadata, probes, genes
       interval_loc <- glue::glue("chr{interval_loc}")
     }
     trait_names <- glue::glue('{genes} {metadata$tissue} {data_type_names[[besd_study["data_type"]]]} {interval_loc}')
-  } else if (besd_study["bespoke_parsing"] == "godmc") {
+  } else if (besd_study["bespoke_parsing"] == "methqtl") {
     genes <- NA
     trait_names <- glue::glue('{metadata$tissue} {probes} {data_type_names[[besd_study["data_type"]]]}')
   } else {

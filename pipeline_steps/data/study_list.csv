@@ -19,4 +19,5 @@ cis*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interva
 trans*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,EUR,GRCh38,1.5e-4,common,json,sparse,TRUE
 trans*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,sparse,TRUE
 *,protein,decode,besd,none,/local-scratch/data/hg38/decode,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
-BreastMammaryTissue_chr[2-5]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
+BreastMammaryTissue_chr[2-9]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
+BreastMammaryTissue_chr1[0-3]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,FALSE

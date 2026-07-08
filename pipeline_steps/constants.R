@@ -46,7 +46,7 @@ bespoke_parsing_options <- list(
   none = "none",
   gtex_sqtl = "gtex_sqtl",
   interval_sqtl = "interval_sqtl",
-  godmc = "godmc"
+  methqtl = "methqtl"
 )
 
 data_types <- list(

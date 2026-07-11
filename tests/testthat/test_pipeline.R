@@ -7,7 +7,8 @@ source("pipeline_steps/constants.R")
 # smr --beqtl-summary /some/besd_file  --extract-probe probe.list  --query 1 --make-besd --out subset_of_besd_file
 # where probe.list has the format:
 
-total_studies <- 8
+total_studies_to_process <- 8
+total_studies_processed <- 5
 ld_blocks <- vroom::vroom("tests/data/ld_blocks.tsv", show_col_types = FALSE)
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 coloc_block <- "EUR/1/1170341-1730405"
@@ -29,8 +30,8 @@ test_that("Identify studies to process", {
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = FALSE)
   expect_equal(
     nrow(studies_to_process),
-    total_studies,
-    info = "Studies to process file should have {total_studies} studies"
+    total_studies_to_process,
+    info = "Studies to process file should have {total_studies_to_process} studies"
   )
 })
 
@@ -107,8 +108,8 @@ test_that("Pipeline execution and file validation", {
     expect_equal(nrow(studies), nrow(traits), info = "Number of studies and traits should be equal")
     expect_true(nrow(studies) > 0, info = "Should have at least one study")
     expect_true(all(studies$study_name %in% traits$study_name), info = "All studies should be in traits_processed")
-    expect_equal(nrow(studies), total_studies, info = "Should have {total_studies} studies")
-    expect_equal(nrow(traits), total_studies, info = "Should have {total_studies} traits")
+    expect_equal(nrow(studies), total_studies_processed, info = "Should have {total_studies_processed} studies")
+    expect_equal(nrow(traits), total_studies_processed, info = "Should have {total_studies_processed} traits")
 
     joined_studies_traits <- dplyr::inner_join(studies, traits, by = "study_name")
     expect_true(

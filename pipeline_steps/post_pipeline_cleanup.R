@@ -1,4 +1,5 @@
 source("pipeline_steps/constants.R")
+source("pipeline_steps/study_directory_helpers.R")
 
 parser <- argparser::arg_parser("Post pipeline cleanup")
 # INPUT
@@ -41,13 +42,8 @@ main <- function() {
 }
 
 cleanup_studies_with_no_extractions <- function() {
-  study_dirs <- Sys.glob(glue::glue("{extracted_study_dir}/*"))
-  empty_study_dirs <- Filter(function(e) file.size(glue::glue("{e}/extracted_snps.tsv")) == 0, study_dirs)
-  message("Studies with no extractions that will be cleaned up: ", length(empty_study_dirs))
-  for (empty_study in empty_study_dirs) {
-    system(glue::glue("rm -r {empty_study}"))
-  }
-  return()
+  cleanup_empty_study_directories(dry_run = FALSE)
+  return(invisible(NULL))
 }
 
 main()

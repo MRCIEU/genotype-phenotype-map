@@ -188,11 +188,22 @@ aggregate_data_produced_by_pipeline <- function(
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
 
+  studies_with_extractions <- character(0)
+  if (nrow(extracted_studies) > 0) {
+    studies_with_extractions <- unique(extracted_studies$study)
+  }
+  studies_to_add <- studies_to_process |>
+    dplyr::filter(study_name %in% studies_with_extractions)
+  message(glue::glue(
+    "Adding {nrow(studies_to_add)} of {nrow(studies_to_process)} studies to studies_processed ",
+    "(studies with LD block extractions only)"
+  ))
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types = F)
-    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_process) |> dplyr::distinct()
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_add) |> dplyr::distinct()
   } else {
-    studies_processed <- studies_to_process
+    studies_processed <- studies_to_add
   }
 
   if (file.exists(traits_processed_file)) {
@@ -266,6 +277,17 @@ create_study_extractions <- function(pipeline_data) {
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[
     match(finemapped_studies$study, pipeline_data$studies_processed$study_name)
   ]
+
+  study_data_types <- pipeline_data$studies_processed |>
+    dplyr::select(study_name, data_type, gene)
+
+  finemapped_studies <- finemapped_studies |>
+    dplyr::left_join(study_data_types, by = c("study" = "study_name")) |>
+    dplyr::mutate(
+      situated_gene = dplyr::if_else(data_type == data_types$methylation, gene, NA_character_),
+      known_gene = dplyr::if_else(data_type == data_types$methylation, NA_character_, known_gene)
+    ) |>
+    dplyr::select(-data_type, -gene)
 
   rare_genes_study_map <- pipeline_data$studies_processed |>
     dplyr::filter(variant_type != variant_types$common & !is.na(gene)) |>

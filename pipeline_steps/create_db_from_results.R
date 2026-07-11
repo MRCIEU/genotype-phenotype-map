@@ -222,10 +222,12 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::left_join(gene_subset_gene_name, by = c("gene" = "gene")) |>
     dplyr::mutate(
       gene_id = dplyr::case_when(
+        data_type == data_types$methylation ~ NA_integer_,
         !is.na(gene_id_from_ensembl_id) ~ gene_id_from_ensembl_id,
         is.na(gene_id_from_ensembl_id) & !is.na(gene_id_from_name) ~ gene_id_from_name,
         TRUE ~ NA_integer_
-      )
+      ),
+      gene = dplyr::if_else(data_type == data_types$methylation, NA_character_, gene)
     ) |>
     dplyr::filter(
       study_name %in% studies_db$study_extractions$data$study &
@@ -387,7 +389,7 @@ format_study_extractions <- function(study_extractions, studies_db) {
 
 format_clustered_colocs <- function(clustered_colocs, studies_db) {
   study_extractions_subset <- studies_db$study_extractions$data |>
-    dplyr::select(id, study_id, unique_study_id, ld_block_id) |>
+    dplyr::select(id, study_id, unique_study_id, ld_block_id, situated_gene_id) |>
     dplyr::rename(study_extraction_id = id)
 
   variant_annotations_subset <- studies_db$variant_annotations$data |>

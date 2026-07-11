@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: bug/pipeline-stuck-memory
+SUCCESS: All tests passed on branch: feature/deal-with-empty-studies

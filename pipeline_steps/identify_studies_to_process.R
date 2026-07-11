@@ -78,6 +78,7 @@ write_studies_to_process <- function(studies_to_process) {
   output_file <- glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv")
   print(output_file)
   vroom::vroom_write(studies_to_process, output_file)
+  return()
 }
 
 validate_study_list <- function(study_list) {

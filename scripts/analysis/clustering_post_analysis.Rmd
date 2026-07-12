@@ -1,6 +1,6 @@
 ---
 params:
-  ld_block: "EUR/1/153358890-156424168"
+  ld_block: "EUR/1/115663032-117574557"
 output:
   html_document:
     self_contained: true
@@ -32,7 +32,6 @@ truthset_file <- "data/tipairs_launched_truthset.tsv"
 
 message("LD Block: ", ld_block)
 message("Block data dir: ", block_data_dir)
-
 ```
 
 ```{r read_in_data}

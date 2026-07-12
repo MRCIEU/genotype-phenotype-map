@@ -481,7 +481,8 @@ process_single_block <- function(block, gwas_info) {
         standardised = glue::glue("{ld_info$ld_block_data}/standardisation_complete"),
         imputed = glue::glue("{ld_info$ld_block_data}/imputation_complete"),
         finemapped = glue::glue("{ld_info$ld_block_data}/finemapping_complete"),
-        coloc = glue::glue("{ld_info$ld_block_data}/coloc_complete")
+        coloc = glue::glue("{ld_info$ld_block_data}/coloc_complete"),
+        clustering = glue::glue("{ld_info$ld_block_data}/clustering_complete")
       )
 
       flog.info(paste(gwas_info$metadata$guid, "Standardising regions for block:", block))
@@ -529,7 +530,7 @@ process_single_block <- function(block, gwas_info) {
         compare_ids_arg <- ""
       }
       coloc_regions <- glue::glue(
-        "Rscript coloc_and_cluster_studies_in_ld_block.R",
+        "Rscript coloc_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$coloc}",
         " --worker_guid {gwas_info$metadata$guid}",
@@ -539,6 +540,18 @@ process_single_block <- function(block, gwas_info) {
       )
       output <- system(coloc_regions, wait = T, intern = T)
       check_pipeline_step_complete(output_files$coloc, block, output)
+      gc()
+
+      global_bfdr_file <- global_bfdr_file_path()
+      cluster_regions <- glue::glue(
+        "Rscript cluster_coloc_results.R",
+        " --ld_block {block} ",
+        " --completed_output_file {output_files$clustering}",
+        " --global_bfdr_file {global_bfdr_file}",
+        " 2>&1"
+      )
+      output <- system(cluster_regions, wait = T, intern = T)
+      check_pipeline_step_complete(output_files$clustering, block, output)
 
       flog.info(paste(gwas_info$metadata$guid, "Time taken for block:", block, diff_time_taken(start_time)))
       return(block)

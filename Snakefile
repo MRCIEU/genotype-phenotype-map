@@ -46,12 +46,17 @@ standardisation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/standardisation_comple
 imputation_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/imputation_complete'
 finemapping_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/finemapping_complete'
 coloc_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/coloc_complete'
+clustering_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/clustering_complete'
 compare_rare_pattern = LD_BLOCK_DATA_DIR + '{ld_block}/compare_rare_complete'
+global_bfdr_complete_file = PIPELINE_METADATA + 'global_bfdr_complete'
 
 ### OUTPUT DATA FILES
 studies_processed_file = RESULTS_DIR + 'latest/studies_processed.tsv.gz'
 traits_processed_file = RESULTS_DIR + 'latest/traits_processed.tsv.gz'
 ld_blocks_to_process = f'{PIPELINE_METADATA}updated_ld_blocks_to_colocalise.tsv'
+
+block_list_name = os.path.basename(BLOCK_LIST).replace('_block_list.csv', '') if BLOCK_LIST else ''
+global_bfdr_file = f'{PIPELINE_METADATA}global_bfdr{"_" + block_list_name if block_list_name else ""}.tsv'
 
 def _under_version(*parts):
     return os.path.join(version_results_dir, *parts)
@@ -84,7 +89,9 @@ rule all:
         expand(imputation_pattern, ld_block=ld_blocks),
         expand(finemapping_pattern, ld_block=ld_blocks),
         expand(coloc_pattern, ld_block=ld_blocks),
+        expand(clustering_pattern, ld_block=ld_blocks),
         expand(compare_rare_pattern, ld_block=ld_blocks),
+        global_bfdr_complete_file,
         coloc_pairwise_results,
         coloc_clustered_results,
         rare_results,
@@ -218,9 +225,51 @@ rule coloc_rule:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript coloc_and_cluster_studies_in_ld_block.R \
+            command = f"Rscript coloc_studies_in_ld_block.R \
                 --ld_block {ld_block} \
                 --completed_output_file {output} \
+                {block_list_arg}"
+        subprocess.run(command, shell=True)
+
+rule calculate_global_bfdr:
+    name: 'calculate_global_bfdr'
+    input: expand(coloc_pattern, ld_block=ld_blocks)
+    output:
+        global_bfdr_tsv=global_bfdr_file,
+        global_bfdr_complete=temporary(global_bfdr_complete_file)
+    threads: 1
+    params:
+        block_list_arg=block_list_arg,
+    shell:
+        """
+        Rscript calculate_global_bfdr.R \
+            --output_file {output.global_bfdr_tsv} \
+            --completed_output_file {output.global_bfdr_complete} \
+            {params.block_list_arg}
+        """
+
+rule clustering_rule:
+    name: f'cluster_per_ld_block'
+    retries: 1
+    threads: 2
+    input:
+        global_bfdr = global_bfdr_file,
+        global_bfdr_complete = global_bfdr_complete_file
+    output: temporary(clustering_pattern)
+    params:
+        ld_dir=lambda wildcards, output: os.path.dirname(output[0])
+    run:
+        ld_blocks = pd.read_csv(ld_blocks_to_process, sep='\t')
+        skip_block = len(ld_blocks[ld_blocks.data_dir == params.ld_dir]) == 0
+
+        if skip_block:
+            command = f"mkdir -p $(dirname {output}) && touch {output}"
+        else:
+            ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
+            command = f"Rscript cluster_coloc_results.R \
+                --ld_block {ld_block} \
+                --completed_output_file {output} \
+                --global_bfdr_file {input.global_bfdr} \
                 {block_list_arg}"
         subprocess.run(command, shell=True)
 
@@ -247,7 +296,7 @@ rule compare_rare_rule:
         subprocess.run(command, shell=True)
 
 rule compile_results:
-    input: expand(coloc_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
+    input: expand(clustering_pattern, ld_block=ld_blocks), expand(compare_rare_pattern, ld_block=ld_blocks)
     threads: 1
     params:
         block_list_arg=block_list_arg,

@@ -1,6 +1,22 @@
 source("../pipeline_steps/constants.R")
 options(dplyr.width = Inf)
 
+new_coloc_pairs_files <- function() {
+  ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  parallel::mclapply(ld_info$block, mc.cores = 30, function(block) {
+    print(block)
+    coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz")
+    if (!file.exists(coloc_pairs_file)) return()
+    coloc_pairs <- vroom::vroom(coloc_pairs_file, show_col_types = F) |>
+      dplyr::filter(h4 < 0.3)
+    vroom::vroom_write(coloc_pairs, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_bfdr.tsv.gz"))
+    return(invisible(NULL))
+  })
+  return(invisible(NULL))
+}
 
 update_files_with_lbfs <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
@@ -2061,4 +2077,4 @@ print_alleles_to_flip <- function() {
 }
 
 
-populate_beta_in_finemapped_files()
+new_coloc_pairs_files()

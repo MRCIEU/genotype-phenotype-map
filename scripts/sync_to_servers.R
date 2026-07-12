@@ -164,6 +164,16 @@ sync_upload_server_data <- function() {
     flags = "-avu --mkpath",
   )
 
+  message("Bayesian FDR thresholds to upload server")
+  bfdr_files <- list.files(file.path(data_dir, "pipeline_metadata"), pattern = "global_bfdr_.*tsv$", full.names = TRUE)
+  for (bfdr_file in bfdr_files) {
+    run_rsync(
+      src = bfdr_file,
+      server = oracle_upload_server,
+      dest = file.path(upload_server_data_dir, "pipeline_metadata", basename(bfdr_file))
+    )
+  }
+
   message("liftover data to oracle server")
   run_rsync(
     src = liftover_dir,

@@ -1,0 +1,66 @@
+---
+title: "Coloc Priors Analysis"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+source("../../pipeline_steps/constants.R")
+
+# 1. Setup your inputs
+p12_original <- 5e-6
+
+new_priors <- c(
+  liberal = 1e-5,
+  semi_liberal = 5e-5,
+  original = 5e-6,
+  conservative = 1e-6,
+  very_conservative = 1e-7,
+  ultra_conservative = 1e-8
+)
+
+# 2. Vectorized function to recalculate PP.H4
+# This assumes pp_hX are columns in your 'df'
+recalc_h4_vec <- function(df, p_old, p_new) {
+  ratio <- p_new / p_old
+  new_h4_unnorm <- df$PP.H4.abf * ratio
+  sum_others <- df$PP.H0.abf + df$PP.H1.abf + df$PP.H2.abf + df$PP.H3.abf
+
+  new_h4 <- new_h4_unnorm / (sum_others + new_h4_unnorm)
+  return(new_h4)
+}
+```
+
+```{r load-data, include=FALSE}
+coloc_pairwise_results_file <- glue::glue("{results_dir}/1.0.0/coloc_pairwise_results.tsv.gz")
+my_data <- vroom::vroom(coloc_pairwise_results_file, show_col_types = FALSE)
+sensitivity_results <- lapply(names(new_priors), function(p_name) {
+  p_val <- new_priors[[p_name]]
+  new_h4_values <- recalc_h4_vec(my_data, p12_original, p_val)
+  data.frame(
+    prior_name = p_name,
+    prior_val = p_val,
+    count_passing = sum(new_h4_values > 0.8, na.rm = TRUE)
+  )
+}) |>
+  bind_rows()
+```
+
+```{r plot-priors, echo=FALSE, fig.cap = "Sensitivity of colocalization calls (PP.H4 > 0.8) to the p12 prior."}
+ggplot(sensitivity_results, aes(x = prior_val, y = count_passing)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(size = 3) +
+  scale_x_log10(breaks = new_priors, labels = names(new_priors)) +
+  theme_minimal() +
+  labs(
+    title = "Colocalization Sensitivity to p12 Prior",
+    x = "Prior Probability (p12) - Log Scale",
+    y = "Number of Traits with PP.H4 > 0.8",
+    caption = "Original prior was 5e-6"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```

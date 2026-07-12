@@ -18,6 +18,15 @@ minimum_extraction_size_for_sparse_coverage <- 4
 
 posterior_prob_h4_threshold <- 0.8
 posterior_prob_threshold_minimum <- 0.5
+target_global_bfdr <- 0.05
+
+global_bfdr_file_path <- function(block_list_path = NA) {
+  block_list_name <- get_block_list_name(block_list_path)
+  if (!is.null(block_list_name)) {
+    return(glue::glue("{data_dir}pipeline_metadata/global_bfdr_{block_list_name}.tsv"))
+  }
+  return(glue::glue("{data_dir}pipeline_metadata/global_bfdr.tsv"))
+}
 
 
 gpm_website_data <- list(

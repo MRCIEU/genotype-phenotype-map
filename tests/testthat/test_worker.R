@@ -24,6 +24,10 @@ setup({
     glue::glue("{data_dir}/gwas_upload_test_setup/ld_blocks/gwas_upload/{study_to_compare}"),
     glue::glue("{data_dir}/ld_blocks/gwas_upload/{study_to_compare}")
   )
+
+  global_bfdr_file <- global_bfdr_file_path()
+  dir.create(dirname(global_bfdr_file), recursive = TRUE, showWarnings = FALSE)
+  file.copy("tests/data/global_bfdr.tsv", global_bfdr_file, overwrite = TRUE)
 })
 
 test_that("Pipeline worker runs for TSV file", {
@@ -50,17 +54,28 @@ test_that("Pipeline worker runs for TSV file", {
   update_directories_for_worker(gwas_info$metadata$guid)
   expect_true(dir.exists(extracted_study_dir), info = "GWAS upload directory should exist")
   expect_true(dir.exists(ld_block_data_dir), info = "LD block data directory should exist")
+
+  global_bfdr_file <- global_bfdr_file_path()
+  expect_true(file.exists(global_bfdr_file), info = glue::glue("Global BFDR file should exist: {global_bfdr_file}"))
+  global_bfdr <- vroom::vroom(global_bfdr_file, show_col_types = FALSE)
+  expect_equal(nrow(global_bfdr), 1, info = "Global BFDR file should contain one row")
+  expect_true(global_bfdr$threshold >= posterior_prob_threshold_minimum, info = "Global BFDR threshold should be valid")
+
   ld_block_files <- c(
     glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/standardised_studies.tsv"),
     glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv"),
     glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv"),
     glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz")
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_complete"),
+    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/clustering_complete")
   )
   for (file in ld_block_files) {
     expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))
-    results <- vroom::vroom(file, show_col_types = FALSE)
-    expect_true(nrow(results) > 0, info = glue::glue("Results file should have rows: {file}"))
+    if (!grepl("_complete$", file)) {
+      results <- vroom::vroom(file, show_col_types = FALSE)
+      expect_true(nrow(results) > 0, info = glue::glue("Results file should have rows: {file}"))
+    }
   }
 
   compiled_coloc_pairwise_results <- vroom::vroom(

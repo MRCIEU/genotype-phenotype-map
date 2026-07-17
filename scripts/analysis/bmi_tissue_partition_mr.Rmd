@@ -7,7 +7,6 @@ output:
 ---
 
 
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE)
 library(data.table)
@@ -15,8 +14,9 @@ library(dplyr)
 library(tibble)
 library(tidyr)
 library(ggplot2)
+library(ggrepel)
+library(pheatmap)
 library(UpSetR)
-#pak::pak("MRCIEU/gpmapr") # update 
 library(gpmapr)
 library(TwoSampleMR)
 library(MVMR)
@@ -26,20 +26,12 @@ library(ieugwasr)
 
 
 ```{r, include=FALSE}
-
-out.dir <- "/Users/rj18633/OneDrive - University of Bristol/postdoc/gp_map/results/vignettes/repo_rerun/"
-
-```
+source("../../pipeline_steps/constants.R")
+Sys.setenv(OPENGWAS_JWT = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImFwaS1qd3QiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJhcGkub3Blbmd3YXMuaW8iLCJhdWQiOiJhcGkub3Blbmd3YXMuaW8iLCJzdWIiOiJhbmRyZXcuZWxtb3JlQGJyaXN0b2wuYWMudWsiLCJpYXQiOjE3ODM2OTEyNzksImV4cCI6MTc4NDkwMDg3OX0.alK-tDmhCUbt83q-g2_PVfINbFYSMZ7ecU8QKJh1xuFpd_2nML3t0YCbK-Wasv1rfoqLrdtBoHAL-sYDMHiNXo-_VUMFQnVmsWy2cXZMD3xMEuClf5bx7fci0Khq71V1uTPlgqF_RyHhoo3L9mdWY1qEMwc9IEzhC2tgvVr70jK9mntgDZf3GH4mRgGvCLMvpbC8p4pV-7dUArIvyHtdEuEJkY1aUQ2s-XIewcBuO87G9vuV0wapyTVqBRvx39riajhvRxnkfuhkT0BouG59lZbLHMRDvMtMDgYdsO6A2kduf89KLXtTWzlv1YzjNb4sj78X1LUQFAynM6TEaWCxDA")
 
 
-Search BMI....
+out.dir <- file.path(results_dir, "1.0.0", "analysis/")
 
-```{r, include=TRUE} 
-search <- search_options_api()
-search <- search$search_terms
-bmi_deets <- search[which(search$type_id == 1992),]
-
-print(bmi_deets)
 ```
 
 Query BMI... 
@@ -94,8 +86,11 @@ annotate_coloc <- function(coloc_res, coloc_groups) {
     left_join(
       coloc_groups %>%
         select(study_extraction_id, trait_name, source_name, tissue) %>%
-        rename(trait_a = trait_name,
-              source_a = source_name),
+        rename(
+          trait_a = trait_name,
+          source_a = source_name,
+          tissue_a = tissue
+        ),
       by = c("study_extraction_a_id" = "study_extraction_id")
     )
   
@@ -104,8 +99,11 @@ annotate_coloc <- function(coloc_res, coloc_groups) {
     left_join(
       coloc_groups %>%
         select(study_extraction_id, trait_name, source_name, tissue) %>%
-        rename(trait_b = trait_name,
-              source_b = source_name),
+        rename(
+          trait_b = trait_name,
+          source_b = source_name,
+          tissue_b = tissue
+        ),
       by = c("study_extraction_b_id" = "study_extraction_id")
     )
   
@@ -113,9 +111,6 @@ annotate_coloc <- function(coloc_res, coloc_groups) {
 }
 
 bmi_coloc_annotated <- annotate_coloc(bmi_coloc_res, bmi_cg)
-
-colnames(bmi_coloc_annotated)[c(11,14)] <- c("tissue_a", "tissue_b")
-
 
 ```
 
@@ -275,13 +270,13 @@ n_intersections
 #write.table(tail_distribution, paste0(out.dir, "summary_of_upset_dat.txt"), col.names = T, row.names = FALSE, quote = FALSE, sep = "\t")
 
 # 
-# tiff(
-#   filename = file.path(out.dir, "bmi_upset.tiff"),
-#   width = 13,
-#   height = 6,
-#   units = "in",
-#   res = 300
-# )
+tiff(
+  filename = file.path(out.dir, "bmi_upset.tiff"),
+  width = 13,
+  height = 6,
+  units = "in",
+  res = 300
+)
 
 print(
   upset(
@@ -301,11 +296,6 @@ print(
 ```
 
 Characterize the trait composition of lead tissues... 
-
-```{r}
-
-
-```
 
 Dig in to the complex trait profile of putative tissue partitioned exposure vars.... 
 - PCA analysis 
@@ -327,7 +317,10 @@ pheno_dat <- pheno_dat %>%
   filter(is.na(tissue_a))
 srcs1 <- c("GoDMC", "eQTLGen", "UK Biobank Proteomics", "OneK1K")
 pheno_dat <- pheno_dat[!(pheno_dat$source_b %in% srcs1),]
-pheno_dat1 <- pheno_dat[,c(1,2,3,6,9,10,12,13)]
+pheno_dat1 <- pheno_dat[, c(
+  "variant_id", "study_extraction_a_id", "study_extraction_b_id", "h4",
+  "trait_a", "source_a", "tissue_a", "trait_b", "source_b", "tissue_b"
+)]
 
 ## harmonise traits so bmi always a: 
 idx <- pheno_dat1$trait_b == "Body mass index" & pheno_dat1$trait_a != "Body mass index"
@@ -342,7 +335,8 @@ for (x in cols) {
   pheno_dat1[idx, b] <- tmp
 }
 
-pheno_dat11 <- na.omit(pheno_dat1)
+pheno_dat11 <- pheno_dat1 %>%
+  filter(!is.na(variant_id), !is.na(trait_b))
 
 ## rm repeat bmi traits  
 rmbmi <- c("Body mass index (UKB data field 21001)", "Body mass index (BMI)")
@@ -352,7 +346,7 @@ pheno_dat11 <- pheno_dat11[!(pheno_dat11$trait_b %in% rmbmi),]
 NROW(unique(pheno_dat11$trait_b))  
 
 ## complex trait profile per tissue  
-df2 <- df1[,c(1,2,3,4,5,6)]
+df2 <- df[, c("tissue", "gene", "source", "variant_id", "display_snp", "rsid")]
 
 ## tissue by trait matrix 
 df2_sub <- df2 %>%
@@ -361,7 +355,7 @@ df2_sub <- df2 %>%
 
 
 tissue_trait_counts <- df2_sub %>%
-  inner_join(pheno_sub, by = "variant_id") %>%
+  inner_join(pheno_dat11, by = "variant_id") %>%
   count(tissue, trait_b) %>%
   pivot_wider(
     names_from = trait_b,
@@ -470,14 +464,14 @@ pcap1 <- ggplot(
 
 pcap1
 
-# ggsave(
-#   filename = paste0(out.dir, "bmi_tpmr_trait_profile_pca_quadrants.tiff"),
-#   plot = pcap1,
-#   width = 9,
-#   height = 6,
-#   units = "in",
-#   dpi = 300       
-# )
+ggsave(
+  filename = paste0(out.dir, "bmi_tpmr_trait_profile_pca_quadrants.tiff"),
+  plot = pcap1,
+  width = 9,
+  height = 6,
+  units = "in",
+  dpi = 300       
+)
 
 ```
 
@@ -536,17 +530,17 @@ p2 <- pheatmap(
 p2
 
 ## save plot 
-# pheatmap(
-#   t(trait_z),
-#   cluster_cols = TRUE,
-#   cluster_rows = TRUE,
-#   show_colnames = TRUE,
-#   show_rownames = FALSE,
-#   filename = paste0(out.dir, "bmi_tissue_traits_z_heatmap.png"),
-#   width = 8,
-#   height = 10
-# )
-# 
+pheatmap(
+  t(trait_z),
+  cluster_cols = TRUE,
+  cluster_rows = TRUE,
+  show_colnames = TRUE,
+  show_rownames = FALSE,
+  filename = paste0(out.dir, "bmi_tissue_traits_z_heatmap.png"),
+  width = 8,
+  height = 10
+)
+
 
 
 #### enriched traits per tissue 
@@ -576,7 +570,7 @@ top_traits_tbl <- lapply(rownames(trait_z), function(tissue) {
 top_traits_tbl
 
 
-#write.table(top_traits_tbl, paste0(out.dir, "bmi_tissue_traits_z_rep_traits.txt"), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
+write.table(top_traits_tbl, paste0(out.dir, "bmi_tissue_traits_z_rep_traits.txt"), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
 
 
 ```
@@ -595,8 +589,13 @@ df <- tp_snps[which(tp_snps$tissue %in% top_tissues),]
 
 
 # update effect allele coding - effect allele is second 
-df$other_allele <- sub(".+ ([A-Z]+)/([A-Z]+)$", "\\1", df$display_snp)
-df$effect_allele  <- sub(".+ ([A-Z]+)/([A-Z]+)$", "\\2", df$display_snp)
+alleles <- utils::strcapture(
+  ".+ ([A-Z]+)/([A-Z]+)$",
+  df$display_snp,
+  proto = list(other_allele = character(), effect_allele = character())
+)
+df$other_allele <- alleles$other_allele
+df$effect_allele <- alleles$effect_allele
 
 
 brain1 <-  df[which(df$tissue == top_tissues[1]),]
@@ -667,82 +666,83 @@ Run example tpmr....
 
 
 ``` {r mr_all}
+opengwas_jwt <- get_opengwas_jwt()
 
-  
-  exp_name <- top_tissues[2]
-  exp_dat <- format_data(expdf, type = 'exposure')
-  
-  # traits to test against
-  traits <- c('ieu-a-7', 'ebi-a-GCST006414', 'ebi-a-GCST009541', 'ebi-a-GCST006906', 'finn-b-I9_PAD')
-  
-  
-  results_file <- paste0(out.dir, "tpmr_", exp_name, "_results.txt")
-  fstats_file  <- paste0(out.dir, "tpmr_", exp_name, "_fstats.txt")
-  
+exp_name <- top_tissues[2]
+exp_dat <- format_data(expdf, type = 'exposure')
 
-  # loop over traits 
-  for (i in traits)  {
-    
-    #i <- traits[1]
-    
-    ## MVMR
-    outcome_dat <- extract_outcome_data(exp_dat$SNP, i)
-    
-    mvdat <- mv_harmonise_data(exp_dat, outcome_dat, harmonise_strictness = 1)
-    
-    ### Conditional F-stats 
-    F.data <- format_mvmr(
-      BXGs = mvdat$exposure_beta[, c(1, 2)],
-      BYG = mvdat$outcome_beta,
-      seBXGs = mvdat$exposure_se[, c(1, 2)],
-      seBYG = mvdat$outcome_se,
-      RSID = row.names(mvdat$exposure_beta)
-    )
-    
-    pheno_mat <- cor(mvdat$exposure_beta[, c(1, 2)])
-    seBXGs <- mvdat$exposure_se[, c(1, 2)]
-    pos <- phenocov_mvmr(pheno_mat, seBXGs) 
-    fstats <- strength_mvmr(r_input = F.data, gencov = pos)[1, ]
-    
-    res <- mv_multiple(mvdat)
-    res <- res$result
-    res$OR <- exp(res$b)
-    res$lower_CI <- exp(res$b - (1.96 * res$se))
-    res$upper_CI <- exp(res$b + (1.96 * res$se)) 
-    
-    #
-    write.table(
-      res,
-      file = results_file,
-      col.names = !file.exists(results_file),
-      row.names = FALSE,
-      quote = FALSE,
-      sep = "\t",
-      append = TRUE
-    )
-    
-    write.table(
-      fstats,
-      file = fstats_file,
-      col.names = !file.exists(fstats_file),
-      row.names = FALSE,
-      quote = FALSE,
-      sep = "\t",
-      append = TRUE
-    )
-  }
-#}
+# traits to test against
+traits <- c('ieu-a-7', 'ebi-a-GCST006414', 'ebi-a-GCST009541', 'ebi-a-GCST006906', 'finn-b-I9_PAD')
 
+
+results_file <- paste0(out.dir, "tpmr_", exp_name, "_results.txt")
+fstats_file  <- paste0(out.dir, "tpmr_", exp_name, "_fstats.txt")
+
+
+# loop over traits
+for (i in traits)  {
+  #i <- traits[1]
+  ## MVMR
+  outcome_dat <- extract_outcome_data(
+    snps = exp_dat$SNP,
+    outcomes = i,
+    opengwas_jwt = opengwas_jwt,
+    splitsize = 25,
+    proxy_splitsize = 25
+  )
+  saveRDS(outcome_dat, file = paste0(out.dir, "outcome_dat_", i, ".rds"))
+  mvdat <- mv_harmonise_data(exp_dat, outcome_dat, harmonise_strictness = 1)
+  ### Conditional F-stats 
+  F.data <- format_mvmr(
+    BXGs = mvdat$exposure_beta[, c(1, 2)],
+    BYG = mvdat$outcome_beta,
+    seBXGs = mvdat$exposure_se[, c(1, 2)],
+    seBYG = mvdat$outcome_se,
+    RSID = row.names(mvdat$exposure_beta)
+  )
+  
+  pheno_mat <- cor(mvdat$exposure_beta[, c(1, 2)])
+  seBXGs <- mvdat$exposure_se[, c(1, 2)]
+  pos <- phenocov_mvmr(pheno_mat, seBXGs) 
+  fstats <- strength_mvmr(r_input = F.data, gencov = pos)[1, ]
+  
+  res <- mv_multiple(mvdat)
+  res <- res$result
+  res$OR <- exp(res$b)
+  res$lower_CI <- exp(res$b - (1.96 * res$se))
+  res$upper_CI <- exp(res$b + (1.96 * res$se)) 
+  
+  #
+  write.table(
+    res,
+    file = results_file,
+    col.names = !file.exists(results_file),
+    row.names = FALSE,
+    quote = FALSE,
+    sep = "\t",
+    append = TRUE
+  )
+  
+  write.table(
+    fstats,
+    file = fstats_file,
+    col.names = !file.exists(fstats_file),
+    row.names = FALSE,
+    quote = FALSE,
+    sep = "\t",
+    append = TRUE
+  )
+}
 
 ```
 
 
 Add separate analysis for T2D 
 
-```{r mr}
+```{r mr, eval=FALSE}
 
 #exp_dat <- format_data(expdf, type='exposure')
-tmp <- load("/Volumes/MRC-IEU-research/projects/ieu2/p1/131/working/results/inclusion_criteria/outcome_gwas/T2D_Mahajan2018.RData")
+tmp <- load(file.path(data_dir, "T2D_Mahajan2018.RData"))
 
 
 

@@ -11,7 +11,7 @@ coloc_base_p1 <- 1e-4
 coloc_base_p2 <- 1e-4
 coloc_base_p12 <- 5e-6
 
-parser <- argparser::arg_parser("Colocalise studies per LD block (pairwise results only)")
+parser <- argparser::arg_parser("Colocalise studies per LD block")
 parser <- argparser::add_argument(
   parser,
   "--ld_block",
@@ -349,14 +349,14 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
   result <- coloc::coloc.bf_bf(
     bf1 = first_lbf,
     bf2 = second_lbf,
-    p1 = dynamic_priors$p1,
-    p2 = dynamic_priors$p2,
-    p12 = dynamic_priors$p12
+    p1 = coloc_base_p1,
+    p2 = coloc_base_p2,
+    p12 = coloc_base_p12 
   )
   result$summary$h4 <- result$summary$PP.H4.abf
-  result$summary$dynamic_p1 <- dynamic_priors$p1
-  result$summary$dynamic_p2 <- dynamic_priors$p2
-  result$summary$dynamic_p12 <- dynamic_priors$p12
+  result$summary$dynamic_p1 <- coloc_base_p1
+  result$summary$dynamic_p2 <- coloc_base_p2
+  result$summary$dynamic_p12 <- coloc_base_p12
   result$summary$nsnps <- nsnps
   coloc_results <- result$summary
   return(coloc_results)
@@ -406,7 +406,8 @@ calculate_dynamic_coloc_priors <- function(nsnps) {
   p12 <- min(target_h4 / nsnps, p1, p2, 0.99 / nsnps)
   p12 <- max(p12, .Machine$double.eps)
 
-  return(list(p1 = p1, p2 = p2, p12 = p12))
+  # return(list(p1 = p1, p2 = p2, p12 = p12))
+  return(list(p1 = coloc_base_p1, p2 = coloc_base_p2, p12 = coloc_base_p12))
 }
 
 resolve_worker_file_paths <- function(finemapped_studies) {

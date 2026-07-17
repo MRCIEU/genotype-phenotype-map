@@ -1,18 +1,31 @@
 source("../pipeline_steps/constants.R")
 options(dplyr.width = Inf)
 
+move_coloc_pairs_files <- function() {
+  ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+  blocks <- ld_info$block
+  for (block in blocks) {
+    print(block)
+    coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12.tsv.gz")
+    if (!file.exists(coloc_pairs_file)) return()
+    file.rename(coloc_pairs_file, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12_1e-5.tsv.gz"))
+  }
+}
+
 new_coloc_pairs_files <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
   ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
 
-  parallel::mclapply(ld_info$block, mc.cores = 30, function(block) {
+  parallel::mclapply(ld_info$block, mc.cores = 70, function(block) {
     print(block)
     coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz")
     if (!file.exists(coloc_pairs_file)) return()
     coloc_pairs <- vroom::vroom(coloc_pairs_file, show_col_types = F) |>
-      dplyr::filter(h4 < 0.3)
-    vroom::vroom_write(coloc_pairs, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_bfdr.tsv.gz"))
+      dplyr::filter(h4 < 0.6)
+    vroom::vroom_write(coloc_pairs, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12.tsv.gz"))
     return(invisible(NULL))
   })
   return(invisible(NULL))
@@ -2077,4 +2090,4 @@ print_alleles_to_flip <- function() {
 }
 
 
-new_coloc_pairs_files()
+move_coloc_pairs_files()

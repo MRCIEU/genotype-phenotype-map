@@ -1,13 +1,13 @@
 ---
 params:
-  ld_block: "EUR/1/115663032-117574557"
+  ld_block: "EUR/1/153358890-156424168"
 output:
   html_document:
     self_contained: true
 title: "Clustering report LD Block: `r params$ld_block`"
 ---
 
-```{r setup, message = FALSE}
+```{r setup, echo = FALSE}
 knitr::opts_chunk$set(echo = FALSE, fig.align = "center", warning = F)
 
 library(igraph)
@@ -23,11 +23,11 @@ h4_threshold <- posterior_prob_h4_threshold
 subgraph_density_theshold <- 0.6
 
 finemapped_file <- file.path(block_data_dir, "finemapped_studies.tsv")
-coloc_file <- file.path(block_data_dir, "coloc_pairwise_results.tsv.gz")
-cluster_obj <- file.path(block_data_dir, "igraph_clustered_results.rds")
+coloc_file <- file.path(block_data_dir, "coloc_pairwise_results_bfdr.tsv.gz")
+cluster_obj <- file.path(block_data_dir, "igraph_clustered_results_1_0_0.rds")
 problemsnp_file <- file.path(block_data_dir, "problematic_finemapped_snps.tsv")
 
-studies_file <- file.path(current_results_dir, "studies_processed.tsv.gz")
+studies_file <- file.path(results_dir, "1.0.0", "studies_processed.tsv.gz")
 truthset_file <- "data/tipairs_launched_truthset.tsv"
 
 message("LD Block: ", ld_block)
@@ -54,6 +54,7 @@ if (file.exists(problemsnp_file)) {
   problem_snps <- data.frame()
 }
 ```
+
 
 ```{r load_truthset}
 

@@ -544,7 +544,7 @@ process_single_block <- function(block, gwas_info) {
 
       global_bfdr_file <- global_bfdr_file_path()
       cluster_regions <- glue::glue(
-        "Rscript cluster_coloc_results.R",
+        "Rscript cluster_studies_in_ld_block.R",
         " --ld_block {block} ",
         " --completed_output_file {output_files$clustering}",
         " --global_bfdr_file {global_bfdr_file}",

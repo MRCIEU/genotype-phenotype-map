@@ -565,7 +565,7 @@ format_pleiotropy_scores <- function(studies_db) {
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {
-  pairwise_colocs <- data.table::fread(file.path(args$results_dir, "coloc_pairwise_results.tsv.gz"))
+  pairwise_colocs <- data.table::fread(file.path(args$results_dir, "coloc_pairwise_results_bfdr.tsv.gz"))
   pairwise_colocs <- pairwise_colocs[!is.na(PP.H4.abf) & ignore == FALSE]
   print(paste("Found", nrow(pairwise_colocs), "pairwise colocs"))
 

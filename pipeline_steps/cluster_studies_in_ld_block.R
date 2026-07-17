@@ -34,6 +34,18 @@ args <- argparser::parse_args(parser)
 
 min_internal_degree_percentage <- 0.05
 
+cluster_output_paths <- function(ld_block_data, block_list_path = NA) {
+  block_list_name <- get_block_list_name(block_list_path)
+  block_list_suffix <- if (is.null(block_list_name)) "" else glue::glue("_{block_list_name}")
+
+  list(
+    pairwise = glue::glue("{ld_block_data}/coloc_pairwise_results.tsv.gz"),
+    new_pairwise = glue::glue("{ld_block_data}/coloc_pairwise_results_5e-6_no_bfdr{block_list_suffix}.tsv.gz"),
+    clustered = glue::glue("{ld_block_data}/clustered_results_5e-6_no_bfdr{block_list_suffix}.tsv.gz"),
+    igraph = glue::glue("{ld_block_data}/igraph_clustered_results_5e-6_no_bfdr{block_list_suffix}.rds")
+  )
+}
+
 main <- function() {
   start_time <- Sys.time()
 
@@ -42,14 +54,7 @@ main <- function() {
   h4_threshold <- read_global_bfdr_threshold(args$global_bfdr_file, args$block_list)
   message(glue::glue("{args$ld_block}: Clustering with global H4 threshold {signif(h4_threshold, 3)}"))
 
-  coloc_clustered_results_file <- glue::glue("{ld_info$ld_block_data}/coloc_clustered_results.tsv.gz")
-  block_list_name <- NULL
-  if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
-    block_list_name <- get_block_list_name(args$block_list)
-    coloc_clustered_results_file <- glue::glue(
-      "{ld_info$ld_block_data}/coloc_clustered_results_{block_list_name}.tsv.gz"
-    )
-  }
+  output_paths <- cluster_output_paths(ld_info$ld_block_data, args$block_list)
 
   block <- vroom::vroom(
     glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"),
@@ -58,7 +63,6 @@ main <- function() {
     dplyr::filter(data_dir == ld_info$ld_block_data)
 
   finemapped_file <- glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
-  coloc_results_file <- glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz")
 
   finemapped_studies <- if (file.exists(finemapped_file)) {
     vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = FALSE) |>
@@ -67,10 +71,26 @@ main <- function() {
     data.frame()
   }
 
-  coloc_results <- if (file.exists(coloc_results_file)) {
-    vroom::vroom(coloc_results_file, delim = "\t", show_col_types = FALSE)
+  coloc_results <- if (file.exists(output_paths$pairwise)) {
+    vroom::vroom(output_paths$pairwise, delim = "\t", show_col_types = FALSE)
   } else {
     data.frame()
+  }
+
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0) {
+    cis_trans_a <- finemapped_studies$cis_trans[match(coloc_results$study_a, finemapped_studies$study)]
+    cis_trans_b <- finemapped_studies$cis_trans[match(coloc_results$study_b, finemapped_studies$study)]
+    blocked_pair <- is_study_blocked(block_list, coloc_results$study_a, cis_trans_a) |
+      is_study_blocked(block_list, coloc_results$study_b, cis_trans_b)
+    coloc_results <- coloc_results |> dplyr::filter(!blocked_pair)
+
+    blocked <- is_study_blocked(block_list, finemapped_studies$study, finemapped_studies$cis_trans)
+    finemapped_studies <- finemapped_studies |> dplyr::filter(!blocked)
   }
 
   nothing_to_cluster <- !file.exists(finemapped_file) ||
@@ -80,21 +100,9 @@ main <- function() {
 
   if (nothing_to_cluster) {
     message(glue::glue("{args$ld_block}: Nothing to cluster, writing empty clustered results."))
-    vroom::vroom_write(empty_clustered_groups(), coloc_clustered_results_file)
+    vroom::vroom_write(empty_clustered_groups(), output_paths$clustered)
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
-  }
-
-  block_list <- NULL
-  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
-    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
-  }
-  if (!is.null(block_list) && nrow(block_list) > 0) {
-    blocked <- is_study_blocked(block_list, finemapped_studies$study, finemapped_studies$cis_trans)
-    if (sum(blocked) > 0) {
-      finemapped_studies <- finemapped_studies |> dplyr::filter(!blocked)
-      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from clustering"))
-    }
   }
 
   finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
@@ -105,8 +113,7 @@ main <- function() {
     finemapped_studies = finemapped_studies,
     studies_to_colocalise = studies_to_colocalise,
     ld_block = args$ld_block,
-    ld_block_data = ld_info$ld_block_data,
-    block_list_path = args$block_list,
+    output_paths = output_paths,
     h4_threshold = h4_threshold,
     start_time = start_time
   )
@@ -120,8 +127,7 @@ run_post_coloc_clustering <- function(
   finemapped_studies,
   studies_to_colocalise,
   ld_block,
-  ld_block_data,
-  block_list_path = NA,
+  output_paths,
   h4_threshold = posterior_prob_h4_threshold,
   start_time = Sys.time()
 ) {
@@ -193,15 +199,7 @@ run_post_coloc_clustering <- function(
 
     clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
 
-    igraph_clustered_results_file <- glue::glue("{ld_block_data}/igraph_clustered_results.rds")
-    block_list_name <- NULL
-    if (!is.null(block_list_path) && !is.na(block_list_path) && !is.null(get_block_list_name(block_list_path))) {
-      block_list_name <- get_block_list_name(block_list_path)
-      igraph_clustered_results_file <- glue::glue(
-        "{ld_block_data}/igraph_clustered_results_{block_list_name}.rds"
-      )
-    }
-    saveRDS(clustered_results, igraph_clustered_results_file)
+    saveRDS(clustered_results, output_paths$igraph)
   } else {
     clustered_results <- list(
       groups = data.frame(
@@ -215,18 +213,8 @@ run_post_coloc_clustering <- function(
     )
   }
 
-  coloc_results_file <- glue::glue("{ld_block_data}/coloc_pairwise_results.tsv.gz")
-  coloc_clustered_results_file <- glue::glue("{ld_block_data}/coloc_clustered_results.tsv.gz")
-  block_list_name <- NULL
-  if (!is.null(block_list_path) && !is.na(block_list_path) && !is.null(get_block_list_name(block_list_path))) {
-    block_list_name <- get_block_list_name(block_list_path)
-    coloc_clustered_results_file <- glue::glue(
-      "{ld_block_data}/coloc_clustered_results_{block_list_name}.tsv.gz"
-    )
-  }
-
-  vroom::vroom_write(coloc_results, coloc_results_file)
-  vroom::vroom_write(clustered_results$groups, coloc_clustered_results_file)
+  vroom::vroom_write(coloc_results, output_paths$new_pairwise)
+  vroom::vroom_write(clustered_results$groups, output_paths$clustered)
 
   return(coloc_results)
 }

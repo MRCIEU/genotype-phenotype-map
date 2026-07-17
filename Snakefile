@@ -162,7 +162,8 @@ rule standardise_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript standardise_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output}"
+                --completed_output_file {output} \
+                {block_list_arg}"
         subprocess.run(command, shell=True)
 
 
@@ -184,7 +185,8 @@ rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript impute_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output}"
+                --completed_output_file {output} \
+                {block_list_arg}"
         subprocess.run(command, shell=True)
 
 rule finemap_rule:
@@ -205,7 +207,8 @@ rule finemap_rule:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
             command = f"Rscript finemap_studies_in_ld_block.R \
                 --ld_block {ld_block} \
-                --completed_output_file {output}"
+                --completed_output_file {output} \
+                {block_list_arg}"
         subprocess.run(command, shell=True)
 
 rule coloc_rule:
@@ -266,7 +269,7 @@ rule clustering_rule:
             command = f"mkdir -p $(dirname {output}) && touch {output}"
         else:
             ld_block = params.ld_dir.replace(LD_BLOCK_DATA_DIR, '')
-            command = f"Rscript cluster_coloc_results.R \
+            command = f"Rscript cluster_studies_in_ld_block.R \
                 --ld_block {ld_block} \
                 --completed_output_file {output} \
                 --global_bfdr_file {input.global_bfdr} \

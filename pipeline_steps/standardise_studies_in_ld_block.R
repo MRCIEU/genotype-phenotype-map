@@ -17,6 +17,13 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "CSV of studies to exclude from standardisation (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--worker_guid",
   help = "Worker GUID (if invoked by worker)",
   type = "character",
@@ -33,6 +40,19 @@ main <- function() {
 
   extracted_studies_file <- glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
   extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0 && nrow(extracted_studies) > 0) {
+    blocked <- is_study_blocked(block_list, extracted_studies$study, extracted_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      extracted_studies <- extracted_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from standardisation"))
+    }
+  }
 
   standardised_studies_file <- glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
   if (file.exists(standardised_studies_file)) {

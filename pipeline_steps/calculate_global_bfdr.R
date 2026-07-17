@@ -22,7 +22,7 @@ parser <- argparser::add_argument(
 parser <- argparser::add_argument(
   parser,
   "--block_list",
-  help = "CSV of studies excluded from colocalisation (only used for output naming parity)",
+  help = "CSV of studies to exclude from the global BFDR calculation (columns: id_pattern, cis_trans)",
   type = "character",
   default = NA
 )
@@ -44,18 +44,25 @@ main <- function() {
     output_file <- global_bfdr_file_path(args$block_list)
   }
 
+
   pairwise_files <- Sys.glob(glue::glue("{ld_block_data_dir}*/*/*/coloc_pairwise_results.tsv.gz"))
   message(glue::glue("Found {length(pairwise_files)} LD blocks with pairwise coloc results"))
 
-  h4_values <- unlist(lapply(pairwise_files, read_block_h4), use.names = FALSE)
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  h4_values <- unlist(lapply(pairwise_files, read_block_h4, block_list = block_list), use.names = FALSE)
   message(glue::glue(
     "Collected {length(h4_values)} pairwise H4 values in {diff_time_taken(start_time)}"
   ))
 
+
   bfdr <- calculate_global_bfdr_threshold(
     posterior_probs = h4_values,
     target_bfdr = args$target_bfdr,
-    minimum_threshold = posterior_prob_threshold_minimum
+    minimum_threshold = posterior_prob_h4_threshold
   )
 
   global_bfdr <- data.frame(
@@ -63,7 +70,7 @@ main <- function() {
     estimated_bfdr = bfdr$estimated_bfdr,
     n_discoveries = bfdr$n_discoveries,
     target_bfdr = args$target_bfdr,
-    minimum_threshold = posterior_prob_threshold_minimum,
+    minimum_threshold = posterior_prob_h4_threshold,
     n_pairs = length(h4_values),
     n_blocks = length(pairwise_files),
     default_threshold = posterior_prob_h4_threshold
@@ -89,7 +96,7 @@ main <- function() {
   return()
 }
 
-calculate_global_bfdr_threshold <- function(posterior_probs, target_bfdr = 0.05, minimum_threshold = 0.5) {
+calculate_global_bfdr_threshold <- function(posterior_probs, target_bfdr = 0.05, minimum_threshold = 0.8) {
   valid_probs <- posterior_probs[is.finite(posterior_probs)]
   valid_probs <- valid_probs[!is.na(valid_probs)]
   if (length(valid_probs) == 0) {
@@ -127,7 +134,7 @@ calculate_global_bfdr_threshold <- function(posterior_probs, target_bfdr = 0.05,
 #' Read the eligible H4 values from a block's pairwise coloc results.
 #' Self-pairs (study_a == study_b) and ignored pairs are excluded from the global pool,
 #' since self-colocs are ~1 by construction and would bias the FDR threshold downward.
-read_block_h4 <- function(pairwise_file) {
+read_block_h4 <- function(pairwise_file, block_list = NULL) {
   if (!file.exists(pairwise_file) || file.size(pairwise_file) == 0) {
     return(numeric(0))
   }
@@ -164,6 +171,20 @@ read_block_h4 <- function(pairwise_file) {
   }
   if ("ignore" %in% names(pairs)) {
     keep <- keep & !(pairs$ignore %in% TRUE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0) {
+    finemapped_file <- file.path(dirname(pairwise_file), "finemapped_studies.tsv")
+    finemapped_studies <- if (file.exists(finemapped_file)) {
+      vroom::vroom(finemapped_file, show_col_types = FALSE)
+    } else {
+      data.frame()
+    }
+    cis_trans_a <- finemapped_studies$cis_trans[match(pairs$study_a, finemapped_studies$study)]
+    cis_trans_b <- finemapped_studies$cis_trans[match(pairs$study_b, finemapped_studies$study)]
+    blocked_pair <- is_study_blocked(block_list, pairs$study_a, cis_trans_a) |
+      is_study_blocked(block_list, pairs$study_b, cis_trans_b)
+    keep <- keep & !blocked_pair
   }
 
   return(as.numeric(pairs[[h4_column]][keep]))

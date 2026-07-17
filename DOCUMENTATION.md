@@ -113,8 +113,8 @@ Pre-existing (you must provide):
 | File(s) | Script |
 |---------|--------|
 | `studies_processed.tsv.gz`, `traits_processed.tsv.gz`, `study_extractions.tsv.gz` | `compile_results.R` |
-| `coloc_pairwise_results.tsv.gz` | `compile_results.R` (aggregates per-LD-block results from `coloc_studies_in_ld_block.R`, then annotated by `cluster_coloc_results.R`) |
-| `coloc_clustered_results.tsv.gz` | `compile_results.R` (aggregates per-LD-block clustering from `cluster_coloc_results.R`, using the global threshold from `calculate_global_bfdr.R`) |
+| `coloc_pairwise_results.tsv.gz` | `compile_results.R` (aggregates per-LD-block results from `coloc_studies_in_ld_block.R`, then annotated by `cluster_studies_in_ld_block.R`) |
+| `coloc_clustered_results.tsv.gz` | `compile_results.R` (aggregates per-LD-block clustering from `cluster_studies_in_ld_block.R`, using the global threshold from `calculate_global_bfdr.R`) |
 | `pipeline_metadata/global_bfdr.tsv` | `calculate_global_bfdr.R` (synced to worker servers for GWAS upload clustering) |
 | `rare_results.tsv.gz` | `compile_results.R` (aggregates from `compare_rare_studies_in_ld_block.R` per LD block) |
 | `studies.db`, `associations.db`, `associations_full.db`, `coloc_pairs.db`, `coloc_pairs_full.db`, `ld.db`, `gwas_upload.db` | `create_db_from_results.R` |

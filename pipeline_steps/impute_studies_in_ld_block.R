@@ -19,6 +19,13 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "CSV of studies to exclude from imputation (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--worker_guid",
   help = "Worker GUID",
   type = "character",
@@ -40,6 +47,19 @@ main <- function() {
   standardised_studies_file <- glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
   standardised_studies <- vroom::vroom(standardised_studies_file, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
+
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0 && nrow(standardised_studies) > 0) {
+    blocked <- is_study_blocked(block_list, standardised_studies$study, standardised_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      standardised_studies <- standardised_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from imputation"))
+    }
+  }
 
   imputed_studies_file <- glue::glue("{ld_info$ld_block_data}/imputed_studies.tsv")
   if (file.exists(imputed_studies_file)) {

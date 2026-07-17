@@ -1,6 +1,11 @@
 ---
 params:
   ld_block: null
+  ld_blocks:
+    - "EUR/1/153358890-156424168"
+    - "EUR/1/158933969-163173938"
+    - "EUR/3/10633999-13113221"
+    - "EUR/22/44582535-46439661"
 output:
   html_document:
     self_contained: true
@@ -18,27 +23,57 @@ library(vroom)
 
 source("../../pipeline_steps/constants.R")
 
-# Whether to scan all on-disk LD block dirs or a single `params$ld_block`
+# A single `ld_block` supplied at render time overrides the four default blocks.
 ld_block_param <- params$ld_block
-run_all_ld_blocks <- is.null(ld_block_param) ||
+use_single_ld_block <- !(is.null(ld_block_param) ||
   (length(ld_block_param) == 0L) ||
   (is.character(ld_block_param) && length(ld_block_param) == 1L &&
-    (is.na(ld_block_param) || !nzchar(trimws(ld_block_param))))
+    (is.na(ld_block_param) || !nzchar(trimws(ld_block_param)))))
 if (is.character(ld_block_param) && length(ld_block_param) > 1L) {
-  stop("params$ld_block must be null (all blocks) or a single character string.")
+  stop("params$ld_block must be null or a single character string.")
 }
+
+selected_ld_blocks <- if (use_single_ld_block) {
+  trimws(ld_block_param)
+} else {
+  unname(unlist(params$ld_blocks, use.names = FALSE))
+}
+
+comparison_files <- data.frame(
+  method = c("Original", "BFDR corrected", "Prior 1e-5 + BFDR corrected"),
+  pairwise_file = c(
+    "coloc_pairwise_results_5e-6_no_bfdr_1_0_0.tsv.gz",
+    "coloc_pairwise_results_5e-6_bfdr_1_0_0.tsv.gz",
+    "coloc_pairwise_results_1e-5_bfdr_1_0_0.tsv.gz"
+  ),
+  cluster_file = c(
+    "clustered_results_5e-6_no_bfdr_1_0_0.tsv.gz",
+    "clustered_results_5e-6_bfdr_1_0_0.tsv.gz",
+    "clustered_results_1e-5_bfdr_1_0_0.tsv.gz"
+  ),
+  rds_file = c(
+    "igraph_clustered_results_5e-6_no_bfdr_1_0_0.rds",
+    "igraph_clustered_results_5e-6_bfdr_1_0_0.rds",
+    "igraph_clustered_results_1e-5_bfdr_1_0_0.rds"
+  ),
+  bfdr_file = c(
+    "global_no_bfdr_threshold_p12_5e-6.tsv",
+    "global_bfdr_threshold_p12_5e-6.tsv",
+    "global_bfdr_threshold_p12_1e-5.tsv"
+  ),
+  stringsAsFactors = FALSE
+)
 ```
 
 ## Overview
 
 This report is used to validate the clustering method.  If we decide to change the clustering method, we can use this report to compare the new method to the old one.
 
-**This run:** `r if (run_all_ld_blocks) "All LD blocks with a data directory." else paste0("Single block: ", ld_block_param, ".")`
+**LD blocks in this run:** `r paste(selected_ld_blocks, collapse = ", ")`
 
-To render only one block: `rmarkdown::render("coloc_clustering_validation.Rmd", params = list(ld_block = "EUR/1/93071870-95684841"))`.  To render all blocks, use `params = list(ld_block = NULL)` or omit `ld_block`.
+To override the default four blocks and render only one, use `rmarkdown::render("coloc_clustering_validation.Rmd", params = list(ld_block = "EUR/1/93071870-95684841"))`.
 
-Part 1: It calculates a series of graph structure metrics for the unpruned and pruned graphs.
-Part 2: It compares the results based on real world target-indication pairs.
+Part 1 calculates graph structure metrics for the unpruned and pruned graphs. Part 2 compares the pairwise coloc and clustering results produced by the three prior/BFDR settings.
 
 ### Graph Structure Metrics
 The metrics we calculate are:
@@ -51,23 +86,22 @@ The metrics we calculate are:
 We then compare the metrics for the unpruned and pruned graphs.
 
 ```{r pruned_vs_unpruned_graph_structure_metrics}
-# `apply` only accepts matrices — use lapply/seq_along. Paths use ld_info$ld_block_data.
 ld_blocks_tsv_path <- file.path("../../pipeline_steps/data/ld_blocks.tsv")
 ld_rows <- vroom::vroom(ld_blocks_tsv_path, show_col_types = FALSE)
 ld_info <- with(ld_rows, construct_ld_block(ancestry, chr, start, stop))
 ld_info <- ld_info[base::dir.exists(ld_info$ld_block_data), , drop = FALSE]
+ld_info <- ld_info[ld_info$block %in% selected_ld_blocks, , drop = FALSE]
 
-if (!run_all_ld_blocks) {
-  key <- trimws(ld_block_param)
-  ld_info <- ld_info[ld_info$block == key, , drop = FALSE]
-  if (nrow(ld_info) == 0L) {
-    stop(
-      "params$ld_block not found among blocks with an existing data directory: ",
-      key
-    )
-  }
+missing_ld_blocks <- setdiff(selected_ld_blocks, ld_info$block)
+if (length(missing_ld_blocks) > 0L) {
+  stop(
+    "Selected LD block(s) not found among blocks with an existing data directory: ",
+    paste(missing_ld_blocks, collapse = ", ")
+  )
 }
 
+# Preserve the requested display order.
+ld_info <- ld_info[match(selected_ld_blocks, ld_info$block), , drop = FALSE]
 blocks <- ld_info$block
 
 analyze_graph_structure_advanced <- function(g, original_graph = NULL) {
@@ -144,90 +178,315 @@ analyze_graph_structure_advanced <- function(g, original_graph = NULL) {
 
 per_block <- lapply(seq_along(blocks), function(bi) {
   block <- blocks[bi]
-  rds_path <- file.path(ld_info$ld_block_data[bi], "igraph_clustered_results.rds")
-  if (!file.exists(rds_path)) {
-    return(NULL)
-  }
-  cr <- tryCatch(readRDS(rds_path), error = function(e) NULL)
-  if (is.null(cr) || is.null(cr$unpruned_graph) || is.null(cr$pruned_graph)) {
-    return(NULL)
-  }
-  u <- tryCatch(
-    analyze_graph_structure_advanced(cr$unpruned_graph),
-    error = function(e) NULL
-  )
-  p <- tryCatch(
-    analyze_graph_structure_advanced(cr$pruned_graph, original_graph = cr$unpruned_graph),
-    error = function(e) NULL
-  )
-  if (is.null(u) || is.null(p)) {
-    return(NULL)
-  }
-  data.frame(
-    ld_block = block,
-    n_components_unpruned = u$n_components,
-    n_components_pruned = p$n_components,
-    mean_weight_unpruned = u$mean_weight,
-    mean_weight_pruned = p$mean_weight,
-    mean_transitivity_unpruned = u$mean_transitivity,
-    mean_transitivity_pruned = p$mean_transitivity,
-    mean_conductance_pruned = p$mean_conductance,
-    median_size_unpruned = u$median_size,
-    median_size_pruned = p$median_size,
-    stringsAsFactors = FALSE
-  )
+
+  dplyr::bind_rows(lapply(seq_len(nrow(comparison_files)), function(method_i) {
+    method <- comparison_files$method[method_i]
+    rds_path <- file.path(ld_info$ld_block_data[bi], comparison_files$rds_file[method_i])
+
+    if (!file.exists(rds_path)) {
+      return(NULL)
+    }
+    cr <- tryCatch(readRDS(rds_path), error = function(e) NULL)
+    if (is.null(cr) || is.null(cr$unpruned_graph) || is.null(cr$pruned_graph)) {
+      return(NULL)
+    }
+    u <- tryCatch(
+      analyze_graph_structure_advanced(cr$unpruned_graph),
+      error = function(e) NULL
+    )
+    p <- tryCatch(
+      analyze_graph_structure_advanced(cr$pruned_graph, original_graph = cr$unpruned_graph),
+      error = function(e) NULL
+    )
+    if (is.null(u) || is.null(p)) {
+      return(NULL)
+    }
+    data.frame(
+      ld_block = block,
+      method = method,
+      n_components_unpruned = u$n_components,
+      n_components_pruned = p$n_components,
+      mean_weight_unpruned = u$mean_weight,
+      mean_weight_pruned = p$mean_weight,
+      mean_transitivity_unpruned = u$mean_transitivity,
+      mean_transitivity_pruned = p$mean_transitivity,
+      mean_conductance_pruned = p$mean_conductance,
+      median_size_unpruned = u$median_size,
+      median_size_pruned = p$median_size,
+      stringsAsFactors = FALSE
+    )
+  }))
 })
 blocks_graph_struct <- dplyr::bind_rows(Filter(Negate(is.null), per_block))
 
 if (nrow(blocks_graph_struct) == 0) {
   knitr::kable(
-    data.frame(message = "No valid igraph_clustered_results.rds found for any block."),
+    data.frame(message = "No valid igraph clustered results found for any selected block or method."),
     caption = "Per-LD-block graph structure (empty)"
   )
 } else {
   knitr::kable(
     blocks_graph_struct,
     digits = 4,
-    caption = if (run_all_ld_blocks) {
-      "Graph structure metrics for each LD block"
-    } else {
-      paste0("Graph structure metrics — ", ld_block_param)
-    }
+    caption = "Graph structure metrics for each LD block and clustering analysis"
   )
 }
-
-# Totals and means across all blocks that contributed a row
-if (nrow(blocks_graph_struct) > 0) {
-  tot_tbl <- data.frame(
-    Metric = c(
-      "Unpruned components (sum)", "Pruned components (sum)",
-      "Mean weight unpruned", "Mean weight pruned",
-      "Mean transitivity unpruned", "Mean transitivity pruned",
-      "Mean conductance (pruned clusters only, vs unpruned ref.)",
-      "Median of per-block median cluster size — unpruned", "— pruned"
-    ),
-    Value = c(
-      sum(blocks_graph_struct$n_components_unpruned, na.rm = TRUE),
-      sum(blocks_graph_struct$n_components_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_weight_unpruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_weight_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_transitivity_unpruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_transitivity_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_conductance_pruned, na.rm = TRUE),
-      stats::median(blocks_graph_struct$median_size_unpruned, na.rm = TRUE),
-      stats::median(blocks_graph_struct$median_size_pruned, na.rm = TRUE)
-    )
-  )
-  knitr::kable(
-    tot_tbl,
-    digits = 4,
-    caption = if (run_all_ld_blocks) {
-      "Aggregated results over all LD blocks in the per-block table"
-    } else {
-      paste0("Summary for single LD block: ", ld_block_param)
-    }
-  )
-}
-
 ```
 
+### Stability across prior and BFDR settings
+
+These comparisons treat each analysis as the reference in turn. They are intended to show whether changing the coloc prior and applying global BFDR materially changes the retained coloc pairs or final clustering.
+
+```{r compare_clustering_result_sets}
+evaluate_clustering <- function(true_membership, predicted_membership) {
+  if (length(true_membership) != length(predicted_membership)) {
+    stop("True and predicted memberships must be the same length")
+  }
+
+  n <- length(true_membership)
+  if (n < 2L) {
+    return(list(TPR = NA_real_, TDR = NA_real_, TP = 0L, FP = 0L, FN = 0L))
+  }
+
+  TP <- FP <- FN <- 0L
+  for (i in seq_len(n - 1L)) {
+    for (j in (i + 1L):n) {
+      same_true <- true_membership[i] == true_membership[j]
+      same_pred <- predicted_membership[i] == predicted_membership[j]
+
+      if (same_true && same_pred) {
+        TP <- TP + 1L
+      } else if (!same_true && same_pred) {
+        FP <- FP + 1L
+      } else if (same_true && !same_pred) {
+        FN <- FN + 1L
+      }
+    }
+  }
+
+  list(
+    TPR = if ((TP + FN) > 0L) TP / (TP + FN) else NA_real_,
+    TDR = if ((TP + FP) > 0L) TP / (TP + FP) else NA_real_,
+    TP = TP,
+    FP = FP,
+    FN = FN
+  )
+}
+
+resolve_global_bfdr_path <- function(bfdr_file, block_data_dir) {
+  candidates <- c(
+    file.path(pipeline_metadata_dir, bfdr_file),
+    file.path(block_data_dir, bfdr_file),
+    bfdr_file
+  )
+  existing <- candidates[file.exists(candidates)]
+  if (length(existing) > 0L) existing[1L] else candidates[1L]
+}
+
+read_global_bfdr_threshold <- function(path) {
+  if (!file.exists(path)) {
+    warning("Missing global BFDR file; using the default H4 threshold: ", path)
+    return(posterior_prob_h4_threshold)
+  }
+
+  global_bfdr <- vroom::vroom(path, show_col_types = FALSE)
+  threshold_col <- intersect(c("threshold", "threhold"), names(global_bfdr))[1L]
+  if (length(threshold_col) == 0L || is.na(threshold_col) || nrow(global_bfdr) == 0L) {
+    warning("No threshold column/value in ", path, "; using the default H4 threshold.")
+    return(posterior_prob_h4_threshold)
+  }
+
+  as.numeric(global_bfdr[[threshold_col]][1L])
+}
+
+make_pair_id <- function(study_a, study_b) {
+  paste(pmin(study_a, study_b), pmax(study_a, study_b), sep = "||")
+}
+
+read_comparison_set <- function(block_data_dir, method_i) {
+  pairwise_path <- file.path(block_data_dir, comparison_files$pairwise_file[method_i])
+  cluster_path <- file.path(block_data_dir, comparison_files$cluster_file[method_i])
+  bfdr_path <- resolve_global_bfdr_path(
+    comparison_files$bfdr_file[method_i],
+    block_data_dir
+  )
+
+  if (!file.exists(pairwise_path)) stop("Missing pairwise file: ", pairwise_path)
+  if (!file.exists(cluster_path)) stop("Missing cluster file: ", cluster_path)
+
+  pairwise <- vroom::vroom(
+    pairwise_path,
+    delim = "\t",
+    col_select = dplyr::any_of(c(
+      "unique_study_a", "unique_study_b", "ignore", "h4", "PP.H4.abf"
+    )),
+    show_col_types = FALSE
+  )
+  clusters <- vroom::vroom(
+    cluster_path,
+    delim = "\t",
+    col_select = dplyr::any_of(c("unique_study_id", "component")),
+    show_col_types = FALSE
+  )
+
+  if (!"ignore" %in% names(pairwise)) pairwise$ignore <- FALSE
+  if (!"h4" %in% names(pairwise) && "PP.H4.abf" %in% names(pairwise)) {
+    pairwise$h4 <- pairwise$PP.H4.abf
+  }
+  required_pairwise_columns <- c("unique_study_a", "unique_study_b", "h4")
+  if (!all(required_pairwise_columns %in% names(pairwise))) {
+    stop("Missing required columns in ", pairwise_path)
+  }
+  if (!all(c("unique_study_id", "component") %in% names(clusters))) {
+    stop("Missing required columns in ", cluster_path)
+  }
+
+  pairwise <- pairwise |>
+    dplyr::mutate(
+      ignore = dplyr::coalesce(as.logical(ignore), FALSE),
+      pair_id = make_pair_id(unique_study_a, unique_study_b)
+    )
+
+  list(
+    method = comparison_files$method[method_i],
+    h4_threshold = read_global_bfdr_threshold(bfdr_path),
+    pairwise = pairwise,
+    clusters = clusters
+  )
+}
+
+compare_sets <- function(named_sets) {
+  methods <- names(named_sets)
+  dplyr::bind_rows(lapply(seq_along(methods), function(i) {
+    dplyr::bind_rows(lapply(seq_along(methods), function(j) {
+      if (i >= j) return(NULL)
+      left <- named_sets[[i]]
+      right <- named_sets[[j]]
+      shared <- intersect(left, right)
+      union_set <- union(left, right)
+      data.frame(
+        method_a = methods[i],
+        method_b = methods[j],
+        n_a = length(left),
+        n_b = length(right),
+        n_shared = length(shared),
+        n_union = length(union_set),
+        jaccard = if (length(union_set) > 0L) {
+          length(shared) / length(union_set)
+        } else {
+          NA_real_
+        }
+      )
+    }))
+  }))
+}
+
+cocluster_pairs <- function(clusters) {
+  if (nrow(clusters) == 0L) return(character())
+
+  component_members <- split(clusters$unique_study_id, clusters$component)
+  pairs <- lapply(component_members, function(studies) {
+    studies <- unique(studies)
+    if (length(studies) < 2L) return(character())
+    apply(utils::combn(sort(studies), 2L), 2L, paste, collapse = "||")
+  })
+  unique(unlist(pairs, use.names = FALSE))
+}
+
+complete_membership <- function(clusters, universe, method) {
+  membership <- paste(method, "singleton", seq_along(universe), sep = "_")
+  names(membership) <- universe
+
+  if (nrow(clusters) > 0L) {
+    cluster_membership <- paste(method, clusters$component, sep = "_component_")
+    names(cluster_membership) <- clusters$unique_study_id
+    membership[names(cluster_membership)] <- cluster_membership
+  }
+  membership
+}
+
+compare_block <- function(ld_block, block_data_dir) {
+  result_sets <- lapply(seq_len(nrow(comparison_files)), function(method_i) {
+    read_comparison_set(block_data_dir, method_i)
+  })
+  names(result_sets) <- comparison_files$method
+
+  pair_sets <- lapply(result_sets, function(result_set) {
+    pairwise <- result_set$pairwise
+    unique(pairwise$pair_id[
+      !pairwise$ignore & pairwise$h4 >= result_set$h4_threshold
+    ])
+  })
+  pair_overlap <- dplyr::mutate(
+    compare_sets(pair_sets),
+    ld_block = ld_block,
+    .before = 1L
+  )
+
+  cocluster_sets <- lapply(result_sets, function(result_set) {
+    cocluster_pairs(result_set$clusters)
+  })
+  cocluster_overlap <- dplyr::mutate(
+    compare_sets(cocluster_sets),
+    ld_block = ld_block,
+    .before = 1L
+  )
+
+  cluster_universe <- unique(unlist(lapply(result_sets, function(result_set) {
+    result_set$clusters$unique_study_id
+  }), use.names = FALSE))
+  memberships <- lapply(result_sets, function(result_set) {
+    complete_membership(result_set$clusters, cluster_universe, result_set$method)
+  })
+
+  method_names <- names(memberships)
+  clustering_eval <- dplyr::bind_rows(lapply(seq_along(method_names), function(i) {
+    dplyr::bind_rows(lapply(seq_along(method_names), function(j) {
+      if (i == j) return(NULL)
+      eval_result <- evaluate_clustering(memberships[[i]], memberships[[j]])
+      data.frame(
+        ld_block = ld_block,
+        true_method = method_names[i],
+        predicted_method = method_names[j],
+        TPR = eval_result$TPR,
+        TDR = eval_result$TDR,
+        TP = eval_result$TP,
+        FP = eval_result$FP,
+        FN = eval_result$FN
+      )
+    }))
+  }))
+
+  list(
+    pair_overlap = pair_overlap,
+    cocluster_overlap = cocluster_overlap,
+    clustering_eval = clustering_eval
+  )
+}
+
+block_comparisons <- lapply(seq_len(nrow(ld_info)), function(i) {
+  compare_block(ld_info$block[i], ld_info$ld_block_data[i])
+})
+
+pair_overlap <- dplyr::bind_rows(lapply(block_comparisons, `[[`, "pair_overlap"))
+cocluster_overlap <- dplyr::bind_rows(lapply(block_comparisons, `[[`, "cocluster_overlap"))
+clustering_eval <- dplyr::bind_rows(lapply(block_comparisons, `[[`, "clustering_eval"))
+
+knitr::kable(
+  pair_overlap,
+  digits = 4,
+  caption = "Overlap of non-ignored pairwise coloc pairs at each method's H4 threshold, by LD block"
+)
+
+knitr::kable(
+  cocluster_overlap,
+  digits = 4,
+  caption = "Overlap of co-clustered study pairs, by LD block"
+)
+
+knitr::kable(
+  clustering_eval,
+  digits = 4,
+  caption = "Pairwise evaluation of cluster memberships by LD block (each method used as the reference in turn)"
+)
+```

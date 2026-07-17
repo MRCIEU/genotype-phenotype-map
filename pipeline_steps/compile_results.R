@@ -144,7 +144,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   pairwise_coloc_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz")
+    glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results_bfdr.tsv.gz")
   )
   coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
     delim = "\t",
@@ -157,11 +157,11 @@ aggregate_data_produced_by_pipeline <- function(
   )
   message("pairwise coloc results: ", nrow(coloc_pairwise_results))
 
-  coloc_clustered_results_file <- "coloc_clustered_results.tsv.gz"
+  coloc_clustered_results_file <- "clustered_results_bfdr.tsv.gz"
   block_list_name <- NULL
   if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
     block_list_name <- get_block_list_name(args$block_list)
-    coloc_clustered_results_file <- glue::glue("coloc_clustered_results_{block_list_name}.tsv.gz")
+    coloc_clustered_results_file <- glue::glue("clustered_results_bfdr_{block_list_name}.tsv.gz")
   }
   coloc_clustered_input_files <- Filter(
     function(file) file.exists(file),

@@ -17,6 +17,13 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "CSV of studies to exclude from finemapping (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--worker_guid",
   help = "Worker GUID",
   type = "character",
@@ -48,6 +55,19 @@ main <- function() {
   }
   imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
+
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0 && nrow(imputed_studies) > 0) {
+    blocked <- is_study_blocked(block_list, imputed_studies$study, imputed_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      imputed_studies <- imputed_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from finemapping"))
+    }
+  }
 
   ld_matrix_file <- glue::glue("{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz")
   ld_matrix <- vroom::vroom(ld_matrix_file, col_names = F, show_col_types = F, altrep = F)

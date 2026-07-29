@@ -1,10 +1,13 @@
 ---
 params:
-  ld_block: "EUR/1/153358890-156424168"
+  ld_block: null
+  ld_blocks_file: "../../pipeline_steps/temp_all_ld_blocks.txt"
+  results_version: "1.0.0"
+  block_list_name: "1_0_0"
 output:
   html_document:
     self_contained: true
-title: "Clustering report LD Block: `r params$ld_block`"
+title: "Clustering mode comparison across LD blocks"
 ---
 
 ```{r setup, echo = FALSE}
@@ -12,29 +15,552 @@ knitr::opts_chunk$set(echo = FALSE, fig.align = "center", warning = F)
 
 library(igraph)
 library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(vroom)
 
 source("../../pipeline_steps/constants.R")
+source("clustering_comparison_helpers.R")
 
 # LD block as ancestry/chr/start-stop (same string as pipeline / ld_block_data_dir layout)
+ld_blocks_file <- params$ld_blocks_file
+if (!file.exists(ld_blocks_file)) {
+  stop("Missing LD block list: ", ld_blocks_file)
+}
+comparison_ld_blocks <- readLines(ld_blocks_file, warn = FALSE)
+comparison_ld_blocks <- comparison_ld_blocks[nzchar(comparison_ld_blocks)]
+
 ld_block <- params$ld_block
+if (is.null(ld_block) || length(ld_block) != 1L || !nzchar(ld_block)) {
+  ld_block <- comparison_ld_blocks[1L]
+}
+if (!(ld_block %in% comparison_ld_blocks)) {
+  stop("params$ld_block is not present in ", ld_blocks_file)
+}
+
 block_data_dir <- file.path(ld_block_data_dir, ld_block)
+report_results_dir <- file.path(results_dir, params$results_version)
 
 h4_threshold <- posterior_prob_h4_threshold
 subgraph_density_theshold <- 0.6
 
 finemapped_file <- file.path(block_data_dir, "finemapped_studies.tsv")
-coloc_file <- file.path(block_data_dir, "coloc_pairwise_results_bfdr.tsv.gz")
-cluster_obj <- file.path(block_data_dir, "igraph_clustered_results_1_0_0.rds")
+coloc_file <- file.path(
+  block_data_dir,
+  glue::glue("coloc_pairwise_results_5e-6_no_bfdr_{params$block_list_name}.tsv.gz")
+)
+cluster_obj <- file.path(
+  block_data_dir,
+  glue::glue("igraph_clustered_results_5e-6_no_bfdr_{params$block_list_name}_mode_2.rds")
+)
 problemsnp_file <- file.path(block_data_dir, "problematic_finemapped_snps.tsv")
 
-studies_file <- file.path(results_dir, "1.0.0", "studies_processed.tsv.gz")
+studies_file <- file.path(report_results_dir, "studies_processed.tsv.gz")
+studies_db_file <- file.path(report_results_dir, "studies.db")
 truthset_file <- "data/tipairs_launched_truthset.tsv"
 
-message("LD Block: ", ld_block)
+mode_config <- data.frame(
+  mode = 1:2,
+  mode_label = c(
+    "Mode 1: original",
+    "Mode 2: original + calibrated isolated dyads"
+  ),
+  stringsAsFactors = FALSE
+)
+
+comparison_inputs <- tidyr::crossing(
+  ld_block = comparison_ld_blocks,
+  mode = mode_config$mode
+) |>
+  dplyr::left_join(mode_config, by = "mode") |>
+  dplyr::mutate(
+    block_data_dir = file.path(ld_block_data_dir, ld_block),
+    cluster_file = file.path(
+      block_data_dir,
+      glue::glue("clustered_results_5e-6_no_bfdr_{params$block_list_name}_mode_{mode}.tsv.gz")
+    ),
+    rds_file = file.path(
+      block_data_dir,
+      glue::glue("igraph_clustered_results_5e-6_no_bfdr_{params$block_list_name}_mode_{mode}.rds")
+    ),
+    cluster_exists = file.exists(cluster_file),
+    rds_exists = file.exists(rds_file)
+  )
+
+complete_blocks <- comparison_inputs |>
+  dplyr::group_by(ld_block) |>
+  dplyr::summarise(complete = all(cluster_exists & rds_exists), .groups = "drop") |>
+  dplyr::filter(complete) |>
+  dplyr::pull(ld_block)
+
+message("Comparison LD blocks: ", length(comparison_ld_blocks))
+message("Blocks with complete outputs for both modes: ", length(complete_blocks))
+message("Detailed LD block: ", ld_block)
 message("Block data dir: ", block_data_dir)
+
+if (length(complete_blocks) == 0L) {
+  stop("No LD block has complete clustered TSV and igraph RDS outputs for both modes.")
+}
+
+analysis_inputs <- comparison_inputs |>
+  dplyr::filter(ld_block %in% complete_blocks) |>
+  dplyr::arrange(match(ld_block, comparison_ld_blocks), mode)
 ```
 
+## Clustering mode evaluation against the truth set
+
+Modes are compared on `r length(complete_blocks)` LD blocks with complete outputs for both modes. The primary question is whether a clustering mode improves on **production GPMap cluster support** (`gpmap_support`) for truth-set target–indication pairs, without introducing many spurious same-cluster molecular–phenotype assignments.
+
+**Gap targets (primary):** truth-set `ti_uid`s with `pairwisecoloc_support = TRUE` but `gpmap_support = FALSE` in the production truth set, and with at least one molecular and one phenotype study finemapped in the same analyzed LD block.
+
+**Cluster support (test outcome):** the mode assigns at least one eligible molecular/phenotype extraction pair to the same final cluster component.
+
+**Non-truth-set same-cluster pairs (false-positive burden):** H4-qualified molecular–phenotype coloc pairs placed in the same cluster by the mode but not matching any truth-set extraction pair in that block.
+
+```{r prepare_truthset_comparison}
+if (!file.exists(studies_file)) stop("Missing studies file: ", studies_file)
+if (!file.exists(studies_db_file)) stop("Missing studies database: ", studies_db_file)
+if (!file.exists(truthset_file)) stop("Missing truth-set file: ", truthset_file)
+if (!requireNamespace("duckdb", quietly = TRUE)) {
+  stop("The duckdb package is required to load gene pleiotropy scores.")
+}
+
+studies_processed_comparison <- vroom::vroom(studies_file, show_col_types = FALSE)
+truthset_comparison <- vroom::vroom(truthset_file, show_col_types = FALSE)
+truthset_ti_meta <- build_truthset_ti_meta(truthset_comparison)
+study_types <- studies_processed_comparison |>
+  dplyr::select(study_name, data_type) |>
+  dplyr::distinct()
+
+gene_study_lookup_comparison <- studies_processed_comparison |>
+  dplyr::filter(data_type != "phenotype", !is.na(gene)) |>
+  dplyr::select(study_name, gene, data_type) |>
+  dplyr::distinct()
+
+finemapped_by_block <- stats::setNames(
+  lapply(complete_blocks, function(block) {
+    path <- file.path(ld_block_data_dir, block, "finemapped_studies.tsv")
+    if (!file.exists(path)) stop("Missing finemapped studies file: ", path)
+    vroom::vroom(path, col_types = finemapped_column_types, show_col_types = FALSE) |>
+      dplyr::filter(variant_type == "common") |>
+      dplyr::select(study, unique_study_id, min_p) |>
+      dplyr::distinct()
+  }),
+  complete_blocks
+)
+
+coloc_files_by_block <- stats::setNames(
+  file.path(
+    ld_block_data_dir,
+    complete_blocks,
+    glue::glue("coloc_pairwise_results_5e-6_no_bfdr_{params$block_list_name}.tsv.gz")
+  ),
+  complete_blocks
+)
+
+truthset_candidates <- truthset_comparison |>
+  dplyr::filter(dplyr::coalesce(as.logical(pairwisecoloc_support), FALSE)) |>
+  dplyr::inner_join(
+    gene_study_lookup_comparison,
+    by = c("target" = "gene"),
+    relationship = "many-to-many"
+  )
+
+truthset_uid_mappings <- dplyr::bind_rows(lapply(complete_blocks, function(block) {
+  finemapped <- finemapped_by_block[[block]]
+  truthset_candidates |>
+    dplyr::inner_join(
+      finemapped |>
+        dplyr::select(study, unique_study_id) |>
+        dplyr::rename(
+          study_name = study,
+          molecular_unique_study_id = unique_study_id
+        ),
+      by = "study_name",
+      relationship = "many-to-many"
+    ) |>
+    dplyr::inner_join(
+      finemapped |>
+        dplyr::select(study, unique_study_id) |>
+        dplyr::rename(
+          trait_gpmap = study,
+          phenotype_unique_study_id = unique_study_id
+        ),
+      by = "trait_gpmap",
+      relationship = "many-to-many"
+    ) |>
+    dplyr::mutate(ld_block = block, .before = 1L) |>
+    dplyr::distinct(
+      ld_block, ti_uid, target, indication_mesh_term, combined_max_phase,
+      trait_gpmap, trait_name_gpmap, study_name, data_type,
+      molecular_unique_study_id, phenotype_unique_study_id
+    )
+}))
+
+if (nrow(truthset_uid_mappings) == 0L) {
+  stop("No pairwise-supported truth-set indications map to finemapped studies in the complete LD blocks.")
+}
+
+evaluable_indications <- truthset_uid_mappings |>
+  dplyr::distinct(
+    ti_uid, target, indication_mesh_term, combined_max_phase
+  ) |>
+  dplyr::inner_join(truthset_ti_meta, by = "ti_uid")
+
+gap_evaluable <- evaluable_indications |>
+  dplyr::filter(gap_target)
+
+studies_conn <- DBI::dbConnect(
+  duckdb::duckdb(),
+  studies_db_file,
+  read_only = TRUE
+)
+gene_pleiotropy <- DBI::dbGetQuery(
+  studies_conn,
+  "
+    SELECT
+      ga.id AS gene_id,
+      ga.gene AS target,
+      gp.distinct_trait_categories
+    FROM gene_annotations AS ga
+    LEFT JOIN gene_pleiotropy AS gp
+      ON ga.id = gp.gene_id
+  "
+)
+DBI::dbDisconnect(studies_conn, shutdown = TRUE)
+
+gene_pleiotropy <- gene_pleiotropy |>
+  dplyr::group_by(target) |>
+  dplyr::summarise(
+    gene_annotation_found = TRUE,
+    pleiotropy_score_found = any(!is.na(distinct_trait_categories)),
+    distinct_trait_categories = if (all(is.na(distinct_trait_categories))) {
+      0L
+    } else {
+      max(distinct_trait_categories, na.rm = TRUE)
+    },
+    .groups = "drop"
+  )
+
+evaluable_indications <- evaluable_indications |>
+  dplyr::left_join(gene_pleiotropy, by = "target") |>
+  dplyr::mutate(
+    gene_annotation_found = dplyr::coalesce(gene_annotation_found, FALSE),
+    pleiotropy_score_found = dplyr::coalesce(pleiotropy_score_found, FALSE),
+    pleiotropy_bin = dplyr::case_when(
+      !gene_annotation_found ~ "Unmapped",
+      distinct_trait_categories <= 1 ~ "0-1",
+      distinct_trait_categories <= 5 ~ "2-5",
+      distinct_trait_categories <= 15 ~ "6-15",
+      distinct_trait_categories > 15 ~ ">15",
+      TRUE ~ "Unmapped"
+    ),
+    pleiotropy_bin = factor(
+      pleiotropy_bin,
+      levels = c("0-1", "2-5", "6-15", ">15", "Unmapped")
+    )
+  )
+
+truthset_diagnostics <- data.frame(
+  check = c(
+    "Complete LD blocks analyzed",
+    "Pairwise-supported ti_uids in truth set",
+    "Evaluable ti_uids (finemapped in analyzed blocks)",
+    "Gap targets evaluable (pairwise yes, production gpmap no)",
+    "Evaluable gap targets / all gap targets in truth set",
+    "Production GPMap-supported ti_uids among evaluable set"
+  ),
+  n = c(
+    length(complete_blocks),
+    sum(truthset_ti_meta$pairwisecoloc_support),
+    nrow(evaluable_indications),
+    nrow(gap_evaluable),
+    NA_real_,
+    sum(evaluable_indications$production_gpmap_support)
+  ),
+  stringsAsFactors = FALSE
+)
+truthset_diagnostics$n[5] <- paste0(
+  nrow(gap_evaluable), " / ", sum(truthset_ti_meta$gap_target)
+)
+
+knitr::kable(
+  truthset_diagnostics,
+  caption = "Truth-set evaluation scope"
+)
+```
+
+```{r evaluate_clustering_modes}
+recovery_by_block <- dplyr::bind_rows(lapply(
+  split(analysis_inputs, seq_len(nrow(analysis_inputs))),
+  evaluate_mode_ti_recovery,
+  truthset_uid_mappings = truthset_uid_mappings
+))
+
+coloc_burden_by_block <- dplyr::bind_rows(lapply(
+  split(analysis_inputs, seq_len(nrow(analysis_inputs))),
+  function(input_row) {
+    evaluate_mode_coloc_burden(
+      input_row = input_row,
+      coloc_file = coloc_files_by_block[[input_row$ld_block]],
+      h4_threshold = h4_threshold,
+      study_types = study_types,
+      truthset_uid_mappings = truthset_uid_mappings
+    )
+  }
+))
+
+mode_support_pooled <- recovery_by_block |>
+  dplyr::group_by(mode, mode_label, ti_uid) |>
+  dplyr::summarise(cluster_support = any(cluster_support), .groups = "drop") |>
+  dplyr::inner_join(evaluable_indications, by = "ti_uid") |>
+  dplyr::mutate(
+    new_gpmap_support = cluster_support & !production_gpmap_support,
+    maintained_gpmap_support = cluster_support & production_gpmap_support,
+    lost_gpmap_support = !cluster_support & production_gpmap_support,
+    still_missing_gpmap_support = !cluster_support & !production_gpmap_support
+  )
+
+gpmap_gap_summary <- mode_support_pooled |>
+  dplyr::filter(gap_target) |>
+  dplyr::group_by(mode, mode_label) |>
+  dplyr::summarise(
+    n_gap_evaluable = dplyr::n(),
+    n_new_gpmap_support = sum(new_gpmap_support),
+    n_still_missing = sum(still_missing_gpmap_support),
+    gap_recovery_rate = n_new_gpmap_support / n_gap_evaluable,
+    .groups = "drop"
+  )
+
+gpmap_concordance_summary <- mode_support_pooled |>
+  dplyr::group_by(mode, mode_label) |>
+  dplyr::summarise(
+    n_evaluable = dplyr::n(),
+    n_production_gpmap = sum(production_gpmap_support),
+    n_mode_cluster_support = sum(cluster_support),
+    n_agree = sum(cluster_support == production_gpmap_support),
+    n_new_gpmap_support = sum(new_gpmap_support),
+    n_lost_gpmap_support = sum(lost_gpmap_support),
+    concordance_rate = n_agree / n_evaluable,
+    .groups = "drop"
+  )
+
+false_positive_summary <- coloc_burden_by_block |>
+  dplyr::group_by(mode, mode_label) |>
+  dplyr::summarise(
+    n_h4_mol_pheno_pairs = sum(n_h4_mol_pheno_pairs),
+    n_same_cluster_h4_mol_pheno = sum(n_same_cluster_h4_mol_pheno),
+    n_truthset_supported_same_cluster = sum(n_truthset_supported_same_cluster),
+    n_non_truthset_same_cluster = sum(n_non_truthset_same_cluster),
+    non_truthset_same_cluster_rate = dplyr::if_else(
+      n_same_cluster_h4_mol_pheno > 0L,
+      n_non_truthset_same_cluster / n_same_cluster_h4_mol_pheno,
+      NA_real_
+    ),
+    n_pipeline_false_positive = sum(n_pipeline_false_positive),
+    n_pipeline_false_negative = sum(n_pipeline_false_negative),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  gpmap_gap_summary,
+  digits = 4,
+  caption = "Gap-target recovery: achieving cluster support where production GPMap support is absent"
+)
+
+knitr::kable(
+  gpmap_concordance_summary,
+  digits = 4,
+  caption = "Concordance with production GPMap support labels across all evaluable pairwise-supported ti_uids"
+)
+
+knitr::kable(
+  false_positive_summary,
+  digits = 4,
+  caption = "False-positive burden: same-cluster H4 molecular–phenotype pairs not in the truth set"
+)
+```
+
+```{r gpmap_mode_gains_and_losses}
+gap_support_wide <- mode_support_pooled |>
+  dplyr::filter(gap_target) |>
+  dplyr::select(ti_uid, mode, cluster_support) |>
+  tidyr::pivot_wider(
+    names_from = mode,
+    values_from = cluster_support,
+    names_prefix = "mode_",
+    values_fill = FALSE
+  )
+
+mode_pairs <- utils::combn(mode_config$mode, 2L, simplify = FALSE)
+gap_mode_gain_loss <- dplyr::bind_rows(lapply(mode_pairs, function(mode_pair) {
+  mode_a <- paste0("mode_", mode_pair[1])
+  mode_b <- paste0("mode_", mode_pair[2])
+  supported_a <- gap_support_wide[[mode_a]]
+  supported_b <- gap_support_wide[[mode_b]]
+  data.frame(
+    mode_a = mode_pair[1],
+    mode_b = mode_pair[2],
+    supported_by_both = sum(supported_a & supported_b),
+    supported_only_by_a = sum(supported_a & !supported_b),
+    supported_only_by_b = sum(!supported_a & supported_b),
+    supported_by_neither = sum(!supported_a & !supported_b)
+  )
+}))
+
+changed_gap_indications <- gap_support_wide |>
+  dplyr::filter(
+    rowSums(dplyr::across(dplyr::starts_with("mode_"))) > 0L,
+    rowSums(dplyr::across(dplyr::starts_with("mode_"))) < nrow(mode_config)
+  ) |>
+  dplyr::left_join(evaluable_indications, by = "ti_uid") |>
+  dplyr::arrange(pleiotropy_bin, target, ti_uid)
+
+knitr::kable(
+  gap_mode_gain_loss,
+  caption = "Pairwise gains and losses on gap targets (pairwise yes, production gpmap no)"
+)
+
+if (nrow(changed_gap_indications) > 0L) {
+  knitr::kable(
+    changed_gap_indications,
+    caption = "Gap-target ti_uids whose cluster support differs between clustering modes"
+  )
+} else {
+  message("No gap-target ti_uids differ in cluster support between clustering modes.")
+}
+```
+
+```{r gap_recovery_by_pleiotropy, fig.width=9, fig.height=5}
+pleiotropy_gap_summary <- mode_support_pooled |>
+  dplyr::filter(gap_target) |>
+  dplyr::group_by(mode, mode_label, pleiotropy_bin, .drop = FALSE) |>
+  dplyr::summarise(
+    n_gap_evaluable = dplyr::n(),
+    n_new_gpmap_support = sum(new_gpmap_support),
+    gap_recovery_rate = if (n_gap_evaluable > 0L) {
+      n_new_gpmap_support / n_gap_evaluable
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  )
+
+knitr::kable(
+  pleiotropy_gap_summary,
+  digits = 4,
+  caption = "Gap-target recovery by target-gene pleiotropy profile"
+)
+
+ggplot(
+  dplyr::filter(pleiotropy_gap_summary, n_gap_evaluable > 0L),
+  aes(x = pleiotropy_bin, y = gap_recovery_rate, fill = mode_label)
+) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.72) +
+  geom_text(
+    aes(label = paste0(n_new_gpmap_support, "/", n_gap_evaluable)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.25,
+    size = 3
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    x = "Target-gene distinct trait-category score",
+    y = "Gap targets achieving cluster support",
+    fill = "Clustering mode"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Graph structure by clustering mode
+
+Both modes use the original p-value-derived edge weights and clustering procedure. Mode 2 additionally admits isolated two-study H4 components that pass a p-value-dependent H4 requirement. All graph metrics are therefore on the same weight scale; differences isolate the effect of calibrated dyad rescue.
+
+```{r clustering_mode_graph_metrics}
+graph_metrics <- dplyr::bind_rows(lapply(
+  split(analysis_inputs, seq_len(nrow(analysis_inputs))),
+  function(input_row) {
+    clustered_result <- readRDS(input_row$rds_file)
+    dplyr::bind_cols(
+      input_row |>
+        dplyr::select(ld_block, mode, mode_label),
+      summarise_clustered_graphs(clustered_result)
+    )
+  }
+))
+
+graph_metrics_summary <- graph_metrics |>
+  dplyr::group_by(mode, mode_label) |>
+  dplyr::summarise(
+    n_blocks = dplyr::n_distinct(ld_block),
+    n_components_unpruned = sum(n_components_unpruned),
+    n_components_pruned = sum(n_components_pruned),
+    mean_weight_unpruned = mean(mean_weight_unpruned, na.rm = TRUE),
+    mean_weight_pruned = mean(mean_weight_pruned, na.rm = TRUE),
+    mean_transitivity_unpruned = mean(mean_transitivity_unpruned, na.rm = TRUE),
+    mean_transitivity_pruned = mean(mean_transitivity_pruned, na.rm = TRUE),
+    mean_conductance_pruned = mean(mean_conductance_pruned, na.rm = TRUE),
+    median_size_unpruned = stats::median(median_size_unpruned, na.rm = TRUE),
+    median_size_pruned = stats::median(median_size_pruned, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+mode_1_metrics <- graph_metrics |>
+  dplyr::filter(mode == 1L) |>
+  dplyr::select(
+    ld_block,
+    baseline_components_pruned = n_components_pruned,
+    baseline_transitivity_pruned = mean_transitivity_pruned,
+    baseline_conductance_pruned = mean_conductance_pruned,
+    baseline_median_size_pruned = median_size_pruned
+  )
+
+graph_metric_deltas <- graph_metrics |>
+  dplyr::left_join(mode_1_metrics, by = "ld_block") |>
+  dplyr::transmute(
+    ld_block,
+    mode,
+    mode_label,
+    delta_components_pruned = n_components_pruned - baseline_components_pruned,
+    delta_transitivity_pruned = mean_transitivity_pruned - baseline_transitivity_pruned,
+    delta_conductance_pruned = mean_conductance_pruned - baseline_conductance_pruned,
+    delta_median_size_pruned = median_size_pruned - baseline_median_size_pruned
+  )
+
+knitr::kable(
+  graph_metrics,
+  digits = 4,
+  caption = "Graph structure metrics by LD block and clustering mode"
+)
+
+knitr::kable(
+  graph_metrics_summary,
+  digits = 4,
+  caption = "Graph structure summary across complete LD blocks"
+)
+
+knitr::kable(
+  graph_metric_deltas,
+  digits = 4,
+  caption = "Per-block changes in pruned graph metrics relative to mode 1"
+)
+```
+
+## Detailed mode 2 exploration
+
+The remainder of the report retains the original single-block diagnostic plots for `r ld_block`, using clustering mode 2.
+
 ```{r read_in_data}
+required_detail_files <- c(finemapped_file, coloc_file, cluster_obj, studies_file)
+missing_detail_files <- required_detail_files[!file.exists(required_detail_files)]
+if (length(missing_detail_files) > 0L) {
+  stop("Missing detailed-analysis input(s): ", paste(missing_detail_files, collapse = ", "))
+}
 
 coloc_results <- vroom::vroom(coloc_file, delim = '\t', show_col_types = F)
 coloc_results_filt <- coloc_results |> dplyr::filter(ignore == FALSE, h4 >= h4_threshold)
@@ -289,20 +815,32 @@ plot(g,
      edge.width = 2,
      layout = g_layout, main = "Original graph (coloured by identified infomap communities)")
 
-plot_nrows_set <- ceiling(sum(g_density < subgraph_density_theshold)/5)
-fig_height_set <- plot_nrows_set*4
+plot_nrows_set <- max(1, ceiling(sum(g_density < subgraph_density_theshold) / 5))
+fig_height_set <- max(4, plot_nrows_set * 4)
 ```
 
-```{r plot_subgraphs_coloured, fig.width = 20, fig.height = 28}
+```{r plot_subgraphs_coloured, fig.width = 20, fig.height = fig_height_set}
 
-g_subgraphs <- lapply(comp_num, function(x){
-  igraph::induced_subgraph(g, vids = igraph::V(g)[g_comps$membership == x])
-})
+lowdensity_subgraphs <- g_subgraphs[which(g_density < subgraph_density_theshold)]
+n_plots <- length(lowdensity_subgraphs)
 
-lowdensity_subgraphs <- g_subgraphs[which(g_density<1)]
-
-par(mfrow = c(plot_nrows_set,5))
-invisible(sapply(lowdensity_subgraphs, plot_subgraphs, colour_verts = TRUE, highlight_pairs = truthset_highlight_pairs))
+if (n_plots == 0) {
+  message("No subgraphs below density threshold ", subgraph_density_theshold)
+} else {
+  plot_ncols <- 5
+  plot_nrows_set <- max(1, ceiling(n_plots / plot_ncols))
+  par(
+    mfrow = c(plot_nrows_set, plot_ncols),
+    mar = c(0.2, 0.2, 0.5, 0.2),
+    oma = c(0, 0, 0, 0)
+  )
+  invisible(sapply(
+    lowdensity_subgraphs,
+    plot_subgraphs,
+    colour_verts = TRUE,
+    highlight_pairs = truthset_highlight_pairs
+  ))
+}
 ```
 
 ```{r select_split_subgraphs}

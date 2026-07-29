@@ -61,14 +61,15 @@ test_that("Pipeline worker runs for TSV file", {
   expect_equal(nrow(global_bfdr), 1, info = "Global BFDR file should contain one row")
   expect_true(global_bfdr$threshold >= posterior_prob_threshold_minimum, info = "Global BFDR threshold should be valid")
 
+  paths <- ld_block_file_paths(ld_block_of_interest)
   ld_block_files <- c(
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/standardised_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_complete"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/clustering_complete")
+    paths$standardised_studies,
+    paths$imputed_studies,
+    paths$finemapped_studies,
+    paths$coloc_pairwise,
+    paths$clustered,
+    paths$coloc_complete,
+    paths$clustering_complete
   )
   for (file in ld_block_files) {
     expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))

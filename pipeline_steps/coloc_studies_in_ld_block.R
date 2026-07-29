@@ -61,21 +61,19 @@ main <- function() {
     update_directories_for_worker(args$worker_guid)
   }
 
-  ld_info <- ld_block_dirs(args$ld_block)
-  coloc_results_file <- glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz")
+  paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
+  metadata_paths <- pipeline_metadata_file_paths()
+  coloc_results_file <- paths$coloc_pairwise
   if (file.exists(coloc_results_file)) {
     coloc_results <- vroom::vroom(coloc_results_file, delim = "\t", show_col_types = F)
   } else {
     coloc_results <- data.frame()
   }
 
-  block <- vroom::vroom(
-    glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"),
-    show_col_types = F
-  ) |>
-    dplyr::filter(data_dir == ld_info$ld_block_data)
+  block <- vroom::vroom(metadata_paths$updated_ld_blocks, show_col_types = F) |>
+    dplyr::filter(data_dir == paths$ld_block_data)
 
-  finemapped_file <- glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
+  finemapped_file <- paths$finemapped_studies
 
   gwas_upload_ids_to_compare <- character(0)
   raw_compare_arg <- args$gwas_upload_ids_to_compare
@@ -267,7 +265,7 @@ run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_
   coloc_results <- dplyr::bind_rows(coloc_results, new_coloc_results)
 
   if (!is.na(worker_guid) && nrow(study_pairs) > 0) {
-    main_pipeline_coloc_file <- glue::glue("{data_dir}/ld_blocks/{ld_block}/coloc_pairwise_results.tsv.gz")
+    main_pipeline_coloc_file <- main_pipeline_ld_block_file_paths(ld_block)$coloc_pairwise
     if (file.exists(main_pipeline_coloc_file)) {
       main_pipeline_coloc <- vroom::vroom(
         main_pipeline_coloc_file,
@@ -434,7 +432,7 @@ resolve_worker_file_paths <- function(finemapped_studies) {
 }
 
 load_worker_finemapped_studies <- function(ld_block, worker_guid, worker_p_value_threshold, compare_guids) {
-  finemapped_file <- glue::glue("{ld_block_dirs(ld_block)$ld_block_data}/finemapped_studies.tsv")
+  finemapped_file <- ld_block_file_paths(ld_block)$finemapped_studies
   if (!file.exists(finemapped_file)) {
     return(data.frame())
   }
@@ -444,7 +442,7 @@ load_worker_finemapped_studies <- function(ld_block, worker_guid, worker_p_value
     dplyr::filter(min_p <= worker_p_value_threshold)
   worker_guid_bp <- finemapped_studies$bp[finemapped_studies$study == worker_guid]
 
-  existing_finemapped_studies_file <- glue::glue("{data_dir}/ld_blocks/{ld_block}/finemapped_studies.tsv")
+  existing_finemapped_studies_file <- main_pipeline_ld_block_file_paths(ld_block)$finemapped_studies
   if (file.exists(existing_finemapped_studies_file)) {
     existing_finemapped_studies <- vroom::vroom(
       existing_finemapped_studies_file,
@@ -459,9 +457,7 @@ load_worker_finemapped_studies <- function(ld_block, worker_guid, worker_p_value
 
   for (compare_guid in compare_guids) {
     if (compare_guid == worker_guid) next
-    compare_finemapped_file <- glue::glue(
-      "{gwas_upload_dir}/ld_blocks/gwas_upload/{compare_guid}/{ld_block}/finemapped_studies.tsv"
-    )
+    compare_finemapped_file <- gwas_upload_ld_block_file_paths(compare_guid, ld_block)$finemapped_studies
     if (!file.exists(compare_finemapped_file)) {
       message(glue::glue("Compare file {compare_finemapped_file} does not exist"))
       next

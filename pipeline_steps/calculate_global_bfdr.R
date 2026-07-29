@@ -45,7 +45,9 @@ main <- function() {
   }
 
 
-  pairwise_files <- Sys.glob(glue::glue("{ld_block_data_dir}*/*/*/coloc_pairwise_results.tsv.gz"))
+  pairwise_files <- Sys.glob(
+    glue::glue("{ld_block_data_dir}*/*/*/{ld_block_file_basenames()$coloc_pairwise}")
+  )
   message(glue::glue("Found {length(pairwise_files)} LD blocks with pairwise coloc results"))
 
   block_list <- NULL
@@ -174,7 +176,10 @@ read_block_h4 <- function(pairwise_file, block_list = NULL) {
   }
 
   if (!is.null(block_list) && nrow(block_list) > 0) {
-    finemapped_file <- file.path(dirname(pairwise_file), "finemapped_studies.tsv")
+    finemapped_file <- file.path(
+      dirname(pairwise_file),
+      ld_block_file_basenames()$finemapped_studies
+    )
     finemapped_studies <- if (file.exists(finemapped_file)) {
       vroom::vroom(finemapped_file, show_col_types = FALSE)
     } else {

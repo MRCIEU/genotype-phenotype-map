@@ -17,15 +17,15 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
-  "--global_bfdr_file",
-  help = "File containing the global BFDR threshold (from calculate_global_bfdr.R)",
+  "--block_list",
+  help = "CSV of studies to exclude from clustering (columns: id_pattern, cis_trans)",
   type = "character",
   default = NA
 )
 parser <- argparser::add_argument(
   parser,
-  "--block_list",
-  help = "CSV of studies to exclude from clustering (columns: id_pattern, cis_trans)",
+  "--worker_guid",
+  help = "Worker GUID (if invoked by worker)",
   type = "character",
   default = NA
 )
@@ -34,45 +34,31 @@ args <- argparser::parse_args(parser)
 
 min_internal_degree_percentage <- 0.05
 
-cluster_output_paths <- function(ld_block_data, block_list_path = NA) {
-  block_list_name <- get_block_list_name(block_list_path)
-  block_list_suffix <- if (is.null(block_list_name)) "" else glue::glue("_{block_list_name}")
-
-  list(
-    pairwise = glue::glue("{ld_block_data}/coloc_pairwise_results.tsv.gz"),
-    new_pairwise = glue::glue("{ld_block_data}/coloc_pairwise_results_5e-6_no_bfdr{block_list_suffix}.tsv.gz"),
-    clustered = glue::glue("{ld_block_data}/clustered_results_5e-6_no_bfdr{block_list_suffix}.tsv.gz"),
-    igraph = glue::glue("{ld_block_data}/igraph_clustered_results_5e-6_no_bfdr{block_list_suffix}.rds")
-  )
-}
-
 main <- function() {
   start_time <- Sys.time()
 
-  ld_info <- ld_block_dirs(args$ld_block)
+  if (!is.na(args$worker_guid)) {
+    update_directories_for_worker(args$worker_guid)
+  }
 
-  h4_threshold <- read_global_bfdr_threshold(args$global_bfdr_file, args$block_list)
-  message(glue::glue("{args$ld_block}: Clustering with global H4 threshold {signif(h4_threshold, 3)}"))
+  paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
+  metadata_paths <- pipeline_metadata_file_paths()
 
-  output_paths <- cluster_output_paths(ld_info$ld_block_data, args$block_list)
+  h4_threshold <- posterior_prob_h4_threshold
+  message(glue::glue("{args$ld_block}: Clustering with H4 threshold {signif(h4_threshold, 3)}"))
 
-  block <- vroom::vroom(
-    glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"),
-    show_col_types = FALSE
-  ) |>
-    dplyr::filter(data_dir == ld_info$ld_block_data)
+  block <- vroom::vroom(metadata_paths$updated_ld_blocks, show_col_types = FALSE) |>
+    dplyr::filter(data_dir == paths$ld_block_data)
 
-  finemapped_file <- glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
-
-  finemapped_studies <- if (file.exists(finemapped_file)) {
-    vroom::vroom(finemapped_file, col_types = finemapped_column_types, show_col_types = FALSE) |>
+  finemapped_studies <- if (file.exists(paths$finemapped_studies)) {
+    vroom::vroom(paths$finemapped_studies, col_types = finemapped_column_types, show_col_types = FALSE) |>
       dplyr::arrange(unique_study_id)
   } else {
     data.frame()
   }
 
-  coloc_results <- if (file.exists(output_paths$pairwise)) {
-    vroom::vroom(output_paths$pairwise, delim = "\t", show_col_types = FALSE)
+  coloc_results <- if (file.exists(paths$coloc_pairwise)) {
+    vroom::vroom(paths$coloc_pairwise, delim = "\t", show_col_types = FALSE)
   } else {
     data.frame()
   }
@@ -93,14 +79,14 @@ main <- function() {
     finemapped_studies <- finemapped_studies |> dplyr::filter(!blocked)
   }
 
-  nothing_to_cluster <- !file.exists(finemapped_file) ||
+  nothing_to_cluster <- !file.exists(paths$finemapped_studies) ||
     nrow(block) == 0 ||
     nrow(finemapped_studies) == 0 ||
     nrow(coloc_results) == 0
 
   if (nothing_to_cluster) {
     message(glue::glue("{args$ld_block}: Nothing to cluster, writing empty clustered results."))
-    vroom::vroom_write(empty_clustered_groups(), output_paths$clustered)
+    vroom::vroom_write(empty_clustered_groups(), paths$clustered)
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
@@ -113,7 +99,7 @@ main <- function() {
     finemapped_studies = finemapped_studies,
     studies_to_colocalise = studies_to_colocalise,
     ld_block = args$ld_block,
-    output_paths = output_paths,
+    output_paths = paths,
     h4_threshold = h4_threshold,
     start_time = start_time
   )
@@ -199,7 +185,7 @@ run_post_coloc_clustering <- function(
 
     clustered_results$groups <- dplyr::bind_rows(clustered_results$groups)
 
-    saveRDS(clustered_results, output_paths$igraph)
+    saveRDS(clustered_results, output_paths$igraph_clustered)
   } else {
     clustered_results <- list(
       groups = data.frame(
@@ -213,7 +199,7 @@ run_post_coloc_clustering <- function(
     )
   }
 
-  vroom::vroom_write(coloc_results, output_paths$new_pairwise)
+  vroom::vroom_write(coloc_results, output_paths$coloc_pairwise)
   vroom::vroom_write(clustered_results$groups, output_paths$clustered)
 
   return(coloc_results)
@@ -616,21 +602,6 @@ load_studies_to_colocalise <- function(finemapped_subset) {
   names(studies_to_colocalise) <- finemapped_subset$unique_study_id
   studies_to_colocalise <- studies_to_colocalise[!sapply(studies_to_colocalise, is.null)]
   return(studies_to_colocalise)
-}
-
-read_global_bfdr_threshold <- function(global_bfdr_file, block_list_path = NA) {
-  if (is.null(global_bfdr_file) || is.na(global_bfdr_file)) {
-    global_bfdr_file <- global_bfdr_file_path(block_list_path)
-  }
-  if (!file.exists(global_bfdr_file)) {
-    message(glue::glue("No global BFDR file found, using default H4 threshold {posterior_prob_h4_threshold}"))
-    return(posterior_prob_h4_threshold)
-  }
-  global_bfdr <- vroom::vroom(global_bfdr_file, show_col_types = FALSE)
-  if (nrow(global_bfdr) == 0 || !"threshold" %in% colnames(global_bfdr)) {
-    return(posterior_prob_h4_threshold)
-  }
-  return(global_bfdr$threshold[1])
 }
 
 invisible(main())

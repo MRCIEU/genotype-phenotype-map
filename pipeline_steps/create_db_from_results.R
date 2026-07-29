@@ -565,7 +565,7 @@ format_pleiotropy_scores <- function(studies_db) {
 }
 
 load_data_into_coloc_pairs_db <- function(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db) {
-  pairwise_colocs <- data.table::fread(file.path(args$results_dir, "coloc_pairwise_results_bfdr.tsv.gz"))
+  pairwise_colocs <- data.table::fread(file.path(args$results_dir, "coloc_pairwise_results.tsv.gz"))
   pairwise_colocs <- pairwise_colocs[!is.na(PP.H4.abf) & ignore == FALSE]
   print(paste("Found", nrow(pairwise_colocs), "pairwise colocs"))
 
@@ -768,8 +768,9 @@ load_data_into_ld_db <- function(ld_conn, studies_db, all_relevant_snps) {
 
 generate_ld_obj <- function(ld_block, snps) {
   message("Generating LD object for ", ld_block)
-  ld_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1.gz"))
-  ld_vars_file <- file.path(ld_reference_panel_dir, glue::glue("{ld_block}.unphased.vcor1.vars"))
+  ld_paths <- ld_block_file_paths(ld_block)
+  ld_file <- ld_paths$ld_matrix_vcor
+  ld_vars_file <- ld_paths$ld_matrix_vars
 
   ld <- data.table::fread(ld_file, header = FALSE, showProgress = FALSE)
   ldvars <- data.table::fread(ld_vars_file, sep = " ", header = FALSE, showProgress = FALSE)
@@ -918,8 +919,9 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
 
   return(tryCatch(
     {
-      imputed_studies_file <- file.path(ld_block_data_dir, ld_block, "imputed_studies.tsv")
-      standard_studies_file <- file.path(ld_block_data_dir, ld_block, "standardised_studies.tsv")
+      block_paths <- ld_block_file_paths(ld_block)
+      imputed_studies_file <- block_paths$imputed_studies
+      standard_studies_file <- block_paths$standardised_studies
       if (!file.exists(imputed_studies_file) && !file.exists(standard_studies_file)) {
         return(NULL)
       }

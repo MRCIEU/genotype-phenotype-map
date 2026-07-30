@@ -118,7 +118,7 @@ compile_results <- function(gwas_info) {
       compare_guids,
       ld_blocks,
       function(guid, block) {
-        gwas_upload_ld_block_file_paths(guid, block)$coloc_pairwise
+        return(gwas_upload_ld_block_file_paths(guid, block)$coloc_pairwise)
       }
     ))
     coloc_pairwise_results_files <- c(coloc_pairwise_results_files, Filter(file.exists, compare_pairwise_files))

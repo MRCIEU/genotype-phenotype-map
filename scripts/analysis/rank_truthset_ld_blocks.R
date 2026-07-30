@@ -81,7 +81,7 @@ if (!is.na(block_list_path) && nzchar(block_list_path) && file.exists(block_list
 }
 
 pair_id_undirected <- function(a, b) {
-  ifelse(a < b, paste(a, b, sep = "||"), paste(b, a, sep = "||"))
+  return(ifelse(a < b, paste(a, b, sep = "||"), paste(b, a, sep = "||")))
 }
 
 read_coloc_global_filtered <- function(coloc_path, blocks_keep, uid_keep) {
@@ -118,7 +118,7 @@ read_coloc_global_filtered <- function(coloc_path, blocks_keep, uid_keep) {
     },
     error = function(e) {
       unlink(c(blocks_file, uids_file))
-      data.table::data.table()
+      return(data.table::data.table())
     }
   )
   if (nrow(df) == 0) {
@@ -130,7 +130,7 @@ read_coloc_global_filtered <- function(coloc_path, blocks_keep, uid_keep) {
   if (!"ld_block" %in% names(df)) {
     names(df)[8] <- "ld_block"
   }
-  df
+  return(df)
 }
 
 read_block_clusters_filtered <- function(ld_block, uid_keep) {
@@ -166,7 +166,7 @@ read_block_clusters_filtered <- function(ld_block, uid_keep) {
     df[, ld_block := ld_block]
     return(df)
   }
-  NULL
+  return(NULL)
 }
 
 read_block_bfdr_info <- function(ld_block) {
@@ -191,7 +191,7 @@ read_block_bfdr_info <- function(ld_block) {
     }
     return(obj$bfdr_info)
   }
-  NULL
+  return(NULL)
 }
 
 message("Published results dir: ", published_results_dir)
@@ -378,7 +378,10 @@ gap_detail <- gap_detail |>
   dplyr::mutate(
     block_bfdr_threshold = vapply(ld_block, function(b) {
       info <- bfdr_info_by_block[[b]]
-      if (is.null(info)) NA_real_ else info$threshold
+      if (is.null(info)) {
+        return(NA_real_)
+      }
+      return(info$threshold)
     }, numeric(1)),
     h4_threshold_used = dplyr::coalesce(block_bfdr_threshold, posterior_prob_h4_threshold)
   )
@@ -408,7 +411,7 @@ if (!is.null(block_list_name)) {
     if (length(uids) == 0) {
       return(NULL)
     }
-    read_block_clusters_filtered(b, unique(uids))
+    return(read_block_clusters_filtered(b, unique(uids)))
   })
   cluster_all <- data.table::rbindlist(cluster_all, use.names = TRUE, fill = TRUE)
 } else {

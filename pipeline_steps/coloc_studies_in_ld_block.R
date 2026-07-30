@@ -349,7 +349,7 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
     bf2 = second_lbf,
     p1 = coloc_base_p1,
     p2 = coloc_base_p2,
-    p12 = coloc_base_p12 
+    p12 = coloc_base_p12
   )
   result$summary$h4 <- result$summary$PP.H4.abf
   result$summary$dynamic_p1 <- coloc_base_p1
@@ -409,26 +409,28 @@ calculate_dynamic_coloc_priors <- function(nsnps) {
 }
 
 resolve_worker_file_paths <- function(finemapped_studies) {
-  finemapped_studies |>
-    dplyr::mutate(
-      file = dplyr::case_when(
-        grepl("^gwas_upload", file) ~ glue::glue("{data_dir}/{file}"),
-        grepl("^study", file) ~ glue::glue("{data_dir}/{file}"),
-        TRUE ~ file
-      ),
-      file_with_lbfs = dplyr::case_when(
-        is.na(file_with_lbfs) ~ NA_character_,
-        grepl("^gwas_upload", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
-        grepl("^study", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
-        TRUE ~ file_with_lbfs
-      ),
-      svg_file = dplyr::case_when(
-        is.na(svg_file) ~ NA_character_,
-        grepl("^gwas_upload", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
-        grepl("^study", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
-        TRUE ~ svg_file
+  return(
+    finemapped_studies |>
+      dplyr::mutate(
+        file = dplyr::case_when(
+          grepl("^gwas_upload", file) ~ glue::glue("{data_dir}/{file}"),
+          grepl("^study", file) ~ glue::glue("{data_dir}/{file}"),
+          TRUE ~ file
+        ),
+        file_with_lbfs = dplyr::case_when(
+          is.na(file_with_lbfs) ~ NA_character_,
+          grepl("^gwas_upload", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
+          grepl("^study", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
+          TRUE ~ file_with_lbfs
+        ),
+        svg_file = dplyr::case_when(
+          is.na(svg_file) ~ NA_character_,
+          grepl("^gwas_upload", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
+          grepl("^study", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
+          TRUE ~ svg_file
+        )
       )
-    )
+  )
 }
 
 load_worker_finemapped_studies <- function(ld_block, worker_guid, worker_p_value_threshold, compare_guids) {

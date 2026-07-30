@@ -46,46 +46,50 @@ analyze_graph_structure_advanced <- function(g, original_graph = NULL) {
       }
     }
 
-    data.frame(
+    return(data.frame(
       weight = mean_weight,
       transitivity = component_transitivity,
       conductance = component_conductance,
       size = igraph::vcount(component_graph)
-    )
+    ))
   })
 
   component_metrics <- dplyr::bind_rows(component_metrics)
-  list(
+  return(list(
     n_components = graph_components$no,
     mean_weight = mean(component_metrics$weight, na.rm = TRUE),
     mean_transitivity = mean(component_metrics$transitivity, na.rm = TRUE),
     mean_conductance = mean(component_metrics$conductance, na.rm = TRUE),
     median_size = stats::median(component_metrics$size)
-  )
+  ))
 }
 
 undirected_pair_id <- function(uid_a, uid_b) {
-  ifelse(uid_a < uid_b, paste(uid_a, uid_b, sep = "||"), paste(uid_b, uid_a, sep = "||"))
+  return(
+    ifelse(uid_a < uid_b, paste(uid_a, uid_b, sep = "||"), paste(uid_b, uid_a, sep = "||"))
+  )
 }
 
 build_truthset_ti_meta <- function(truthset) {
-  truthset |>
-    dplyr::group_by(ti_uid) |>
-    dplyr::summarise(
-      pairwisecoloc_support = any(dplyr::coalesce(as.logical(pairwisecoloc_support), FALSE)),
-      production_gpmap_support = any(dplyr::coalesce(as.logical(gpmap_support), FALSE)),
-      production_preinfomap_support = any(dplyr::coalesce(as.logical(preinfomap_support), FALSE)),
-      .groups = "drop"
-    ) |>
-    dplyr::mutate(
-      support_tier = dplyr::case_when(
-        production_gpmap_support & production_preinfomap_support ~ "pairwise_preinfomap_and_gpmap",
-        !production_gpmap_support & production_preinfomap_support ~ "pairwise_and_preinfomap_only",
-        production_gpmap_support & !production_preinfomap_support ~ "pairwise_and_gpmap_only",
-        TRUE ~ "pairwise_only"
-      ),
-      gap_target = pairwisecoloc_support & !production_gpmap_support
-    )
+  return(
+    truthset |>
+      dplyr::group_by(ti_uid) |>
+      dplyr::summarise(
+        pairwisecoloc_support = any(dplyr::coalesce(as.logical(pairwisecoloc_support), FALSE)),
+        production_gpmap_support = any(dplyr::coalesce(as.logical(gpmap_support), FALSE)),
+        production_preinfomap_support = any(dplyr::coalesce(as.logical(preinfomap_support), FALSE)),
+        .groups = "drop"
+      ) |>
+      dplyr::mutate(
+        support_tier = dplyr::case_when(
+          production_gpmap_support & production_preinfomap_support ~ "pairwise_preinfomap_and_gpmap",
+          !production_gpmap_support & production_preinfomap_support ~ "pairwise_and_preinfomap_only",
+          production_gpmap_support & !production_preinfomap_support ~ "pairwise_and_gpmap_only",
+          TRUE ~ "pairwise_only"
+        ),
+        gap_target = pairwisecoloc_support & !production_gpmap_support
+      )
+  )
 }
 
 evaluate_mode_ti_recovery <- function(input_row, truthset_uid_mappings) {
@@ -114,15 +118,17 @@ evaluate_mode_ti_recovery <- function(input_row, truthset_uid_mappings) {
     dplyr::group_by(ti_uid) |>
     dplyr::summarise(cluster_support = any(cluster_support), .groups = "drop")
 
-  block_mappings |>
-    dplyr::distinct(ti_uid) |>
-    dplyr::left_join(pair_recovery, by = "ti_uid") |>
-    dplyr::mutate(
-      cluster_support = dplyr::coalesce(cluster_support, FALSE),
-      ld_block = input_row$ld_block,
-      mode = input_row$mode,
-      mode_label = input_row$mode_label
-    )
+  return(
+    block_mappings |>
+      dplyr::distinct(ti_uid) |>
+      dplyr::left_join(pair_recovery, by = "ti_uid") |>
+      dplyr::mutate(
+        cluster_support = dplyr::coalesce(cluster_support, FALSE),
+        ld_block = input_row$ld_block,
+        mode = input_row$mode,
+        mode_label = input_row$mode_label
+      )
+  )
 }
 
 evaluate_mode_coloc_burden <- function(
@@ -223,7 +229,7 @@ evaluate_mode_coloc_burden <- function(
     na.rm = TRUE
   )
 
-  data.frame(
+  return(data.frame(
     ld_block = input_row$ld_block,
     mode = input_row$mode,
     mode_label = input_row$mode_label,
@@ -233,7 +239,7 @@ evaluate_mode_coloc_burden <- function(
     n_non_truthset_same_cluster = sum(!same_cluster_pairs$pair_id %in% truthset_pair_ids),
     n_pipeline_false_positive = n_pipeline_false_positive,
     n_pipeline_false_negative = n_pipeline_false_negative
-  )
+  ))
 }
 
 summarise_clustered_graphs <- function(clustered_results) {
@@ -251,7 +257,7 @@ summarise_clustered_graphs <- function(clustered_results) {
     original_graph = clustered_results$unpruned_graph
   )
 
-  data.frame(
+  return(data.frame(
     n_components_unpruned = unpruned$n_components,
     n_components_pruned = pruned$n_components,
     mean_weight_unpruned = unpruned$mean_weight,
@@ -261,5 +267,5 @@ summarise_clustered_graphs <- function(clustered_results) {
     mean_conductance_pruned = pruned$mean_conductance,
     median_size_unpruned = unpruned$median_size,
     median_size_pruned = pruned$median_size
-  )
+  ))
 }

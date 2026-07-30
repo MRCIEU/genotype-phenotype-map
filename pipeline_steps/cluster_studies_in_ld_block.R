@@ -244,9 +244,10 @@ cluster_coloc_results <- function(
 ) {
   unique_studies_to_ignore <- finemapped_studies$unique_study_id[finemapped_studies$ignore]
   coloc_results <- coloc_results |>
-    dplyr::filter(!ignore &
-      !unique_study_a %in% unique_studies_to_ignore &
-      !unique_study_b %in% unique_studies_to_ignore
+    dplyr::filter(
+      !ignore &
+        !unique_study_a %in% unique_studies_to_ignore &
+        !unique_study_b %in% unique_studies_to_ignore
     )
   message(
     glue::glue("{ld_block}: Clustering {nrow(coloc_results)} coloc results starting {diff_time_taken(start_time)}")
@@ -414,7 +415,10 @@ cluster_coloc_results <- function(
   ))
 }
 
-mark_false_positives_and_negatives <- function(coloc_results, clustered_results, h4_threshold = posterior_prob_h4_threshold) {
+mark_false_positives_and_negatives <- function(
+    coloc_results,
+    clustered_results,
+    h4_threshold = posterior_prob_h4_threshold) {
   coloc_results$false_positive <- F
   coloc_results$false_negative <- F
 
@@ -564,14 +568,14 @@ find_snp_and_connectedness_per_cluster <- function(
 }
 
 empty_clustered_groups <- function() {
-  data.frame(
+  return(data.frame(
     unique_study_id = character(),
     component = integer(),
     ld_block = character(),
     snp = character(),
     h4_connectedness = numeric(),
     h3_connectedness = numeric()
-  )
+  ))
 }
 
 load_studies_to_colocalise <- function(finemapped_subset) {

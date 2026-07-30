@@ -247,7 +247,7 @@ ld_block_file_basenames <- function(block_list = NA) {
   block_list_name <- get_block_list_name(block_list)
   block_list_suffix <- if (is.null(block_list_name)) "" else glue::glue("_{block_list_name}")
 
-  list(
+  return(list(
     extracted_studies = "extracted_studies.tsv",
     standardised_studies = "standardised_studies.tsv",
     imputed_studies = "imputed_studies.tsv",
@@ -263,7 +263,7 @@ ld_block_file_basenames <- function(block_list = NA) {
     coloc_complete = "coloc_complete",
     clustering_complete = "clustering_complete",
     compare_rare_complete = "compare_rare_complete"
-  )
+  ))
 }
 
 # Full paths for an LD block. Pass ld_block_data to override the root
@@ -311,33 +311,33 @@ ld_block_file_paths <- function(ld_block = NULL, block_list = NA, ld_block_data 
     paths$ld_matrix_eig <- glue::glue("{ref_prefix}.ldeig.rds")
   }
 
-  paths
+  return(paths)
 }
 
 # Main-pipeline LD-block paths (ignores worker directory remapping).
 main_pipeline_ld_block_file_paths <- function(ld_block, block_list = NA) {
-  ld_block_file_paths(
+  return(ld_block_file_paths(
     ld_block = ld_block,
     block_list = block_list,
     ld_block_data = file.path(data_dir, "ld_blocks", ld_block)
-  )
+  ))
 }
 
 # GWAS-upload worker LD-block paths for a specific upload GUID.
 gwas_upload_ld_block_file_paths <- function(guid, ld_block, block_list = NA) {
-  ld_block_file_paths(
+  return(ld_block_file_paths(
     ld_block = ld_block,
     block_list = block_list,
     ld_block_data = file.path(gwas_upload_dir, "ld_blocks", "gwas_upload", guid, ld_block)
-  )
+  ))
 }
 
 pipeline_metadata_file_paths <- function(block_list = NA) {
-  list(
+  return(list(
     studies_to_process = glue::glue("{pipeline_metadata_dir}studies_to_process.tsv"),
     updated_ld_blocks = glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"),
     global_bfdr = global_bfdr_file_path(block_list)
-  )
+  ))
 }
 
 construct_ld_block <- function(ancestry, chr, start, stop) {

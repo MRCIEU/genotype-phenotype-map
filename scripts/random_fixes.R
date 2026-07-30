@@ -9,9 +9,12 @@ move_coloc_pairs_files <- function() {
   for (block in blocks) {
     print(block)
     coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12.tsv.gz")
-    if (!file.exists(coloc_pairs_file)) return()
+    if (!file.exists(coloc_pairs_file)) {
+      next
+    }
     file.rename(coloc_pairs_file, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12_1e-5.tsv.gz"))
   }
+  return(invisible(NULL))
 }
 
 new_coloc_pairs_files <- function() {
@@ -22,7 +25,9 @@ new_coloc_pairs_files <- function() {
   parallel::mclapply(ld_info$block, mc.cores = 70, function(block) {
     print(block)
     coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz")
-    if (!file.exists(coloc_pairs_file)) return()
+    if (!file.exists(coloc_pairs_file)) {
+      return(invisible(NULL))
+    }
     coloc_pairs <- vroom::vroom(coloc_pairs_file, show_col_types = F) |>
       dplyr::filter(h4 < 0.6)
     vroom::vroom_write(coloc_pairs, glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results_p12.tsv.gz"))

@@ -1,3 +1,5 @@
 id_pattern,cis_trans
 ukb-ppp-european-*,trans
 interval-*,NA
+decode-*,NA
+GTEx-methQTL-*,NA

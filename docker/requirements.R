@@ -8,9 +8,12 @@ install.packages(c("remotes", "devtools"))
 
 cran_install <- c(
   "testthat", "susieR", "Rfast", "duckdb", "validate", "redux", "sendmailR", "igraph", "svglite", "readxl",
-  "janitor", "lintr", "styler"
+  "janitor", "styler"
 )
 install.packages(cran_install)
+
+# Pin lintr to match CI (.github/workflows/main.yml) and local make lint behaviour.
+remotes::install_version("lintr", version = "3.3.0.1")
 
 # Install packages from GitHub and specific versions
 remotes::install_version("RcppEigen", version = "0.3.3.9.3")

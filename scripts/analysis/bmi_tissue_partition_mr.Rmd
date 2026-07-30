@@ -26,8 +26,9 @@ library(ieugwasr)
 
 
 ```{r, include=FALSE}
+source("../../pipeline_steps/constants.R")
 
-out.dir <- "/Users/rj18633/OneDrive - University of Bristol/postdoc/gp_map/results/vignettes/repo_rerun/"
+out.dir <- file.path(results_dir, "1.0.0", "analysis")
 
 ```
 
@@ -275,13 +276,13 @@ n_intersections
 #write.table(tail_distribution, paste0(out.dir, "summary_of_upset_dat.txt"), col.names = T, row.names = FALSE, quote = FALSE, sep = "\t")
 
 # 
-# tiff(
-#   filename = file.path(out.dir, "bmi_upset.tiff"),
-#   width = 13,
-#   height = 6,
-#   units = "in",
-#   res = 300
-# )
+tiff(
+  filename = file.path(out.dir, "bmi_upset.tiff"),
+  width = 13,
+  height = 6,
+  units = "in",
+  res = 300
+)
 
 print(
   upset(
@@ -301,11 +302,6 @@ print(
 ```
 
 Characterize the trait composition of lead tissues... 
-
-```{r}
-
-
-```
 
 Dig in to the complex trait profile of putative tissue partitioned exposure vars.... 
 - PCA analysis 
@@ -470,14 +466,14 @@ pcap1 <- ggplot(
 
 pcap1
 
-# ggsave(
-#   filename = paste0(out.dir, "bmi_tpmr_trait_profile_pca_quadrants.tiff"),
-#   plot = pcap1,
-#   width = 9,
-#   height = 6,
-#   units = "in",
-#   dpi = 300       
-# )
+ggsave(
+  filename = paste0(out.dir, "bmi_tpmr_trait_profile_pca_quadrants.tiff"),
+  plot = pcap1,
+  width = 9,
+  height = 6,
+  units = "in",
+  dpi = 300       
+)
 
 ```
 
@@ -505,7 +501,7 @@ summary <- snps_per_tissue %>%
 summary <- summary[order(-summary$n_traits), ]
 print(summary)
 
-# write.table(summary_tbl_like, paste0(out.dir, "bmi_tpmr_pleiotropy_summary1.txt"), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE) 
+write.table(summary_tbl_like, paste0(out.dir, "bmi_tpmr_pleiotropy_summary1.txt"), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE) 
 
 ```
 
@@ -536,17 +532,17 @@ p2 <- pheatmap(
 p2
 
 ## save plot 
-# pheatmap(
-#   t(trait_z),
-#   cluster_cols = TRUE,
-#   cluster_rows = TRUE,
-#   show_colnames = TRUE,
-#   show_rownames = FALSE,
-#   filename = paste0(out.dir, "bmi_tissue_traits_z_heatmap.png"),
-#   width = 8,
-#   height = 10
-# )
-# 
+pheatmap(
+  t(trait_z),
+  cluster_cols = TRUE,
+  cluster_rows = TRUE,
+  show_colnames = TRUE,
+  show_rownames = FALSE,
+  filename = paste0(out.dir, "bmi_tissue_traits_z_heatmap.png"),
+  width = 8,
+  height = 10
+)
+
 
 
 #### enriched traits per tissue 
@@ -576,7 +572,7 @@ top_traits_tbl <- lapply(rownames(trait_z), function(tissue) {
 top_traits_tbl
 
 
-#write.table(top_traits_tbl, paste0(out.dir, "bmi_tissue_traits_z_rep_traits.txt"), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
+write.table(top_traits_tbl, paste0(out.dir, "bmi_tissue_traits_z_rep_traits.txt"), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
 
 
 ```

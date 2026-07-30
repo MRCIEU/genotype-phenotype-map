@@ -111,8 +111,11 @@ aggregate_data_produced_by_pipeline <- function(
   studies_processed_file,
   traits_processed_file
 ) {
+  file_names <- ld_block_file_basenames(args$block_list)
+
   extracted_studies_files <- Filter(
-    function(file) file.exists(file), glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
+    function(file) file.exists(file),
+    file.path(ld_info$ld_block_data, file_names$extracted_studies)
   )
   extracted_studies <- lapply(extracted_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F))
@@ -120,7 +123,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   standardised_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$standardised_studies)
   )
   standardised_studies <- lapply(standardised_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = standardised_column_types))
@@ -128,7 +131,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   imputed_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/imputed_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$imputed_studies)
   )
   imputed_studies <- lapply(imputed_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = imputed_column_types))
@@ -136,7 +139,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   finemapped_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$finemapped_studies)
   )
   finemapped_studies <- lapply(finemapped_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types))
@@ -144,7 +147,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   pairwise_coloc_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz")
+    file.path(ld_info$ld_block_data, file_names$coloc_pairwise)
   )
   coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
     delim = "\t",
@@ -157,15 +160,9 @@ aggregate_data_produced_by_pipeline <- function(
   )
   message("pairwise coloc results: ", nrow(coloc_pairwise_results))
 
-  coloc_clustered_results_file <- "coloc_clustered_results.tsv.gz"
-  block_list_name <- NULL
-  if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
-    block_list_name <- get_block_list_name(args$block_list)
-    coloc_clustered_results_file <- glue::glue("coloc_clustered_results_{block_list_name}.tsv.gz")
-  }
   coloc_clustered_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/{coloc_clustered_results_file}")
+    file.path(ld_info$ld_block_data, file_names$clustered)
   )
   coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim = "\t", show_col_types = F)
   message("clustered coloc results: ", nrow(coloc_clustered_results))
@@ -178,7 +175,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   compare_rare_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/compare_rare_results.tsv")
+    file.path(ld_info$ld_block_data, file_names$compare_rare_results)
   )
   if (length(compare_rare_input_files) == 0) {
     compare_rare_results <- data.frame()

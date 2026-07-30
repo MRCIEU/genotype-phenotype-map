@@ -23,7 +23,7 @@ compile_results <- function(gwas_info) {
 
   finemapped_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/finemapped_studies.tsv")
+    file.path(ld_block_dirs, ld_block_file_basenames()$finemapped_studies)
   )
   compare_guids <- gwas_info$metadata$gwas_upload_ids_to_compare
   if (is.null(compare_guids)) compare_guids <- gwas_info$metadata$compare_with_upload_guids
@@ -35,7 +35,7 @@ compile_results <- function(gwas_info) {
     compare_files <- as.character(outer(
       compare_guids,
       ld_blocks,
-      function(guid, block) glue::glue("{gwas_upload_dir}ld_blocks/gwas_upload/{guid}/{block}/finemapped_studies.tsv")
+      function(guid, block) gwas_upload_ld_block_file_paths(guid, block)$finemapped_studies
     ))
     finemapped_studies_files <- c(finemapped_studies_files, Filter(file.exists, compare_files))
   }
@@ -81,7 +81,7 @@ compile_results <- function(gwas_info) {
 
   coloc_clustered_results_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/coloc_clustered_results.tsv.gz")
+    file.path(ld_block_dirs, ld_block_file_basenames()$clustered)
   )
   if (length(coloc_clustered_results_files) > 0) {
     coloc_clustered_results <- lapply(coloc_clustered_results_files, function(file) {
@@ -110,7 +110,7 @@ compile_results <- function(gwas_info) {
 
   coloc_pairwise_results_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_block_dirs}/coloc_pairwise_results.tsv.gz")
+    file.path(ld_block_dirs, ld_block_file_basenames()$coloc_pairwise)
   )
   if (length(compare_guids) > 0) {
     ld_blocks <- sub(paste0("^", ld_block_data_dir), "", ld_block_dirs)
@@ -118,7 +118,7 @@ compile_results <- function(gwas_info) {
       compare_guids,
       ld_blocks,
       function(guid, block) {
-        return(paste0(gwas_upload_dir, "ld_blocks/gwas_upload/", guid, "/", block, "/coloc_pairwise_results.tsv.gz"))
+        return(gwas_upload_ld_block_file_paths(guid, block)$coloc_pairwise)
       }
     ))
     coloc_pairwise_results_files <- c(coloc_pairwise_results_files, Filter(file.exists, compare_pairwise_files))

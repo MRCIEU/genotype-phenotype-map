@@ -27,9 +27,11 @@ library(ieugwasr)
 
 ```{r, include=FALSE}
 source("../../pipeline_steps/constants.R")
-Sys.setenv(OPENGWAS_JWT = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImFwaS1qd3QiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJhcGkub3Blbmd3YXMuaW8iLCJhdWQiOiJhcGkub3Blbmd3YXMuaW8iLCJzdWIiOiJhbmRyZXcuZWxtb3JlQGJyaXN0b2wuYWMudWsiLCJpYXQiOjE3ODM2OTEyNzksImV4cCI6MTc4NDkwMDg3OX0.alK-tDmhCUbt83q-g2_PVfINbFYSMZ7ecU8QKJh1xuFpd_2nML3t0YCbK-Wasv1rfoqLrdtBoHAL-sYDMHiNXo-_VUMFQnVmsWy2cXZMD3xMEuClf5bx7fci0Khq71V1uTPlgqF_RyHhoo3L9mdWY1qEMwc9IEzhC2tgvVr70jK9mntgDZf3GH4mRgGvCLMvpbC8p4pV-7dUArIvyHtdEuEJkY1aUQ2s-XIewcBuO87G9vuV0wapyTVqBRvx39riajhvRxnkfuhkT0BouG59lZbLHMRDvMtMDgYdsO6A2kduf89KLXtTWzlv1YzjNb4sj78X1LUQFAynM6TEaWCxDA")
+#TODO: add opengwas jwt
+Sys.setenv(OPENGWAS_JWT = "")
 
-
+#TODO: update results directory if needed
+results_dir <- "/Users/wt23152/Documents/Projects/scratch/021/results"
 out.dir <- file.path(results_dir, "1.0.0", "analysis/")
 
 ```
@@ -230,9 +232,13 @@ upset_data$variant_id <- NULL
 # plot
 upp1 <- upset(
    upset_data,
-   nsets = 18,      
-   nintersects = NA, 
-   order.by = "freq"
+   nsets = 18,
+   nintersects = NA,
+   order.by = "freq",
+   show.numbers = "no",
+   mb.ratio = c(0.5, 0.5),
+   point.size = 2.0,
+   text.scale = c(1.3, 1.1, 1.0, 0.9, 1.7, 1.0)
  )
 
 
@@ -269,27 +275,28 @@ n_intersections
 
 #write.table(tail_distribution, paste0(out.dir, "summary_of_upset_dat.txt"), col.names = T, row.names = FALSE, quote = FALSE, sep = "\t")
 
-# 
 tiff(
   filename = file.path(out.dir, "bmi_upset.tiff"),
   width = 13,
   height = 6,
   units = "in",
-  res = 300
+  res = 600
 )
 
 print(
   upset(
     upset_data,
     nsets = 18,
-    #nintersects = 70,
     nintersects = n_intersections,
-    order.by = "freq"
+    order.by = "freq",
+    show.numbers = "no",
+    mb.ratio = c(0.5, 0.5),
+    point.size = 2.0,
+    text.scale = c(1.3, 1.1, 1.0, 0.9, 1.7, 1.0)
   )
 )
 
-
-#dev.off() 
+dev.off()
 
 
 

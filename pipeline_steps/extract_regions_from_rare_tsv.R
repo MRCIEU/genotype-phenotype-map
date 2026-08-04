@@ -36,7 +36,7 @@ beneficial_columns <- c("GENE", "ANNOTATION")
 #' 1. Identify GRCh38 ld regions containing rare variant top hits passing threshold (no clumping performed here)
 #' 2. Extract SNPs across region and store
 main <- function() {
-  study <- vroom::vroom(glue::glue("{pipeline_metadata_dir}/studies_to_process.tsv"), show_col_types = F) |>
+  study <- vroom::vroom(pipeline_metadata_file_paths()$studies_to_process, show_col_types = F) |>
     dplyr::filter(extracted_location == args$extracted_study_location)
   if (nrow(study) != 1) stop("Error: cant find study to process")
 

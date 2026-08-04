@@ -50,17 +50,23 @@ test_that("Pipeline worker runs for TSV file", {
   update_directories_for_worker(gwas_info$metadata$guid)
   expect_true(dir.exists(extracted_study_dir), info = "GWAS upload directory should exist")
   expect_true(dir.exists(ld_block_data_dir), info = "LD block data directory should exist")
+
+  paths <- ld_block_file_paths(ld_block_of_interest)
   ld_block_files <- c(
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/standardised_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/imputed_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/finemapped_studies.tsv"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_pairwise_results.tsv.gz"),
-    glue::glue("{ld_block_data_dir}/{ld_block_of_interest}/coloc_clustered_results.tsv.gz")
+    paths$standardised_studies,
+    paths$imputed_studies,
+    paths$finemapped_studies,
+    paths$coloc_pairwise,
+    paths$clustered,
+    paths$coloc_complete,
+    paths$clustering_complete
   )
   for (file in ld_block_files) {
     expect_true(file.exists(file), info = glue::glue("File should exist: {file}"))
-    results <- vroom::vroom(file, show_col_types = FALSE)
-    expect_true(nrow(results) > 0, info = glue::glue("Results file should have rows: {file}"))
+    if (!grepl("_complete$", file)) {
+      results <- vroom::vroom(file, show_col_types = FALSE)
+      expect_true(nrow(results) > 0, info = glue::glue("Results file should have rows: {file}"))
+    }
   }
 
   compiled_coloc_pairwise_results <- vroom::vroom(

@@ -17,6 +17,13 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "CSV of studies to exclude from finemapping (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--worker_guid",
   help = "Worker GUID",
   type = "character",
@@ -39,21 +46,32 @@ main <- function() {
   if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
-  ld_info <- ld_block_dirs(args$ld_block)
+  paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
 
-  imputed_studies_file <- glue::glue("{ld_info$ld_block_data}/imputed_studies.tsv")
-  if (!file.exists(imputed_studies_file)) {
+  if (!file.exists(paths$imputed_studies)) {
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
-  imputed_studies <- vroom::vroom(imputed_studies_file, show_col_types = F) |>
+  imputed_studies <- vroom::vroom(paths$imputed_studies, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
 
-  ld_matrix_file <- glue::glue("{ld_info$ld_reference_panel_prefix}.unphased.vcor1.gz")
-  ld_matrix <- vroom::vroom(ld_matrix_file, col_names = F, show_col_types = F, altrep = F)
-  ld_matrix_info <- vroom::vroom(glue::glue("{ld_info$ld_reference_panel_prefix}.tsv"), show_col_types = F)
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
 
-  finemapped_results_file <- glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
+  if (!is.null(block_list) && nrow(block_list) > 0 && nrow(imputed_studies) > 0) {
+    blocked <- is_study_blocked(block_list, imputed_studies$study, imputed_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      imputed_studies <- imputed_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from finemapping"))
+    }
+  }
+
+  ld_matrix <- vroom::vroom(paths$ld_matrix_vcor, col_names = F, show_col_types = F, altrep = F)
+  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
+
+  finemapped_results_file <- paths$finemapped_studies
   existing_finemapped_results <- load_existing_finemapped_results(finemapped_results_file)
 
   if (nrow(imputed_studies) == 0) {
@@ -127,7 +145,7 @@ main <- function() {
               is.na(args$worker_guid)
           ) {
             message("performing qc")
-            qc_results <- perform_qc(gwas, study, ld_info$ld_reference_panel_prefix)
+            qc_results <- perform_qc(gwas, study, paths$ld_reference_panel_prefix)
             study <- qc_results$study
 
             if (study["snps_removed_by_qc"] > 0) {

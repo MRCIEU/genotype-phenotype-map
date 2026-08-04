@@ -193,13 +193,14 @@ test_that("Pipeline execution and file validation", {
   test_that("LD Block directories contain expected files", {
     coloc_block_dir <- glue::glue("{ld_block_data_dir}{coloc_block}")
     expect_true(dir.exists(coloc_block_dir), info = glue::glue("LD block directory should exist: {coloc_block_dir}"))
+    names <- ld_block_file_basenames()
     expected_common_files <- c(
-      "extracted_studies.tsv",
-      "standardised_studies.tsv",
-      "imputed_studies.tsv",
-      "finemapped_studies.tsv",
-      "coloc_pairwise_results.tsv.gz",
-      "coloc_clustered_results.tsv.gz"
+      names$extracted_studies,
+      names$standardised_studies,
+      names$imputed_studies,
+      names$finemapped_studies,
+      names$coloc_pairwise,
+      names$clustered
     )
 
     for (file_name in expected_common_files) {
@@ -256,8 +257,12 @@ test_that("Pipeline execution and file validation", {
   })
 
   test_that("Coloc results are valid", {
-    clustered_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_clustered_results.tsv.gz")
-    pairwise_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_pairwise_results.tsv.gz")
+    clustered_results_file <- file.path(
+      ld_block_data_dir, coloc_block, ld_block_file_basenames()$clustered
+    )
+    pairwise_results_file <- file.path(
+      ld_block_data_dir, coloc_block, ld_block_file_basenames()$coloc_pairwise
+    )
     expect_true(file.exists(clustered_results_file), info = glue::glue("File should exist: {clustered_results_file}"))
     expect_true(file.exists(pairwise_results_file), info = glue::glue("File should exist: {pairwise_results_file}"))
 

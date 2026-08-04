@@ -12,12 +12,12 @@ ukb-d-*,phenotype,ukb,opengwas,none,/local-scratch/data/opengwas/igd,EUR,GRCh37,
 *,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/data/hg38/GTEx-sQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
 *,gene_expression,onek1k,besd,none,/local-scratch/data/hg38/onek1k,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
 *,gene_expression,eqtlgen,besd,none,/local-scratch/data/hg38/eqtlgen,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
-*,methylation,godmc,besd,methqtl,/local-scratch/data/hg38/godmc,EUR,GRCh38,1.5e-4,common,json,sparse,TRUE
+*,methylation,godmc,besd,methqtl,/local-scratch/data/hg38/godmc,EUR,GRCh38,1.5e-4,common,json,sparse,FALSE
 european*,protein,ukb_ppp,besd,none,/local-scratch/data/hg38/ukb-ppp,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
 cis*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
 cis*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
 trans*,gene_expression,interval,besd,none,/local-scratch/data/hg38/interval-eQTL,EUR,GRCh38,1.5e-4,common,json,sparse,TRUE
 trans*,splice_variant,interval,besd,interval_sqtl,/local-scratch/data/hg38/interval-sQTL,EUR,GRCh38,1.5e-4,common,json,sparse,TRUE
 *,protein,decode,besd,none,/local-scratch/data/hg38/decode,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
-BreastMammaryTissue_chr[2-9]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
-BreastMammaryTissue_chr1[0-3]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
+BreastMammaryTissue_chr[2-9]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,TRUE
+BreastMammaryTissue_chr1[0-3]*,methylation,gtex,besd,methqtl,/local-scratch/data/hg38/GTEx-methQTL-v10,EUR,GRCh38,1.5e-4,common,json,dense,TRUE

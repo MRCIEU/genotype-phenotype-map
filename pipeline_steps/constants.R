@@ -18,6 +18,15 @@ minimum_extraction_size_for_sparse_coverage <- 4
 
 posterior_prob_h4_threshold <- 0.8
 posterior_prob_threshold_minimum <- 0.5
+target_global_bfdr <- 0.05
+
+global_bfdr_file_path <- function(block_list_path = NA) {
+  block_list_name <- get_block_list_name(block_list_path)
+  if (!is.null(block_list_name)) {
+    return(glue::glue("{data_dir}pipeline_metadata/global_bfdr_{block_list_name}.tsv"))
+  }
+  return(glue::glue("{data_dir}pipeline_metadata/global_bfdr.tsv"))
+}
 
 
 gpm_website_data <- list(
@@ -230,6 +239,105 @@ ld_block_dirs <- function(block) {
   )
   # ld_info <- dplyr::bind_cols(ld_info, ld_block_components(block))
   return(ld_info)
+}
+
+# Basenames for files stored under an LD-block data directory.
+# Optional block_list adds a suffix to clustered/igraph outputs only.
+ld_block_file_basenames <- function(block_list = NA) {
+  block_list_name <- get_block_list_name(block_list)
+  block_list_suffix <- if (is.null(block_list_name)) "" else glue::glue("_{block_list_name}")
+
+  return(list(
+    extracted_studies = "extracted_studies.tsv",
+    standardised_studies = "standardised_studies.tsv",
+    imputed_studies = "imputed_studies.tsv",
+    finemapped_studies = "finemapped_studies.tsv",
+    coloc_pairwise = "coloc_pairwise_results.tsv.gz",
+    clustered = glue::glue("clustered_results{block_list_suffix}.tsv.gz"),
+    igraph_clustered = glue::glue("igraph_clustered_results{block_list_suffix}.rds"),
+    compare_rare_results = "compare_rare_results.tsv",
+    compare_rare_cached = "compare_rare_cached_studies.tsv",
+    standardisation_complete = "standardisation_complete",
+    imputation_complete = "imputation_complete",
+    finemapping_complete = "finemapping_complete",
+    coloc_complete = "coloc_complete",
+    clustering_complete = "clustering_complete",
+    compare_rare_complete = "compare_rare_complete"
+  ))
+}
+
+# Full paths for an LD block. Pass ld_block_data to override the root
+# (e.g. main-pipeline tree while worker directories are remapped).
+ld_block_file_paths <- function(ld_block = NULL, block_list = NA, ld_block_data = NULL) {
+  if (is.null(ld_block_data)) {
+    if (is.null(ld_block)) {
+      stop("ld_block_file_paths() requires ld_block or ld_block_data")
+    }
+    ld_info <- ld_block_dirs(ld_block)
+    ld_block_data <- ld_info$ld_block_data
+    ref_prefix <- ld_info$ld_reference_panel_prefix
+  } else if (!is.null(ld_block)) {
+    ref_prefix <- glue::glue("{ld_reference_panel_dir}{ld_block}")
+  } else {
+    ref_prefix <- NULL
+  }
+
+  names <- ld_block_file_basenames(block_list)
+  paths <- list(
+    ld_block = ld_block,
+    ld_block_data = ld_block_data,
+    ld_reference_panel_prefix = ref_prefix,
+    extracted_studies = file.path(ld_block_data, names$extracted_studies),
+    standardised_studies = file.path(ld_block_data, names$standardised_studies),
+    imputed_studies = file.path(ld_block_data, names$imputed_studies),
+    finemapped_studies = file.path(ld_block_data, names$finemapped_studies),
+    coloc_pairwise = file.path(ld_block_data, names$coloc_pairwise),
+    clustered = file.path(ld_block_data, names$clustered),
+    igraph_clustered = file.path(ld_block_data, names$igraph_clustered),
+    compare_rare_results = file.path(ld_block_data, names$compare_rare_results),
+    compare_rare_cached = file.path(ld_block_data, names$compare_rare_cached),
+    standardisation_complete = file.path(ld_block_data, names$standardisation_complete),
+    imputation_complete = file.path(ld_block_data, names$imputation_complete),
+    finemapping_complete = file.path(ld_block_data, names$finemapping_complete),
+    coloc_complete = file.path(ld_block_data, names$coloc_complete),
+    clustering_complete = file.path(ld_block_data, names$clustering_complete),
+    compare_rare_complete = file.path(ld_block_data, names$compare_rare_complete)
+  )
+
+  if (!is.null(ref_prefix)) {
+    paths$ld_matrix_tsv <- glue::glue("{ref_prefix}.tsv")
+    paths$ld_matrix_vcor <- glue::glue("{ref_prefix}.unphased.vcor1.gz")
+    paths$ld_matrix_vars <- glue::glue("{ref_prefix}.unphased.vcor1.vars")
+    paths$ld_matrix_eig <- glue::glue("{ref_prefix}.ldeig.rds")
+  }
+
+  return(paths)
+}
+
+# Main-pipeline LD-block paths (ignores worker directory remapping).
+main_pipeline_ld_block_file_paths <- function(ld_block, block_list = NA) {
+  return(ld_block_file_paths(
+    ld_block = ld_block,
+    block_list = block_list,
+    ld_block_data = file.path(data_dir, "ld_blocks", ld_block)
+  ))
+}
+
+# GWAS-upload worker LD-block paths for a specific upload GUID.
+gwas_upload_ld_block_file_paths <- function(guid, ld_block, block_list = NA) {
+  return(ld_block_file_paths(
+    ld_block = ld_block,
+    block_list = block_list,
+    ld_block_data = file.path(gwas_upload_dir, "ld_blocks", "gwas_upload", guid, ld_block)
+  ))
+}
+
+pipeline_metadata_file_paths <- function(block_list = NA) {
+  return(list(
+    studies_to_process = glue::glue("{pipeline_metadata_dir}studies_to_process.tsv"),
+    updated_ld_blocks = glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"),
+    global_bfdr = global_bfdr_file_path(block_list)
+  ))
 }
 
 construct_ld_block <- function(ancestry, chr, start, stop) {

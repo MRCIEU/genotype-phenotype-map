@@ -20,19 +20,20 @@ parser <- argparser::add_argument(
 args <- argparser::parse_args(parser)
 
 main <- function() {
-  ld_info <- ld_block_dirs(args$ld_block)
-  block <- vroom::vroom(glue::glue("{pipeline_metadata_dir}updated_ld_blocks_to_colocalise.tsv"), show_col_types = F) |>
-    dplyr::filter(data_dir == ld_info$ld_block_data)
+  paths <- ld_block_file_paths(args$ld_block)
+  metadata_paths <- pipeline_metadata_file_paths()
+  block <- vroom::vroom(metadata_paths$updated_ld_blocks, show_col_types = F) |>
+    dplyr::filter(data_dir == paths$ld_block_data)
 
-  compare_rare_cache_file <- glue::glue("{ld_info$ld_block_data}/compare_rare_cached_studies.tsv")
-  standardised_file <- glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
+  compare_rare_cache_file <- paths$compare_rare_cached
+  standardised_file <- paths$standardised_studies
   if (file.exists(standardised_file)) {
     standardised_studies <- vroom::vroom(standardised_file, delim = "\t", show_col_types = F) |>
       dplyr::filter(variant_type != variant_types$common)
   }
 
   if (!file.exists(standardised_file) || nrow(block) == 0 || nrow(standardised_studies) == 0) {
-    message(glue::glue("No rare studies to compare in LD region {ld_info$ld_block_data}, skipping."))
+    message(glue::glue("No rare studies to compare in LD region {paths$ld_block_data}, skipping."))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
@@ -69,7 +70,7 @@ main <- function() {
   # Re-assign names
   names(studies_to_compare) <- standardised_studies$unique_study_id
 
-  message(glue::glue("Comparing {length(studies_to_compare)} rare variants in LD region {ld_info$ld_block_data}"))
+  message(glue::glue("Comparing {length(studies_to_compare)} rare variants in LD region {paths$ld_block_data}"))
 
   # All rare variants available in ld_block
   variants <- do.call("rbind", lapply(studies_to_compare, function(x) {
@@ -78,7 +79,7 @@ main <- function() {
     dplyr::group_by(SNP) |>
     dplyr::summarise(min_P = min(P))
 
-  message(glue::glue("Found {nrow(variants)} rare variants in LD region {ld_info$ld_block_data}"))
+  message(glue::glue("Found {nrow(variants)} rare variants in LD region {paths$ld_block_data}"))
 
   # Compare rare variant hits across studies at given p-value threshold
   compare_results <- compare_by_variant(
@@ -88,15 +89,14 @@ main <- function() {
   )
 
   if (nrow(compare_results) == 0) {
-    message(glue::glue("No rare variants to compare in LD region {ld_info$ld_block_data}, skipping."))
+    message(glue::glue("No rare variants to compare in LD region {paths$ld_block_data}, skipping."))
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
   }
 
   studies_to_cache <- data.frame(study = standardised_studies$study)
 
-  compare_results_file <- glue::glue("{ld_info$ld_block_data}/compare_rare_results.tsv")
-  vroom::vroom_write(compare_results, compare_results_file)
+  vroom::vroom_write(compare_results, paths$compare_rare_results)
   vroom::vroom_write(studies_to_cache, compare_rare_cache_file)
   vroom::vroom_write(data.frame(), args$completed_output_file)
   return()

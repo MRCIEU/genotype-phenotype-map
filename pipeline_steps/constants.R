@@ -44,6 +44,7 @@ ld_reference_panel_dir <- glue::glue("{data_dir}ld_reference_panel_hg38/")
 liftover_dir <- glue::glue("{data_dir}liftover/")
 extracted_study_dir <- glue::glue("{data_dir}study/")
 variant_annotation_dir <- glue::glue("{data_dir}variant_annotation/")
+ti_pairs_data_dir <- glue::glue("{data_dir}ti_pairs/")
 static_web_dir <- glue::glue("{current_results_dir}static_web/")
 svg_dir <- glue::glue("{static_web_dir}svgs/")
 
@@ -250,6 +251,7 @@ ld_block_file_basenames <- function(block_list = NA) {
   return(list(
     extracted_studies = "extracted_studies.tsv",
     standardised_studies = "standardised_studies.tsv",
+    standardised_skipped = "standardised_skipped.tsv",
     imputed_studies = "imputed_studies.tsv",
     finemapped_studies = "finemapped_studies.tsv",
     coloc_pairwise = "coloc_pairwise_results.tsv.gz",
@@ -289,6 +291,7 @@ ld_block_file_paths <- function(ld_block = NULL, block_list = NA, ld_block_data 
     ld_reference_panel_prefix = ref_prefix,
     extracted_studies = file.path(ld_block_data, names$extracted_studies),
     standardised_studies = file.path(ld_block_data, names$standardised_studies),
+    standardised_skipped = file.path(ld_block_data, names$standardised_skipped),
     imputed_studies = file.path(ld_block_data, names$imputed_studies),
     finemapped_studies = file.path(ld_block_data, names$finemapped_studies),
     coloc_pairwise = file.path(ld_block_data, names$coloc_pairwise),

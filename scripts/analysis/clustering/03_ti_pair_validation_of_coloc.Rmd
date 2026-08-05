@@ -1,0 +1,402 @@
+---
+title: "Drug target-indication pair validation of coloc"
+author: "A. Hanson"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    code_folding: hide
+params:
+  # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
+  results_version: "1.0.0"
+  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap.rda
+  recompute_cache: false
+---
+
+The increased relative success (RS) of drug targets for diesease indications (T-I pairs) evidenced by genetic colocalisation implies that knowledge of the gene products impacted by genetic perturbations causally underlying disease can improve the likelihood of successful therapeutic intervention. The GPMAP involves several stages of amalgamating and pruning genetic evidence from GWAS studies to group shared signals across molecular and complex traits (including disease): \
+- Grouping studies that share a regional signal (coloc H3) \
+- Pairwise colocalisation (coloc H4) \
+- Grouping studies into clusters ("graphs") based on the H4 matrix \
+- Splitting of megaclusters into subclusters based on edge/study connectivity (using the igraph infomap method) \
+- Further pruning of poorly connected cluster edges/studies (results presented to user)
+
+If refinement of colocalisation clusters is working well, with the pruning out of false positive colocs and inference of false negative study links, these grouping will be more sensitive and specific in providing genetic evidence for successful T-I pairs (ie. RS will increase as genetic evidence becomes more refined)... 
+
+## Data import
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(ggplot2)
+
+source("../../../pipeline_steps/constants.R")
+
+versioned_results_dir <- if (grepl("^/", params$results_version)) {
+  params$results_version
+} else {
+  file.path(sub("/$", "", results_dir), params$results_version)
+}
+analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
+cache_dir <- file.path(ti_pairs_data_dir, "cache")
+pre_infomap_dir <- file.path(ti_pairs_data_dir, "pre-infomap")
+
+## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
+ti_pairs <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+ti_pairs_unique <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_unique.tsv"))
+```
+
+We wish to compare the colocalisation clusters returned to users after running ingraph:infomap() to split highly connected groups of studies sharing H4 signals at a given loci, followed by pruning of outlying poorly connected studies, with the pre-split and pruned results: 
+
+### Pre-infomap coloc clusters
+
+```{r prepare-data}
+## Pre-pruned clusters from the versioned results directory
+pre_infomap_file_local <- file.path(versioned_results_dir, "coloc_clustered_results_no_pruning.tsv.gz")
+if (!file.exists(pre_infomap_file_local)) {
+  fallback <- file.path(pre_infomap_dir, "coloc_clustered_results_no_pruning.tsv.gz")
+  if (file.exists(fallback)) {
+    pre_infomap_file_local <- fallback
+  } else {
+    stop("Missing coloc_clustered_results_no_pruning.tsv.gz in ", versioned_results_dir,
+         " (or ", pre_infomap_dir, ")")
+  }
+}
+
+pre_infomap_clusters <- vroom::vroom(pre_infomap_file_local)
+
+## Filter out studies added post first submission
+# studies_extracted <- vroom::vroom(file.path(versioned_results_dir, "study_extractions.tsv.gz"))
+# blocked_list <- data.table::fread("../../../pipeline_steps/data/1_0_0_block_list.csv", data.table = FALSE)
+# studies_out <- studies_extracted$study[is_study_blocked(...)] |> unique()
+# write.table(studies_out, file.path(pre_infomap_dir, "exclude_studies.txt"))
+studies_out <- read.table(file.path(pre_infomap_dir, "exclude_studies.txt"))[, 1]
+
+# Remove from pre-pruned clusters
+pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(study %in% studies_out))
+```
+
+What genetic (QTL) evidence is available for each molecular target?
+
+```{r molecular-targets}
+targets <- unique(ti_pairs$target) #2221 drug targets
+
+# Using studies processed in pipeline at time of publication
+gpmap_molecular <- data.table::fread(file.path(versioned_results_dir, "studies_processed.tsv.gz")) |>
+  dplyr::filter(variant_type == "common" & gene %in% targets)
+
+matched_targets <- unique(gpmap_molecular$gene)
+# length(matched_targets) #2221 drug targets with genetic associations tested across molecular assays
+
+# What % of drug targets have data from each molecular assays available (in at least one tissue)?:
+available_assays <- gpmap_molecular |> dplyr::group_by(gene, data_type) |> dplyr::summarise(n_studies = dplyr::n())
+table(available_assays$data_type)/length(matched_targets) * 100 # 99.3% eQTL, 92.6% sQTL, 88.9% mQTL, 38.0% pQTL
+
+# Which genes have which modes of molecular insight?
+molecular_insight <- available_assays |> dplyr::group_by(data_type) |> dplyr::reframe(gene = c(gene))
+molecular_insight <- lapply(split(molecular_insight, molecular_insight$data_type), function(x){x$gene})
+```
+
+```{r preinfomap-support}
+# Split pre_infomap_clusters df into list of studies within shared components
+pre_infomap_splitclusters <- pre_infomap_clusters |> 
+  dplyr::group_by(coloc_group_id) |> dplyr::group_split()
+
+names(pre_infomap_splitclusters) <- paste0("group_",unique(pre_infomap_clusters$coloc_group_id))
+  
+# Loop through T-I pairs and identify situatons where both the target and indication fall in the same pre-infomap cluster - count this as genetic evidence 
+pull_ti_preinfomap <- function(target, trait){
+  message("Testing for cluster sharing between: ", trait, " and ", target)
+  
+  ## Pull group IDs
+  group_ids <- pre_infomap_clusters |> dplyr::filter(study %in% trait) |> dplyr::pull(coloc_group_id) |> unique()
+  
+  res <- data.frame(target = target,
+                    trait = trait)
+  
+  # Which modes of molecular insight are available for the target?
+  insight <- sapply(molecular_insight, function(x){target %in% x})
+  insight <- names(insight)[insight]
+  groups_wtarget <- NULL
+  
+  if(length(group_ids) == 0){
+    res$preinfomap_GC_support <- FALSE
+    res$preinfomap_eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
+    res$preinfomap_sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
+    res$preinfomap_mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
+    res$preinfomap_pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
+    res$preinfomap_n_coloc_groups <- NA
+    res$preinfomap_coloc_groups <- NA
+  }else{
+    # Pull colocs w target gene
+    group_set <- pre_infomap_splitclusters[paste0("group_",group_ids)]
+    groups_wtarget <- do.call("rbind", group_set) |> dplyr::filter(gene %in% target)
+    
+    if(nrow(groups_wtarget) > 0){
+      evidence <- unique(groups_wtarget$data_type)
+      res$preinfomap_GC_support <- TRUE
+      res$preinfomap_eQTL_support <- ifelse(any(evidence %in% "gene_expression"), TRUE, ifelse("gene_expression" %in% insight, FALSE, NA))
+      res$preinfomap_sQTL_support <- ifelse(any(evidence %in% "splice_variant"), TRUE, ifelse("splice_variant" %in% insight, FALSE, NA))
+      res$preinfomap_mQTL_support <- ifelse(any(evidence %in% "methylation"), TRUE, ifelse("methylation" %in% insight, FALSE, NA))
+      res$preinfomap_pQTL_support <- ifelse(any(evidence %in% "protein"), TRUE, ifelse("protein" %in% insight, FALSE, NA))
+      res$preinfomap_n_coloc_groups <- length(unique(groups_wtarget$coloc_group_id))
+      res$preinfomap_coloc_groups <- paste(unique(groups_wtarget$coloc_group_id), collapse = ";")
+    } else {
+      res$preinfomap_GC_support <- FALSE
+      res$preinfomap_eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
+      res$preinfomap_sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
+      res$preinfomap_mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
+      res$preinfomap_pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
+      res$preinfomap_n_coloc_groups <- NA
+      res$preinfomap_coloc_groups <- NA
+    }
+  }
+  return(list(group_summary = res, target_groups = groups_wtarget))
+}
+
+preinfomap_file <- file.path(pre_infomap_dir, "tipairs_preinfomap.rda")
+if (!file.exists(preinfomap_file)) {
+  legacy <- file.path(pre_infomap_dir, "tipairs_pre-infomap.rda")
+  if (file.exists(legacy)) preinfomap_file <- legacy
+}
+
+if (params$recompute_cache) {
+  ti_preinfomap <- mapply(
+    FUN = pull_ti_preinfomap,
+    target = ti_pairs$target,
+    trait = ti_pairs$trait_gpmap,
+    SIMPLIFY = FALSE
+  )
+  names(ti_preinfomap) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+  save(ti_preinfomap, file = file.path(pre_infomap_dir, "tipairs_preinfomap.rda"))
+} else {
+  load(preinfomap_file) # ti_preinfomap
+}
+
+# Genetic colocalisation (GC) support:
+gc_support_preinfomap <- do.call("rbind",lapply(ti_preinfomap, function(x){x[[1]]})) |>
+ dplyr::mutate(ti_uid = ti_pairs$ti_uid, .before = "target") |>
+ dplyr::rename("GC_support_preinfomap" = preinfomap_GC_support)
+```
+
+### Coloc pairs
+
+```{r colocpairs-support}
+# Load pre-computed GC support based on coloc pairs (pre clustering)
+load(file.path(cache_dir, "gpmap_tipairwisecolocs.rda")) # ti_colocs_frompairs
+gc_support_pairs <- do.call("rbind",lapply(ti_colocs_frompairs, function(x){x[[1]]})) |>
+  dplyr::mutate(ti_uid = ti_pairs$ti_uid, .before = "target") |>
+  dplyr::rename("GC_support_colocpairs" = GC_support,
+                "colocpairs_eQTL_support" = eQTL_support,
+                "colocpairs_sQTL_support" = sQTL_support,
+                "colocpairs_mQTL_support" = mQTL_support,
+                "colocpairs_pQTL_support" = pQTL_support)
+
+# Merge evidence tiers and collapse
+# identical(rownames(gc_support_preinfomap), rownames(gc_support_pairs))
+gc_support_preinfomap <- cbind(gc_support_preinfomap, gc_support_pairs[,4:9])
+
+# Collapse across studies for the same indication
+gpmap_support_preinfomap = gc_support_preinfomap |> 
+  dplyr::group_by(ti_uid) |> 
+  dplyr::summarise(across(where(is.logical), any))
+    
+# Append to ti-pairs
+#identical(ti_pairs_unique$ti_uid, gpmap_support_preinfomap$ti_uid)
+ti_pairs_unique <- ti_pairs_unique |> dplyr::left_join(gpmap_support_preinfomap, by = "ti_uid")
+```
+
+## T-I pairs with tiered GPMAP support
+
+T-I pairs with genetic support available across: \
+1. Coloc pairs \
+2. Coloc H4<0.8 groups pre infomap cluster assignement
+3. Infomap assigned (and pruned) coloc groups \
+
+```{r genetic-support, fig.width=5, fig.height=4}
+summary_gcsupport <- ti_pairs_unique[,c("ti_uid", "combined_max_phase", "GC_support_colocpairs", "GC_support_preinfomap", "gpmap_support")] |>
+  tidyr::pivot_longer(cols = 3:5, names_to = "source", values_to = "genetic_support") |>
+  dplyr::group_by(combined_max_phase, source) |> dplyr::summarise(total = dplyr::n(), supported = sum(genetic_support)) |>
+  dplyr::mutate(
+    combined_max_phase = factor(combined_max_phase, levels = rev(c("Preclinical","Phase I","Phase II","Phase III","Launched"))),
+    per_supported = (supported/total) * 100,
+    CI_lower = binom::binom.confint(x = supported, n = total, methods = "wilson")[,"lower"] * 100,
+    CI_upper = binom::binom.confint(x = supported, n = total, methods = "wilson")[,"upper"] * 100,
+    failed = ifelse(combined_max_phase == "Launched", FALSE, TRUE))
+
+set_names = c("gpmap_support" = "GPMAP coloc clusters",
+              "GC_support_colocpairs" = "Coloc pairs (H4>0.8)", 
+              "GC_support_preinfomap" = "Coloc clusters (pre infomap cluster assignment and pruning)")
+
+summary_gcsupport |> 
+  ggplot(aes(x = per_supported, y = combined_max_phase, group = source, colour = source)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4) +
+  geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0, lwd = 1, 
+                position = position_dodge(width = 0.5)) +
+  geom_hline(yintercept = c(0.5,1.5,2.5,3.5,4.5,5.5), col = "grey") +
+  scale_colour_manual(name = "", values = c("tomato","steelblue","orange"), label = set_names) +
+  scale_x_continuous(limits = c(0,20)) +
+  theme_minimal() +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank(),
+        axis.text = element_text(size = 10)) +
+  labs(x = "Genetic support (%)", y = "") +
+  guides(colour = guide_legend(nrow = 3))
+```
+
+```{r genetic-support-qtls, fig.width=6, fig.height=6}
+summary_gcsupport_qtls <- ti_pairs_unique[,c("ti_uid", "combined_max_phase", 
+                                        "eQTL_support","sQTL_support","mQTL_support","pQTL_support",
+                                        "preinfomap_eQTL_support","preinfomap_sQTL_support", "preinfomap_mQTL_support", "preinfomap_pQTL_support")] |>
+  tidyr::pivot_longer(cols = 3:10, names_to = "source", values_to = "genetic_support") |>
+  dplyr::group_by(combined_max_phase, source) |> dplyr::summarise(total = dplyr::n(), supported = sum(genetic_support, na.rm = TRUE)) |>
+  dplyr::mutate(
+    source = factor(source, levels = c("eQTL_support","preinfomap_eQTL_support",
+                                       "sQTL_support","preinfomap_sQTL_support",
+                                       "mQTL_support","preinfomap_mQTL_support",
+                                       "pQTL_support","preinfomap_pQTL_support")),
+    combined_max_phase = factor(combined_max_phase, levels = rev(c("Preclinical","Phase I","Phase II","Phase III","Launched"))),
+    per_supported = (supported/total) * 100,
+    CI_lower = binom::binom.confint(x = supported, n = total, methods = "wilson")[,"lower"] * 100,
+    CI_upper = binom::binom.confint(x = supported, n = total, methods = "wilson")[,"upper"] * 100,
+    failed = ifelse(combined_max_phase == "Launched", FALSE, TRUE),
+    qtl = sub(".*(.QTL)_support","\\1",source),
+    set = ifelse(grepl("preinfomap",source), "pre-infomap","GPMAP"))
+
+qtl_colours = c("eQTL" = "orange", 
+              "mQTL" = "olivedrab3", 
+              "sQTL" = "steelblue",
+              "pQTL" = "tomato")
+
+summary_gcsupport_qtls |> 
+  ggplot(aes(x = per_supported, y = combined_max_phase, group = source, colour = qtl)) +
+  geom_point(aes(shape = set), position = position_dodge(width = 0.9), size = 4) +
+  geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0, lwd = 1, 
+                position = position_dodge(width = 0.9)) +
+  geom_hline(yintercept = c(0.5,1.5,2.5,3.5,4.5,5.5), col = "grey") +
+  scale_shape_manual(name = "Set", values = c(19,1)) +
+  scale_colour_manual(name = "QTL", values = qtl_colours) +
+  scale_x_continuous(limits = c(0,20)) +
+  theme_minimal() +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank(),
+        axis.text = element_text(size = 10)) +
+  labs(x = "Genetic support (%)", y = "") +
+  guides(colour = guide_legend(nrow = 2))
+```
+
+### Relative success
+
+```{r relative-success, fig.width=5, fig.height=2}
+# Sources of genetic support
+sources <- c("gpmap_support", "GC_support_colocpairs", "GC_support_preinfomap")
+
+rel_success <- do.call("rbind", lapply(sources, FUN = function(x){
+  # Restrict to  drugs passing preclinical trials
+  dat <- ti_pairs_unique |> dplyr::filter(combined_max_phase != "Preclinical")
+  dat <- dat |> dplyr::filter(dat[[x]] == TRUE | gpmap_support == FALSE) # No GC support from other means as denominator
+  
+  # Contingency table
+  tab <- table(dat[[x]], dat$succ)
+  if(nrow(tab) != 2){
+    data.frame(source = x,
+               n_supp_launched = NA,
+               n_supp = NA,
+               RS = NA,
+               CI_lower = NA,
+               CI_upper = NA)
+  }else{
+    # Relative success and CI with epitools
+    RS <- epitools::riskratio(tab, method = "wald")
+    out <- RS$measure[2,]
+    data.frame(source = x,
+               n_supp_launched = tab[2,2],
+               n_supp = sum(tab[2,]),
+               RS = out["estimate"],
+               CI_lower = out["lower"],
+               CI_upper = out["upper"])
+  }
+})) |> na.exclude()
+
+set_names_short = c("gpmap_support" = "GPMAP support",
+                    "GC_support_preinfomap" = "Pre-clustering support",
+                    "GC_support_colocpairs" = "Coloc pairs support")
+
+rel_success |>
+  dplyr::mutate(labels = factor(set_names_short[source], levels = set_names_short)) |>
+  ggplot(aes(x = RS, y = labels, colour = source)) +
+  geom_point(size = 4) +
+  geom_vline(xintercept = 1, colour = "grey", lty = 2) +
+  geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0, lwd = 1) +
+  scale_colour_manual(name = "", values = c("tomato","steelblue","orange")) +
+  scale_x_continuous(limits = c(0,ceiling(max(rel_success$CI_upper)))) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size = 10),
+        axis.line = element_line(colour = "grey"),
+        legend.position = "none") +
+  labs(x = "Relative success", y = "")
+```
+
+```{r relative-success-byqtl, fig.width=5, fig.height=3}
+# Sources of genetic support
+sources_qtls <- c("gpmap_support", "eQTL_support","sQTL_support","mQTL_support","pQTL_support",
+             "GC_support_preinfomap", "preinfomap_eQTL_support","preinfomap_sQTL_support", "preinfomap_mQTL_support", "preinfomap_pQTL_support")
+
+rel_success_qtls <- do.call("rbind", lapply(sources_qtls, FUN = function(x){
+  # Restrict to  drugs passing preclinical trials
+  dat <- ti_pairs_unique |> dplyr::filter(combined_max_phase != "Preclinical")
+  dat <- dat |> dplyr::filter(dat[[x]] == TRUE | gpmap_support == FALSE) # No GC support from other means as denominator
+  
+  # Contingency table
+  tab <- table(dat[[x]], dat$succ)
+  if(nrow(tab) != 2){
+    data.frame(source = x,
+               n_supp_launched = NA,
+               n_supp = NA,
+               RS = NA,
+               CI_lower = NA,
+               CI_upper = NA)
+  }else{
+    # Relative success and CI with epitools
+    RS <- epitools::riskratio(tab, method = "wald")
+    out <- RS$measure[2,]
+    data.frame(source = x,
+               n_supp_launched = tab[2,2],
+               n_supp = sum(tab[2,]),
+               RS = out["estimate"],
+               CI_lower = out["lower"],
+               CI_upper = out["upper"])
+  }
+})) |> na.exclude() |> 
+    dplyr::mutate(
+    qtl = ifelse(grepl("QTL",source), sub(".*(.QTL)_support","\\1",source), "All"),
+    set = ifelse(grepl("preinfomap",source), "pre-infomap","GPMAP"))
+
+set_names_short_qtls = c("gpmap_support" = "GPMAP support",
+                         "GC_support_preinfomap" = "Pre-clustering support",
+                         "eQTL_support" = "GPMAP eQTL", 
+                         "preinfomap_eQTL_support" = "Pre-clustering eQTL",
+                         "mQTL_support" = "GPMAP mQTL", 
+                         "preinfomap_mQTL_support" = "Pre-clustering mQTL",
+                         "sQTL_support" = "GPMAP sQTL",
+                         "preinfomap_sQTL_support" = "Pre-clustering sQTL",
+                         "pQTL_support" = "GPMAP pQTL",
+                         "preinfomap_pQTL_support" = "Pre-clustering pQTL")
+
+rel_success_qtls |>
+  dplyr::mutate(labels = factor(set_names_short_qtls[source], levels = set_names_short_qtls)) |>
+  ggplot(aes(x = RS, y = labels, colour = qtl, shape = set)) +
+  geom_point(size = 4) +
+  facet_grid(qtl ~ ., scale = "free") +
+  geom_vline(xintercept = 1, colour = "grey", lty = 2) +
+  geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0, lwd = 1) +
+  scale_colour_manual(name = "", values = qtl_colours) +
+  scale_shape_manual(name = "Set", values = c(19,1)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size = 10),
+        axis.line = element_line(colour = "grey"),
+        legend.position = "none") +
+  labs(x = "Relative success", y = "")```

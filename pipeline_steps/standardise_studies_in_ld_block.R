@@ -31,12 +31,25 @@ parser <- argparser::add_argument(
 )
 args <- argparser::parse_args(parser)
 
+standardisation_skip_rule_version <- glue::glue(
+  "min_dense={minimum_extraction_size_for_dense_coverage},min_sparse={minimum_extraction_size_for_sparse_coverage}"
+)
+
 main <- function() {
   if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
   paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
-  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
+
+  if (!file.exists(paths$extracted_studies)) {
+    message(glue::glue("{args$ld_block}: No extracted studies; writing empty standardised results."))
+    vroom::vroom_write(empty_standardised_studies(), paths$standardised_studies)
+    if (!file.exists(paths$standardised_skipped)) {
+      vroom::vroom_write(empty_standardised_skipped(), paths$standardised_skipped)
+    }
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
 
   extracted_studies <- vroom::vroom(paths$extracted_studies, show_col_types = F)
 
@@ -63,45 +76,87 @@ main <- function() {
     existing_standardised_studies <- empty_standardised_studies()
   }
 
-  new_standardised_studies <- empty_standardised_studies()
+  existing_skipped <- load_standardised_skipped(paths$standardised_skipped)
+  active_skipped_inputs <- existing_skipped$input_file[
+    existing_skipped$rule_version == standardisation_skip_rule_version
+  ]
 
-  if (nrow(extracted_studies) > 0) {
-    new_standardised_studies <- apply(extracted_studies, 1, function(study) {
-      start_time <- Sys.time()
-      standardised_file <- sub("extracted", "standardised", study[["file"]])
+  expected_standardised_files <- sub("extracted", "standardised", extracted_studies$file)
+  already_done <- expected_standardised_files %in% existing_standardised_studies$file |
+    extracted_studies$file %in% active_skipped_inputs
+  todo_idx <- which(!already_done)
 
-      if (standardised_file %in% existing_standardised_studies$file) {
-        return()
-      }
-
-      result <- perform_standardisation(study, ld_matrix_info)
-
-      if (nrow(result$gwas) < minimum_extraction_size_for_dense_coverage &&
-          study[["variant_type"]] == variant_types$common &&
-          study[["coverage"]] == coverage_types$dense
-      ) {
-        return()
-      }
-
-      if (
-        nrow(result$gwas) < minimum_extraction_size_for_sparse_coverage &&
-          study[["variant_type"]] == variant_types$common &&
-          study[["coverage"]] == coverage_types$sparse
-      ) {
-        return()
-      }
-
-      vroom::vroom_write(result$gwas, result$study$file)
-
-      result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time))
-      return(result$study)
-    }) |>
-      dplyr::bind_rows() |>
-      type.convert(as.is = T)
-
-    if (nrow(new_standardised_studies) > 0) {
-      new_standardised_studies$chr <- as.character(new_standardised_studies$chr)
+  if (length(todo_idx) == 0L) {
+    message(glue::glue(
+      "{args$ld_block}: All {nrow(extracted_studies)} studies already standardised or skipped; skipping."
+    ))
+    if (!file.exists(standardised_studies_file)) {
+      vroom::vroom_write(existing_standardised_studies, standardised_studies_file)
     }
+    if (!file.exists(paths$standardised_skipped)) {
+      vroom::vroom_write(existing_skipped, paths$standardised_skipped)
+    }
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
+
+  message(glue::glue(
+    "{args$ld_block}: Standardising {length(todo_idx)} / {nrow(extracted_studies)} studies"
+  ))
+  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
+  studies_to_standardise <- extracted_studies[todo_idx, , drop = FALSE]
+
+  results <- lapply(seq_len(nrow(studies_to_standardise)), function(i) {
+    study <- studies_to_standardise[i, , drop = FALSE]
+    start_time <- Sys.time()
+    result <- perform_standardisation(study, ld_matrix_info)
+    n_variants <- nrow(result$gwas)
+
+    if (n_variants < minimum_extraction_size_for_dense_coverage &&
+        study[["variant_type"]] == variant_types$common &&
+        study[["coverage"]] == coverage_types$dense
+    ) {
+      return(list(
+        status = "skipped",
+        skipped = make_standardised_skipped_row(
+          study = study,
+          reason = "below_min_dense",
+          n_variants = n_variants
+        )
+      ))
+    }
+
+    if (
+      n_variants < minimum_extraction_size_for_sparse_coverage &&
+        study[["variant_type"]] == variant_types$common &&
+        study[["coverage"]] == coverage_types$sparse
+    ) {
+      return(list(
+        status = "skipped",
+        skipped = make_standardised_skipped_row(
+          study = study,
+          reason = "below_min_sparse",
+          n_variants = n_variants
+        )
+      ))
+    }
+
+    vroom::vroom_write(result$gwas, result$study$file)
+
+    result$study$time_taken <- hms::as_hms(difftime(Sys.time(), start_time))
+    return(list(status = "ok", study = result$study))
+  })
+
+  new_standardised_studies <- dplyr::bind_rows(
+    lapply(results[vapply(results, function(r) identical(r$status, "ok"), logical(1))], `[[`, "study")
+  )
+  new_skipped <- dplyr::bind_rows(
+    lapply(results[vapply(results, function(r) identical(r$status, "skipped"), logical(1))], `[[`, "skipped")
+  )
+
+  if (nrow(new_standardised_studies) > 0) {
+    new_standardised_studies <- type.convert(new_standardised_studies, as.is = TRUE)
+    new_standardised_studies$chr <- as.character(new_standardised_studies$chr)
   }
 
   if (nrow(new_standardised_studies) > 0) {
@@ -115,17 +170,33 @@ main <- function() {
     vroom::vroom_write(empty_standardised_studies(), standardised_studies_file)
   }
 
+  if (nrow(new_skipped) > 0) {
+    skipped_studies <- dplyr::bind_rows(existing_skipped, new_skipped) |>
+      dplyr::distinct(input_file, rule_version, .keep_all = TRUE)
+    vroom::vroom_write(skipped_studies, paths$standardised_skipped)
+  } else if (!file.exists(paths$standardised_skipped)) {
+    vroom::vroom_write(existing_skipped, paths$standardised_skipped)
+  }
+
   vroom::vroom_write(data.frame(), args$completed_output_file)
   return()
 }
 
 perform_standardisation <- function(study, ld_matrix_info) {
-  standardised_file <- sub("extracted", "standardised", study[["file"]])
-  gwas <- vroom::vroom(study[["file"]], show_col_types = F, col_types = vroom::cols(
+  # study may be a 1-row data.frame (preferred) or a named vector from apply()
+  get_field <- function(name) {
+    if (is.data.frame(study)) {
+      return(study[[name]][[1]])
+    }
+    return(study[[name]])
+  }
+
+  standardised_file <- sub("extracted", "standardised", get_field("file"))
+  gwas <- vroom::vroom(get_field("file"), show_col_types = F, col_types = vroom::cols(
     EA = vroom::col_character(),
     OA = vroom::col_character()
   ))
-  is_rare_study <- study[["variant_type"]] != variant_types$common
+  is_rare_study <- get_field("variant_type") != variant_types$common
 
   response <- standardise_alleles(gwas) |>
     standardise_extracted_gwas(ld_matrix_info, is_rare_study)
@@ -133,13 +204,18 @@ perform_standardisation <- function(study, ld_matrix_info) {
   response$gwas <- gwas_health_check(response$gwas) |>
     filter_gwas(is_rare_study)
 
-  study["ld_block"] <- args$ld_block
-  study["file"] <- standardised_file
-  study["eaf_from_reference_panel"] <- response$eaf_from_reference_panel
-  study["snps_removed_by_reference_panel"] <- response$snps_removed_by_reference_panel
-  study <- study[-match("reference_build", names(study))]
+  study_out <- if (is.data.frame(study)) {
+    as.list(study[1, , drop = TRUE])
+  } else {
+    as.list(study)
+  }
+  study_out[["ld_block"]] <- args$ld_block
+  study_out[["file"]] <- standardised_file
+  study_out[["eaf_from_reference_panel"]] <- response$eaf_from_reference_panel
+  study_out[["snps_removed_by_reference_panel"]] <- response$snps_removed_by_reference_panel
+  study_out[["reference_build"]] <- NULL
 
-  return(list(gwas = response$gwas, study = as.list(study)))
+  return(list(gwas = response$gwas, study = study_out))
 }
 
 empty_standardised_studies <- function() {
@@ -158,6 +234,53 @@ empty_standardised_studies <- function() {
     time_taken = character(),
     variant_type = character(),
     coverage = character()
+  ))
+}
+
+empty_standardised_skipped <- function() {
+  return(data.frame(
+    study = character(),
+    input_file = character(),
+    reason = character(),
+    n_variants = integer(),
+    coverage = character(),
+    variant_type = character(),
+    ld_block = character(),
+    rule_version = character(),
+    stringsAsFactors = FALSE
+  ))
+}
+
+load_standardised_skipped <- function(skipped_file) {
+  if (!file.exists(skipped_file)) {
+    return(empty_standardised_skipped())
+  }
+  skipped <- vroom::vroom(skipped_file, show_col_types = FALSE)
+  expected_cols <- names(empty_standardised_skipped())
+  missing_cols <- setdiff(expected_cols, names(skipped))
+  for (col in missing_cols) {
+    skipped[[col]] <- NA
+  }
+  return(skipped[, expected_cols, drop = FALSE])
+}
+
+make_standardised_skipped_row <- function(study, reason, n_variants) {
+  get_field <- function(name) {
+    if (is.data.frame(study)) {
+      return(study[[name]][[1]])
+    }
+    return(study[[name]])
+  }
+  return(data.frame(
+    study = get_field("study"),
+    input_file = get_field("file"),
+    reason = reason,
+    n_variants = as.integer(n_variants),
+    coverage = get_field("coverage"),
+    variant_type = get_field("variant_type"),
+    ld_block = args$ld_block,
+    rule_version = as.character(standardisation_skip_rule_version),
+    stringsAsFactors = FALSE
   ))
 }
 

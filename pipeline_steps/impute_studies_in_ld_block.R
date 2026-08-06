@@ -200,6 +200,8 @@ empty_imputed_studies <- function() {
       z_adj = numeric(),
       se_adj = numeric(),
       time_taken = character(),
+      significant_rows_imputed = numeric(),
+      significant_rows_filtered = numeric(),
       ld_block = character(),
       variant_type = character(),
       coverage = character()

@@ -177,8 +177,63 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   return(table)
 }
 
+#' Load study_sources rows from summary_stats metadata.csv files.
+#' Keeps per-file citations out of studies_processed; only used when building the DB.
+load_summary_stats_study_sources <- function() {
+  study_list_file <- if (!is.na(TEST_RUN)) {
+    "../tests/data/study_list.csv"
+  } else {
+    "data/study_list.csv"
+  }
+  if (!file.exists(study_list_file)) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+
+  study_list <- vroom::vroom(study_list_file, show_col_types = F)
+  summary_stats_entries <- dplyr::filter(study_list, data_format == data_formats$summary_stats)
+  if (nrow(summary_stats_entries) == 0) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+
+  sources <- apply(summary_stats_entries, 1, function(entry) {
+    metadata_file <- file.path(entry[["data_location"]], "metadata.csv")
+    if (!file.exists(metadata_file)) {
+      return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+    }
+
+    metadata <- vroom::vroom(metadata_file, show_col_types = F)
+    required_cols <- c("source", "name", "url", "doi")
+    if (!all(required_cols %in% colnames(metadata))) {
+      return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+    }
+
+    return(
+      metadata |>
+        dplyr::mutate(
+          source = gsub("_", "-", source),
+          url = ifelse(is.na(url), "", as.character(url)),
+          doi = ifelse(is.na(doi), "", as.character(doi))
+        ) |>
+        dplyr::filter(!is.na(source) & source != "" & !is.na(name) & name != "") |>
+        dplyr::distinct(source, .keep_all = TRUE) |>
+        dplyr::select(source, name, url, doi)
+    )
+  }) |>
+    dplyr::bind_rows()
+
+  if (nrow(sources) == 0) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+  return(dplyr::distinct(sources, source, .keep_all = TRUE))
+}
+
 load_data_for_studies_db <- function(studies_db, studies_conn) {
-  studies_db$study_sources$data <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F) |>
+  static_sources <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F)
+  dynamic_sources <- load_summary_stats_study_sources()
+  studies_db$study_sources$data <- dplyr::bind_rows(
+    static_sources,
+    dplyr::filter(dynamic_sources, !source %in% static_sources$source)
+  ) |>
     resolve_ids_for_table(studies_db$study_sources$existing_ids, studies_db$study_sources$persist_id_from) |>
     dplyr::select(get_table_column_names(studies_db$study_sources))
 

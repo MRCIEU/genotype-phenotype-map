@@ -125,6 +125,10 @@ rule extract_regions_from_studies:
             command = f'Rscript extract_regions_from_rare_tsv.R \
                 --extracted_study_location {study.extracted_location} \
                 --extracted_output_file {output}'
+        elif study.data_format == 'summary_stats':
+            command = f'Rscript extract_regions_from_summary_stats.R \
+                --extracted_study_location {study.extracted_location} \
+                --extracted_output_file {output}'
         else:
             raise ValueError(f'Cant ingest unknown data format: {study.data_format}')
 

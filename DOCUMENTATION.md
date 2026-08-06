@@ -25,17 +25,39 @@ Studies are configured in `pipeline_steps/data/study_list.csv`. Each row defines
 | `id_pattern` | Glob pattern to match study IDs (e.g. `ebi-a-*`, `*` for all in directory) |
 | `data_type` | One of: `phenotype`, `gene_expression`, `splice_variant`, `transcript`, `protein`, `methylation`, `metabolome`, `cell_trait`, `plasma_protein` |
 | `source` | Must exist in `pipeline_steps/data/study_sources.csv` |
-| `data_format` | `opengwas`, `besd`, or `tsv` |
+| `data_format` | `opengwas`, `besd`, `tsv`, or `summary_stats` |
 | `bespoke_parsing` | Parsing variant (e.g. `none`, `gtex_sqtl`, `godmc`) |
 | `data_location` | Path to the data on disk |
 | `ancestry` | e.g. `EUR` |
 | `reference_build` | `GRCh37` or `GRCh38` |
 | `p_value_threshold` | e.g. `1.5e-4` |
 | `variant_type` | `common` or `rare_exome` |
-| `metadata_type` | `json` or `tsv` |
+| `metadata_type` | `json`, `tsv`, or `csv` (`csv` required for `summary_stats`) |
 | `coverage` | `dense` or `sparse` |
 
 The pipeline discovers studies by matching `data_location` + `id_pattern` against the filesystem. Study IDs are derived from folder and file names.
+
+### summary_stats format
+
+For delimited GWAS uploads (csv/tsv), use `data_format=summary_stats` and `metadata_type=csv`. Point `data_location` at a directory containing `metadata.csv`, where each row describes one summary-stat file (same fields as the worker upload JSON):
+
+| Column | Description |
+|--------|-------------|
+| `study_name` | Unique study ID (underscores become dashes) |
+| `file_location` | Path to the summary-stat file (absolute, or relative to `data_location`) |
+| `trait` | Trait display name |
+| `sample_size` | Sample size |
+| `category` | `continuous` or `categorical` |
+| `file_type` | `csv` (delimited; VCF not yet supported) |
+| `source` | Unique source slug for this file/paper (used in the DB `study_sources` table) |
+| `name` | Display name for the source (e.g. paper or consortium name) |
+| `url` | Source URL (may be empty) |
+| `doi` | DOI URL or identifier (may be empty) |
+| `SNP`, `RSID`, `CHR`, `BP`, `EA`, `OA`, `P`, `BETA`, `OR`, `SE`, `EAF`, `N` | Optional column map: value is the source column name in the file |
+
+Ancestry, reference build, and p-value threshold come from the `study_list.csv` row. Extraction reuses `extract_regions_from_summary_stats.R` (same script as the worker path).
+
+For `study_list.csv`, use `source=manual` (or another catch-all already in `study_sources.csv`). Each study’s `source` slug is taken from `metadata.csv` and stored on the study as usual. Citation fields (`name` / `url` / `doi`) stay in `metadata.csv` only and are merged into the DB `study_sources` table when databases are created — they are not written to `studies_processed`. Use a unique `source` slug per paper/dataset.
 
 To exclude studies, add them to `pipeline_steps/data/ignore_studies.tsv` or `pipeline_steps/data/ignore_studies_rare.tsv`.
 
@@ -50,7 +72,7 @@ To exclude studies, add them to `pipeline_steps/data/ignore_studies.tsv` or `pip
 | `url` | Source URL |
 | `doi` | DOI for citation |
 
-When adding a new source to `study_list.csv`, add a corresponding row to `study_sources.csv`.
+When adding a new source to `study_list.csv`, add a corresponding row to `study_sources.csv`. For one-off summary-stat ingestions, prefer putting citation fields in `metadata.csv` instead (see above).
 
 ---
 
@@ -72,7 +94,7 @@ These must exist under `$DATA_DIR` before running:
 
 4. **Study data**
    - Paths specified in `study_list.csv`; typically under `/local-scratch/data/`
-   - Must match the expected layout for the chosen `data_format` (opengwas, besd, tsv)
+   - Must match the expected layout for the chosen `data_format` (opengwas, besd, tsv, summary_stats)
 
 ---
 

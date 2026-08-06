@@ -7,8 +7,8 @@ source("pipeline_steps/constants.R")
 # smr --beqtl-summary /some/besd_file  --extract-probe probe.list  --query 1 --make-besd --out subset_of_besd_file
 # where probe.list has the format:
 
-total_studies_to_process <- 8
-total_studies_processed <- 5
+total_studies_to_process <- 9
+total_studies_processed <- 6
 ld_blocks <- vroom::vroom("tests/data/ld_blocks.tsv", show_col_types = FALSE)
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 coloc_block <- "EUR/1/1170341-1730405"
@@ -240,7 +240,7 @@ test_that("Pipeline execution and file validation", {
       }
       for (dir_name in expected_dirs) {
         dir_path <- file.path(study_dir, dir_name)
-        expect_true(dir.exists(dir_path), info = glue::glue("Directory should exist"))
+        expect_true(dir.exists(dir_path), info = glue::glue("Directory should exist: {dir_path}"))
       }
       extracted_snps <- vroom::vroom(file.path(study_dir, "extracted_snps.tsv"), show_col_types = FALSE)
       for (j in seq_len(nrow(extracted_snps))) {

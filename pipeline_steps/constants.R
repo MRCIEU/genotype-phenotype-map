@@ -113,7 +113,7 @@ cell_types <- c(
   "Plasma"
 )
 study_categories <- list(continuous = "continuous", categorical = "categorical")
-data_formats <- list(opengwas = "opengwas", besd = "besd", tsv = "tsv")
+data_formats <- list(opengwas = "opengwas", besd = "besd", tsv = "tsv", summary_stats = "summary_stats")
 cis_trans <- list(cis_only = "cis", trans_only = "trans", cis_trans = "cis_trans")
 variant_types <- list(common = "common", rare_exome = "rare_exome", rare_wgs = "rare_wgs")
 ancestry_map <- list(EUR = "European", EAS = "East Asian", AFR = "African", SAS = "South Asian")
@@ -127,6 +127,12 @@ available_liftover_conversions <- list(
 )
 extraction_file_types <- list(vcf = "vcf", csv = "csv")
 coverage_types <- list(dense = "dense", sparse = "sparse")
+metadata_types <- list(json = "json", tsv = "tsv", csv = "csv")
+
+# Standardised GWAS column names that can be remapped in summary_stats metadata.csv
+summary_stats_column_map_fields <- c(
+  "SNP", "RSID", "CHR", "BP", "EA", "OA", "P", "BETA", "OR", "SE", "EAF", "N"
+)
 
 standardised_gwas_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "SNP", "Z", "GENE")
 required_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P")
@@ -148,6 +154,13 @@ imputed_column_types <- vroom::cols(
   bp = vroom::col_number(),
   sample_size = vroom::col_number(),
   p_value_threshold = vroom::col_number(),
+  rows_imputed = vroom::col_number(),
+  b_cor = vroom::col_number(),
+  se_cor = vroom::col_number(),
+  z_adj = vroom::col_number(),
+  se_adj = vroom::col_number(),
+  significant_rows_imputed = vroom::col_number(),
+  significant_rows_filtered = vroom::col_number(),
   time_taken = vroom::col_character()
 )
 

@@ -6,8 +6,8 @@ studies_db <- list(
       id INTEGER PRIMARY KEY,
       source TEXT NOT NULL,
       name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      doi TEXT NOT NULL
+      url TEXT,
+      doi TEXT
     )"
   ),
   ld_blocks = list(

@@ -1,0 +1,2 @@
+threshold	estimated_bfdr	n_discoveries	target_bfdr	minimum_threshold	n_pairs	n_blocks	default_threshold
+0.8	0.05	100	0.05	0.5	1000	100	0.8

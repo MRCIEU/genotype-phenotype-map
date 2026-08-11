@@ -1,6 +1,9 @@
 ---
 params:
   ld_block: null
+  ld_blocks_file: "../../pipeline_steps/temp_all_ld_blocks.txt"
+  results_version: "1.0.0"
+  n_cores: 50
 output:
   html_document:
     self_contained: true
@@ -8,226 +11,986 @@ title: "Coloc Clustering Validation"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, fig.align = "center", warning = FALSE, message = FALSE,
-                      fig.width = 8, fig.height = 5)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.align = "center",
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 9,
+  fig.height = 5
+)
 
 library(igraph)
-library(ggplot2)
 library(dplyr)
 library(vroom)
+library(scales)
+library(parallel)
 
 source("../../pipeline_steps/constants.R")
+source("clustering_comparison_helpers.R")
 
-# Whether to scan all on-disk LD block dirs or a single `params$ld_block`
+n_cores <- max(1L, as.integer(params$n_cores))
+
+ld_blocks_file <- params$ld_blocks_file
+if (!file.exists(ld_blocks_file)) {
+  stop("Missing LD block list: ", ld_blocks_file)
+}
+
 ld_block_param <- params$ld_block
-run_all_ld_blocks <- is.null(ld_block_param) ||
+use_single_ld_block <- !(is.null(ld_block_param) ||
   (length(ld_block_param) == 0L) ||
   (is.character(ld_block_param) && length(ld_block_param) == 1L &&
-    (is.na(ld_block_param) || !nzchar(trimws(ld_block_param))))
+    (is.na(ld_block_param) || !nzchar(trimws(ld_block_param)))))
 if (is.character(ld_block_param) && length(ld_block_param) > 1L) {
-  stop("params$ld_block must be null (all blocks) or a single character string.")
+  stop("params$ld_block must be null or a single character string.")
 }
+
+selected_ld_blocks <- if (use_single_ld_block) {
+  trimws(ld_block_param)
+} else {
+  blocks <- readLines(ld_blocks_file, warn = FALSE)
+  blocks[nzchar(blocks)]
+}
+
+comparison_files <- data.frame(
+  method = c(
+    "5e-6, no BFDR",
+    "5e-6 + BFDR",
+    "1e-5 + BFDR"
+  ),
+  pairwise_file = c(
+    "coloc_pairwise_results_5e-6_no_bfdr_1_0_0.tsv.gz",
+    "coloc_pairwise_results_5e-6_bfdr_1_0_0.tsv.gz",
+    "coloc_pairwise_results_1e-5_bfdr_1_0_0.tsv.gz"
+  ),
+  cluster_file = c(
+    "clustered_results_5e-6_no_bfdr_1_0_0.tsv.gz",
+    "clustered_results_5e-6_bfdr_1_0_0.tsv.gz",
+    "clustered_results_1e-5_bfdr_1_0_0.tsv.gz"
+  ),
+  rds_file = c(
+    "igraph_clustered_results_5e-6_no_bfdr_1_0_0.rds",
+    "igraph_clustered_results_5e-6_bfdr_1_0_0.rds",
+    "igraph_clustered_results_1e-5_bfdr_1_0_0.rds"
+  ),
+  bfdr_file = c(
+    "global_no_bfdr_threshold_p12_5e-6.tsv",
+    "global_bfdr_threshold_p12_5e-6.tsv",
+    "global_bfdr_threshold_p12_1e-5.tsv"
+  ),
+  stringsAsFactors = FALSE
+)
+
+studies_file <- file.path(results_dir, params$results_version, "studies_processed.tsv.gz")
+if (!file.exists(studies_file)) {
+  stop("Missing studies file: ", studies_file)
+}
+study_types <- vroom::vroom(studies_file, show_col_types = FALSE) |>
+  dplyr::select(study_name, data_type, variant_type) |>
+  dplyr::distinct()
+
+study_extractions_file <- file.path(
+  results_dir, params$results_version, "study_extractions.tsv.gz"
+)
+if (!file.exists(study_extractions_file)) {
+  stop("Missing study extractions file: ", study_extractions_file)
+}
+study_extractions_meta <- vroom::vroom(
+  study_extractions_file,
+  col_select = c(unique_study_id, study, min_p),
+  show_col_types = FALSE
+)
+study_min_p <- study_extractions_meta |>
+  dplyr::select(unique_study_id, min_p)
+
+# Denominator for coloc profiles: common phenotype extractions at genome-wide significance
+phenotype_universe <- study_extractions_meta |>
+  dplyr::filter(!is.na(min_p), min_p <= genome_wide_p_value_threshold) |>
+  dplyr::left_join(study_types, by = c("study" = "study_name")) |>
+  dplyr::filter(data_type == "phenotype", variant_type == "common") |>
+  dplyr::pull(unique_study_id) |>
+  unique()
 ```
 
 ## Overview
 
-This report is used to validate the clustering method.  If we decide to change the clustering method, we can use this report to compare the new method to the old one.
+This report compares the three prior / BFDR clustering configurations across LD blocks.
 
-**This run:** `r if (run_all_ld_blocks) "All LD blocks with a data directory." else paste0("Single block: ", ld_block_param, ".")`
+**Single-block override:** set `params$ld_block` when rendering.
 
-To render only one block: `rmarkdown::render("coloc_clustering_validation.Rmd", params = list(ld_block = "EUR/1/93071870-95684841"))`.  To render all blocks, use `params = list(ld_block = NULL)` or omit `ld_block`.
+### Methods compared
 
-Part 1: It calculates a series of graph structure metrics for the unpruned and pruned graphs.
-Part 2: It compares the results based on real world target-indication pairs.
+| Method | Pairwise input used for clustering | Annotated pairwise output | Threshold file |
+|--------|------------------------------------|---------------------------|----------------|
+| 5e-6, no BFDR | `coloc_pairwise_results.tsv.gz` | `coloc_pairwise_results_5e-6_no_bfdr_1_0_0.tsv.gz` | `global_no_bfdr_threshold_p12_5e-6.tsv` |
+| 5e-6 + BFDR | `coloc_pairwise_results.tsv.gz` | `coloc_pairwise_results_5e-6_bfdr_1_0_0.tsv.gz` | `global_bfdr_threshold_p12_5e-6.tsv` |
+| 1e-5 + BFDR | `coloc_pairwise_results_p12_1e-5.tsv.gz` | `coloc_pairwise_results_1e-5_bfdr_1_0_0.tsv.gz` | `global_bfdr_threshold_p12_1e-5.tsv` |
 
-### Graph Structure Metrics
-The metrics we calculate are:
-1. Number of components
-2. Mean weight
-3. Mean transitivity
-4. Mean conductance
-5. Median size
+```{r resolve_blocks}
+ld_info <- data.frame(
+  block = selected_ld_blocks,
+  ld_block_data = file.path(ld_block_data_dir, selected_ld_blocks),
+  stringsAsFactors = FALSE
+)
+ld_info <- ld_info[dir.exists(ld_info$ld_block_data), , drop = FALSE]
 
-We then compare the metrics for the unpruned and pruned graphs.
+required_files <- c(
+  comparison_files$pairwise_file,
+  comparison_files$cluster_file,
+  comparison_files$rds_file
+)
+complete_mask <- vapply(seq_len(nrow(ld_info)), function(i) {
+  all(file.exists(file.path(ld_info$ld_block_data[i], required_files)))
+}, logical(1))
 
-```{r pruned_vs_unpruned_graph_structure_metrics}
-# `apply` only accepts matrices — use lapply/seq_along. Paths use ld_info$ld_block_data.
-ld_blocks_tsv_path <- file.path("../../pipeline_steps/data/ld_blocks.tsv")
-ld_rows <- vroom::vroom(ld_blocks_tsv_path, show_col_types = FALSE)
-ld_info <- with(ld_rows, construct_ld_block(ancestry, chr, start, stop))
-ld_info <- ld_info[base::dir.exists(ld_info$ld_block_data), , drop = FALSE]
-
-if (!run_all_ld_blocks) {
-  key <- trimws(ld_block_param)
-  ld_info <- ld_info[ld_info$block == key, , drop = FALSE]
-  if (nrow(ld_info) == 0L) {
-    stop(
-      "params$ld_block not found among blocks with an existing data directory: ",
-      key
-    )
-  }
-}
-
+incomplete_blocks <- ld_info$block[!complete_mask]
+ld_info <- ld_info[complete_mask, , drop = FALSE]
 blocks <- ld_info$block
 
-analyze_graph_structure_advanced <- function(g, original_graph = NULL) {
-  if (is.null(g) || igraph::vcount(g) < 1L) {
-    return(list(
-      n_components = 0L,
-      mean_weight = NA_real_,
-      mean_transitivity = NA_real_,
-      mean_conductance = NA_real_,
-      median_size = NA_real_
-    ))
-  }
-  comp <- components(g)
-  if (comp$no < 1L) {
-    return(list(
-      n_components = 0L,
-      mean_weight = NA_real_,
-      mean_transitivity = NA_real_,
-      mean_conductance = NA_real_,
-      median_size = NA_real_
-    ))
-  }
+if (length(blocks) == 0L) {
+  stop("No LD blocks have complete outputs for all three clustering configurations.")
+}
+```
 
-  comp_metrics <- lapply(seq_len(comp$no), function(i) {
-    v_indices <- which(comp$membership == i)
-    subgraph <- induced_subgraph(g, v_indices)
+**Complete LD blocks analysed:** `r length(blocks)` of `r length(selected_ld_blocks)` requested. All tables below are **pooled across those complete blocks**.
 
-    m_weight <- if (ecount(subgraph) > 0) mean(E(subgraph)$weight) else 0
-    trans <- transitivity(subgraph, type = "global")
-    if (is.na(trans)) trans <- 0
+### Graph structure metrics
 
-    cond <- NA
-    if (!is.null(original_graph)) {
-      node_names <- V(g)[v_indices]$name
-      internal_weight <- sum(E(subgraph)$weight)
-      inc_edges_list <- incident_edges(original_graph, v = node_names, mode = "all")
-      all_edge_ids <- unique(unlist(inc_edges_list))
-      total_original_weight <- sum(E(original_graph)[all_edge_ids]$weight)
+Metrics are calculated per LD block from the unpruned and pruned graphs, then pooled across blocks.
 
-      if (total_original_weight > 0) {
-        cond <- (total_original_weight - internal_weight) / total_original_weight
-      } else {
-        cond <- 0
+```{r pruned_vs_unpruned_graph_structure_metrics}
+per_block_graph <- dplyr::bind_rows(parallel::mclapply(
+  seq_len(nrow(ld_info)),
+  function(bi) {
+    dplyr::bind_rows(lapply(seq_len(nrow(comparison_files)), function(method_i) {
+      rds_path <- file.path(ld_info$ld_block_data[bi], comparison_files$rds_file[method_i])
+      cr <- tryCatch(readRDS(rds_path), error = function(e) NULL)
+      if (is.null(cr) || is.null(cr$unpruned_graph) || is.null(cr$pruned_graph)) {
+        return(NULL)
       }
+      u <- tryCatch(
+        analyze_graph_structure_advanced(cr$unpruned_graph),
+        error = function(e) NULL
+      )
+      p <- tryCatch(
+        analyze_graph_structure_advanced(cr$pruned_graph, original_graph = cr$unpruned_graph),
+        error = function(e) NULL
+      )
+      if (is.null(u) || is.null(p)) {
+        return(NULL)
+      }
+      data.frame(
+        ld_block = ld_info$block[bi],
+        method = comparison_files$method[method_i],
+        n_components_unpruned = u$n_components,
+        n_components_pruned = p$n_components,
+        mean_weight_unpruned = u$mean_weight,
+        mean_weight_pruned = p$mean_weight,
+        mean_transitivity_unpruned = u$mean_transitivity,
+        mean_transitivity_pruned = p$mean_transitivity,
+        mean_conductance_pruned = p$mean_conductance,
+        median_size_unpruned = u$median_size,
+        median_size_pruned = p$median_size,
+        stringsAsFactors = FALSE
+      )
+    }))
+  },
+  mc.cores = n_cores
+))
+
+graph_structure_pooled <- per_block_graph |>
+  dplyr::group_by(method) |>
+  dplyr::summarise(
+    n_components_unpruned = sum(n_components_unpruned),
+    n_components_pruned = sum(n_components_pruned),
+    mean_weight_unpruned = mean(mean_weight_unpruned, na.rm = TRUE),
+    mean_weight_pruned = mean(mean_weight_pruned, na.rm = TRUE),
+    mean_transitivity_unpruned = mean(mean_transitivity_unpruned, na.rm = TRUE),
+    mean_transitivity_pruned = mean(mean_transitivity_pruned, na.rm = TRUE),
+    mean_conductance_pruned = mean(mean_conductance_pruned, na.rm = TRUE),
+    median_of_median_size_unpruned = stats::median(median_size_unpruned, na.rm = TRUE),
+    median_of_median_size_pruned = stats::median(median_size_pruned, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  graph_structure_pooled,
+  digits = 4,
+  caption = "Graph structure metrics pooled across complete LD blocks"
+)
+```
+
+### Stability across prior and BFDR settings
+
+False-positive / false-negative flags come from the annotated pairwise outputs written by clustering:
+
+- **False positive:** an H4-positive pair whose edge was removed during clustering
+- **False negative:** an H4-negative pair whose studies nevertheless finish in the same cluster
+
+FP/FN rates are restricted to **non-ignored** pairs where **both** study extractions have
+`min_p < 5e-8`, and H4 significance uses `h4 > 0.8`. Both false-positive and false-negative
+rates use H4-positive pairs as the denominator (`n_false_* / n_h4_positive`).
+
+Method-to-method stability asks how much BFDR (or the 1e-5 prior) changes **pairwise H4
+calls** versus **final Infomap communities**:
+
+- **Pairwise change** — among the union of non-ignored pairs with H4 ≥ each method's clustering
+  threshold, the fraction in the symmetric difference (`1 − Jaccard`)
+- **Community-pair change** — same for co-clustered study pairs in the clustered results
+- **Adjusted Rand Index (ARI)** — agreement of Infomap partitions on the shared study universe
+  (studies present in only one clustering are treated as singletons in the other)
+
+```{r compare_clustering_result_sets}
+resolve_global_bfdr_path <- function(bfdr_file) {
+  candidates <- c(
+    file.path(pipeline_metadata_dir, bfdr_file),
+    bfdr_file
+  )
+  existing <- candidates[file.exists(candidates)]
+  if (length(existing) > 0L) existing[1L] else candidates[1L]
+}
+
+read_global_bfdr_threshold <- function(path) {
+  if (!file.exists(path)) {
+    warning("Missing global BFDR file; using the default H4 threshold: ", path)
+    return(posterior_prob_h4_threshold)
+  }
+  global_bfdr <- vroom::vroom(path, show_col_types = FALSE)
+  threshold_col <- intersect(c("threshold", "threhold"), names(global_bfdr))[1L]
+  if (length(threshold_col) == 0L || is.na(threshold_col) || nrow(global_bfdr) == 0L) {
+    warning("No threshold column/value in ", path, "; using the default H4 threshold.")
+    return(posterior_prob_h4_threshold)
+  }
+  as.numeric(global_bfdr[[threshold_col]][1L])
+}
+
+method_thresholds <- stats::setNames(
+  vapply(
+    comparison_files$bfdr_file,
+    function(f) read_global_bfdr_threshold(resolve_global_bfdr_path(f)),
+    numeric(1)
+  ),
+  comparison_files$method
+)
+
+make_pair_id <- function(study_a, study_b) {
+  paste(pmin(study_a, study_b), pmax(study_a, study_b), sep = "||")
+}
+
+# Hubert & Arabie adjusted Rand index for two labelings of the same objects.
+adjusted_rand_index <- function(labels_a, labels_b) {
+  stopifnot(length(labels_a) == length(labels_b))
+  n <- length(labels_a)
+  if (n < 2L) {
+    return(NA_real_)
+  }
+
+  tab <- table(labels_a, labels_b)
+  sum_comb <- function(x) sum(x * (x - 1) / 2)
+  index <- sum_comb(as.vector(tab))
+  row_comb <- sum_comb(rowSums(tab))
+  col_comb <- sum_comb(colSums(tab))
+  expected <- row_comb * col_comb / (n * (n - 1) / 2)
+  max_index <- (row_comb + col_comb) / 2
+  denom <- max_index - expected
+  if (denom <= 0) {
+    return(1)
+  }
+  (index - expected) / denom
+}
+
+cocluster_pair_ids <- function(clusters) {
+  if (is.null(clusters) || nrow(clusters) == 0L) {
+    return(character())
+  }
+  component_members <- split(clusters$unique_study_id, as.character(clusters$component))
+  pairs <- lapply(component_members, function(studies) {
+    studies <- unique(studies)
+    if (length(studies) < 2L) {
+      return(character())
     }
+    apply(utils::combn(sort(studies), 2L), 2L, paste, collapse = "||")
+  })
+  unique(unlist(pairs, use.names = FALSE))
+}
+
+membership_from_clusters <- function(clusters) {
+  if (is.null(clusters) || nrow(clusters) == 0L) {
+    return(stats::setNames(character(), character()))
+  }
+  stats::setNames(as.character(clusters$component), clusters$unique_study_id)
+}
+
+align_memberships_for_ari <- function(membership_a, membership_b) {
+  universe <- union(names(membership_a), names(membership_b))
+  if (length(universe) == 0L) {
+    return(list(a = character(), b = character()))
+  }
+  label_a <- membership_a[universe]
+  label_b <- membership_b[universe]
+  missing_a <- is.na(label_a)
+  missing_b <- is.na(label_b)
+  if (any(missing_a)) {
+    label_a[missing_a] <- paste0("singleton_a_", universe[missing_a])
+  }
+  if (any(missing_b)) {
+    label_b[missing_b] <- paste0("singleton_b_", universe[missing_b])
+  }
+  list(a = unname(label_a), b = unname(label_b), universe = universe)
+}
+
+compare_partition_pair <- function(
+    method_a,
+    method_b,
+    h4_pairs_a,
+    h4_pairs_b,
+    clusters_a,
+    clusters_b,
+    ld_block
+) {
+  pair_union <- union(h4_pairs_a, h4_pairs_b)
+  pair_shared <- intersect(h4_pairs_a, h4_pairs_b)
+  n_pair_union <- length(pair_union)
+  n_pair_shared <- length(pair_shared)
+
+  cocluster_a <- cocluster_pair_ids(clusters_a)
+  cocluster_b <- cocluster_pair_ids(clusters_b)
+  community_union <- union(cocluster_a, cocluster_b)
+  community_shared <- intersect(cocluster_a, cocluster_b)
+  n_community_union <- length(community_union)
+  n_community_shared <- length(community_shared)
+
+  aligned <- align_memberships_for_ari(
+    membership_from_clusters(clusters_a),
+    membership_from_clusters(clusters_b)
+  )
+  ari <- if (length(aligned$universe) >= 2L) {
+    adjusted_rand_index(aligned$a, aligned$b)
+  } else {
+    NA_real_
+  }
+
+  data.frame(
+    ld_block = ld_block,
+    method_a = method_a,
+    method_b = method_b,
+    n_studies = length(aligned$universe),
+    n_h4_pairs_a = length(h4_pairs_a),
+    n_h4_pairs_b = length(h4_pairs_b),
+    n_h4_pairs_shared = n_pair_shared,
+    n_h4_pairs_union = n_pair_union,
+    pairwise_changed_frac = if (n_pair_union > 0L) {
+      1 - n_pair_shared / n_pair_union
+    } else {
+      NA_real_
+    },
+    n_community_pairs_a = length(cocluster_a),
+    n_community_pairs_b = length(cocluster_b),
+    n_community_pairs_shared = n_community_shared,
+    n_community_pairs_union = n_community_union,
+    community_changed_frac = if (n_community_union > 0L) {
+      1 - n_community_shared / n_community_union
+    } else {
+      NA_real_
+    },
+    adjusted_rand_index = ari,
+    stringsAsFactors = FALSE
+  )
+}
+
+read_comparison_set <- function(block_data_dir, method_i) {
+  pairwise_path <- file.path(block_data_dir, comparison_files$pairwise_file[method_i])
+  cluster_path <- file.path(block_data_dir, comparison_files$cluster_file[method_i])
+
+  pairwise <- vroom::vroom(
+    pairwise_path,
+    delim = "\t",
+    col_select = dplyr::any_of(c(
+      "unique_study_a", "unique_study_b", "study_a", "study_b",
+      "ignore", "h4", "PP.H4.abf", "false_positive", "false_negative"
+    )),
+    show_col_types = FALSE
+  )
+  clusters <- vroom::vroom(
+    cluster_path,
+    delim = "\t",
+    col_select = dplyr::any_of(c("unique_study_id", "component")),
+    show_col_types = FALSE
+  )
+
+  if (!"ignore" %in% names(pairwise)) pairwise$ignore <- FALSE
+  if (!"h4" %in% names(pairwise) && "PP.H4.abf" %in% names(pairwise)) {
+    pairwise$h4 <- pairwise$PP.H4.abf
+  }
+  for (flag in c("false_positive", "false_negative")) {
+    if (!flag %in% names(pairwise)) {
+      pairwise[[flag]] <- NA
+    } else {
+      pairwise[[flag]] <- as.logical(pairwise[[flag]])
+    }
+  }
+
+  pairwise <- pairwise |>
+    dplyr::mutate(ignore = dplyr::coalesce(as.logical(ignore), FALSE))
+
+  list(
+    method = comparison_files$method[method_i],
+    h4_threshold = method_thresholds[[comparison_files$method[method_i]]],
+    pairwise = pairwise,
+    clusters = clusters
+  )
+}
+
+h4_pair_ids <- function(pairwise, h4_threshold) {
+  keep <- !pairwise$ignore & !is.na(pairwise$h4) & pairwise$h4 >= h4_threshold
+  if (!any(keep)) {
+    return(character())
+  }
+  unique(make_pair_id(pairwise$unique_study_a[keep], pairwise$unique_study_b[keep]))
+}
+
+pheno_ids_from_pairs <- function(annotated, keep_mask) {
+  sub <- annotated[keep_mask, , drop = FALSE]
+  if (nrow(sub) == 0L) {
+    return(character())
+  }
+  unique(stats::na.omit(c(sub$unique_study_a, sub$unique_study_b)))
+}
+
+# Molecular QTL partners: qtl_data_types from constants.R (includes methylation;
+# excludes phenotype and non_qtl_data_types such as cell_trait / metabolome / plasma_protein).
+is_molecular_data_type <- function(data_type) {
+  data_type %in% qtl_data_types
+}
+
+summarise_trait_molecular_links <- function(pairwise, h4_threshold) {
+  empty <- list(
+    summary = data.frame(
+      n_h4_mol_pheno_pairs = 0,
+      n_h4_no_fp_mol_pheno_pairs = 0,
+      n_h4_no_fp_plus_fn_mol_pheno_pairs = 0
+    ),
+    trait_hits_h4_only = character(),
+    trait_hits_h4_no_fp = character(),
+    trait_hits_h4_no_fp_plus_fn = character(),
+    trait_studies_h4_only = character(),
+    trait_studies_h4_no_fp = character(),
+    trait_studies_h4_no_fp_plus_fn = character(),
+    pheno_pheno_hits_h4_only = character(),
+    pheno_pheno_hits_h4_no_fp = character(),
+    pheno_pheno_hits_h4_no_fp_plus_fn = character()
+  )
+
+  if (!all(c("study_a", "study_b") %in% names(pairwise))) {
+    return(empty)
+  }
+
+  annotated <- pairwise |>
+    dplyr::filter(!ignore) |>
+    dplyr::left_join(study_types, by = c("study_a" = "study_name")) |>
+    dplyr::rename(type_a = data_type) |>
+    dplyr::left_join(study_types, by = c("study_b" = "study_name")) |>
+    dplyr::rename(type_b = data_type) |>
+    dplyr::left_join(study_min_p, by = c("unique_study_a" = "unique_study_id")) |>
+    dplyr::rename(min_p_a = min_p) |>
+    dplyr::left_join(study_min_p, by = c("unique_study_b" = "unique_study_id")) |>
+    dplyr::rename(min_p_b = min_p) |>
+    dplyr::mutate(
+      type_a = dplyr::coalesce(type_a, "unknown"),
+      type_b = dplyr::coalesce(type_b, "unknown"),
+      both_gw_sig = !is.na(min_p_a) & !is.na(min_p_b) &
+        min_p_a <= genome_wide_p_value_threshold &
+        min_p_b <= genome_wide_p_value_threshold,
+      is_mol_pheno = both_gw_sig & (
+        (type_a == "phenotype" & is_molecular_data_type(type_b)) |
+          (type_b == "phenotype" & is_molecular_data_type(type_a))
+      ),
+      is_pheno_pheno = both_gw_sig & type_a == "phenotype" & type_b == "phenotype",
+      phenotype_unique_study_id = dplyr::case_when(
+        type_a == "phenotype" & is_molecular_data_type(type_b) ~ unique_study_a,
+        type_b == "phenotype" & is_molecular_data_type(type_a) ~ unique_study_b,
+        TRUE ~ NA_character_
+      ),
+      phenotype_study = dplyr::case_when(
+        type_a == "phenotype" & is_molecular_data_type(type_b) ~ study_a,
+        type_b == "phenotype" & is_molecular_data_type(type_a) ~ study_b,
+        TRUE ~ NA_character_
+      ),
+      false_positive = dplyr::coalesce(false_positive, FALSE),
+      false_negative = dplyr::coalesce(false_negative, FALSE),
+      h4_ok = !is.na(h4) & h4 >= h4_threshold,
+      keep_pair_h4_only = h4_ok,
+      keep_pair_h4_no_fp = h4_ok & !false_positive,
+      keep_pair_h4_no_fp_plus_fn = (h4_ok & !false_positive) | false_negative,
+      keep_h4_only = is_mol_pheno & keep_pair_h4_only,
+      keep_h4_no_fp = is_mol_pheno & keep_pair_h4_no_fp,
+      keep_h4_no_fp_plus_fn = is_mol_pheno & keep_pair_h4_no_fp_plus_fn
+    )
+
+  list(
+    summary = data.frame(
+      n_h4_mol_pheno_pairs = sum(as.numeric(annotated$keep_h4_only), na.rm = TRUE),
+      n_h4_no_fp_mol_pheno_pairs = sum(as.numeric(annotated$keep_h4_no_fp), na.rm = TRUE),
+      n_h4_no_fp_plus_fn_mol_pheno_pairs = sum(
+        as.numeric(annotated$keep_h4_no_fp_plus_fn), na.rm = TRUE
+      )
+    ),
+    trait_hits_h4_only = unique(stats::na.omit(
+      annotated$phenotype_unique_study_id[annotated$keep_h4_only]
+    )),
+    trait_hits_h4_no_fp = unique(stats::na.omit(
+      annotated$phenotype_unique_study_id[annotated$keep_h4_no_fp]
+    )),
+    trait_hits_h4_no_fp_plus_fn = unique(stats::na.omit(
+      annotated$phenotype_unique_study_id[annotated$keep_h4_no_fp_plus_fn]
+    )),
+    trait_studies_h4_only = unique(stats::na.omit(
+      annotated$phenotype_study[annotated$keep_h4_only]
+    )),
+    trait_studies_h4_no_fp = unique(stats::na.omit(
+      annotated$phenotype_study[annotated$keep_h4_no_fp]
+    )),
+    trait_studies_h4_no_fp_plus_fn = unique(stats::na.omit(
+      annotated$phenotype_study[annotated$keep_h4_no_fp_plus_fn]
+    )),
+    pheno_pheno_hits_h4_only = pheno_ids_from_pairs(
+      annotated, annotated$is_pheno_pheno & annotated$keep_pair_h4_only
+    ),
+    pheno_pheno_hits_h4_no_fp = pheno_ids_from_pairs(
+      annotated, annotated$is_pheno_pheno & annotated$keep_pair_h4_no_fp
+    ),
+    pheno_pheno_hits_h4_no_fp_plus_fn = pheno_ids_from_pairs(
+      annotated, annotated$is_pheno_pheno & annotated$keep_pair_h4_no_fp_plus_fn
+    )
+  )
+}
+
+# Molecular if the coloc group contains any QTL data type (including methylation).
+# Non-QTL types (cell_trait, metabolome, plasma_protein) do not count as molecular.
+classify_phenotypes_from_clusters <- function(clusters) {
+  empty <- list(
+    molecular = character(),
+    phenotype_only = character()
+  )
+  if (is.null(clusters) || nrow(clusters) == 0L || !"unique_study_id" %in% names(clusters)) {
+    return(empty)
+  }
+
+  anno <- clusters |>
+    dplyr::left_join(
+      study_extractions_meta |> dplyr::select(unique_study_id, study),
+      by = "unique_study_id"
+    ) |>
+    dplyr::left_join(study_types, by = c("study" = "study_name")) |>
+    dplyr::mutate(
+      data_type = dplyr::coalesce(data_type, "unknown"),
+      component = as.character(component),
+      is_molecular = is_molecular_data_type(data_type)
+    )
+
+  molecular <- anno |>
+    dplyr::group_by(component) |>
+    dplyr::filter(any(is_molecular)) |>
+    dplyr::ungroup() |>
+    dplyr::filter(data_type == "phenotype") |>
+    dplyr::pull(unique_study_id) |>
+    unique()
+
+  phenotype_only <- anno |>
+    dplyr::group_by(component) |>
+    dplyr::filter(!any(is_molecular), any(data_type == "phenotype")) |>
+    dplyr::ungroup() |>
+    dplyr::filter(data_type == "phenotype") |>
+    dplyr::pull(unique_study_id) |>
+    unique()
+
+  list(molecular = molecular, phenotype_only = phenotype_only)
+}
+
+compare_block <- function(ld_block, block_data_dir) {
+  result_sets <- lapply(seq_len(nrow(comparison_files)), function(method_i) {
+    read_comparison_set(block_data_dir, method_i)
+  })
+  names(result_sets) <- comparison_files$method
+
+  method_names <- names(result_sets)
+  h4_pairs_by_method <- lapply(result_sets, function(result_set) {
+    h4_pair_ids(result_set$pairwise, result_set$h4_threshold)
+  })
+
+  partition_stability <- dplyr::bind_rows(lapply(seq_along(method_names), function(i) {
+    dplyr::bind_rows(lapply(seq_along(method_names), function(j) {
+      if (j <= i) {
+        return(NULL)
+      }
+      compare_partition_pair(
+        method_a = method_names[i],
+        method_b = method_names[j],
+        h4_pairs_a = h4_pairs_by_method[[i]],
+        h4_pairs_b = h4_pairs_by_method[[j]],
+        clusters_a = result_sets[[i]]$clusters,
+        clusters_b = result_sets[[j]]$clusters,
+        ld_block = ld_block
+      )
+    }))
+  }))
+
+  algorithm_error_summary <- dplyr::bind_rows(lapply(result_sets, function(result_set) {
+    # Match pleiotropy_analysis.Rmd: GW-sig pairs on both sides, H4 > 0.8 for the rate.
+    pairwise <- result_set$pairwise |>
+      dplyr::left_join(study_min_p, by = c("unique_study_a" = "unique_study_id")) |>
+      dplyr::rename(min_p_a = min_p) |>
+      dplyr::left_join(study_min_p, by = c("unique_study_b" = "unique_study_id")) |>
+      dplyr::rename(min_p_b = min_p) |>
+      dplyr::filter(
+        !ignore,
+        !is.na(min_p_a),
+        !is.na(min_p_b),
+        min_p_a < genome_wide_p_value_threshold,
+        min_p_b < genome_wide_p_value_threshold
+      )
+
+    h4_positive <- !is.na(pairwise$h4) & pairwise$h4 > posterior_prob_h4_threshold
+    n_h4_positive <- sum(h4_positive)
+    n_false_positive <- sum(h4_positive & pairwise$false_positive %in% TRUE)
+    n_false_negative <- sum(pairwise$false_negative %in% TRUE)
 
     data.frame(
-      weight = m_weight,
-      transitivity = trans,
-      conductance = cond,
-      size = vcount(subgraph)
+      ld_block = ld_block,
+      method = result_set$method,
+      clustering_h4_threshold = result_set$h4_threshold,
+      n_h4_positive = n_h4_positive,
+      n_false_positive = n_false_positive,
+      n_false_negative = n_false_negative,
+      false_positive_rate = if (n_h4_positive > 0L) {
+        n_false_positive / n_h4_positive
+      } else {
+        NA_real_
+      },
+      # FN rate relative to H4-positive pairs (true-positive H4 discoveries)
+      false_negative_rate = if (n_h4_positive > 0L) {
+        n_false_negative / n_h4_positive
+      } else {
+        NA_real_
+      }
+    )
+  }))
+
+  trait_molecular_by_method <- lapply(result_sets, function(result_set) {
+    trait_links <- summarise_trait_molecular_links(
+      result_set$pairwise,
+      result_set$h4_threshold
+    )
+    cluster_classes <- classify_phenotypes_from_clusters(result_set$clusters)
+    list(
+      summary = dplyr::bind_cols(
+        data.frame(
+          ld_block = ld_block,
+          method = result_set$method,
+          h4_threshold = result_set$h4_threshold,
+          pairwise_file = comparison_files$pairwise_file[
+            comparison_files$method == result_set$method
+          ],
+          stringsAsFactors = FALSE
+        ),
+        trait_links$summary
+      ),
+      ids = c(
+        trait_links[c(
+          "trait_hits_h4_only",
+          "trait_hits_h4_no_fp",
+          "trait_hits_h4_no_fp_plus_fn",
+          "trait_studies_h4_only",
+          "trait_studies_h4_no_fp",
+          "trait_studies_h4_no_fp_plus_fn",
+          "pheno_pheno_hits_h4_only",
+          "pheno_pheno_hits_h4_no_fp",
+          "pheno_pheno_hits_h4_no_fp_plus_fn"
+        )],
+        list(
+          cluster_molecular = cluster_classes$molecular,
+          cluster_phenotype_only = cluster_classes$phenotype_only
+        )
+      )
     )
   })
 
-  results_df <- do.call(rbind, comp_metrics)
-  if (is.null(results_df) || nrow(results_df) == 0) {
-    return(list(
-      n_components = as.integer(comp$no),
-      mean_weight = NA_real_,
-      mean_transitivity = NA_real_,
-      mean_conductance = NA_real_,
-      median_size = NA_real_
-    ))
-  }
-
   list(
-    n_components = comp$no,
-    mean_weight = mean(results_df$weight, na.rm = TRUE),
-    mean_transitivity = mean(results_df$transitivity, na.rm = TRUE),
-    mean_conductance = mean(results_df$conductance, na.rm = TRUE),
-    median_size = stats::median(results_df$size)
-  )
-}
-
-per_block <- lapply(seq_along(blocks), function(bi) {
-  block <- blocks[bi]
-  rds_path <- file.path(ld_info$ld_block_data[bi], "igraph_clustered_results.rds")
-  if (!file.exists(rds_path)) {
-    return(NULL)
-  }
-  cr <- tryCatch(readRDS(rds_path), error = function(e) NULL)
-  if (is.null(cr) || is.null(cr$unpruned_graph) || is.null(cr$pruned_graph)) {
-    return(NULL)
-  }
-  u <- tryCatch(
-    analyze_graph_structure_advanced(cr$unpruned_graph),
-    error = function(e) NULL
-  )
-  p <- tryCatch(
-    analyze_graph_structure_advanced(cr$pruned_graph, original_graph = cr$unpruned_graph),
-    error = function(e) NULL
-  )
-  if (is.null(u) || is.null(p)) {
-    return(NULL)
-  }
-  data.frame(
-    ld_block = block,
-    n_components_unpruned = u$n_components,
-    n_components_pruned = p$n_components,
-    mean_weight_unpruned = u$mean_weight,
-    mean_weight_pruned = p$mean_weight,
-    mean_transitivity_unpruned = u$mean_transitivity,
-    mean_transitivity_pruned = p$mean_transitivity,
-    mean_conductance_pruned = p$mean_conductance,
-    median_size_unpruned = u$median_size,
-    median_size_pruned = p$median_size,
-    stringsAsFactors = FALSE
-  )
-})
-blocks_graph_struct <- dplyr::bind_rows(Filter(Negate(is.null), per_block))
-
-if (nrow(blocks_graph_struct) == 0) {
-  knitr::kable(
-    data.frame(message = "No valid igraph_clustered_results.rds found for any block."),
-    caption = "Per-LD-block graph structure (empty)"
-  )
-} else {
-  knitr::kable(
-    blocks_graph_struct,
-    digits = 4,
-    caption = if (run_all_ld_blocks) {
-      "Graph structure metrics for each LD block"
-    } else {
-      paste0("Graph structure metrics — ", ld_block_param)
-    }
-  )
-}
-
-# Totals and means across all blocks that contributed a row
-if (nrow(blocks_graph_struct) > 0) {
-  tot_tbl <- data.frame(
-    Metric = c(
-      "Unpruned components (sum)", "Pruned components (sum)",
-      "Mean weight unpruned", "Mean weight pruned",
-      "Mean transitivity unpruned", "Mean transitivity pruned",
-      "Mean conductance (pruned clusters only, vs unpruned ref.)",
-      "Median of per-block median cluster size — unpruned", "— pruned"
+    partition_stability = partition_stability,
+    algorithm_error_summary = algorithm_error_summary,
+    trait_molecular_summary = dplyr::bind_rows(
+      lapply(trait_molecular_by_method, `[[`, "summary")
     ),
-    Value = c(
-      sum(blocks_graph_struct$n_components_unpruned, na.rm = TRUE),
-      sum(blocks_graph_struct$n_components_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_weight_unpruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_weight_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_transitivity_unpruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_transitivity_pruned, na.rm = TRUE),
-      mean(blocks_graph_struct$mean_conductance_pruned, na.rm = TRUE),
-      stats::median(blocks_graph_struct$median_size_unpruned, na.rm = TRUE),
-      stats::median(blocks_graph_struct$median_size_pruned, na.rm = TRUE)
+    trait_molecular_ids = lapply(trait_molecular_by_method, `[[`, "ids")
+  )
+}
+
+block_comparisons <- parallel::mclapply(
+  seq_len(nrow(ld_info)),
+  function(i) {
+    compare_block(ld_info$block[i], ld_info$ld_block_data[i])
+  },
+  mc.cores = n_cores
+)
+
+partition_stability <- dplyr::bind_rows(
+  lapply(block_comparisons, `[[`, "partition_stability")
+)
+algorithm_error_summary <- dplyr::bind_rows(
+  lapply(block_comparisons, `[[`, "algorithm_error_summary")
+)
+trait_molecular_summary <- dplyr::bind_rows(
+  lapply(block_comparisons, `[[`, "trait_molecular_summary")
+)
+
+partition_stability_pooled <- partition_stability |>
+  dplyr::group_by(method_a, method_b) |>
+  dplyr::summarise(
+    n_blocks = dplyr::n(),
+    # Compute weighted ARI before n_studies is overwritten by its sum.
+    adjusted_rand_index = {
+      ok <- !is.na(adjusted_rand_index) & n_studies > 0
+      if (!any(ok)) {
+        NA_real_
+      } else {
+        sum(adjusted_rand_index[ok] * n_studies[ok]) / sum(n_studies[ok])
+      }
+    },
+    n_studies = sum(as.numeric(n_studies)),
+    n_h4_pairs_a = sum(as.numeric(n_h4_pairs_a)),
+    n_h4_pairs_b = sum(as.numeric(n_h4_pairs_b)),
+    n_h4_pairs_shared = sum(as.numeric(n_h4_pairs_shared)),
+    n_h4_pairs_union = sum(as.numeric(n_h4_pairs_union)),
+    pairwise_changed_pct = if (n_h4_pairs_union > 0) {
+      100 * (1 - n_h4_pairs_shared / n_h4_pairs_union)
+    } else {
+      NA_real_
+    },
+    n_community_pairs_a = sum(as.numeric(n_community_pairs_a)),
+    n_community_pairs_b = sum(as.numeric(n_community_pairs_b)),
+    n_community_pairs_shared = sum(as.numeric(n_community_pairs_shared)),
+    n_community_pairs_union = sum(as.numeric(n_community_pairs_union)),
+    community_changed_pct = if (n_community_pairs_union > 0) {
+      100 * (1 - n_community_pairs_shared / n_community_pairs_union)
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  )
+
+algorithm_error_pooled <- algorithm_error_summary |>
+  dplyr::group_by(method) |>
+  dplyr::summarise(
+    clustering_h4_threshold = dplyr::first(clustering_h4_threshold),
+    n_h4_positive = sum(as.numeric(n_h4_positive)),
+    n_false_positive = sum(as.numeric(n_false_positive)),
+    n_false_negative = sum(as.numeric(n_false_negative)),
+    false_positive_rate = if (n_h4_positive > 0) {
+      n_false_positive / n_h4_positive
+    } else {
+      NA_real_
+    },
+    false_negative_rate = if (n_h4_positive > 0) {
+      n_false_negative / n_h4_positive
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  )
+
+knitr::kable(
+  algorithm_error_pooled,
+  digits = 4,
+  caption = paste(
+    "False positives and false negatives marked by the clustering algorithm,",
+    "pooled across LD blocks (non-ignored pairs with both min_p < 5e-8;",
+    "FP and FN rates = count / n_h4_positive where h4 > 0.8)"
+  )
+)
+
+knitr::kable(
+  partition_stability_pooled |>
+    dplyr::select(
+      method_a, method_b,
+      pairwise_changed_pct, community_changed_pct, adjusted_rand_index,
+      n_h4_pairs_union, n_community_pairs_union, n_studies
+    ),
+  digits = 4,
+  caption = paste(
+    "Method-to-method stability pooled across LD blocks.",
+    "pairwise_changed_pct = 100 × (1 − Jaccard) of H4≥threshold pairs;",
+    "community_changed_pct = same for Infomap co-clustered study pairs;",
+    "adjusted_rand_index = study-count–weighted mean ARI of Infomap partitions",
+    "(studies present in only one clustering treated as singletons)."
+  )
+)
+
+bfdr_contrast <- partition_stability_pooled |>
+  dplyr::filter(
+    method_a == "5e-6, no BFDR",
+    method_b == "5e-6 + BFDR"
+  )
+
+if (nrow(bfdr_contrast) == 1L) {
+  cat(
+    sprintf(
+      paste0(
+        "\nApplying BFDR changed %.1f%% of pairwise colocalizations ",
+        "but only %.1f%% of final graph community pairs ",
+        "(Adjusted Rand Index = %.3f).\n"
+      ),
+      bfdr_contrast$pairwise_changed_pct,
+      bfdr_contrast$community_changed_pct,
+      bfdr_contrast$adjusted_rand_index
     )
   )
-  knitr::kable(
-    tot_tbl,
-    digits = 4,
-    caption = if (run_all_ld_blocks) {
-      "Aggregated results over all LD blocks in the per-block table"
-    } else {
-      paste0("Summary for single LD block: ", ld_block_param)
-    }
-  )
 }
-
 ```
 
+### Trait hits linked to a molecular phenotype
+
+Using the annotated pairwise outputs (`coloc_pairwise_results_*`), count how many **phenotype extractions** (`unique_study_id`) and **phenotype studies** have at least one molecular QTL association under three definitions. Molecular partners are restricted to `qtl_data_types` from `constants.R` (eQTL / sQTL / tQTL / pQTL / methQTL), and both sides must have `min_p ≤ 5e-8` (matching `pipeline_summary.Rmd`).
+
+1. **H4 only** — H4 ≥ method threshold and phenotype–QTL pair
+2. **H4 minus false positives** — same as (1), excluding pairs marked `false_positive`
+3. **H4 minus FP + false negatives** — pairs kept by (2), plus pairs marked `false_negative`
+
+Then report **overall** colocalization profiles for genome-wide significant common phenotype loci (`min_p ≤ 5e-8`), for each of the **9** method × definition combinations:
+
+- **H4 only** — pairwise H4 links to a GW-significant QTL partner
+- **H4 minus FP** / **H4 minus FP + FN** — Infomap coloc-group membership from each method's clustered results (molecular if the group contains any `qtl_data_types` member, including methylation; phenotype-only if the group has phenotype but no QTL types). FN pairs are already co-clustered, so those two definitions share the same profile.
+
+```{r trait_molecular_association}
+trait_molecular_pair_counts <- trait_molecular_summary |>
+  dplyr::group_by(method, pairwise_file, h4_threshold) |>
+  dplyr::summarise(
+    n_mol_pheno_pairs_h4_only = sum(as.numeric(n_h4_mol_pheno_pairs), na.rm = TRUE),
+    n_mol_pheno_pairs_h4_no_fp = sum(as.numeric(n_h4_no_fp_mol_pheno_pairs), na.rm = TRUE),
+    n_mol_pheno_pairs_h4_no_fp_plus_fn = sum(
+      as.numeric(n_h4_no_fp_plus_fn_mol_pheno_pairs), na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+union_ids <- function(id_lists, field) {
+  unique(unlist(lapply(id_lists, `[[`, field), use.names = FALSE))
+}
+
+trait_molecular_pooled <- dplyr::bind_rows(lapply(comparison_files$method, function(method) {
+  id_lists <- lapply(block_comparisons, function(block_result) {
+    block_result$trait_molecular_ids[[method]]
+  })
+  pair_row <- trait_molecular_pair_counts |>
+    dplyr::filter(method == !!method)
+
+  data.frame(
+    method = method,
+    pairwise_file = pair_row$pairwise_file[1],
+    h4_threshold = pair_row$h4_threshold[1],
+    n_mol_pheno_pairs_h4_only = pair_row$n_mol_pheno_pairs_h4_only[1],
+    n_mol_pheno_pairs_h4_no_fp = pair_row$n_mol_pheno_pairs_h4_no_fp[1],
+    n_mol_pheno_pairs_h4_no_fp_plus_fn = pair_row$n_mol_pheno_pairs_h4_no_fp_plus_fn[1],
+    n_trait_hits_h4_only = length(union_ids(id_lists, "trait_hits_h4_only")),
+    n_trait_hits_h4_no_fp = length(union_ids(id_lists, "trait_hits_h4_no_fp")),
+    n_trait_hits_h4_no_fp_plus_fn = length(union_ids(id_lists, "trait_hits_h4_no_fp_plus_fn")),
+    n_trait_studies_h4_only = length(union_ids(id_lists, "trait_studies_h4_only")),
+    n_trait_studies_h4_no_fp = length(union_ids(id_lists, "trait_studies_h4_no_fp")),
+    n_trait_studies_h4_no_fp_plus_fn = length(union_ids(id_lists, "trait_studies_h4_no_fp_plus_fn")),
+    stringsAsFactors = FALSE
+  )
+}))
+
+knitr::kable(
+  trait_molecular_pooled,
+  digits = 4,
+  caption = paste(
+    "Trait hits linked to a GW-significant QTL (qtl_data_types) across annotated pairwise files.",
+    "Both sides require min_p ≤ 5e-8. Trait hits = unique phenotype extractions;",
+    "trait studies = unique phenotype study_name."
+  )
+)
+
+n_phenotype_universe <- length(phenotype_universe)
+
+coloc_profile_overall <- dplyr::bind_rows(lapply(comparison_files$method, function(method) {
+  id_lists <- lapply(block_comparisons, function(block_result) {
+    block_result$trait_molecular_ids[[method]]
+  })
+
+  cluster_mol <- intersect(union_ids(id_lists, "cluster_molecular"), phenotype_universe)
+  cluster_pheno_only <- intersect(
+    union_ids(id_lists, "cluster_phenotype_only"),
+    phenotype_universe
+  )
+  # A locus in a molecular group should not also count as phenotype-only
+  cluster_pheno_only <- setdiff(cluster_pheno_only, cluster_mol)
+
+  pairwise_states <- list(
+    "H4 only" = list(
+      mol = intersect(union_ids(id_lists, "trait_hits_h4_only"), phenotype_universe),
+      pheno_only = setdiff(
+        intersect(union_ids(id_lists, "pheno_pheno_hits_h4_only"), phenotype_universe),
+        intersect(union_ids(id_lists, "trait_hits_h4_only"), phenotype_universe)
+      )
+    ),
+    "H4 minus FP" = list(
+      mol = cluster_mol,
+      pheno_only = cluster_pheno_only
+    ),
+    "H4 minus FP + FN" = list(
+      mol = cluster_mol,
+      pheno_only = cluster_pheno_only
+    )
+  )
+
+  dplyr::bind_rows(lapply(names(pairwise_states), function(definition) {
+    mol_ids <- pairwise_states[[definition]]$mol
+    pheno_only_ids <- pairwise_states[[definition]]$pheno_only
+    n_mol <- length(mol_ids)
+    n_pheno_only <- length(pheno_only_ids)
+    n_none <- n_phenotype_universe - n_mol - n_pheno_only
+
+    data.frame(
+      method = method,
+      definition = definition,
+      n_phenotype_loci = n_phenotype_universe,
+      n_molecular = n_mol,
+      n_phenotype_only = n_pheno_only,
+      n_no_coloc = n_none,
+      percent_molecular = n_mol / n_phenotype_universe,
+      percent_phenotype_only = n_pheno_only / n_phenotype_universe,
+      percent_no_coloc = n_none / n_phenotype_universe,
+      stringsAsFactors = FALSE
+    )
+  }))
+}))
+
+coloc_profile_overall <- coloc_profile_overall |>
+  dplyr::mutate(
+    method = factor(method, levels = comparison_files$method),
+    definition = factor(
+      definition,
+      levels = c("H4 only", "H4 minus FP", "H4 minus FP + FN")
+    )
+  ) |>
+  dplyr::arrange(method, definition)
+
+knitr::kable(
+  coloc_profile_overall |>
+    dplyr::mutate(
+      n_phenotype_loci = scales::comma(n_phenotype_loci),
+      n_molecular = scales::comma(n_molecular),
+      n_phenotype_only = scales::comma(n_phenotype_only),
+      n_no_coloc = scales::comma(n_no_coloc),
+      percent_molecular = scales::percent(percent_molecular, accuracy = 0.1),
+      percent_phenotype_only = scales::percent(percent_phenotype_only, accuracy = 0.1),
+      percent_no_coloc = scales::percent(percent_no_coloc, accuracy = 0.1)
+    ),
+  caption = paste(
+    "Overall colocalization profiles of fine-mapped common phenotype loci (min_p ≤ 5e-8).",
+    "H4 only = pairwise H4 to a GW-significant QTL partner (qtl_data_types, including methQTL);",
+    "H4 minus FP / H4 minus FP + FN = coloc-group membership with any QTL member.",
+    "non_qtl_data_types (cell_trait, metabolome, plasma_protein) do not count as molecular."
+  )
+)
+```

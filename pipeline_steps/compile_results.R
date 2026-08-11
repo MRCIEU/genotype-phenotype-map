@@ -111,8 +111,11 @@ aggregate_data_produced_by_pipeline <- function(
   studies_processed_file,
   traits_processed_file
 ) {
+  file_names <- ld_block_file_basenames(args$block_list)
+
   extracted_studies_files <- Filter(
-    function(file) file.exists(file), glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
+    function(file) file.exists(file),
+    file.path(ld_info$ld_block_data, file_names$extracted_studies)
   )
   extracted_studies <- lapply(extracted_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F))
@@ -120,7 +123,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   standardised_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$standardised_studies)
   )
   standardised_studies <- lapply(standardised_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = standardised_column_types))
@@ -128,7 +131,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   imputed_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/imputed_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$imputed_studies)
   )
   imputed_studies <- lapply(imputed_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = imputed_column_types))
@@ -136,7 +139,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   finemapped_studies_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/finemapped_studies.tsv")
+    file.path(ld_info$ld_block_data, file_names$finemapped_studies)
   )
   finemapped_studies <- lapply(finemapped_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types))
@@ -144,7 +147,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   pairwise_coloc_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/coloc_pairwise_results.tsv.gz")
+    file.path(ld_info$ld_block_data, file_names$coloc_pairwise)
   )
   coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
     delim = "\t",
@@ -157,15 +160,9 @@ aggregate_data_produced_by_pipeline <- function(
   )
   message("pairwise coloc results: ", nrow(coloc_pairwise_results))
 
-  coloc_clustered_results_file <- "coloc_clustered_results.tsv.gz"
-  block_list_name <- NULL
-  if (!is.null(args$block_list) && !is.na(args$block_list) && !is.null(get_block_list_name(args$block_list))) {
-    block_list_name <- get_block_list_name(args$block_list)
-    coloc_clustered_results_file <- glue::glue("coloc_clustered_results_{block_list_name}.tsv.gz")
-  }
   coloc_clustered_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/{coloc_clustered_results_file}")
+    file.path(ld_info$ld_block_data, file_names$clustered)
   )
   coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim = "\t", show_col_types = F)
   message("clustered coloc results: ", nrow(coloc_clustered_results))
@@ -178,7 +175,7 @@ aggregate_data_produced_by_pipeline <- function(
 
   compare_rare_input_files <- Filter(
     function(file) file.exists(file),
-    glue::glue("{ld_info$ld_block_data}/compare_rare_results.tsv")
+    file.path(ld_info$ld_block_data, file_names$compare_rare_results)
   )
   if (length(compare_rare_input_files) == 0) {
     compare_rare_results <- data.frame()
@@ -188,11 +185,22 @@ aggregate_data_produced_by_pipeline <- function(
 
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
 
+  studies_with_extractions <- character(0)
+  if (nrow(extracted_studies) > 0) {
+    studies_with_extractions <- unique(extracted_studies$study)
+  }
+  studies_to_add <- studies_to_process |>
+    dplyr::filter(study_name %in% studies_with_extractions)
+  message(glue::glue(
+    "Adding {nrow(studies_to_add)} of {nrow(studies_to_process)} studies to studies_processed ",
+    "(studies with LD block extractions only)"
+  ))
+
   if (file.exists(studies_processed_file)) {
     studies_processed <- vroom::vroom(studies_processed_file, show_col_types = F)
-    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_process) |> dplyr::distinct()
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_add) |> dplyr::distinct()
   } else {
-    studies_processed <- studies_to_process
+    studies_processed <- studies_to_add
   }
 
   if (file.exists(traits_processed_file)) {
@@ -266,6 +274,17 @@ create_study_extractions <- function(pipeline_data) {
   finemapped_studies$known_gene <- pipeline_data$studies_processed$gene[
     match(finemapped_studies$study, pipeline_data$studies_processed$study_name)
   ]
+
+  study_data_types <- pipeline_data$studies_processed |>
+    dplyr::select(study_name, data_type, gene)
+
+  finemapped_studies <- finemapped_studies |>
+    dplyr::left_join(study_data_types, by = c("study" = "study_name")) |>
+    dplyr::mutate(
+      situated_gene = dplyr::if_else(data_type == data_types$methylation, gene, NA_character_),
+      known_gene = dplyr::if_else(data_type == data_types$methylation, NA_character_, known_gene)
+    ) |>
+    dplyr::select(-data_type, -gene)
 
   rare_genes_study_map <- pipeline_data$studies_processed |>
     dplyr::filter(variant_type != variant_types$common & !is.na(gene)) |>

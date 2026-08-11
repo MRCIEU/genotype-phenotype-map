@@ -17,6 +17,13 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--block_list",
+  help = "CSV of studies to exclude from standardisation (columns: id_pattern, cis_trans)",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
   "--worker_guid",
   help = "Worker GUID (if invoked by worker)",
   type = "character",
@@ -28,13 +35,25 @@ main <- function() {
   if (!is.na(args$worker_guid)) {
     update_directories_for_worker(args$worker_guid)
   }
-  ld_info <- ld_block_dirs(args$ld_block)
-  ld_matrix_info <- vroom::vroom(glue::glue("{ld_info$ld_reference_panel_prefix}.tsv"), show_col_types = F)
+  paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
+  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
 
-  extracted_studies_file <- glue::glue("{ld_info$ld_block_data}/extracted_studies.tsv")
-  extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+  extracted_studies <- vroom::vroom(paths$extracted_studies, show_col_types = F)
 
-  standardised_studies_file <- glue::glue("{ld_info$ld_block_data}/standardised_studies.tsv")
+  block_list <- NULL
+  if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
+    block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)
+  }
+
+  if (!is.null(block_list) && nrow(block_list) > 0 && nrow(extracted_studies) > 0) {
+    blocked <- is_study_blocked(block_list, extracted_studies$study, extracted_studies$cis_trans)
+    if (sum(blocked) > 0) {
+      extracted_studies <- extracted_studies |> dplyr::filter(!blocked)
+      message(glue::glue("{args$ld_block}: Excluded {sum(blocked)} blocked studies from standardisation"))
+    }
+  }
+
+  standardised_studies_file <- paths$standardised_studies
   if (file.exists(standardised_studies_file)) {
     existing_standardised_studies <- vroom::vroom(standardised_studies_file,
       show_col_types = F,

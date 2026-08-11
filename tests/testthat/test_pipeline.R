@@ -7,7 +7,8 @@ source("pipeline_steps/constants.R")
 # smr --beqtl-summary /some/besd_file  --extract-probe probe.list  --query 1 --make-besd --out subset_of_besd_file
 # where probe.list has the format:
 
-total_studies <- 8
+total_studies_to_process <- 8
+total_studies_processed <- 5
 ld_blocks <- vroom::vroom("tests/data/ld_blocks.tsv", show_col_types = FALSE)
 ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
 coloc_block <- "EUR/1/1170341-1730405"
@@ -29,8 +30,8 @@ test_that("Identify studies to process", {
   studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = FALSE)
   expect_equal(
     nrow(studies_to_process),
-    total_studies,
-    info = "Studies to process file should have {total_studies} studies"
+    total_studies_to_process,
+    info = "Studies to process file should have {total_studies_to_process} studies"
   )
 })
 
@@ -107,8 +108,8 @@ test_that("Pipeline execution and file validation", {
     expect_equal(nrow(studies), nrow(traits), info = "Number of studies and traits should be equal")
     expect_true(nrow(studies) > 0, info = "Should have at least one study")
     expect_true(all(studies$study_name %in% traits$study_name), info = "All studies should be in traits_processed")
-    expect_equal(nrow(studies), total_studies, info = "Should have {total_studies} studies")
-    expect_equal(nrow(traits), total_studies, info = "Should have {total_studies} traits")
+    expect_equal(nrow(studies), total_studies_processed, info = "Should have {total_studies_processed} studies")
+    expect_equal(nrow(traits), total_studies_processed, info = "Should have {total_studies_processed} traits")
 
     joined_studies_traits <- dplyr::inner_join(studies, traits, by = "study_name")
     expect_true(
@@ -192,13 +193,14 @@ test_that("Pipeline execution and file validation", {
   test_that("LD Block directories contain expected files", {
     coloc_block_dir <- glue::glue("{ld_block_data_dir}{coloc_block}")
     expect_true(dir.exists(coloc_block_dir), info = glue::glue("LD block directory should exist: {coloc_block_dir}"))
+    names <- ld_block_file_basenames()
     expected_common_files <- c(
-      "extracted_studies.tsv",
-      "standardised_studies.tsv",
-      "imputed_studies.tsv",
-      "finemapped_studies.tsv",
-      "coloc_pairwise_results.tsv.gz",
-      "coloc_clustered_results.tsv.gz"
+      names$extracted_studies,
+      names$standardised_studies,
+      names$imputed_studies,
+      names$finemapped_studies,
+      names$coloc_pairwise,
+      names$clustered
     )
 
     for (file_name in expected_common_files) {
@@ -255,8 +257,12 @@ test_that("Pipeline execution and file validation", {
   })
 
   test_that("Coloc results are valid", {
-    clustered_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_clustered_results.tsv.gz")
-    pairwise_results_file <- file.path(ld_block_data_dir, coloc_block, "coloc_pairwise_results.tsv.gz")
+    clustered_results_file <- file.path(
+      ld_block_data_dir, coloc_block, ld_block_file_basenames()$clustered
+    )
+    pairwise_results_file <- file.path(
+      ld_block_data_dir, coloc_block, ld_block_file_basenames()$coloc_pairwise
+    )
     expect_true(file.exists(clustered_results_file), info = glue::glue("File should exist: {clustered_results_file}"))
     expect_true(file.exists(pairwise_results_file), info = glue::glue("File should exist: {pairwise_results_file}"))
 

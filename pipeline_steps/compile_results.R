@@ -113,58 +113,87 @@ aggregate_data_produced_by_pipeline <- function(
 ) {
   file_names <- ld_block_file_basenames(args$block_list)
 
+  message("Aggregating extracted_studies")
   extracted_studies_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$extracted_studies)
   )
+  message(glue::glue("Reading {length(extracted_studies_files)} extracted_studies file(s)"))
   extracted_studies <- lapply(extracted_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F))
   }) |> dplyr::bind_rows()
 
+  message("Aggregating standardised_studies")
   standardised_studies_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$standardised_studies)
   )
+  message(glue::glue("Reading {length(standardised_studies_files)} standardised_studies file(s)"))
   standardised_studies <- lapply(standardised_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = standardised_column_types))
   }) |> dplyr::bind_rows()
 
+  message("Aggregating imputed_studies")
   imputed_studies_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$imputed_studies)
   )
+  message(glue::glue("Reading {length(imputed_studies_files)} imputed_studies file(s)"))
   imputed_studies <- lapply(imputed_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = imputed_column_types))
   }) |> dplyr::bind_rows()
 
+  message("Aggregating finemapped_studies")
   finemapped_studies_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$finemapped_studies)
   )
+  message(glue::glue("Reading {length(finemapped_studies_files)} finemapped_studies file(s)"))
   finemapped_studies <- lapply(finemapped_studies_files, function(file) {
     return(vroom::vroom(file, show_col_types = F, col_types = finemapped_column_types))
   }) |> dplyr::bind_rows()
 
+  message("Aggregating coloc_pairwise")
   pairwise_coloc_input_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$coloc_pairwise)
   )
-  coloc_pairwise_results <- vroom::vroom(pairwise_coloc_input_files,
-    delim = "\t",
-    show_col_types = F,
-    col_select = c(
-      "unique_study_a", "unique_study_b", "PP.H0.abf", "PP.H1.abf",
-      "PP.H2.abf", "PP.H3.abf", "PP.H4.abf", "ld_block",
-      "false_positive", "false_negative", "ignore"
-    )
-  )
-  message("pairwise coloc results: ", nrow(coloc_pairwise_results))
+  message(glue::glue("Reading {length(pairwise_coloc_input_files)} coloc_pairwise file(s)"))
+  # Read/filter per LD block: multi-file vroom() is fragile at this scale, and the
+  # unfiltered pairwise table exceeds R's ~2.1B row limit. Keep weakly informative
+  # pairs only (H3 or H4 above a low floor); full pairs remain in per-block files.
+  coloc_pairwise_compile_pp_threshold <- 0.2
+  coloc_pairwise_results <- parallel::mclapply(
+    pairwise_coloc_input_files,
+    mc.cores = 1,
+    function(file) {
+      data.table::setDTthreads(1)
+      pairs <- data.table::fread(file, showProgress = FALSE)
+      pairs <- pairs[
+        PP.H4.abf > coloc_pairwise_compile_pp_threshold |
+          PP.H3.abf > coloc_pairwise_compile_pp_threshold
+      ]
+      return(pairs)
+    }
+  ) |>
+    data.table::rbindlist(use.names = TRUE, fill = TRUE) |>
+    tibble::as_tibble()
+  message(glue::glue(
+    "pairwise coloc results: {nrow(coloc_pairwise_results)} ",
+    "(kept PP.H3 or PP.H4 > {coloc_pairwise_compile_pp_threshold} per LD block)"
+  ))
 
+  message("Aggregating coloc_clustered")
   coloc_clustered_input_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$clustered)
   )
-  coloc_clustered_results <- vroom::vroom(coloc_clustered_input_files, delim = "\t", show_col_types = F)
+  coloc_clustered_results <- vroom_multi(
+    coloc_clustered_input_files,
+    "coloc_clustered",
+    delim = "\t",
+    show_col_types = F
+  )
   message("clustered coloc results: ", nrow(coloc_clustered_results))
 
   coloc_clustered_results <- coloc_clustered_results |>
@@ -173,17 +202,28 @@ aggregate_data_produced_by_pipeline <- function(
     dplyr::ungroup() |>
     dplyr::arrange(coloc_group_id)
 
+  message("Aggregating compare_rare_results")
   compare_rare_input_files <- Filter(
     function(file) file.exists(file),
     file.path(ld_info$ld_block_data, file_names$compare_rare_results)
   )
   if (length(compare_rare_input_files) == 0) {
+    message("Reading 0 compare_rare_results file(s)")
     compare_rare_results <- data.frame()
   } else {
-    compare_rare_results <- vroom::vroom(compare_rare_input_files, delim = "\t", show_col_types = F)
+    compare_rare_results <- vroom_multi(
+      compare_rare_input_files,
+      "compare_rare_results",
+      delim = "\t",
+      show_col_types = F
+    )
   }
 
-  studies_to_process <- vroom::vroom(studies_to_process_file, show_col_types = F)
+  studies_to_process <- vroom::vroom(
+    studies_to_process_file,
+    show_col_types = F,
+    col_types = studies_processed_column_types
+  )
 
   studies_with_extractions <- character(0)
   if (nrow(extracted_studies) > 0) {
@@ -197,10 +237,17 @@ aggregate_data_produced_by_pipeline <- function(
   ))
 
   if (file.exists(studies_processed_file)) {
-    studies_processed <- vroom::vroom(studies_processed_file, show_col_types = F)
-    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_add) |> dplyr::distinct()
+    studies_processed <- vroom::vroom(
+      studies_processed_file,
+      show_col_types = F,
+      col_types = studies_processed_column_types
+    )
+    # Newer metadata is appended last; keep the last row per study_name so
+    # non-identical historical duplicates do not accumulate.
+    studies_processed <- dplyr::bind_rows(studies_processed, studies_to_add)
+    studies_processed <- studies_processed[!duplicated(studies_processed$study_name, fromLast = TRUE), ]
   } else {
-    studies_processed <- studies_to_add
+    studies_processed <- studies_to_add[!duplicated(studies_to_add$study_name, fromLast = TRUE), ]
   }
 
   if (file.exists(traits_processed_file)) {

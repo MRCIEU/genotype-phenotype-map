@@ -270,6 +270,219 @@ ggsave(file.path(report_analysis_dir, 'summary_a_data_source.png'), p1, width = 
 
 ```
 
+### Cis vs trans study extractions
+
+```{r cis-trans-extraction-summary, echo=F}
+# Genome-wide significant molecular extractions only (phenotypes are typically NA for cis_trans)
+cis_trans_extraction_summary <- latest_study_extractions |>
+  dplyr::filter(
+    min_p <= 5e-8,
+    cis_trans %in% c("cis", "trans"),
+    data_type %in% qtl_data_types
+  ) |>
+  dplyr::group_by(data_type) |>
+  dplyr::summarise(
+    n_cis = sum(cis_trans == "cis"),
+    n_trans = sum(cis_trans == "trans"),
+    n_total = dplyr::n(),
+    pct_trans = n_trans / n_total,
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(n_trans))
+
+cis_trans_extraction_totals <- cis_trans_extraction_summary |>
+  dplyr::summarise(
+    data_type = "Total",
+    n_cis = sum(n_cis),
+    n_trans = sum(n_trans),
+    n_total = sum(n_total),
+    pct_trans = n_trans / n_total,
+    .groups = "drop"
+  )
+
+cis_trans_extraction_table <- dplyr::bind_rows(cis_trans_extraction_summary, cis_trans_extraction_totals) |>
+  dplyr::mutate(
+    n_cis = scales::comma(n_cis),
+    n_trans = scales::comma(n_trans),
+    n_total = scales::comma(n_total),
+    pct_trans = scales::percent(pct_trans, accuracy = 0.1)
+  )
+
+knitr::kable(
+  cis_trans_extraction_table,
+  caption = "Genome-wide significant (P ≤ 5e-8) molecular study extractions by cis/trans"
+)
+
+# Membership in multi-member coloc groups (same significance filter as elsewhere)
+extractions_in_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "
+  SELECT DISTINCT cg.study_extraction_id
+  FROM coloc_groups AS cg
+  JOIN study_extractions AS se ON cg.study_extraction_id = se.id
+  WHERE se.min_p <= 5e-8
+    AND cg.coloc_group_id IN (
+      SELECT cg2.coloc_group_id
+      FROM coloc_groups AS cg2
+      JOIN study_extractions AS se2 ON cg2.study_extraction_id = se2.id
+      WHERE se2.min_p <= 5e-8
+      GROUP BY cg2.coloc_group_id
+      HAVING COUNT(*) > 1
+    )
+")
+
+cis_trans_coloc_group_summary <- latest_study_extractions |>
+  dplyr::filter(
+    min_p <= 5e-8,
+    cis_trans %in% c("cis", "trans"),
+    data_type %in% qtl_data_types
+  ) |>
+  dplyr::mutate(in_coloc_group = study_extraction_id %in% extractions_in_coloc_groups$study_extraction_id) |>
+  dplyr::group_by(data_type, cis_trans) |>
+  dplyr::summarise(
+    n_extractions = dplyr::n(),
+    n_in_coloc_group = sum(in_coloc_group),
+    pct_in_coloc_group = n_in_coloc_group / n_extractions,
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(data_type, cis_trans)
+
+cis_trans_coloc_group_totals <- cis_trans_coloc_group_summary |>
+  dplyr::group_by(cis_trans) |>
+  dplyr::summarise(
+    data_type = "Total",
+    n_extractions = sum(n_extractions),
+    n_in_coloc_group = sum(n_in_coloc_group),
+    pct_in_coloc_group = n_in_coloc_group / n_extractions,
+    .groups = "drop"
+  )
+
+cis_trans_coloc_group_table <- dplyr::bind_rows(cis_trans_coloc_group_summary, cis_trans_coloc_group_totals) |>
+  dplyr::mutate(
+    n_extractions = scales::comma(n_extractions),
+    n_in_coloc_group = scales::comma(n_in_coloc_group),
+    pct_in_coloc_group = scales::percent(pct_in_coloc_group, accuracy = 0.1)
+  )
+
+knitr::kable(
+  cis_trans_coloc_group_table,
+  caption = "How often cis vs trans extractions appear in multi-member coloc groups (P ≤ 5e-8)"
+)
+
+cis_trans_coloc_viz <- dplyr::bind_rows(cis_trans_coloc_group_summary, cis_trans_coloc_group_totals) |>
+  dplyr::filter(data_type != "Total") |>
+  dplyr::mutate(
+    cis_trans = factor(cis_trans, levels = c("cis", "trans")),
+    data_type_label = dplyr::recode(data_type, !!!unlist(data_type_names), .default = data_type)
+  )
+
+p_cis_trans_coloc <- ggplot(
+  cis_trans_coloc_viz,
+  aes(x = reorder(data_type_label, pct_in_coloc_group), y = pct_in_coloc_group, fill = cis_trans)
+) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.85) +
+  geom_text(
+    aes(label = scales::percent(pct_in_coloc_group, accuracy = 0.1)),
+    position = position_dodge(width = 0.9),
+    hjust = -0.1,
+    size = 3
+  ) +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Percent in coloc group",
+    fill = "cis/trans",
+    title = "Coloc-group membership rates for cis vs trans extractions"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom",
+    axis.text = element_text(color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.15))) +
+  scale_fill_manual(values = c("cis" = cb_blue, "trans" = cb_orange))
+
+ggsave(
+  file.path(report_analysis_dir, "summary_cis_trans_coloc_group_membership.png"),
+  p_cis_trans_coloc,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+# Coloc-group composition: cis-only vs trans-only vs mixed
+coloc_group_member_types <- DBI::dbGetQuery(latest_results$studies_conn, "
+  SELECT
+    cg.coloc_group_id,
+    se.cis_trans,
+    s.data_type,
+    s.tissue
+  FROM coloc_groups AS cg
+  JOIN study_extractions AS se ON cg.study_extraction_id = se.id
+  JOIN studies AS s ON cg.study_id = s.id
+  WHERE se.min_p <= 5e-8
+    AND cg.coloc_group_id IN (
+      SELECT cg2.coloc_group_id
+      FROM coloc_groups AS cg2
+      JOIN study_extractions AS se2 ON cg2.study_extraction_id = se2.id
+      WHERE se2.min_p <= 5e-8
+      GROUP BY cg2.coloc_group_id
+      HAVING COUNT(*) > 1
+    )
+")
+
+coloc_group_composition <- coloc_group_member_types |>
+  dplyr::group_by(coloc_group_id) |>
+  dplyr::summarise(
+    group_size = dplyr::n(),
+    n_cis = sum(cis_trans == "cis", na.rm = TRUE),
+    n_trans = sum(cis_trans == "trans", na.rm = TRUE),
+    n_molecular = n_cis + n_trans,
+    composition = dplyr::case_when(
+      n_cis > 0 & n_trans == 0 ~ "cis_only",
+      n_trans > 0 & n_cis == 0 ~ "trans_only",
+      n_cis > 0 & n_trans > 0 ~ "mixed_cis_trans",
+      TRUE ~ "no_cis_trans_label"
+    ),
+    n_tissues = dplyr::n_distinct(tissue[!is.na(tissue) & tissue != ""]),
+    .groups = "drop"
+  ) |>
+  dplyr::filter(composition != "no_cis_trans_label")
+
+coloc_group_composition_summary <- coloc_group_composition |>
+  dplyr::group_by(composition) |>
+  dplyr::summarise(
+    n_groups = dplyr::n(),
+    median_group_size = stats::median(group_size),
+    mean_group_size = mean(group_size),
+    pct_multi_tissue = mean(n_tissues > 1),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    pct_groups = n_groups / sum(n_groups)
+  ) |>
+  dplyr::arrange(dplyr::desc(n_groups))
+
+coloc_group_composition_table <- coloc_group_composition_summary |>
+  dplyr::mutate(
+    n_groups = scales::comma(n_groups),
+    pct_groups = scales::percent(pct_groups, accuracy = 0.1),
+    median_group_size = scales::comma(median_group_size, accuracy = 0.1),
+    mean_group_size = scales::comma(mean_group_size, accuracy = 0.1),
+    pct_multi_tissue = scales::percent(pct_multi_tissue, accuracy = 0.1)
+  )
+
+knitr::kable(
+  coloc_group_composition_table,
+  caption = paste(
+    "Coloc-group composition among multi-member groups (P ≤ 5e-8 members).",
+    "mixed_cis_trans = group contains ≥1 cis and ≥1 trans extraction;",
+    "pct_multi_tissue = share of groups with >1 distinct tissue among members."
+  )
+)
+```
+
 ### Colocalization Clustering Information:
 
 ```{r colocalization-clustering-information, echo=F}
@@ -1238,7 +1451,7 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
 ggsave(file.path(report_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
 ```
 
-### Genome-wide phenotype hits with strong H3/H4 support
+### Genome-wide phenotype hits with strong H4 support
 
 ```{r phenotype_h3_h4_rates_by_trait_category, echo=F}
 phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
@@ -1247,7 +1460,8 @@ phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
   ) |>
   dplyr::mutate(
     phenotype_study_extraction_id = study_extraction_a_id,
-    phenotype_trait_category = trait_category_a
+    phenotype_trait_category = trait_category_a,
+    molecular_cis_trans = cis_trans_b
   )
 
 full_phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
@@ -1256,7 +1470,8 @@ full_phenotype_molecular_coloc_pairs_a <- latest_coloc_pair_results |>
   ) |>
   dplyr::mutate(
     phenotype_study_extraction_id = study_extraction_a_id,
-    phenotype_trait_category = trait_category_a
+    phenotype_trait_category = trait_category_a,
+    molecular_cis_trans = cis_trans_b
   )
 
 phenotype_molecular_coloc_pairs_b <- latest_coloc_pair_results |>
@@ -1265,7 +1480,8 @@ phenotype_molecular_coloc_pairs_b <- latest_coloc_pair_results |>
   ) |>
   dplyr::mutate(
     phenotype_study_extraction_id = study_extraction_b_id,
-    phenotype_trait_category = trait_category_b
+    phenotype_trait_category = trait_category_b,
+    molecular_cis_trans = cis_trans_a
   )
 
 full_phenotype_molecular_coloc_pairs_b <- latest_coloc_pair_results |>
@@ -1274,7 +1490,8 @@ full_phenotype_molecular_coloc_pairs_b <- latest_coloc_pair_results |>
   ) |>
   dplyr::mutate(
     phenotype_study_extraction_id = study_extraction_b_id,
-    phenotype_trait_category = trait_category_b
+    phenotype_trait_category = trait_category_b,
+    molecular_cis_trans = cis_trans_a
   )
 
 
@@ -1283,6 +1500,8 @@ full_h3_h4_by_hit <- dplyr::bind_rows(full_phenotype_molecular_coloc_pairs_a, fu
   dplyr::summarise(
     has_h3 = any(h3 > 0.8, na.rm = TRUE),
     has_h4 = any(h4 > 0.8, na.rm = TRUE),
+    has_h4_cis = any(h4 > 0.8 & molecular_cis_trans == "cis", na.rm = TRUE),
+    has_h4_cis_trans = any(h4 > 0.8 & molecular_cis_trans %in% c("cis", "trans"), na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -1291,6 +1510,9 @@ h3_h4_by_hit <- dplyr::bind_rows(phenotype_molecular_coloc_pairs_a, phenotype_mo
   dplyr::summarise(
     has_h3 = any(h3 > 0.8, na.rm = TRUE),
     has_h4 = any(h4 > 0.8, na.rm = TRUE),
+    has_h4_cis = any(h4 > 0.8 & molecular_cis_trans == "cis", na.rm = TRUE),
+    has_h4_trans = any(h4 > 0.8 & molecular_cis_trans == "trans", na.rm = TRUE),
+    has_h4_cis_trans = any(h4 > 0.8 & molecular_cis_trans %in% c("cis", "trans"), na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -1300,11 +1522,15 @@ phenotype_hits_with_probs <- all_phenotype_study_extractions |>
   dplyr::mutate(
     has_h3 = tidyr::replace_na(has_h3, FALSE),
     has_h4 = tidyr::replace_na(has_h4, FALSE),
-    h4_support= dplyr::case_when(
-      has_h4 ~ "H4 > 0.8",
+    has_h4_cis = tidyr::replace_na(has_h4_cis, FALSE),
+    has_h4_trans = tidyr::replace_na(has_h4_trans, FALSE),
+    has_h4_cis_trans = tidyr::replace_na(has_h4_cis_trans, FALSE),
+    has_h4_trans_only = has_h4_trans & !has_h4_cis,
+    h4_support = dplyr::case_when(
+      has_h4_cis_trans ~ "H4 > 0.8 (cis or trans QTL)",
       TRUE ~ "No H4 > 0.8"
     ),
-    h3_support= dplyr::case_when(
+    h3_support = dplyr::case_when(
       has_h3 ~ "H3 > 0.8",
       TRUE ~ "No H3 > 0.8"
     )
@@ -1315,40 +1541,230 @@ h3_h4_support_numeric <- phenotype_hits_with_probs |>
   dplyr::group_by(trait_category) |>
   dplyr::summarise(
     total_hits = dplyr::n(),
-    hits_h4 = sum(has_h4),
-    # hits_h3 = sum(has_h3),
+    hits_h4_cis = sum(has_h4_cis),
+    hits_h4_cis_trans = sum(has_h4_cis_trans),
+    hits_h4_trans_only = sum(has_h4_trans_only),
     .groups = "drop"
   )
 
 h3_h4_table_main <- h3_h4_support_numeric |>
-  dplyr::arrange(dplyr::desc(hits_h4)) |>
+  dplyr::arrange(dplyr::desc(hits_h4_cis_trans)) |>
   dplyr::mutate(
-    pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
-    # pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    pct_h4_support_cis = scales::percent(hits_h4_cis / total_hits, accuracy = 0.1),
+    pct_h4_support_cis_trans = scales::percent(hits_h4_cis_trans / total_hits, accuracy = 0.1),
+    pct_h4_support_trans_only = scales::percent(hits_h4_trans_only / total_hits, accuracy = 0.1),
     total_hits = scales::comma(total_hits),
-    hits_h4 = scales::comma(hits_h4),
-    # hits_h3 = scales::comma(hits_h3)
+    hits_h4_cis = scales::comma(hits_h4_cis),
+    hits_h4_cis_trans = scales::comma(hits_h4_cis_trans),
+    hits_h4_trans_only = scales::comma(hits_h4_trans_only)
   )
 
 h3_h4_totals_row <- h3_h4_support_numeric |>
   dplyr::summarise(
     trait_category = "Total",
     total_hits = sum(total_hits),
-    hits_h4 = sum(hits_h4),
-    # hits_h3 = sum(hits_h3),
+    hits_h4_cis = sum(hits_h4_cis),
+    hits_h4_cis_trans = sum(hits_h4_cis_trans),
+    hits_h4_trans_only = sum(hits_h4_trans_only),
     .groups = "drop"
   ) |>
   dplyr::mutate(
-    pct_h4_support = scales::percent(hits_h4 / total_hits, accuracy = 0.1),
-    # pct_h3_support = scales::percent(hits_h3 / total_hits, accuracy = 0.1),
+    pct_h4_support_cis = scales::percent(hits_h4_cis / total_hits, accuracy = 0.1),
+    pct_h4_support_cis_trans = scales::percent(hits_h4_cis_trans / total_hits, accuracy = 0.1),
+    pct_h4_support_trans_only = scales::percent(hits_h4_trans_only / total_hits, accuracy = 0.1),
     total_hits = scales::comma(total_hits),
-    hits_h4 = scales::comma(hits_h4),
-    # hits_h3 = scales::comma(hits_h3)
+    hits_h4_cis = scales::comma(hits_h4_cis),
+    hits_h4_cis_trans = scales::comma(hits_h4_cis_trans),
+    hits_h4_trans_only = scales::comma(hits_h4_trans_only)
   )
 
-h3_h4_table <- dplyr::bind_rows(h3_h4_table_main, h3_h4_totals_row)
+h3_h4_table <- dplyr::bind_rows(h3_h4_table_main, h3_h4_totals_row) |>
+  dplyr::select(
+    trait_category, total_hits,
+    hits_h4_cis, pct_h4_support_cis,
+    hits_h4_cis_trans, pct_h4_support_cis_trans,
+    hits_h4_trans_only, pct_h4_support_trans_only
+  )
 
-knitr::kable(h3_h4_table, caption = "Genome-wide phenotype hits with strong colocalization support by trait category")
+knitr::kable(
+  h3_h4_table,
+  caption = paste(
+    "Genome-wide phenotype hits with strong H4 (>0.8) molecular support by trait category.",
+    "hits_h4_cis = ≥1 cis QTL partner;",
+    "hits_h4_cis_trans = ≥1 cis or trans QTL partner;",
+    "hits_h4_trans_only = ≥1 trans QTL partner and no cis H4 partner (incremental trans support)."
+  )
+)
+```
+
+### Coloc pair mix (cis/trans)
+
+```{r coloc-pair-mix-cis-trans, echo=F}
+h4_pairs_for_mix <- latest_coloc_pair_results |>
+  dplyr::filter(h4 > 0.8, min_p_a <= 5e-8, min_p_b <= 5e-8) |>
+  dplyr::mutate(
+    a_mol = data_type_a %in% qtl_data_types,
+    b_mol = data_type_b %in% qtl_data_types,
+    a_pheno = data_type_a == "phenotype",
+    b_pheno = data_type_b == "phenotype",
+    pair_mix = dplyr::case_when(
+      a_pheno & b_mol & cis_trans_b %in% c("cis", "trans") ~ paste0("phenotype-", cis_trans_b),
+      b_pheno & a_mol & cis_trans_a %in% c("cis", "trans") ~ paste0("phenotype-", cis_trans_a),
+      a_mol & b_mol &
+        cis_trans_a %in% c("cis", "trans") &
+        cis_trans_b %in% c("cis", "trans") ~
+        paste(pmin(cis_trans_a, cis_trans_b), pmax(cis_trans_a, cis_trans_b), sep = "-"),
+      TRUE ~ NA_character_
+    ),
+    pair_scope = dplyr::case_when(
+      grepl("^phenotype-", pair_mix) ~ "phenotype-molecular",
+      pair_mix %in% c("cis-cis", "cis-trans", "trans-trans") ~ "molecular-molecular",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  dplyr::filter(!is.na(pair_mix))
+
+coloc_pair_mix_summary <- h4_pairs_for_mix |>
+  dplyr::count(pair_scope, pair_mix, name = "n_pairs") |>
+  dplyr::group_by(pair_scope) |>
+  dplyr::mutate(pct_within_scope = n_pairs / sum(n_pairs)) |>
+  dplyr::ungroup() |>
+  dplyr::arrange(pair_scope, dplyr::desc(n_pairs))
+
+coloc_pair_mix_table <- coloc_pair_mix_summary |>
+  dplyr::mutate(
+    n_pairs = scales::comma(n_pairs),
+    pct_within_scope = scales::percent(pct_within_scope, accuracy = 0.1)
+  )
+
+knitr::kable(
+  coloc_pair_mix_table,
+  caption = paste(
+    "H4 > 0.8 coloc pairs (both sides P ≤ 5e-8) by cis/trans mix.",
+    "phenotype-cis / phenotype-trans = GWAS hit paired with a molecular QTL;",
+    "cis-cis / cis-trans / trans-trans = molecular–molecular pairs."
+  )
+)
+```
+
+### Tissue sharing in H4 pairs
+
+```{r tissue-sharing-cis-trans, echo=F}
+tissue_sharing_pairs <- latest_coloc_pair_results |>
+  dplyr::filter(
+    h4 > 0.8,
+    min_p_a <= 5e-8,
+    min_p_b <= 5e-8,
+    !is.na(tissue_a), !is.na(tissue_b),
+    tissue_a != "", tissue_b != ""
+  ) |>
+  dplyr::mutate(
+    a_mol = data_type_a %in% qtl_data_types,
+    b_mol = data_type_b %in% qtl_data_types,
+    a_pheno = data_type_a == "phenotype",
+    b_pheno = data_type_b == "phenotype",
+    pair_mix = dplyr::case_when(
+      a_pheno & b_mol & cis_trans_b %in% c("cis", "trans") ~ paste0("phenotype-", cis_trans_b),
+      b_pheno & a_mol & cis_trans_a %in% c("cis", "trans") ~ paste0("phenotype-", cis_trans_a),
+      a_mol & b_mol &
+        cis_trans_a %in% c("cis", "trans") &
+        cis_trans_b %in% c("cis", "trans") ~
+        paste(pmin(cis_trans_a, cis_trans_b), pmax(cis_trans_a, cis_trans_b), sep = "-"),
+      TRUE ~ NA_character_
+    ),
+    same_tissue = tissue_a == tissue_b
+  ) |>
+  dplyr::filter(pair_mix %in% c("cis-cis", "cis-trans", "trans-trans", "phenotype-cis", "phenotype-trans"))
+
+tissue_sharing_summary <- tissue_sharing_pairs |>
+  dplyr::group_by(pair_mix) |>
+  dplyr::summarise(
+    n_pairs = dplyr::n(),
+    n_same_tissue = sum(same_tissue),
+    n_cross_tissue = sum(!same_tissue),
+    pct_same_tissue = n_same_tissue / n_pairs,
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(n_pairs))
+
+tissue_sharing_totals <- tissue_sharing_summary |>
+  dplyr::summarise(
+    pair_mix = "Total",
+    n_pairs = sum(n_pairs),
+    n_same_tissue = sum(n_same_tissue),
+    n_cross_tissue = sum(n_cross_tissue),
+    pct_same_tissue = n_same_tissue / n_pairs,
+    .groups = "drop"
+  )
+
+tissue_sharing_table <- dplyr::bind_rows(tissue_sharing_summary, tissue_sharing_totals) |>
+  dplyr::mutate(
+    n_pairs = scales::comma(n_pairs),
+    n_same_tissue = scales::comma(n_same_tissue),
+    n_cross_tissue = scales::comma(n_cross_tissue),
+    pct_same_tissue = scales::percent(pct_same_tissue, accuracy = 0.1)
+  )
+
+knitr::kable(
+  tissue_sharing_table,
+  caption = paste(
+    "Tissue sharing among H4 > 0.8 pairs with non-missing tissues on both sides (P ≤ 5e-8).",
+    "Higher cross-tissue rates for pairs involving trans QTLs would support broader sharing."
+  )
+)
+
+if (nrow(tissue_sharing_summary) > 0) {
+  tissue_sharing_viz <- tissue_sharing_summary |>
+    dplyr::mutate(
+      pair_mix = factor(
+        pair_mix,
+        levels = c("cis-cis", "cis-trans", "trans-trans", "phenotype-cis", "phenotype-trans")
+      )
+    ) |>
+    tidyr::pivot_longer(
+      cols = c(n_same_tissue, n_cross_tissue),
+      names_to = "tissue_status",
+      values_to = "count"
+    ) |>
+    dplyr::mutate(
+      tissue_status = dplyr::recode(
+        tissue_status,
+        n_same_tissue = "Same tissue",
+        n_cross_tissue = "Cross tissue"
+      )
+    )
+
+  p_tissue_sharing <- ggplot(
+    tissue_sharing_viz,
+    aes(x = pair_mix, y = count, fill = tissue_status)
+  ) +
+    geom_bar(stat = "identity", position = "stack", alpha = 0.85) +
+    labs(
+      x = "Pair mix",
+      y = "Number of H4 > 0.8 pairs",
+      fill = "",
+      title = "Same- vs cross-tissue H4 pairs by cis/trans mix"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "bottom",
+      axis.text = element_text(color = "black"),
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank()
+    ) +
+    scale_y_continuous(labels = scales::comma) +
+    scale_fill_manual(values = c("Same tissue" = cb_blue, "Cross tissue" = cb_orange))
+
+  ggsave(
+    file.path(report_analysis_dir, "summary_cis_trans_tissue_sharing.png"),
+    p_tissue_sharing,
+    width = 10,
+    height = 6,
+    dpi = 300
+  )
+}
 ```
 
 ```{r h3_h4_full_table, echo=F, eval=FALSE}
@@ -1402,8 +1818,8 @@ h3_h4_full_table <- dplyr::bind_rows(h3_h4_full_table_main, h3_h4_full_totals_ro
 
 h3_h4_plot_data <- h3_h4_support_numeric |>
   dplyr::mutate(
-    pct_h4 = hits_h4 / total_hits,
-    pct_h3 = hits_h3 / total_hits
+    pct_h4_cis = hits_h4_cis / total_hits,
+    pct_h4_cis_trans = hits_h4_cis_trans / total_hits
   ) |>
   dplyr::filter(!is.na(trait_category))
 
@@ -1417,17 +1833,20 @@ if (length(shared_trait_order) == 0) {
 h3_h4_viz <- h3_h4_plot_data |>
   dplyr::mutate(trait_category = factor(trait_category, levels = rev(shared_trait_order))) |>
   tidyr::pivot_longer(
-    cols = c(pct_h4, pct_h3),
+    cols = c(pct_h4_cis, pct_h4_cis_trans),
     names_to = "support_type",
     values_to = "percentage"
   ) |>
   dplyr::mutate(
     support_type = dplyr::recode(
       support_type,
-      pct_h4 = "H4 > 0.8",
-      pct_h3 = "H3 > 0.8"
+      pct_h4_cis = "H4 > 0.8 (cis QTL)",
+      pct_h4_cis_trans = "H4 > 0.8 (cis or trans QTL)"
     ),
-    support_type = factor(support_type, levels = c("H4 > 0.8", "H3 > 0.8"))
+    support_type = factor(
+      support_type,
+      levels = c("H4 > 0.8 (cis or trans QTL)", "H4 > 0.8 (cis QTL)")
+    )
   )
 
 p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = support_type)) +
@@ -1460,8 +1879,8 @@ p_h3h4 <- ggplot(h3_h4_viz, aes(x = trait_category, y = percentage, fill = suppo
   ) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0, 1, by = 0.25)) +
   scale_fill_manual(values = c(
-    "H4 > 0.8" = cb_orange,
-    "H3 > 0.8" = cb_blue
+    "H4 > 0.8 (cis or trans QTL)" = cb_orange,
+    "H4 > 0.8 (cis QTL)" = cb_blue
   )) +
   guides(fill = guide_legend(title.position = "top", title.hjust = 0.5))
 

@@ -223,8 +223,6 @@ coloc_pairwise_results_column_types <- vroom::cols(
   study_b = vroom::col_character(),
   bp_distance = vroom::col_double(),
   ignore = vroom::col_logical(),
-  false_positive = vroom::col_logical(),
-  false_negative = vroom::col_logical(),
   nsnps = vroom::col_number(),
   hit1 = vroom::col_character(),
   hit2 = vroom::col_character(),
@@ -236,8 +234,32 @@ coloc_pairwise_results_column_types <- vroom::cols(
   idx1 = vroom::col_number(),
   idx2 = vroom::col_number(),
   h4 = vroom::col_double(),
-  ld_block = vroom::col_character()
+  ld_block = vroom::col_character(),
+  false_positive = vroom::col_logical(),
+  false_negative = vroom::col_logical()
 )
+
+# Read multiple files with vroom; on column-mismatch errors, print per-file ncol.
+vroom_multi <- function(files, label, ...) {
+  message(glue::glue("Reading {length(files)} {label} file(s)"))
+  if (length(files) == 0) {
+    return(NULL)
+  }
+  tryCatch(
+    vroom::vroom(files, ...),
+    error = function(e) {
+      message(glue::glue("Failed while reading {label}: {conditionMessage(e)}"))
+      for (f in files) {
+        nc <- tryCatch(
+          ncol(vroom::vroom(f, n_max = 0, show_col_types = FALSE)),
+          error = function(...) NA_integer_
+        )
+        message(glue::glue("  {nc} cols: {f}"))
+      }
+      stop(e)
+    }
+  )
+}
 
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)

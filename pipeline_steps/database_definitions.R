@@ -200,6 +200,33 @@ studies_db <- list(
       distinct_trait_categories INTEGER NOT NULL,
       distinct_protein_coding_genes INTEGER NOT NULL
     )"
+  ),
+  pathway_mappings = list(
+    name = "pathway_mappings",
+    persist_id_from = NA,
+    query = "CREATE TABLE pathway_mappings (
+      gene_id INTEGER NOT NULL,
+      term_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      description TEXT,
+      PRIMARY KEY (gene_id, term_id),
+      FOREIGN KEY (gene_id) REFERENCES gene_annotations(id)
+    )",
+    indexes = "CREATE INDEX idx_pathway_mappings_gene_id ON pathway_mappings(gene_id);
+      CREATE INDEX idx_pathway_mappings_term_id ON pathway_mappings(term_id);
+      CREATE INDEX idx_pathway_mappings_source ON pathway_mappings(source);"
+  ),
+  pathway_sizes = list(
+    name = "pathway_sizes",
+    persist_id_from = NA,
+    query = "CREATE TABLE pathway_sizes (
+      term_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      description TEXT,
+      pathway_size INTEGER NOT NULL,
+      background_size INTEGER NOT NULL
+    )",
+    indexes = "CREATE INDEX idx_pathway_sizes_source ON pathway_sizes(source);"
   )
 )
 
@@ -361,6 +388,7 @@ associations_db <- list(
     )"
   )
 )
+
 
 gwas_upload_db <- list(
   gwas_upload = list(

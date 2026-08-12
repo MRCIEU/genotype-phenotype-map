@@ -207,6 +207,32 @@ main <- function() {
   )
   DBI::dbAppendTable(studies_con, "gene_pleiotropy", gene_pleiotropy)
 
+  tryCatch({
+    pathway_mappings <- DBI::dbGetQuery(
+      orig_studies_con,
+      sprintf(
+        "SELECT * FROM pathway_mappings WHERE gene_id IN (%s)",
+        paste(genes_to_keep, collapse = ",")
+      )
+    )
+    DBI::dbAppendTable(studies_con, "pathway_mappings", pathway_mappings)
+
+    if (nrow(pathway_mappings) > 0) {
+      pathway_sizes <- DBI::dbGetQuery(
+        orig_studies_con,
+        sprintf(
+          "SELECT * FROM pathway_sizes WHERE term_id IN (%s)",
+          paste(sprintf("'%s'", unique(pathway_mappings$term_id)), collapse = ",")
+        )
+      )
+      DBI::dbAppendTable(studies_con, "pathway_sizes", pathway_sizes)
+    }
+    message("Copied ", nrow(pathway_mappings), " pathway mappings to test DB")
+  }, error = function(e) {
+    message("Pathway tables not found in source DB, skipping: ", conditionMessage(e))
+    return(invisible(NULL))
+  })
+
   coloc_pairs <- DBI::dbGetQuery(
     orig_coloc_pairs_con,
     sprintf(

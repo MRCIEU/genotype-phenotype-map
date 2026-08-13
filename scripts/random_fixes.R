@@ -93,14 +93,14 @@ diagnose_coloc_pairwise_column_types <- function(n_max = 1000) {
 
   type_rows <- lapply(files, function(f) {
     d <- vroom::vroom(f, delim = "\t", n_max = n_max, show_col_types = FALSE)
-    data.frame(
+    return(data.frame(
       file = f,
       column = names(d),
       typeof = vapply(d, typeof, character(1)),
-      class = vapply(d, function(x) class(x)[1], character(1)),
+      class = vapply(d, function(x) return(class(x)[1]), character(1)),
       nrow = nrow(d),
       stringsAsFactors = FALSE
-    )
+    ))
   })
   types <- dplyr::bind_rows(type_rows)
 
@@ -148,11 +148,11 @@ diagnose_coloc_pairwise_column_types <- function(n_max = 1000) {
       {
         force(expr)
         message(glue::glue("  OK"))
-        NULL
+        return(NULL)
       },
       error = function(e) {
         message(glue::glue("  FAILED: {conditionMessage(e)}"))
-        conditionMessage(e)
+        return(conditionMessage(e))
       }
     )
     return(err)
@@ -178,12 +178,12 @@ diagnose_coloc_pairwise_column_types <- function(n_max = 1000) {
     lapply_bind = try_read(
       "lapply + bind_rows with coloc_pairwise_results_column_types",
       lapply(files, function(f) {
-        vroom::vroom(
+        return(vroom::vroom(
           f,
           delim = "\t",
           show_col_types = FALSE,
           col_types = coloc_pairwise_results_column_types
-        )
+        ))
       }) |> dplyr::bind_rows()
     )
   )
@@ -196,9 +196,9 @@ diagnose_coloc_pairwise_column_types <- function(n_max = 1000) {
       err <- tryCatch(
         {
           vroom::vroom(files[c(1, i)], delim = "\t", show_col_types = FALSE)
-          NULL
+          return(NULL)
         },
-        error = function(e) conditionMessage(e)
+        error = function(e) return(conditionMessage(e))
       )
       if (!is.null(err)) {
         failing_pair <- files[c(1, i)]

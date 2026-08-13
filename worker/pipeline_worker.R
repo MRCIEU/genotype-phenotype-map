@@ -470,7 +470,7 @@ identify_memory_intensive_blocks <- function(blocks, threshold = 8000, guid = NA
     "EUR/6/30425675-31282730",
     "EUR/5/153673287-157202743",
     "EUR/6/27258180-28904669",
-    "EUR/6/41655647-43990869",
+    "EUR/6/41655647-43990869"
   )
 
   calculated <- c()

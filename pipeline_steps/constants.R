@@ -245,7 +245,7 @@ vroom_multi <- function(files, label, ...) {
   if (length(files) == 0) {
     return(NULL)
   }
-  tryCatch(
+  return(tryCatch(
     vroom::vroom(files, ...),
     error = function(e) {
       message(glue::glue("Failed while reading {label}: {conditionMessage(e)}"))
@@ -258,7 +258,7 @@ vroom_multi <- function(files, label, ...) {
       }
       stop(e)
     }
-  )
+  ))
 }
 
 file_prefix <- function(file_path) {

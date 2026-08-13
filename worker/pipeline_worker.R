@@ -252,7 +252,10 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       gc()
 
       ld_blocks_to_colocalise <- vroom::vroom(ld_blocks_to_colocalise_file, show_col_types = F)
-      memory_intensive_blocks <- identify_memory_intensive_blocks(ld_blocks_to_colocalise$ld_block)
+      memory_intensive_blocks <- identify_memory_intensive_blocks(
+        ld_blocks_to_colocalise$ld_block,
+        guid = gwas_info$metadata$guid
+      )
 
       blocks_parallel <- ld_blocks_to_colocalise$ld_block[
         !ld_blocks_to_colocalise$ld_block %in% memory_intensive_blocks
@@ -458,7 +461,19 @@ create_study_metadata_files <- function(gwas_info) {
 }
 
 identify_memory_intensive_blocks <- function(blocks, threshold = 8000, guid = NA) {
-  memory_intensive_blocks <- c()
+  # Known OOM-prone blocks when coloc runs alongside other large blocks in the
+  # 6-wide parallel pool (even when each is below the study-count threshold).
+  # Ranked by main-pipeline coloc_pairwise size / unfinished in the e11d99e9 OOM window.
+  hardcoded_memory_intensive_blocks <- c(
+    "EUR/5/129539728-133682912",
+    "EUR/5/96487028-97711949",
+    "EUR/6/30425675-31282730",
+    "EUR/5/153673287-157202743",
+    "EUR/6/27258180-28904669",
+    "EUR/6/41655647-43990869",
+  )
+
+  calculated <- c()
 
   for (block in blocks) {
     finemapped_file <- main_pipeline_ld_block_file_paths(block)$finemapped_studies
@@ -469,7 +484,18 @@ identify_memory_intensive_blocks <- function(blocks, threshold = 8000, guid = NA
     dt <- dt[min_p < min_p_allowed_for_worker]
     num_studies <- nrow(dt)
 
-    if (num_studies > threshold) memory_intensive_blocks <- c(memory_intensive_blocks, block)
+    if (num_studies > threshold) calculated <- c(calculated, block)
+  }
+
+  hardcoded <- intersect(hardcoded_memory_intensive_blocks, blocks)
+  memory_intensive_blocks <- unique(c(hardcoded, calculated))
+
+  if (length(hardcoded) > 0) {
+    flog.info(paste(
+      guid,
+      "Adding hardcoded memory-intensive blocks:",
+      paste(hardcoded, collapse = ", ")
+    ))
   }
 
   return(memory_intensive_blocks)

@@ -13,20 +13,26 @@ From `pipeline_steps/constants.R`:
 
 ### Expected layout under `$DATA_DIR/ti_pairs/`
 
+All inputs and caches are flat under `ti_pairs/`:
+
 ```text
 ti_pairs/
-  ericminikel-genetic_support/
-    Supplement_ST01.csv
-    data/assoc.tsv.gz
-    data/sim.tsv.gz
-  target-indication_data/
-    gpmap_matched_traits.csv
-    gpmap_matched_traits_filtered_corrected.csv
-    target-indicationpairs_gpmapevidence.tsv   # written by 01
-  cache/                                       # expensive intermediate .rda objects
-  pre-infomap/
-    exclude_studies.txt
-    tipairs_preinfomap.rda
+  # Minikel et al. (https://zenodo.org/records/10783210)
+  Supplement_ST01.csv
+  assoc.tsv.gz
+  sim.tsv.gz
+  # Trait–MeSH matching (inputs + output of 01)
+  gpmap_matched_traits.csv
+  gpmap_matched_traits_filtered_corrected.csv
+  target-indicationpairs_gpmapevidence.tsv   # written by 01
+  # Caches written / read by 02–03
+  gpmap_indications.rda
+  gpmap_indications_rarevariants.rda
+  gpmap_ticolocs.rda
+  gpmap_tisharedrare.rda
+  gpmap_tipairwisecolocs.rda
+  tipairs_preinfomap.rda                     # pre-infomap T-I support (from 03)
+  exclude_studies.txt                        # optional
 ```
 
 ## Workflow
@@ -61,7 +67,7 @@ Rscript -e 'rmarkdown::render("02_gpmap_support_for_ti_pairs.Rmd",
   params = list(results_version = "1.0.0", recompute_cache = FALSE),
   output_dir = "/local-scratch/projects/genotype-phenotype-map/results/1.0.0/analysis/clustering")'
 
-# Recompute and overwrite caches under $DATA_DIR/ti_pairs/cache/
+# Recompute and overwrite caches under $DATA_DIR/ti_pairs/
 Rscript -e 'rmarkdown::render("02_gpmap_support_for_ti_pairs.Rmd",
   params = list(results_version = "1.0.0", recompute_cache = TRUE),
   output_dir = "/local-scratch/projects/genotype-phenotype-map/results/1.0.0/analysis/clustering")'

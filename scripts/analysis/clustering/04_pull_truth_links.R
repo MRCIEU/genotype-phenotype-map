@@ -38,14 +38,12 @@ dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
 ti_pairs <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
 
 ## Colocalisation group evidence (studies linked by H4>0.8) pre infomap refinement of clusters
-preinfomap_file <- file.path(ti_pairs_data_dir, "pre-infomap", "tipairs_preinfomap.rda")
+preinfomap_file <- file.path(ti_pairs_data_dir, "tipairs_preinfomap.rda")
 if (!file.exists(preinfomap_file)) {
-  legacy <- file.path(ti_pairs_data_dir, "pre-infomap", "tipairs_pre-infomap.rda")
-  if (file.exists(legacy)) {
-    preinfomap_file <- legacy
-  }
+  stop("Missing ", preinfomap_file)
 }
 load(preinfomap_file) # ti_preinfomap
+message("Loaded pre-infomap support from: ", preinfomap_file)
 
 gc_support_preinfomap <- do.call("rbind", lapply(ti_preinfomap, function(x) {
   return(x[[1]])

@@ -31,20 +31,19 @@ versioned_results_dir <- if (grepl("^/", args$results_version)) {
   file.path(sub("/$", "", results_dir), args$results_version)
 }
 
-matching_dir <- file.path(ti_pairs_data_dir, "target-indication_data")
-minikel_dir <- file.path(ti_pairs_data_dir, "ericminikel-genetic_support")
-dir.create(matching_dir, recursive = TRUE, showWarnings = FALSE)
+# Flat layout under $DATA_DIR/ti_pairs/ (see clustering/README.md)
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
 # Data from Minikel et al: https://zenodo.org/records/10783210
 
 ## Supplementary Table1 (target indication pairs: n=1255 with supporting genetic evidence, n=24458 unsupported)
-ti_pairs <- data.table::fread(file.path(minikel_dir, "Supplement_ST01.csv"))
+ti_pairs <- data.table::fread(ti_file("Supplement_ST01.csv"))
 
 ## Genetically supported/unsupported T-I pairs (from Figure 1A, ST04)
 table(ti_pairs$combined_max_phase, ti_pairs$target_status)
 
 ## All significant genetic associations
-assocs <- data.table::fread(file.path(minikel_dir, "data", "assoc.tsv.gz"))
+assocs <- data.table::fread(ti_file("assoc.tsv.gz"))
 
 ### ----- STEP 1: -----
 # Derive table of all association study trait --> MeSH term (+ MeSH ID) mappings
@@ -53,7 +52,7 @@ term_tab <- assocs |>
   dplyr::select(original_trait, mesh_id, mesh_term) |>
   unique()
 
-# data.table::fwrite(term_tab, file = file.path(matching_dir, "ericminike_traittomesh.csv"), quote = TRUE)
+# data.table::fwrite(term_tab, file = ti_file("ericminike_traittomesh.csv"), quote = TRUE)
 
 ### ----- STEP 2: -----
 # Derive table of ingested GPMAP study traits to match
@@ -75,7 +74,7 @@ forAI <- cbind(
   gpmap_trait = gpmap_traits$trait_name_gpmap[seq_len(nrow(term_tab))],
   original_trait = term_tab$original_trait
 )
-# data.table::fwrite(forAI, file = file.path(matching_dir, "ericminike_gpmap_traitstomatch.csv"), quote = TRUE)
+# data.table::fwrite(forAI, file = ti_file("ericminike_gpmap_traitstomatch.csv"), quote = TRUE)
 
 # ChatGPT5 was run with the following prompt:
 # nolint start: line_length_linter.
@@ -89,7 +88,7 @@ forAI <- cbind(
 
 # Output: gpmap_matched_traits.csv
 
-matched <- data.table::fread(file = file.path(matching_dir, "gpmap_matched_traits.csv")) |>
+matched <- data.table::fread(file = ti_file("gpmap_matched_traits.csv")) |>
   dplyr::select(-original_trait) |>
   dplyr::arrange(desc(confidence)) |>
   dplyr::filter(nchar(gpmap_trait) > 0) |>
@@ -103,7 +102,7 @@ gpmap_traits <- gpmap_traits |> dplyr::left_join(matched, by = c("trait_name_gpm
 # (based on MeSH term similarity of >=0.8)
 
 # Read in MeSH ID similarity matrix from Minikel et al.
-mesh_match <- data.table::fread(file.path(minikel_dir, "data", "sim.tsv.gz"))
+mesh_match <- data.table::fread(ti_file("sim.tsv.gz"))
 mesh_terms <- data.frame(
   mesh_id = c(ti_pairs$indication_mesh_id, term_tab$mesh_id),
   mesh_term = c(ti_pairs$indication_mesh_term, term_tab$mesh_term)
@@ -162,12 +161,9 @@ gpmap_matched <- gpmap_traits |> dplyr::filter(mesh_id %in% mesh_set) # 2171 stu
 # sufficiently captured by the MeSH term assigned to the original trait in Minikel et al.
 # (see gpmap_matched_traits_filtered.xlsx for excluded traits)
 
-# data.table::fwrite(gpmap_matched, file.path(matching_dir, "gpmap_matched_traits_tofilter.csv"))
+# data.table::fwrite(gpmap_matched, ti_file("gpmap_matched_traits_tofilter.csv"))
 
-gpmap_matched_filtered <- data.table::fread(file.path(
-  matching_dir,
-  "gpmap_matched_traits_filtered_corrected.csv"
-))
+gpmap_matched_filtered <- data.table::fread(ti_file("gpmap_matched_traits_filtered_corrected.csv"))
 # 1423 studies with high confidence mapping to MeSH terms for disease indications (343 unique MeSH terms)
 
 # Match GPMAP studies to indicators
@@ -222,6 +218,6 @@ length(unique(ti_pairs_gpmap$ti_uid))
 missing <- i_term_tab[!(i_term_tab$indication_mesh_id %in% gpmap_matched_filtered$indication_mesh_id)]
 
 # Write out final table of gpmap studies paired with pharmaceutical indications
-out_file <- file.path(matching_dir, "target-indicationpairs_gpmapevidence.tsv")
+out_file <- ti_file("target-indicationpairs_gpmapevidence.tsv")
 data.table::fwrite(ti_pairs_gpmap, out_file, sep = "\t")
 message("Wrote: ", out_file)

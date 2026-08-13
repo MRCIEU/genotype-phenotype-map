@@ -24,6 +24,10 @@ source("../../pipeline_steps/constants.R")
 source("../../pipeline_steps/gwas_calculations.R")
 
 report_results_dir <- params$results_dir
+if (is.null(report_results_dir) || is.na(report_results_dir) || !nzchar(report_results_dir)) {
+  report_results_dir <- as.character(current_results_dir)
+}
+report_results_dir <- sub("/+$", "", report_results_dir)
 report_analysis_dir <- file.path(report_results_dir, "analysis")
 dir.create(report_analysis_dir, recursive = TRUE, showWarnings = FALSE)
 message("Using results_dir: ", report_results_dir)

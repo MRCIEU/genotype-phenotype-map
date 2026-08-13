@@ -11,7 +11,7 @@ output:
 params:
   # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
   results_version: "1.0.0"
-  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap.rda
+  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap.rda under data/ti_pairs/
   recompute_cache: false
 ---
 
@@ -39,8 +39,8 @@ versioned_results_dir <- if (grepl("^/", params$results_version)) {
   file.path(sub("/$", "", results_dir), params$results_version)
 }
 analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
-cache_dir <- file.path(ti_pairs_data_dir, "cache")
-pre_infomap_dir <- file.path(ti_pairs_data_dir, "pre-infomap")
+# Flat layout under $DATA_DIR/ti_pairs/
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
 ## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
 ti_pairs <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
@@ -55,26 +55,23 @@ We wish to compare the colocalisation clusters returned to users after running i
 ## Pre-pruned clusters from the versioned results directory
 pre_infomap_file_local <- file.path(versioned_results_dir, "coloc_clustered_results_no_pruning.tsv.gz")
 if (!file.exists(pre_infomap_file_local)) {
-  fallback <- file.path(pre_infomap_dir, "coloc_clustered_results_no_pruning.tsv.gz")
-  if (file.exists(fallback)) {
-    pre_infomap_file_local <- fallback
-  } else {
-    stop("Missing coloc_clustered_results_no_pruning.tsv.gz in ", versioned_results_dir,
-         " (or ", pre_infomap_dir, ")")
-  }
+  stop("Missing coloc_clustered_results_no_pruning.tsv.gz in ", versioned_results_dir)
 }
 
 pre_infomap_clusters <- vroom::vroom(pre_infomap_file_local)
 
-## Filter out studies added post first submission
+## Filter out studies added post first submission (optional exclude list)
 # studies_extracted <- vroom::vroom(file.path(versioned_results_dir, "study_extractions.tsv.gz"))
 # blocked_list <- data.table::fread("../../../pipeline_steps/data/1_0_0_block_list.csv", data.table = FALSE)
 # studies_out <- studies_extracted$study[is_study_blocked(...)] |> unique()
-# write.table(studies_out, file.path(pre_infomap_dir, "exclude_studies.txt"))
-studies_out <- read.table(file.path(pre_infomap_dir, "exclude_studies.txt"))[, 1]
-
-# Remove from pre-pruned clusters
-pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(study %in% studies_out))
+# write.table(studies_out, ti_file("exclude_studies.txt"))
+exclude_file <- ti_file("exclude_studies.txt")
+if (file.exists(exclude_file)) {
+  studies_out <- read.table(exclude_file)[, 1]
+  pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(study %in% studies_out))
+} else {
+  message("No exclude_studies.txt found under ", ti_pairs_data_dir, "; skipping study exclusion")
+}
 ```
 
 What genetic (QTL) evidence is available for each molecular target?
@@ -155,11 +152,7 @@ pull_ti_preinfomap <- function(target, trait){
   return(list(group_summary = res, target_groups = groups_wtarget))
 }
 
-preinfomap_file <- file.path(pre_infomap_dir, "tipairs_preinfomap.rda")
-if (!file.exists(preinfomap_file)) {
-  legacy <- file.path(pre_infomap_dir, "tipairs_pre-infomap.rda")
-  if (file.exists(legacy)) preinfomap_file <- legacy
-}
+preinfomap_file <- ti_file("tipairs_preinfomap.rda")
 
 if (params$recompute_cache) {
   ti_preinfomap <- mapply(
@@ -169,8 +162,11 @@ if (params$recompute_cache) {
     SIMPLIFY = FALSE
   )
   names(ti_preinfomap) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
-  save(ti_preinfomap, file = file.path(pre_infomap_dir, "tipairs_preinfomap.rda"))
+  save(ti_preinfomap, file = preinfomap_file)
 } else {
+  if (!file.exists(preinfomap_file)) {
+    stop("Missing ", preinfomap_file, "; set recompute_cache = TRUE to build it")
+  }
   load(preinfomap_file) # ti_preinfomap
 }
 
@@ -184,7 +180,7 @@ gc_support_preinfomap <- do.call("rbind",lapply(ti_preinfomap, function(x){x[[1]
 
 ```{r colocpairs-support}
 # Load pre-computed GC support based on coloc pairs (pre clustering)
-load(file.path(cache_dir, "gpmap_tipairwisecolocs.rda")) # ti_colocs_frompairs
+load(ti_file("gpmap_tipairwisecolocs.rda")) # ti_colocs_frompairs
 gc_support_pairs <- do.call("rbind",lapply(ti_colocs_frompairs, function(x){x[[1]]})) |>
   dplyr::mutate(ti_uid = ti_pairs$ti_uid, .before = "target") |>
   dplyr::rename("GC_support_colocpairs" = GC_support,

@@ -367,11 +367,13 @@ rule create_static_web_files:
     threads: 1
     params:
         static_web_dir=STATIC_WEB_DIR,
+        results_dir=version_results_dir,
     output: temporary(static_web_files_ready_file)
     shell:
         """
         Rscript create_static_web_files.R \
             --studies_db_file {studies_db_file} \
+            --results_dir {params.results_dir} \
             --static_web_dir {params.static_web_dir} \
             --static_web_files_ready_file {output}
         """

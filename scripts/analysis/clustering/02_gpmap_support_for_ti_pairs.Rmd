@@ -11,7 +11,7 @@ output:
 params:
   # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
   results_version: "1.0.0"
-  # If true, recompute expensive intermediates and overwrite caches under data/ti_pairs/cache/
+  # If true, recompute expensive intermediates and overwrite caches under data/ti_pairs/
   recompute_cache: false
 ---
 
@@ -28,14 +28,13 @@ versioned_results_dir <- if (grepl("^/", params$results_version)) {
   file.path(sub("/$", "", results_dir), params$results_version)
 }
 analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
-cache_dir <- file.path(ti_pairs_data_dir, "cache")
-minikel_dir <- file.path(ti_pairs_data_dir, "ericminikel-genetic_support")
-matching_dir <- file.path(ti_pairs_data_dir, "target-indication_data")
+# Flat layout: inputs and .rda caches live directly under $DATA_DIR/ti_pairs/
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(ti_pairs_data_dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Supplementary Table1 (target indication pairs: n=1255 with supporting genetic evidence, n=24458 unsupported) from Minikel et.
-ti_pairs_minikel <- data.table::fread(file.path(minikel_dir, "Supplement_ST01.csv"))
+ti_pairs_minikel <- data.table::fread(ti_file("Supplement_ST01.csv"))
 # Indication area categories
 indication_areas <- data.frame(ti_uid = ti_pairs_minikel$ti_uid, indication_area = ti_pairs_minikel$areas)
 
@@ -49,7 +48,7 @@ Drug target - disease indication pairs with genetic insight available in the GPM
 -   **2236** drug target genes (**18932** unique target-indication pairs)
 
 ```{r gpmap-data}
-ti_pairs <- data.table::fread(file.path(matching_dir, "target-indicationpairs_gpmapevidence.tsv"))
+ti_pairs <- data.table::fread(ti_file("target-indicationpairs_gpmapevidence.tsv"))
 gpmap_traits <- unique(ti_pairs$trait_gpmap) #1421
 
 #length(unique(ti_pairs$indication_mesh_id)) #495
@@ -57,13 +56,13 @@ gpmap_traits <- unique(ti_pairs$trait_gpmap) #1421
 #length(unique(ti_pairs$target))
 
 # Download GPMAP coloc cluster results for matched indications:
-traits_ids <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
-traits_ids_rare <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
 
-indications_cache <- file.path(cache_dir, "gpmap_indications.rda")
-indications_rare_cache <- file.path(cache_dir, "gpmap_indications_rarevariants.rda")
+indications_cache <- ti_file("gpmap_indications.rda")
+indications_rare_cache <- ti_file("gpmap_indications_rarevariants.rda")
 
 if (params$recompute_cache) {
+  traits_ids <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
+  traits_ids_rare <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
   # Pull all coloc groups with indication traits (slow)
   trait_colocs <- lapply(traits_ids$id, gpmapr::trait)
   names(trait_colocs) <- traits_ids$trait
@@ -196,7 +195,7 @@ pull_ti_colocs <- function(target, trait){
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-ti_colocs_cache <- file.path(cache_dir, "gpmap_ticolocs.rda")
+ti_colocs_cache <- ti_file("gpmap_ticolocs.rda")
 if (params$recompute_cache) {
   ti_colocs <- mapply(
     FUN = pull_ti_colocs,
@@ -313,7 +312,7 @@ pull_ti_rare <- function(target, trait){
   return(list(rare_results_summary = res, target_sharedrare = rare_wtarget))
 }
 
-ti_sharedrare_cache <- file.path(cache_dir, "gpmap_tisharedrare.rda")
+ti_sharedrare_cache <- ti_file("gpmap_tisharedrare.rda")
 if (params$recompute_cache) {
   ti_sharedrare <- mapply(
     FUN = pull_ti_rare,
@@ -431,11 +430,10 @@ Pull pairwise coloc results for indications in the GPMAP and identify high confi
 
 ```{r coloc-pairs, message=FALSE}
 # Traits to pull:
-traits <- traits_ids$trait
-ti_colocs_frompairs_cache <- file.path(cache_dir, "gpmap_tipairwisecolocs.rda")
-pairwisecolocs_cache <- file.path(cache_dir, "gpmap_indications_pairwisecolocs.rda")
-indications_ids_file <- file.path(cache_dir, "gpmap_indications_ids.txt")
-pairwise_indications_file <- file.path(cache_dir, "coloc_pairwise_indications.txt")
+ti_colocs_frompairs_cache <- ti_file("gpmap_tipairwisecolocs.rda")
+pairwisecolocs_cache <- ti_file("gpmap_indications_pairwisecolocs.rda")
+indications_ids_file <- ti_file("gpmap_indications_ids.txt")
+pairwise_indications_file <- ti_file("coloc_pairwise_indications.txt")
 
 pull_ti_coloc_pairs <- function(target, trait) {
   message("Testing for pairwise colocalisation between: ", trait, " and ", target)
@@ -514,7 +512,7 @@ if (params$recompute_cache) {
         study_a = sub("_EUR.*", "", unique_study_a),
         study_b = sub("_EUR.*", "", unique_study_b)
       ) |>
-      dplyr::filter(study_a %in% traits | study_b %in% traits)
+      dplyr::filter(study_a %in% traits_ids$trait | study_b %in% traits_ids$trait)
     data.table::fwrite(trait_pair_colocs, pairwise_indications_file, sep = "\t")
   } else {
     trait_pair_colocs <- data.table::fread(pairwise_indications_file) |>
@@ -533,7 +531,7 @@ if (params$recompute_cache) {
       study_b = trait_pair_colocs$study_a
     )
   trait_pair_colocs <- rbind(trait_pair_colocs, trait_pair_colocs_flip) |>
-    dplyr::filter(study_a %in% traits)
+    dplyr::filter(study_a %in% traits_ids$trait)
   trait_pair_colocs <- trait_pair_colocs |>
     dplyr::left_join(
       study_metadata[, c("study_name", "data_type", "gene", "tissue")],

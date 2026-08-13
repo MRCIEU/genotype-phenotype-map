@@ -4,3 +4,4 @@ GTEx-eQTL*,gene_expression,gtex,besd,none,/local-scratch/projects/genotype-pheno
 GTEx-sQTL*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,5e-8,common,json,dense,FALSE
 BrainMeta*,gene_expression,brain_meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
 *,phenotype,genebass,tsv,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/rare,EUR,GRCh38,1.5e-4,rare_exome,tsv,dense,FALSE
+*,phenotype,manual,summary_stats,none,../tests/data/summary_stats,EUR,GRCh38,1.5e-4,common,csv,dense,FALSE

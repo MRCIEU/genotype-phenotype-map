@@ -10,6 +10,12 @@ parser <- argparser::add_argument(
 )
 parser <- argparser::add_argument(
   parser,
+  "--results_dir",
+  help = "Pipeline results directory for this version (DBs and analysis outputs)",
+  type = "character"
+)
+parser <- argparser::add_argument(
+  parser,
   "--studies_db_file",
   help = "Studies DB file",
   type = "character"
@@ -32,7 +38,8 @@ main <- function() {
 
   rmarkdown::render(
     "../scripts/analysis/pipeline_summary.Rmd",
-    output_file = file.path(args$static_web_dir, "pipeline_summary.html")
+    output_file = file.path(args$static_web_dir, "pipeline_summary.html"),
+    params = list(results_dir = args$results_dir)
   )
   vroom::vroom_write(data.frame(), args$static_web_files_ready_file)
   return()

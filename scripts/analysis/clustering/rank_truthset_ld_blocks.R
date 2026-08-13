@@ -9,44 +9,8 @@
 #   Rscript rank_truthset_ld_blocks.R
 #   Rscript rank_truthset_ld_blocks.R --top_n 20
 #   Rscript rank_truthset_ld_blocks.R --skip_gap_detail
-#   Rscript rank_truthset_ld_blocks.R --block_list ../../pipeline_steps/data/1_0_0_block_list.csv
-#   Rscript rank_truthset_ld_blocks.R --results_dir /path/to/results/1.0.0/
-
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(vroom)
-})
-
-args <- commandArgs(trailingOnly = TRUE)
-top_n <- 10L
-output_dir <- "data"
-skip_gap_detail <- FALSE
-results_subdir <- "1.0.0"
-block_list_path <- NA_character_
-
-if (length(args) > 0) {
-  i <- 1L
-  while (i <= length(args)) {
-    if (args[i] == "--top_n" && i < length(args)) {
-      top_n <- as.integer(args[i + 1L])
-      i <- i + 2L
-    } else if (args[i] == "--output_dir" && i < length(args)) {
-      output_dir <- args[i + 1L]
-      i <- i + 2L
-    } else if (args[i] == "--results_dir" && i < length(args)) {
-      results_subdir <- sub("/$", "", args[i + 1L])
-      i <- i + 2L
-    } else if (args[i] == "--block_list" && i < length(args)) {
-      block_list_path <- args[i + 1L]
-      i <- i + 2L
-    } else if (args[i] == "--skip_gap_detail") {
-      skip_gap_detail <- TRUE
-      i <- i + 1L
-    } else {
-      i <- i + 1L
-    }
-  }
-}
+#   Rscript rank_truthset_ld_blocks.R --block_list ../../../pipeline_steps/data/1_0_0_block_list.csv
+#   Rscript rank_truthset_ld_blocks.R --results_version 1.0.0
 
 cmd_args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", cmd_args[grep("--file=", cmd_args)])
@@ -54,10 +18,73 @@ if (length(script_path) == 1L && nzchar(script_path)) {
   setwd(dirname(normalizePath(script_path)))
 }
 
-if (file.exists("../../.env")) {
-  readRenviron("../../.env")
+if (file.exists("../../../.env")) {
+  readRenviron("../../../.env")
 }
-source("../../pipeline_steps/constants.R")
+source("../../../pipeline_steps/constants.R")
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(vroom)
+})
+
+parser <- argparser::arg_parser(
+  "Rank LD blocks by truthset T-I pairs and analyse pairwise-coloc gaps"
+)
+parser <- argparser::add_argument(
+  parser,
+  "--top_n",
+  help = "Number of top LD blocks to report",
+  type = "integer",
+  default = 10L
+)
+parser <- argparser::add_argument(
+  parser,
+  "--output_dir",
+  help = "Directory for ranking / gap summary outputs",
+  type = "character",
+  default = "../data"
+)
+parser <- argparser::add_argument(
+  parser,
+  "--results_version",
+  help = "Version label under RESULTS_DIR, or absolute path to a results directory",
+  type = "character",
+  default = "1.0.0"
+)
+parser <- argparser::add_argument(
+  parser,
+  "--results_dir",
+  help = "Deprecated alias for --results_version",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
+  "--block_list",
+  help = "Optional CSV of studies to exclude",
+  type = "character",
+  default = NA
+)
+parser <- argparser::add_argument(
+  parser,
+  "--skip_gap_detail",
+  help = "Skip pairwise gap detail extraction",
+  type = "logical",
+  flag = TRUE
+)
+args <- argparser::parse_args(parser)
+
+top_n <- as.integer(args$top_n)
+output_dir <- args$output_dir
+skip_gap_detail <- isTRUE(args$skip_gap_detail)
+block_list_path <- args$block_list
+results_subdir <- if (!is.na(args$results_dir) && nzchar(args$results_dir)) {
+  sub("/$", "", args$results_dir)
+} else {
+  sub("/$", "", args$results_version)
+}
+
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 if (grepl("^/", results_subdir)) {
@@ -66,7 +93,14 @@ if (grepl("^/", results_subdir)) {
   published_results_dir <- glue::glue("{results_dir}{results_subdir}/")
 }
 
-truthset_file <- file.path("data", "tipairs_launched_truthset.tsv")
+truthset_file <- file.path(published_results_dir, "analysis", "clustering", "tipairs_launched_truthset.tsv")
+if (!file.exists(truthset_file)) {
+  fallback_truthset <- file.path("..", "data", "tipairs_launched_truthset.tsv")
+  if (file.exists(fallback_truthset)) {
+    message("Using fallback truthset: ", fallback_truthset)
+    truthset_file <- fallback_truthset
+  }
+}
 study_extractions_file <- file.path(published_results_dir, "study_extractions.tsv.gz")
 studies_file <- file.path(published_results_dir, "studies_processed.tsv.gz")
 coloc_global_file <- file.path(published_results_dir, "coloc_pairwise_results.tsv.gz")

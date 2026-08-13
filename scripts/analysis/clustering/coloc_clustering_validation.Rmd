@@ -1,7 +1,7 @@
 ---
 params:
   ld_block: null
-  ld_blocks_file: "../../pipeline_steps/temp_all_ld_blocks.txt"
+  ld_blocks_file: "../../../pipeline_steps/temp_all_ld_blocks.txt"
   results_version: "1.0.0"
   n_cores: 50
 output:
@@ -26,7 +26,7 @@ library(vroom)
 library(scales)
 library(parallel)
 
-source("../../pipeline_steps/constants.R")
+source("../../../pipeline_steps/constants.R")
 source("clustering_comparison_helpers.R")
 
 n_cores <- max(1L, as.integer(params$n_cores))

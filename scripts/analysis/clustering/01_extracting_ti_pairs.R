@@ -1,23 +1,49 @@
+#!/usr/bin/env Rscript
 # Matching T-I pairs from Minikel et al. to GPMAP molecular traits and phenotypes
+#
+# Usage:
+#   Rscript 01_extracting_ti_pairs.R
+#   Rscript 01_extracting_ti_pairs.R --results_version 1.0.0
 
-library(here)
-library(dotenv)
+cmd_args <- commandArgs(trailingOnly = FALSE)
+script_path <- sub("--file=", "", cmd_args[grep("--file=", cmd_args)])
+if (length(script_path) == 1L && nzchar(script_path)) {
+  setwd(dirname(normalizePath(script_path)))
+}
 
-renv::load(project = here("genotype-phenotype-map-analysis"))
+source("../../../pipeline_steps/constants.R")
 
-readRenviron(here("genotype-phenotype-map-analysis/.env"))
-data_dir <- Sys.getenv("DATA_DIR")
+parser <- argparser::arg_parser(
+  "Match Minikel T-I pairs to GPMAP traits and write gpmapevidence table"
+)
+parser <- argparser::add_argument(
+  parser,
+  "--results_version",
+  help = "Version label under RESULTS_DIR, or absolute path to a results directory",
+  type = "character",
+  default = "1.0.0"
+)
+args <- argparser::parse_args(parser)
+
+versioned_results_dir <- if (grepl("^/", args$results_version)) {
+  args$results_version
+} else {
+  file.path(sub("/$", "", results_dir), args$results_version)
+}
+
+# Flat layout under $DATA_DIR/ti_pairs/ (see clustering/README.md)
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
 # Data from Minikel et al: https://zenodo.org/records/10783210
 
 ## Supplementary Table1 (target indication pairs: n=1255 with supporting genetic evidence, n=24458 unsupported)
-ti_pairs <- data.table::fread(file.path(data_dir, "ericminikel-genetic_support/Supplement_ST01.csv"))
+ti_pairs <- data.table::fread(ti_file("Supplement_ST01.csv"))
 
 ## Genetically supported/unsupported T-I pairs (from Figure 1A, ST04)
 table(ti_pairs$combined_max_phase, ti_pairs$target_status)
 
 ## All significant genetic associations
-assocs <- data.table::fread(file.path(data_dir, "ericminikel-genetic_support/data/assoc.tsv.gz"))
+assocs <- data.table::fread(ti_file("assoc.tsv.gz"))
 
 ### ----- STEP 1: -----
 # Derive table of all association study trait --> MeSH term (+ MeSH ID) mappings
@@ -26,7 +52,7 @@ term_tab <- assocs |>
   dplyr::select(original_trait, mesh_id, mesh_term) |>
   unique()
 
-# data.table::fwrite(term_tab, file = file.path(data_dir,"target-indication_data/ericminike_traittomesh.csv"), quote = TRUE) # nolint: line_length_linter.
+# data.table::fwrite(term_tab, file = ti_file("ericminike_traittomesh.csv"), quote = TRUE)
 
 ### ----- STEP 2: -----
 # Derive table of ingested GPMAP study traits to match
@@ -40,15 +66,15 @@ colnames(gpmap_traits) <- paste0(colnames(gpmap_traits), "_gpmap")
 
 ### ----- STEP 3: -----
 # Map GPMAP traits to the trait terms in term_tab so the matched MeshID can be identified
-# The assumption here is that the phenotypic associations sourced in Minikel et al. are the more exhaustive set, and should # nolint: line_length_linter.
-# contain the EBI and UKB studies ingested for the GPMAP
+# The assumption here is that the phenotypic associations sourced in Minikel et al. are the more
+# exhaustive set, and should contain the EBI and UKB studies ingested for the GPMAP
 
 # Pass a .csv containing the original traits from Minikel et al and GPMAP traits
 forAI <- cbind(
   gpmap_trait = gpmap_traits$trait_name_gpmap[seq_len(nrow(term_tab))],
   original_trait = term_tab$original_trait
 )
-# data.table::fwrite(forAI, file = file.path(data_dir,"target-indication_data/ericminike_gpmap_traitstomatch.csv"), quote = TRUE) # nolint: line_length_linter.
+# data.table::fwrite(forAI, file = ti_file("ericminike_gpmap_traitstomatch.csv"), quote = TRUE)
 
 # ChatGPT5 was run with the following prompt:
 # nolint start: line_length_linter.
@@ -62,7 +88,7 @@ forAI <- cbind(
 
 # Output: gpmap_matched_traits.csv
 
-matched <- data.table::fread(file = file.path(data_dir, "target-indication_data/gpmap_matched_traits.csv")) |>
+matched <- data.table::fread(file = ti_file("gpmap_matched_traits.csv")) |>
   dplyr::select(-original_trait) |>
   dplyr::arrange(desc(confidence)) |>
   dplyr::filter(nchar(gpmap_trait) > 0) |>
@@ -72,10 +98,11 @@ matched <- data.table::fread(file = file.path(data_dir, "target-indication_data/
 gpmap_traits <- gpmap_traits |> dplyr::left_join(matched, by = c("trait_name_gpmap" = "gpmap_trait"))
 
 ### ----- STEP 4: -----
-# Retain only the GPMAP traits which can be matched to a drug-target indication in ti_pairs (based on MeSH term similarity of >=0.8) # nolint: line_length_linter.
+# Retain only the GPMAP traits which can be matched to a drug-target indication in ti_pairs
+# (based on MeSH term similarity of >=0.8)
 
 # Read in MeSH ID similarity matrix from Minikel et al.
-mesh_match <- data.table::fread(file.path(data_dir, "ericminikel-genetic_support/data/sim.tsv.gz"))
+mesh_match <- data.table::fread(ti_file("sim.tsv.gz"))
 mesh_terms <- data.frame(
   mesh_id = c(ti_pairs$indication_mesh_id, term_tab$mesh_id),
   mesh_term = c(ti_pairs$indication_mesh_term, term_tab$mesh_term)
@@ -128,17 +155,15 @@ mesh_set <- unique(c(mesh_match_highconf$indication_mesh_id, mesh_match_highconf
 # Extract these from the GPMAP studies
 gpmap_matched <- gpmap_traits |> dplyr::filter(mesh_id %in% mesh_set) # 2171 studies
 
-# Manually check the pairing of GPMAP traits to original traits conducted above (based on AI reported best_match and confidence) # nolint: line_length_linter.
+# Manually check the pairing of GPMAP traits to original traits conducted above
+# (based on AI reported best_match and confidence)
 # and exclude those where the GPMAP trait is not the same or sufficiently comparable to the original trait, or
 # sufficiently captured by the MeSH term assigned to the original trait in Minikel et al.
 # (see gpmap_matched_traits_filtered.xlsx for excluded traits)
 
-# data.table::fwrite(gpmap_matched, file.path(data_dir,"target-indication_data/gpmap_matched_traits_tofilter.csv"))
+# data.table::fwrite(gpmap_matched, ti_file("gpmap_matched_traits_tofilter.csv"))
 
-gpmap_matched_filtered <- data.table::fread(file.path(
-  data_dir,
-  "target-indication_data/gpmap_matched_traits_filtered_corrected.csv"
-))
+gpmap_matched_filtered <- data.table::fread(ti_file("gpmap_matched_traits_filtered_corrected.csv"))
 # 1423 studies with high confidence mapping to MeSH terms for disease indications (343 unique MeSH terms)
 
 # Match GPMAP studies to indicators
@@ -156,7 +181,7 @@ gpmap_matched_filtered <- gpmap_matched_filtered |>
 
 targets <- unique(ti_pairs$target) # 2480 drug targets
 
-gpmap_molecular <- data.table::fread(file.path(data_dir, "studies_processed.tsv.gz")) |>
+gpmap_molecular <- data.table::fread(file.path(versioned_results_dir, "studies_processed.tsv.gz")) |>
   dplyr::filter(variant_type == "common" & gene %in% targets)
 
 matched_targets <- unique(gpmap_molecular$gene)
@@ -165,12 +190,13 @@ length(matched_targets) # 2350 drug targets with genetic associations tested acr
 # What % of drug targets have data from each molecular assays available (in at least one tissue)?:
 available_assays <- gpmap_molecular |>
   dplyr::group_by(gene, data_type) |>
-  dplyr::summarise(n_studies = dplyr::n())
+  dplyr::summarise(n_studies = dplyr::n(), .groups = "drop")
 table(available_assays$data_type) / length(matched_targets) * 100 # 97.9% eQTL, 91.3% sQTL, 87.5% mQTL, 38.4% pQTL
 
 ### ----- STEP 6: -----
 
-# Bind GPMAP association studies to ti_pairs (keeping pairs for which both the indication and the target are included in GPMAP studies) # nolint: line_length_linter.
+# Bind GPMAP association studies to ti_pairs (keeping pairs for which both the indication and
+# the target are included in GPMAP studies)
 ti_pairs_gpmap <- dplyr::left_join(
   ti_pairs[, c(
     "ti_uid", "target",
@@ -185,10 +211,13 @@ ti_pairs_gpmap <- dplyr::left_join(
   dplyr::relocate("indication_association_similarity" = comb_norm, .after = indication_mesh_term) |>
   dplyr::filter(!is.na(data_type_gpmap) & target %in% matched_targets) # Keep t-i pairs with targets in GPMAP only
 
-length(unique(ti_pairs_gpmap$ti_uid)) # 18932/25713 (74%) unique T-I pairs tested in Minikel et al. have genetic evidence in GPMAP # nolint: line_length_linter.
+# 18932/25713 (74%) unique T-I pairs tested in Minikel et al. have genetic evidence in GPMAP
+length(unique(ti_pairs_gpmap$ti_uid))
 
 ## Check which indications are not matching
 missing <- i_term_tab[!(i_term_tab$indication_mesh_id %in% gpmap_matched_filtered$indication_mesh_id)]
 
-# Write out final table of gpmap studies paired with phamaceutical indications
-# data.table::fwrite(ti_pairs_gpmap, file.path(data_dir, "target-indication_data/target-indicationpairs_gpmapevidence.tsv"), sep = "\t") # nolint: line_length_linter.
+# Write out final table of gpmap studies paired with pharmaceutical indications
+out_file <- ti_file("target-indicationpairs_gpmapevidence.tsv")
+data.table::fwrite(ti_pairs_gpmap, out_file, sep = "\t")
+message("Wrote: ", out_file)

@@ -1,34 +1,40 @@
 ---
 title: "GPMAP support for drug target-indication pairs"
 author: "A. Hanson"
-format: 
-  html:
-    embed-resources: true
-    page-layout: full
+output:
+  html_document:
+    self_contained: true
     toc: true
-    toc-depth: 4
-    toc-location: left
-    code-fold: true
-execute:
-  message: FALSE
-  warning: FALSE
+    toc_depth: 4
+    toc_float: true
+    code_folding: hide
+params:
+  # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
+  results_version: "1.0.0"
+  # If true, recompute expensive intermediates and overwrite caches under data/ti_pairs/
+  recompute_cache: false
 ---
 
-```{r}
-#| label: setup
-#| message: FALSE
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 
-library(here)
-library(dotenv)
 library(ggplot2)
 
-readRenviron(here(".env"))
-data_dir <- Sys.getenv("DATA_DIR")
-res_dir <- Sys.getenv("RES_DIR")
-repo_dir <- Sys.getenv("REPO_DIR")
+source("../../../pipeline_steps/constants.R")
+
+versioned_results_dir <- if (grepl("^/", params$results_version)) {
+  params$results_version
+} else {
+  file.path(sub("/$", "", results_dir), params$results_version)
+}
+analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
+# Flat layout: inputs and .rda caches live directly under $DATA_DIR/ti_pairs/
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
+dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(ti_pairs_data_dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Supplementary Table1 (target indication pairs: n=1255 with supporting genetic evidence, n=24458 unsupported) from Minikel et.
-ti_pairs_minikel <- data.table::fread(file.path(data_dir,"ericminikel-genetic_support/Supplement_ST01.csv"))
+ti_pairs_minikel <- data.table::fread(ti_file("Supplement_ST01.csv"))
 # Indication area categories
 indication_areas <- data.frame(ti_uid = ti_pairs_minikel$ti_uid, indication_area = ti_pairs_minikel$areas)
 
@@ -36,15 +42,13 @@ indication_areas <- data.frame(ti_uid = ti_pairs_minikel$ti_uid, indication_area
 
 ### Data import
 
-Drug target - disease indication pairs with genetic insight available in the GPMAP (see `01_extractTIpairs.R`)
+Drug target - disease indication pairs with genetic insight available in the GPMAP (see `01_extracting_ti_pairs.R`)
 
 -   **495** indication MeSH IDs matched to **1421** GPMAP studies (mapped to **344** unique MeSH IDs with similarity index \>=0.8)
 -   **2236** drug target genes (**18932** unique target-indication pairs)
 
-```{r}
-#| label: gpmap-data
-
-ti_pairs <- data.table::fread(file.path(data_dir,"target-indication_data/target-indicationpairs_gpmapevidence.tsv"))
+```{r gpmap-data}
+ti_pairs <- data.table::fread(ti_file("target-indicationpairs_gpmapevidence.tsv"))
 gpmap_traits <- unique(ti_pairs$trait_gpmap) #1421
 
 #length(unique(ti_pairs$indication_mesh_id)) #495
@@ -52,20 +56,24 @@ gpmap_traits <- unique(ti_pairs$trait_gpmap) #1421
 #length(unique(ti_pairs$target))
 
 # Download GPMAP coloc cluster results for matched indications:
-traits_ids <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
-traits_ids_rare <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
 
-# Pull all coloc groups with indication traits
-# trait_colocs <- lapply(traits_ids$id, gpmapr::trait) #This currently takes a long time!
-# names(trait_colocs) <- traits_ids$trait
-# trait_colocs_rare <- lapply(traits_ids_rare$id, gpmapr::trait)
-# names(trait_colocs_rare) <- traits_ids_rare$trait
+indications_cache <- ti_file("gpmap_indications.rda")
+indications_rare_cache <- ti_file("gpmap_indications_rarevariants.rda")
 
-#save(trait_colocs, file = file.path(res_dir,"target-indication_results","gpmap_indications.rda"))
-#save(trait_colocs_rare, file = file.path(res_dir,"target-indication_results","gpmap_indications_rarevariants.rda"))
-
-load(file.path(res_dir,"target-indication_results","gpmap_indications.rda")) #trait_colocs
-load(file.path(res_dir,"target-indication_results","gpmap_indications_rarevariants.rda")) #trait_colocs_rare
+if (params$recompute_cache) {
+  traits_ids <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
+  traits_ids_rare <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
+  # Pull all coloc groups with indication traits (slow)
+  trait_colocs <- lapply(traits_ids$id, gpmapr::trait)
+  names(trait_colocs) <- traits_ids$trait
+  trait_colocs_rare <- lapply(traits_ids_rare$id, gpmapr::trait)
+  names(trait_colocs_rare) <- traits_ids_rare$trait
+  save(trait_colocs, file = indications_cache)
+  save(trait_colocs_rare, file = indications_rare_cache)
+} else {
+  load(indications_cache) # trait_colocs
+  load(indications_rare_cache) # trait_colocs_rare
+}
 ```
 
 Exclude indication studies that are poorly weighted and not pulled into any colocalising clusters due to weak regional signals:
@@ -94,7 +102,7 @@ What genetic (QTL) evidence is available for each molecular target?
 ```{r}
 targets <- unique(ti_pairs$target) #2221 drug targets
 
-gpmap_molecular <- data.table::fread(file.path(data_dir,"studies_processed.tsv.gz")) |>
+gpmap_molecular <- data.table::fread(file.path(versioned_results_dir, "studies_processed.tsv.gz")) |>
   dplyr::filter(variant_type == "common" & gene %in% targets)
 
 matched_targets <- unique(gpmap_molecular$gene)
@@ -127,9 +135,7 @@ Post filtering:
 
 Extracting evidence for drug target-disease indication colocalising signals from GPMAP trait clusters:
 
-```{r}
-#| label: coloc-clusters
-
+```{r coloc-clusters}
 # For each row in ti_pairs, does a molecular study for the drug target gene and the paired disease indication (trait_gpmap) share a colcalising signal?
 # How many colocalising signals (e.g. loci) are there between the gene and the trait?
 
@@ -148,6 +154,7 @@ pull_ti_colocs <- function(target, trait){
   # Which modes of molecular insight are available for the target?
   insight <- sapply(molecular_insight, function(x){target %in% x})
   insight <- names(insight)[insight]
+  coloc_wtarget <- NULL
   
   if(is.null(colocs)){
     res$GC_support <- FALSE
@@ -188,11 +195,19 @@ pull_ti_colocs <- function(target, trait){
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-#ti_colocs <- mapply(FUN = pull_ti_colocs, target = ti_pairs$target, trait = ti_pairs$trait_gpmap, SIMPLIFY = F)
-#names(ti_colocs) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
-
-#save(ti_colocs, file = file.path(res_dir,"target-indication_results","gpmap_ticolocs.rda"))
-load(file.path(res_dir,"target-indication_results","gpmap_ticolocs.rda")) #ti_colocs
+ti_colocs_cache <- ti_file("gpmap_ticolocs.rda")
+if (params$recompute_cache) {
+  ti_colocs <- mapply(
+    FUN = pull_ti_colocs,
+    target = ti_pairs$target,
+    trait = ti_pairs$trait_gpmap,
+    SIMPLIFY = FALSE
+  )
+  names(ti_colocs) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+  save(ti_colocs, file = ti_colocs_cache)
+} else {
+  load(ti_colocs_cache) # ti_colocs
+}
 
 # Genetic colocalisation (GC) support:
 gc_support <- do.call("rbind",lapply(ti_colocs, function(x){x[[1]]})) |>
@@ -257,10 +272,7 @@ ti_pairs_unique <- dplyr::left_join(unique(ti_pairs[,c("ti_uid","target","indica
 Evidence for drug target-disease indications with shared rare variant associations:
 *N.B. Evidence taken as a shared rare variant pQTL for a drug target, or a shared variant situtated in the drug target gene*
 
-```{r}
-#| label: rarevariants-shared
-#| include: FALSE
-
+```{r rarevariants-shared, include=FALSE}
 # For each row in ti_pairs, does a molecular study for the drug target gene and the paired disease indication (trait_gpmap) share a rare varaint association?
 # OR does a rare variant for a disease indication fall in the drug target gene?
 # Note the rare results group IDs so the specific grouped studies can be later extracted
@@ -300,11 +312,19 @@ pull_ti_rare <- function(target, trait){
   return(list(rare_results_summary = res, target_sharedrare = rare_wtarget))
 }
 
-#ti_sharedrare <- mapply(FUN = pull_ti_rare, target = ti_pairs$target, trait = ti_pairs$trait_gpmap, SIMPLIFY = F)
-#names(ti_sharedrare) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
-
-#save(ti_sharedrare, file = file.path(res_dir,"target-indication_results","gpmap_tisharedrare.rda"))
-load(file.path(res_dir,"target-indication_results","gpmap_tisharedrare.rda")) #ti_sharedrare
+ti_sharedrare_cache <- ti_file("gpmap_tisharedrare.rda")
+if (params$recompute_cache) {
+  ti_sharedrare <- mapply(
+    FUN = pull_ti_rare,
+    target = ti_pairs$target,
+    trait = ti_pairs$trait_gpmap,
+    SIMPLIFY = FALSE
+  )
+  names(ti_sharedrare) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+  save(ti_sharedrare, file = ti_sharedrare_cache)
+} else {
+  load(ti_sharedrare_cache) # ti_sharedrare
+}
 
 # Genetic signal sharing (GS) support (rare variants):
 gs_support_rare_unique <- do.call("rbind",lapply(ti_sharedrare, function(x){x[[1]]})) |>
@@ -322,12 +342,7 @@ ti_pairs_unique$gpmap_support_any <- ti_pairs_unique$gpmap_support | ti_pairs_un
 
 **Common variant colocalisations:**
 
-```{r}
-#| label: coloc-support-by-phase
-#| fig.width: 4
-#| fig.height: 2.5
-#| message: FALSE
-
+```{r coloc-support-by-phase, fig.width=4, fig.height=2.5, message=FALSE}
 summary_gcsupport <- ti_pairs_unique[,c("ti_uid","combined_max_phase", "minikel_support", "gpmap_support")] |>
   tidyr::pivot_longer(cols = 3:4, names_to = "source", values_to = "genetic_support") |>
   dplyr::group_by(combined_max_phase, source) |> dplyr::summarise(total = dplyr::n(), supported = sum(genetic_support)) |>
@@ -381,12 +396,7 @@ cbind(t, rowSums(t))
 
 **Common variant colocalisations plus rare variant signal:**
 
-```{r}
-#| label: any-support-by-phase
-#| fig.width: 7
-#| fig.height: 3
-#| message: FALSE
-
+```{r any-support-by-phase, fig.width=7, fig.height=3, message=FALSE}
 summary_anysupport <- ti_pairs_unique[,c("ti_uid","combined_max_phase", "minikel_support", "gpmap_support", "gpmap_support_any")] |>
   tidyr::pivot_longer(cols = 3:5, names_to = "source", values_to = "genetic_support") |>
   dplyr::group_by(combined_max_phase, source) |> dplyr::summarise(total = dplyr::n(), supported = sum(genetic_support)) |>
@@ -418,88 +428,131 @@ summary_anysupport |>
 
 Pull pairwise coloc results for indications in the GPMAP and identify high confidence colocs (\>=0.8) with drug target:
 
-```{r}
-#| label: coloc-pairs
-#| message: FALSE
-
+```{r coloc-pairs, message=FALSE}
 # Traits to pull:
-traits <- traits_ids$trait
-#write.table(traits_ids$trait, file = file.path(res_dir,"target-indication_results","gpmap_indications_ids.txt"), row.names = F, col.names = F, quote = F)
+ti_colocs_frompairs_cache <- ti_file("gpmap_tipairwisecolocs.rda")
+pairwisecolocs_cache <- ti_file("gpmap_indications_pairwisecolocs.rda")
+indications_ids_file <- ti_file("gpmap_indications_ids.txt")
+pairwise_indications_file <- ti_file("coloc_pairwise_indications.txt")
 
-# # Study metadata for gene annotaton (from P1: /local-scratch/projects/genotype-phenotype-map/results/current/studies_processed.tsv.gz)
-# study_metadata <- data.table::fread(file.path(data_dir, "studies_processed.tsv.gz"))
-# 
-# # Extacted from P1: /local-scratch/projects/genotype-phenotype-map/results/current/coloc_pairwise_results.tsv.gz
-# # zcat coloc_pairwise_results.tsv.gz | awk -F'\t' '$7 >= 0.8' | grep -F -f gpmap_indications_ids.txt > coloc_pairwise_indications.txt
-# 
-# trait_pair_colocs <- data.table::fread(file.path(res_dir, "target-indication_results/coloc_pairwise_indications.txt")) |>
-#   dplyr::mutate(study_a = sub("_EUR.*", "", unique_study_a),
-#                 study_b = sub("_EUR.*", "", unique_study_b))
-# 
-# trait_pair_colocs_flip <- trait_pair_colocs |> dplyr::mutate(unique_study_a = trait_pair_colocs$unique_study_b,
-#                                                              unique_study_b = trait_pair_colocs$unique_study_a,
-#                                                              study_a = trait_pair_colocs$study_b,
-#                                                              study_b = trait_pair_colocs$study_a)
-# trait_pair_colocs <- rbind(trait_pair_colocs, trait_pair_colocs_flip) |> dplyr::filter(study_a %in% traits) #study_a contains complex traits (indications) only
-# # Annotate study_b genes for molecular traits
-# trait_pair_colocs <- trait_pair_colocs |> dplyr::left_join(study_metadata[,c("study_name", "data_type", "gene", "tissue")], by = c("study_b" = "study_name"))
-# # Convert to list
-# trait_pair_colocs <- split(trait_pair_colocs, trait_pair_colocs$study_a)
-# rm(trait_pair_colocs_flip)
-# 
-# save(trait_pair_colocs, file = file.path(res_dir,"target-indication_results","gpmap_indications_pairwisecolocs.rda"))
-# load(file = file.path(res_dir,"target-indication_results","gpmap_indications_pairwisecolocs.rda")) #trait_pair_colocs
-# trait_pair_colocs <- trait_pair_colocs[names(trait_pair_colocs) %in% names(trait_colocs)]
-# 
-# pull_ti_coloc_pairs <- function(target, trait){
-#   message("Testing for pairwise colocalisation between: ", trait, " and ", target)
-#   colocs <- trait_pair_colocs[[trait]]
-#   
-#   res <- data.frame(target = target,
-#                     trait = trait)
-#   
-#   # Which modes of molecular insight are available for the target?
-#   insight <- sapply(molecular_insight, function(x){target %in% x})
-#   insight <- names(insight)[insight]
-#   
-#   if(is.null(colocs)){
-#     res$GC_support <- FALSE
-#     res$eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
-#     res$sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
-#     res$mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
-#     res$pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
-#     res$n_coloc_pairs <- NA
-#   }else{
-# 
-#     # Pull colocs w target gene
-#     coloc_wtarget <- colocs |> dplyr::filter(gene %in% target)
-#     
-#     if(nrow(coloc_wtarget) > 0){
-#       evidence <- unique(coloc_wtarget$data_type)
-#       res$GC_support <- TRUE
-#       res$eQTL_support <- ifelse(any(evidence %in% "Gene Expression"), TRUE, ifelse("gene_expression" %in% insight, FALSE, NA))
-#       res$sQTL_support <- ifelse(any(evidence %in% "Splice Variant"), TRUE, ifelse("splice_variant" %in% insight, FALSE, NA))
-#       res$mQTL_support <- ifelse(any(evidence %in% "Methylation"), TRUE, ifelse("methylation" %in% insight, FALSE, NA))
-#       res$pQTL_support <- ifelse(any(evidence %in% "Protein"), TRUE, ifelse("protein" %in% insight, FALSE, NA))
-#       res$n_coloc_pairs <- nrow(coloc_wtarget)
-#     } else {
-#       res$GC_support <- FALSE
-#       res$eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
-#       res$sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
-#       res$mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
-#       res$pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
-#       res$n_coloc_pairs <- NA
-#     }
-#   }
-#   
-#   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
-# }
-# 
-# ti_colocs_frompairs <- mapply(FUN = pull_ti_coloc_pairs, target = ti_pairs$target, trait = ti_pairs$trait_gpmap, SIMPLIFY = F)
-# names(ti_colocs_frompairs) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
-# 
-# save(ti_colocs_frompairs, file = file.path(res_dir,"target-indication_results","gpmap_tipairwisecolocs.rda"))
-load(file.path(res_dir,"target-indication_results","gpmap_tipairwisecolocs.rda")) #ti_colocs_frompairs
+pull_ti_coloc_pairs <- function(target, trait) {
+  message("Testing for pairwise colocalisation between: ", trait, " and ", target)
+  colocs <- trait_pair_colocs[[trait]]
+
+  res <- data.frame(target = target, trait = trait)
+  insight <- sapply(molecular_insight, function(x) {
+    target %in% x
+  })
+  insight <- names(insight)[insight]
+  coloc_wtarget <- NULL
+
+  if (is.null(colocs)) {
+    res$GC_support <- FALSE
+    res$eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
+    res$sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
+    res$mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
+    res$pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
+    res$n_coloc_pairs <- NA
+  } else {
+    coloc_wtarget <- colocs |> dplyr::filter(gene %in% target)
+    if (nrow(coloc_wtarget) > 0) {
+      evidence <- unique(coloc_wtarget$data_type)
+      res$GC_support <- TRUE
+      res$eQTL_support <- ifelse(
+        any(evidence %in% "Gene Expression"), TRUE,
+        ifelse("gene_expression" %in% insight, FALSE, NA)
+      )
+      res$sQTL_support <- ifelse(
+        any(evidence %in% "Splice Variant"), TRUE,
+        ifelse("splice_variant" %in% insight, FALSE, NA)
+      )
+      res$mQTL_support <- ifelse(
+        any(evidence %in% "Methylation"), TRUE,
+        ifelse("methylation" %in% insight, FALSE, NA)
+      )
+      res$pQTL_support <- ifelse(
+        any(evidence %in% "Protein"), TRUE,
+        ifelse("protein" %in% insight, FALSE, NA)
+      )
+      res$n_coloc_pairs <- nrow(coloc_wtarget)
+    } else {
+      res$GC_support <- FALSE
+      res$eQTL_support <- ifelse("gene_expression" %in% insight, FALSE, NA)
+      res$sQTL_support <- ifelse("splice_variant" %in% insight, FALSE, NA)
+      res$mQTL_support <- ifelse("methylation" %in% insight, FALSE, NA)
+      res$pQTL_support <- ifelse("protein" %in% insight, FALSE, NA)
+      res$n_coloc_pairs <- NA
+    }
+  }
+
+  return(list(coloc_summary = res, target_colocs = coloc_wtarget))
+}
+
+if (params$recompute_cache) {
+  write.table(
+    traits_ids$trait,
+    file = indications_ids_file,
+    row.names = FALSE,
+    col.names = FALSE,
+    quote = FALSE
+  )
+
+  # Prefer a pre-filtered pairwise extract if present; otherwise filter the versioned results file.
+  # Manual equivalent:
+  # zcat coloc_pairwise_results.tsv.gz | awk -F'\t' '$7 >= 0.8' | grep -F -f gpmap_indications_ids.txt
+  if (!file.exists(pairwise_indications_file)) {
+    coloc_pairwise_path <- file.path(versioned_results_dir, "coloc_pairwise_results.tsv.gz")
+    if (!file.exists(coloc_pairwise_path)) {
+      stop("Missing ", pairwise_indications_file, " and ", coloc_pairwise_path)
+    }
+    message("Filtering pairwise coloc results from: ", coloc_pairwise_path)
+    trait_pair_colocs <- data.table::fread(coloc_pairwise_path) |>
+      dplyr::filter(PP.H4.abf >= 0.8) |>
+      dplyr::mutate(
+        study_a = sub("_EUR.*", "", unique_study_a),
+        study_b = sub("_EUR.*", "", unique_study_b)
+      ) |>
+      dplyr::filter(study_a %in% traits_ids$trait | study_b %in% traits_ids$trait)
+    data.table::fwrite(trait_pair_colocs, pairwise_indications_file, sep = "\t")
+  } else {
+    trait_pair_colocs <- data.table::fread(pairwise_indications_file) |>
+      dplyr::mutate(
+        study_a = sub("_EUR.*", "", unique_study_a),
+        study_b = sub("_EUR.*", "", unique_study_b)
+      )
+  }
+
+  study_metadata <- data.table::fread(file.path(versioned_results_dir, "studies_processed.tsv.gz"))
+  trait_pair_colocs_flip <- trait_pair_colocs |>
+    dplyr::mutate(
+      unique_study_a = trait_pair_colocs$unique_study_b,
+      unique_study_b = trait_pair_colocs$unique_study_a,
+      study_a = trait_pair_colocs$study_b,
+      study_b = trait_pair_colocs$study_a
+    )
+  trait_pair_colocs <- rbind(trait_pair_colocs, trait_pair_colocs_flip) |>
+    dplyr::filter(study_a %in% traits_ids$trait)
+  trait_pair_colocs <- trait_pair_colocs |>
+    dplyr::left_join(
+      study_metadata[, c("study_name", "data_type", "gene", "tissue")],
+      by = c("study_b" = "study_name")
+    )
+  trait_pair_colocs <- split(trait_pair_colocs, trait_pair_colocs$study_a)
+  rm(trait_pair_colocs_flip)
+  save(trait_pair_colocs, file = pairwisecolocs_cache)
+
+  trait_pair_colocs <- trait_pair_colocs[names(trait_pair_colocs) %in% names(trait_colocs)]
+  ti_colocs_frompairs <- mapply(
+    FUN = pull_ti_coloc_pairs,
+    target = ti_pairs$target,
+    trait = ti_pairs$trait_gpmap,
+    SIMPLIFY = FALSE
+  )
+  names(ti_colocs_frompairs) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+  save(ti_colocs_frompairs, file = ti_colocs_frompairs_cache)
+} else {
+  load(ti_colocs_frompairs_cache) # ti_colocs_frompairs
+}
 
 # Genetic colocalisation support:
 gc_pairs_support <- do.call("rbind",lapply(ti_colocs_frompairs, function(x){x[[1]]})) |>
@@ -517,12 +570,7 @@ ti_pairs_unique$gpmap_support_coloc_pairs <- gpmap_support_coloc_pairs$gpmap_sup
 
 T-I pairs with genetic colocalisation support by trait clustering vs pairwise coloc:
 
-```{r}
-#| label: coloc-support-by-phase-2
-#| fig.width: 7
-#| fig.height: 3.5
-#| message: FALSE
-
+```{r coloc-support-by-phase-2, fig.width=7, fig.height=3.5, message=FALSE}
 summary_gcsupport_2 <- ti_pairs_unique[,c("ti_uid","combined_max_phase", "target_status", "gpmap_support","gpmap_support_coloc_pairs")] |>
   dplyr::mutate(target_status = ifelse(target_status == "genetically supported target", TRUE, FALSE)) |>
   tidyr::pivot_longer(cols = 3:5, names_to = "source", values_to = "genetic_support") |>
@@ -562,12 +610,7 @@ ti_pairs_unique[,c("ti_uid","succ", "gpmap_support_coloc_pairs", "gpmap_support"
 
 ## Evidence by molecular data type
 
-```{r}
-#| label: coloc-support-by-qtl
-#| fig.width: 4.5
-#| fig.height: 3.5
-#| message: FALSE
-
+```{r coloc-support-by-qtl, fig.width=4.5, fig.height=3.5, message=FALSE}
 summary_gcsupport_qtls <- ti_pairs_unique[,c("ti_uid","combined_max_phase","gpmap_support","eQTL_support","sQTL_support","mQTL_support","pQTL_support")] |>
   dplyr::filter(gpmap_support == TRUE) |>
   tidyr::pivot_longer(cols = 4:7, names_to = "source", values_to = "genetic_support") |>
@@ -608,12 +651,7 @@ summary_gcsupport_qtls |>
 **Relative success by mode of support** \
 Probability of phase I -> launched success with:without genetic support across sources of support:
 
-```{r}
-#| label: relative-success
-#| fig.width: 4.5
-#| fig.height: 2
-#| message: FALSE
-
+```{r relative-success, fig.width=4.5, fig.height=2, message=FALSE}
 # Sources of genetic support
 sources <- c("gpmap_support", "gpmap_support_any", "eQTL_support","sQTL_support","mQTL_support","pQTL_support")
 
@@ -686,12 +724,7 @@ rel_success
 
 **Number of supporting molecular modalities for genetically supported targets by phase** \
 
-```{r}
-#| label: coloc-support-by-qtlnumber
-#| fig.width: 4
-#| fig.height: 4.5
-#| message: FALSE
-
+```{r coloc-support-by-qtlnumber, fig.width=4, fig.height=4.5, message=FALSE}
 plotdata_gcsupport_qtlnumber <- ti_pairs_unique[,c("ti_uid","combined_max_phase","gpmap_support","eQTL_support","sQTL_support","mQTL_support","pQTL_support")] |>
   dplyr::filter(gpmap_support == TRUE) |>
   dplyr::rowwise() |>
@@ -721,12 +754,7 @@ Probability of success with:without genetic support across from 1,2 or 3 modes o
 
 *N.B needs to be confirmed here whether all models of qQTL association (excluding protein) have been tested for all genes*
 
-```{r}
-#| label: relative-success-by-qtlnumber
-#| fig.width: 3
-#| fig.height: 2
-#| message: FALSE
-
+```{r relative-success-by-qtlnumber, fig.width=3, fig.height=2, message=FALSE}
 # Sources of genetic support
 n_qtls <- 1:4
 
@@ -833,12 +861,7 @@ rel_success_split_3[3,"RS"]/rel_success_split_3[1,"RS"]
 
 Are targets more likely to have genetic support in tissues relevant to the disease indication?
 
-```{r}
-#| label: coloc-support-by-tissue
-#| fig.width: 20
-#| fig.height: 11
-#| message: FALSE
-
+```{r coloc-support-by-tissue, fig.width=20, fig.height=11, message=FALSE}
 # Add supporting tissues to results
 unique_tissues <- unique(tissues)
 areas <- unique(unlist(strsplit(indication_areas$indication_area, ", ")))
@@ -903,12 +926,7 @@ summary_gcsupport_bytissue |>
 
 **Relative success by tissue specificity of molecular evidence**
 
-```{r}
-#| label: relative-success-by-num-tissues
-#| fig.width: 3.5
-#| fig.height: 2.2
-#| message: FALSE
-
+```{r relative-success-by-num-tissues, fig.width=3.5, fig.height=2.2, message=FALSE}
 # Number of tissues with supporting molecular evidence (e.g. how many tissues are supporting QTLs identified in)
 n_tissues <- levels(cut(1:25, breaks = c(0,1,5,10,25)))
 
@@ -959,12 +977,7 @@ rel_success_ntissues
 
 **Relative success by tissue of molecular evidence split by indication area**
 
-```{r}
-#| label: relative-success-by-tissues
-#| fig.width: 4.5
-#| fig.height: 2.5
-#| message: FALSE
-
+```{r relative-success-by-tissues, fig.width=4.5, fig.height=2.5, message=FALSE}
 # Success here defined as progression from phase 2 to 3 (i.e. evidence of effective treatment)
 rel_success_tissuebyarea <- do.call("rbind", lapply(areas, FUN = function(x){
   dat <- ti_pairs_unique |>
@@ -1003,9 +1016,7 @@ rel_success_tissuebyarea <- do.call("rbind", lapply(areas, FUN = function(x){
 
 ## Exploring the contribution of pleiotropy
 
-```{r}
-#| label: pleiotropy-scores
-
+```{r pleiotropy-scores}
 # Gene cis-pleiotropy scores
 gene_scores <- gpmapr::get_all_gene_pleiotropies()
 
@@ -1018,12 +1029,7 @@ ti_pairs_unique <- ti_pairs_unique |>
 
 **What is the relative success of drugs targeting more pleiotropic genes?**
 
-```{r}
-#| label: relative-success-by-pleiotropy
-#| message: FALSE
-#| fig.width: 3.5
-#| fig.height: 2.2
-
+```{r relative-success-by-pleiotropy, message=FALSE, fig.width=3.5, fig.height=2.2}
 # Gene pleiotropy group
 score_group <- levels(ti_pairs_unique$genescore_gene_cut)
 
@@ -1077,12 +1083,7 @@ rel_success_genescore[1,"RS"]/rel_success_genescore[4,"RS"]
 
 **What is the relative success (across phases) of drugs targeting more pleiotropic genes?**
 
-```{r}
-#| label: relative-phase-success-by-pleiotropy
-#| message: FALSE
-#| fig.width: 4
-#| fig.height: 4
-
+```{r relative-phase-success-by-pleiotropy, message=FALSE, fig.width=4, fig.height=4}
 ### Split by phase of drug progression
 phases <- c("succ_p_1", "succ_1_2", "succ_2_3", "succ_3_a")
 
@@ -1153,12 +1154,7 @@ rel_success_genescore_byphase |> dplyr::arrange(phase)
 
 **What is the relative success of drugs targeting genes implicated in multiple disease categories?**
 
-```{r}
-#| label: relative-success-by-categoryscore
-#| message: FALSE
-#| fig.width: 4.5
-#| fig.height: 2.5
-
+```{r relative-success-by-categoryscore, message=FALSE, fig.width=4.5, fig.height=2.5}
 # Gene pleiotropy group
 catscore_group <- levels(ti_pairs_unique$genescore_category_cut)
 
@@ -1202,12 +1198,7 @@ rel_success_catscore |>
   labs(x = "RS", y = "Trait category score \n of target gene")
 ```
 
-```{r}
-#| label: relative-phase-success-by-categoryscore
-#| message: FALSE
-#| fig.width: 4
-#| fig.height: 4
-
+```{r relative-phase-success-by-categoryscore, message=FALSE, fig.width=4, fig.height=4}
 ### Split by phase of drug progression
 rel_success_cat_byphase <- do.call("rbind", lapply(catscore_group, FUN = function(x){
   dat <- ti_pairs_unique |> dplyr::filter(genescore_category_cut %in% x)
@@ -1265,7 +1256,9 @@ rel_success_cat_byphase |>
 
 ## Write out data
 ```{r}
-## Write out
-#data.table::fwrite(ti_pairs, file = file.path(repo_dir,"scripts/drugtarget-indication-pairs/output/GPMAP_T-Ipairs_allmatchedstudies.tsv"), sep = "\t")
-#data.table::fwrite(ti_pairs_unique, file = file.path(repo_dir,"scripts/drugtarget-indication-pairs/output/GPMAP_T-Ipairs_unique.tsv"), sep = "\t")
+## Write scored T-I pair tables into versioned analysis results
+data.table::fwrite(ti_pairs, file = ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"), sep = "\t")
+data.table::fwrite(ti_pairs_unique, file = ti_file("GPMAP_T-Ipairs_unique.tsv"), sep = "\t")
+message("Wrote: ", ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+message("Wrote: ", ti_file("GPMAP_T-Ipairs_unique.tsv"))
 ```

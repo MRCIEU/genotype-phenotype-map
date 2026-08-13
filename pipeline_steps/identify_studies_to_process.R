@@ -39,6 +39,7 @@ main <- function() {
   opengwas_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$opengwas)
   besd_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$besd)
   tsv_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$tsv)
+  summary_stats_entries <- dplyr::filter(study_list_to_process, data_format == data_formats$summary_stats)
 
   if (nrow(study_list_to_process) == 0) {
     message("Found 0 new studies to process")
@@ -49,9 +50,15 @@ main <- function() {
   opengwas_studies_to_process <- calculate_opengwas_studies_to_process(opengwas_entries)
   besd_studies_to_process <- calculate_besd_studies_to_process(besd_entries)
   tsv_studies_to_process <- calculate_tsv_studies_to_process(tsv_entries)
+  summary_stats_studies_to_process <- calculate_summary_stats_studies_to_process(summary_stats_entries)
 
   # Filter out studies that have already been processed or are to be ignored
-  studies_to_process <- dplyr::bind_rows(opengwas_studies_to_process, besd_studies_to_process, tsv_studies_to_process)
+  studies_to_process <- dplyr::bind_rows(
+    opengwas_studies_to_process,
+    besd_studies_to_process,
+    tsv_studies_to_process,
+    summary_stats_studies_to_process
+  )
 
   if (nrow(studies_to_process) == 0 || !"study_name" %in% colnames(studies_to_process)) {
     message("Found 0 new studies to process")
@@ -97,6 +104,13 @@ validate_study_list <- function(study_list) {
     stop("Error: some reference_build values in study_list are not valid")
   }
   if (!all(study_list$coverage %in% coverage_types)) stop("Error: some coverage values in study_list are not valid")
+  if (!all(study_list$metadata_type %in% metadata_types)) {
+    stop("Error: some metadata_type values in study_list are not valid")
+  }
+  summary_stats_rows <- dplyr::filter(study_list, data_format == data_formats$summary_stats)
+  if (nrow(summary_stats_rows) > 0 && !all(summary_stats_rows$metadata_type == metadata_types$csv)) {
+    stop("Error: summary_stats data_format requires metadata_type=csv")
+  }
   if (!"processing_complete" %in% colnames(study_list)) {
     stop("Error: study_list must include a processing_complete column")
   }
@@ -338,6 +352,125 @@ calculate_tsv_studies_to_process <- function(entries) {
       coverage = entry[["coverage"]],
       heritability = NA,
       heritability_se = NA
+    ))
+  }) |>
+    dplyr::bind_rows()
+
+  return(expanded_studies)
+}
+
+#' calculate_summary_stats_studies_to_process
+#' Discovers delimited summary-stat files described by metadata.csv under data_location.
+#' Each metadata row mirrors the worker upload JSON fields (sample size, category, column map, etc.).
+calculate_summary_stats_studies_to_process <- function(entries) {
+  if (nrow(entries) == 0) {
+    return(data.frame())
+  }
+
+  expanded_studies <- apply(entries, 1, function(entry) {
+    if (entry[["metadata_type"]] != metadata_types$csv) {
+      stop(glue::glue(
+        "summary_stats data_format requires metadata_type=csv (got {entry[['metadata_type']]})"
+      ))
+    }
+
+    metadata_file <- glue::glue('{entry[["data_location"]]}/metadata.csv')
+    if (!file.exists(metadata_file)) {
+      stop(glue::glue("metadata file is missing: {metadata_file}"))
+    }
+
+    required_meta_cols <- c(
+      "study_name", "file_location", "trait", "sample_size", "category", "file_type",
+      "source", "name", "url", "doi"
+    )
+    summary_metadata <- vroom::vroom(metadata_file, show_col_types = F)
+    missing_cols <- setdiff(required_meta_cols, colnames(summary_metadata))
+    if (length(missing_cols) > 0) {
+      stop(glue::glue(
+        "metadata.csv is missing required columns: {paste(missing_cols, collapse = ', ')}"
+      ))
+    }
+
+    summary_metadata <- summary_metadata |>
+      dplyr::filter(grepl(entry[["id_pattern"]], study_name)) |>
+      dplyr::mutate(
+        study_name = gsub("_", "-", study_name),
+        source = gsub("_", "-", source),
+        url = ifelse(is.na(url), "", as.character(url)),
+        doi = ifelse(is.na(doi), "", as.character(doi))
+      )
+
+    if (nrow(summary_metadata) == 0) {
+      return(data.frame())
+    }
+
+    if (any(is.na(summary_metadata$source) | summary_metadata$source == "")) {
+      stop(glue::glue("metadata.csv has rows with missing source: {metadata_file}"))
+    }
+    if (any(is.na(summary_metadata$name) | summary_metadata$name == "")) {
+      stop(glue::glue("metadata.csv has rows with missing source name: {metadata_file}"))
+    }
+
+    summary_metadata$file_location <- ifelse(
+      grepl("^(/|[A-Za-z]:)", summary_metadata$file_location),
+      summary_metadata$file_location,
+      file.path(entry[["data_location"]], summary_metadata$file_location)
+    )
+
+    missing_files <- summary_metadata$file_location[!file.exists(summary_metadata$file_location)]
+    if (length(missing_files) > 0) {
+      stop(glue::glue("summary stats files missing: {paste(missing_files, collapse = ', ')}"))
+    }
+
+    invalid_file_types <- setdiff(unique(summary_metadata$file_type), unlist(extraction_file_types))
+    if (length(invalid_file_types) > 0) {
+      stop(glue::glue(
+        "metadata.csv has unsupported file_type values: {paste(invalid_file_types, collapse = ', ')}"
+      ))
+    }
+
+    data_study_dir <- glue::glue("{data_dir}study/{summary_metadata$study_name}/")
+    column_names_json <- vapply(seq_len(nrow(summary_metadata)), function(i) {
+      row <- summary_metadata[i, , drop = FALSE]
+      cols <- lapply(summary_stats_column_map_fields, function(field) {
+        if (!field %in% colnames(row)) {
+          return(NULL)
+        }
+        val <- row[[field]]
+        if (is.null(val) || length(val) == 0 || is.na(val) || val == "") {
+          return(NULL)
+        }
+        return(as.character(val))
+      })
+      names(cols) <- summary_stats_column_map_fields
+      cols <- Filter(Negate(is.null), cols)
+      return(as.character(jsonlite::toJSON(cols, auto_unbox = TRUE)))
+    }, character(1))
+
+    return(data.frame(
+      data_type = entry[["data_type"]],
+      data_format = entry[["data_format"]],
+      source = summary_metadata$source,
+      study_name = summary_metadata$study_name,
+      trait = summary_metadata$study_name,
+      trait_name = summary_metadata$trait,
+      ancestry = entry[["ancestry"]],
+      sample_size = summary_metadata$sample_size,
+      category = tolower(summary_metadata$category),
+      study_location = summary_metadata$file_location,
+      extracted_location = data_study_dir,
+      reference_build = entry[["reference_build"]],
+      p_value_threshold = format(entry[["p_value_threshold"]], scientific = FALSE),
+      variant_type = entry[["variant_type"]],
+      gene = NA,
+      probe = NA,
+      tissue = NA,
+      cell_type = NA,
+      coverage = entry[["coverage"]],
+      heritability = NA,
+      heritability_se = NA,
+      file_type = summary_metadata$file_type,
+      column_names = column_names_json
     ))
   }) |>
     dplyr::bind_rows()

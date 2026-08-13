@@ -44,6 +44,7 @@ ld_reference_panel_dir <- glue::glue("{data_dir}ld_reference_panel_hg38/")
 liftover_dir <- glue::glue("{data_dir}liftover/")
 extracted_study_dir <- glue::glue("{data_dir}study/")
 variant_annotation_dir <- glue::glue("{data_dir}variant_annotation/")
+ti_pairs_data_dir <- glue::glue("{data_dir}ti_pairs/")
 static_web_dir <- glue::glue("{current_results_dir}static_web/")
 svg_dir <- glue::glue("{static_web_dir}svgs/")
 
@@ -112,7 +113,7 @@ cell_types <- c(
   "Plasma"
 )
 study_categories <- list(continuous = "continuous", categorical = "categorical")
-data_formats <- list(opengwas = "opengwas", besd = "besd", tsv = "tsv")
+data_formats <- list(opengwas = "opengwas", besd = "besd", tsv = "tsv", summary_stats = "summary_stats")
 cis_trans <- list(cis_only = "cis", trans_only = "trans", cis_trans = "cis_trans")
 variant_types <- list(common = "common", rare_exome = "rare_exome", rare_wgs = "rare_wgs")
 ancestry_map <- list(EUR = "European", EAS = "East Asian", AFR = "African", SAS = "South Asian")
@@ -126,6 +127,12 @@ available_liftover_conversions <- list(
 )
 extraction_file_types <- list(vcf = "vcf", csv = "csv")
 coverage_types <- list(dense = "dense", sparse = "sparse")
+metadata_types <- list(json = "json", tsv = "tsv", csv = "csv")
+
+# Standardised GWAS column names that can be remapped in summary_stats metadata.csv
+summary_stats_column_map_fields <- c(
+  "SNP", "RSID", "CHR", "BP", "EA", "OA", "P", "BETA", "OR", "SE", "EAF", "N"
+)
 
 standardised_gwas_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P", "SNP", "Z", "GENE")
 required_columns <- c("CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "P")
@@ -147,6 +154,13 @@ imputed_column_types <- vroom::cols(
   bp = vroom::col_number(),
   sample_size = vroom::col_number(),
   p_value_threshold = vroom::col_number(),
+  rows_imputed = vroom::col_number(),
+  b_cor = vroom::col_number(),
+  se_cor = vroom::col_number(),
+  z_adj = vroom::col_number(),
+  se_adj = vroom::col_number(),
+  significant_rows_imputed = vroom::col_number(),
+  significant_rows_filtered = vroom::col_number(),
   time_taken = vroom::col_character()
 )
 
@@ -209,8 +223,6 @@ coloc_pairwise_results_column_types <- vroom::cols(
   study_b = vroom::col_character(),
   bp_distance = vroom::col_double(),
   ignore = vroom::col_logical(),
-  false_positive = vroom::col_logical(),
-  false_negative = vroom::col_logical(),
   nsnps = vroom::col_number(),
   hit1 = vroom::col_character(),
   hit2 = vroom::col_character(),
@@ -222,8 +234,32 @@ coloc_pairwise_results_column_types <- vroom::cols(
   idx1 = vroom::col_number(),
   idx2 = vroom::col_number(),
   h4 = vroom::col_double(),
-  ld_block = vroom::col_character()
+  ld_block = vroom::col_character(),
+  false_positive = vroom::col_logical(),
+  false_negative = vroom::col_logical()
 )
+
+# Read multiple files with vroom; on column-mismatch errors, print per-file ncol.
+vroom_multi <- function(files, label, ...) {
+  message(glue::glue("Reading {length(files)} {label} file(s)"))
+  if (length(files) == 0) {
+    return(NULL)
+  }
+  return(tryCatch(
+    vroom::vroom(files, ...),
+    error = function(e) {
+      message(glue::glue("Failed while reading {label}: {conditionMessage(e)}"))
+      for (f in files) {
+        nc <- tryCatch(
+          ncol(vroom::vroom(f, n_max = 0, show_col_types = FALSE)),
+          error = function(...) NA_integer_
+        )
+        message(glue::glue("  {nc} cols: {f}"))
+      }
+      stop(e)
+    }
+  ))
+}
 
 file_prefix <- function(file_path) {
   file_name <- basename(file_path)
@@ -250,6 +286,7 @@ ld_block_file_basenames <- function(block_list = NA) {
   return(list(
     extracted_studies = "extracted_studies.tsv",
     standardised_studies = "standardised_studies.tsv",
+    standardised_skipped = "standardised_skipped.tsv",
     imputed_studies = "imputed_studies.tsv",
     finemapped_studies = "finemapped_studies.tsv",
     coloc_pairwise = "coloc_pairwise_results.tsv.gz",
@@ -289,6 +326,7 @@ ld_block_file_paths <- function(ld_block = NULL, block_list = NA, ld_block_data 
     ld_reference_panel_prefix = ref_prefix,
     extracted_studies = file.path(ld_block_data, names$extracted_studies),
     standardised_studies = file.path(ld_block_data, names$standardised_studies),
+    standardised_skipped = file.path(ld_block_data, names$standardised_skipped),
     imputed_studies = file.path(ld_block_data, names$imputed_studies),
     finemapped_studies = file.path(ld_block_data, names$finemapped_studies),
     coloc_pairwise = file.path(ld_block_data, names$coloc_pairwise),

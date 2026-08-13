@@ -1,6 +1,229 @@
 source("../pipeline_steps/constants.R")
 options(dplyr.width = Inf)
 
+# One-off: collapse duplicate study_name rows in studies_processed.tsv.gz.
+# Prefers non-NA coverage, then coverage == "sparse", then the last row
+# (compile appends newer metadata after older rows).
+dedupe_studies_processed <- function(
+  studies_processed_file = glue::glue("{current_results_dir}/studies_processed.tsv.gz")
+) {
+  if (!file.exists(studies_processed_file)) {
+    stop(glue::glue("File not found: {studies_processed_file}"))
+  }
+
+  studies_processed <- vroom::vroom(studies_processed_file, show_col_types = FALSE)
+  n_before <- nrow(studies_processed)
+  n_dup_studies <- sum(duplicated(studies_processed$study_name))
+
+  if (n_dup_studies == 0) {
+    message("No duplicate study_name rows found")
+    return(invisible(studies_processed))
+  }
+
+  studies_processed <- studies_processed |>
+    dplyr::mutate(.row = dplyr::row_number()) |>
+    dplyr::arrange(
+      study_name,
+      is.na(coverage),
+      coverage != "sparse",
+      dplyr::desc(.row)
+    ) |>
+    dplyr::distinct(study_name, .keep_all = TRUE) |>
+    dplyr::arrange(.row) |>
+    dplyr::select(-.row)
+
+  message(glue::glue(
+    "Removed {n_before - nrow(studies_processed)} duplicate rows ",
+    "({n_dup_studies} duplicate study_name occurrences); ",
+    "{nrow(studies_processed)} studies remain"
+  ))
+  vroom::vroom_write(studies_processed, studies_processed_file)
+  return(invisible(studies_processed))
+}
+
+coloc_pairwise_result_columns <- c(
+  "unique_study_a", "study_a", "unique_study_b", "study_b", "bp_distance",
+  "ignore", "nsnps", "hit1", "hit2",
+  "PP.H0.abf", "PP.H1.abf", "PP.H2.abf", "PP.H3.abf", "PP.H4.abf",
+  "idx1", "idx2", "h4", "ld_block", "false_positive", "false_negative"
+)
+
+# Drop unused columns (e.g. dynamic_p*) from per-block coloc_pairwise_results files.
+trim_coloc_pairwise_columns <- function(mc.cores = 30) {
+  ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  parallel::mclapply(ld_info$block, mc.cores = mc.cores, function(block) {
+    coloc_pairs_file <- glue::glue("{ld_block_data_dir}/{block}/coloc_pairwise_results.tsv.gz")
+    if (!file.exists(coloc_pairs_file)) {
+      return(invisible(NULL))
+    }
+
+    coloc_pairs <- vroom::vroom(coloc_pairs_file, delim = "\t", show_col_types = FALSE)
+    keep_cols <- intersect(coloc_pairwise_result_columns, colnames(coloc_pairs))
+    drop_cols <- setdiff(colnames(coloc_pairs), coloc_pairwise_result_columns)
+
+    if (length(drop_cols) == 0 && identical(colnames(coloc_pairs), keep_cols)) {
+      return(invisible(NULL))
+    }
+
+    if (length(drop_cols) > 0) {
+      message(glue::glue("{block}: dropping {paste(drop_cols, collapse = ', ')}"))
+    } else {
+      message(glue::glue("{block}: reordering columns"))
+    }
+    coloc_pairs <- dplyr::select(coloc_pairs, dplyr::all_of(keep_cols))
+    vroom::vroom_write(coloc_pairs, coloc_pairs_file)
+    return(invisible(NULL))
+  })
+
+  return(invisible(NULL))
+}
+
+# Diagnose why multi-file vroom(coloc_pairwise) fails even when per-file types look fine.
+diagnose_coloc_pairwise_column_types <- function(n_max = 1000) {
+  ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
+  ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
+  ld_info <- ld_info[dir.exists(ld_info$ld_block_data), ]
+
+  files <- file.path(ld_info$ld_block_data, "coloc_pairwise_results.tsv.gz")
+  files <- files[file.exists(files)]
+  message(glue::glue("Checking {length(files)} coloc_pairwise files"))
+
+  type_rows <- lapply(files, function(f) {
+    d <- vroom::vroom(f, delim = "\t", n_max = n_max, show_col_types = FALSE)
+    return(data.frame(
+      file = f,
+      column = names(d),
+      typeof = vapply(d, typeof, character(1)),
+      class = vapply(d, function(x) return(class(x)[1]), character(1)),
+      nrow = nrow(d),
+      stringsAsFactors = FALSE
+    ))
+  })
+  types <- dplyr::bind_rows(type_rows)
+
+  message("\nPer-file guessed types (collapsed):")
+  print(
+    types |>
+      dplyr::group_by(column) |>
+      dplyr::summarise(
+        n_typeof = dplyr::n_distinct(typeof),
+        typeofs = paste(sort(unique(typeof)), collapse = ", "),
+        classes = paste(sort(unique(class)), collapse = ", "),
+        .groups = "drop"
+      )
+  )
+
+  mismatched <- types |>
+    dplyr::group_by(column) |>
+    dplyr::summarise(
+      n_typeof = dplyr::n_distinct(typeof),
+      typeofs = paste(sort(unique(typeof)), collapse = ", "),
+      classes = paste(sort(unique(class)), collapse = ", "),
+      .groups = "drop"
+    ) |>
+    dplyr::filter(n_typeof > 1)
+
+  if (nrow(mismatched) == 0) {
+    message("\nNo columns with mixed typeof across single-file reads")
+  } else {
+    message("\nColumns with mixed typeof across files:")
+    print(mismatched)
+    for (col in mismatched$column) {
+      message(glue::glue("\n{col}:"))
+      print(types |> dplyr::filter(column == col) |> dplyr::count(typeof, class))
+    }
+  }
+
+  empty_files <- types |>
+    dplyr::distinct(file, nrow) |>
+    dplyr::filter(nrow == 0)
+  message(glue::glue("\nFiles with 0 rows in first {n_max} sampled rows: {nrow(empty_files)}"))
+
+  try_read <- function(label, expr) {
+    message(glue::glue("\nTrying {label} ..."))
+    err <- tryCatch(
+      {
+        force(expr)
+        message(glue::glue("  OK"))
+        return(NULL)
+      },
+      error = function(e) {
+        message(glue::glue("  FAILED: {conditionMessage(e)}"))
+        return(conditionMessage(e))
+      }
+    )
+    return(err)
+  }
+
+  results <- list(
+    types = types,
+    mismatched = mismatched,
+    empty_files = empty_files$file,
+    multi_guess = try_read(
+      "vroom(files) with type guessing",
+      vroom::vroom(files, delim = "\t", show_col_types = FALSE)
+    ),
+    multi_typed = try_read(
+      "vroom(files) with coloc_pairwise_results_column_types",
+      vroom::vroom(
+        files,
+        delim = "\t",
+        show_col_types = FALSE,
+        col_types = coloc_pairwise_results_column_types
+      )
+    ),
+    lapply_bind = try_read(
+      "lapply + bind_rows with coloc_pairwise_results_column_types",
+      lapply(files, function(f) {
+        return(vroom::vroom(
+          f,
+          delim = "\t",
+          show_col_types = FALSE,
+          col_types = coloc_pairwise_results_column_types
+        ))
+      }) |> dplyr::bind_rows()
+    )
+  )
+
+  # If multi-file fails but per-file types look fine, find a minimal failing pair.
+  if (!is.null(results$multi_guess) || !is.null(results$multi_typed)) {
+    message("\nSearching for a minimal file pair that fails multi-file vroom...")
+    failing_pair <- NULL
+    for (i in 2:min(length(files), 50)) {
+      err <- tryCatch(
+        {
+          vroom::vroom(files[c(1, i)], delim = "\t", show_col_types = FALSE)
+          return(NULL)
+        },
+        error = function(e) return(conditionMessage(e))
+      )
+      if (!is.null(err)) {
+        failing_pair <- files[c(1, i)]
+        message(glue::glue("  Fail with files[1] + files[{i}]: {err}"))
+        message(glue::glue("  A: {failing_pair[1]}"))
+        message(glue::glue("  B: {failing_pair[2]}"))
+        for (f in failing_pair) {
+          d <- vroom::vroom(f, delim = "\t", n_max = n_max, show_col_types = FALSE)
+          message(glue::glue(
+            "  {basename(dirname(f))}: ",
+            paste(sprintf("%s=%s", names(d), vapply(d, typeof, character(1))), collapse = ", ")
+          ))
+        }
+        break
+      }
+    }
+    if (is.null(failing_pair)) {
+      message("  No failing pair found in first 50 files vs files[1]; failure may need a larger set")
+    }
+    results$failing_pair <- failing_pair
+  }
+
+  return(invisible(results))
+}
+
 move_coloc_pairs_files <- function() {
   ld_blocks <- vroom::vroom("../pipeline_steps/data/ld_blocks.tsv")
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)
@@ -2095,4 +2318,4 @@ print_alleles_to_flip <- function() {
 }
 
 
-move_coloc_pairs_files()
+dedupe_studies_processed()

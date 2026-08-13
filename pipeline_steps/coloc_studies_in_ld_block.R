@@ -4,12 +4,9 @@ dplyr.summarise.inform <- FALSE
 
 bp_range <- 50000
 
-# Wallace 2020-style defaults: interpret priors at a reference locus size,
-# then rescale to each harmonised locus so locus-level priors stay comparable.
-wallace_reference_nsnps <- 1000
-coloc_base_p1 <- 1e-4
-coloc_base_p2 <- 1e-4
-coloc_base_p12 <- 5e-6
+coloc_p1 <- 1e-4
+coloc_p2 <- 1e-4
+coloc_p12 <- 5e-6
 
 parser <- argparser::arg_parser("Colocalise studies per LD block")
 parser <- argparser::add_argument(
@@ -230,25 +227,25 @@ run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_
     if (is.null(result)) {
       result <- data.frame(
         unique_study_a = pair$unique_study_a,
-        study_a = NA,
+        study_a = NA_character_,
         unique_study_b = pair$unique_study_b,
-        study_b = NA,
-        bp_distance = NA,
-        ignore = T,
-        false_positive = F,
-        false_negative = F,
-        nsnps = NA,
-        hit1 = NA,
-        hit2 = NA,
-        PP.H0.abf = NA,
-        PP.H1.abf = NA,
-        PP.H2.abf = NA,
-        PP.H3.abf = NA,
-        PP.H4.abf = NA,
-        idx1 = NA,
-        idx2 = NA,
-        h4 = NA,
-        ld_block = ld_block
+        study_b = NA_character_,
+        bp_distance = NA_real_,
+        ignore = TRUE,
+        nsnps = NA_real_,
+        hit1 = NA_character_,
+        hit2 = NA_character_,
+        PP.H0.abf = NA_real_,
+        PP.H1.abf = NA_real_,
+        PP.H2.abf = NA_real_,
+        PP.H3.abf = NA_real_,
+        PP.H4.abf = NA_real_,
+        idx1 = NA_real_,
+        idx2 = NA_real_,
+        h4 = NA_real_,
+        ld_block = ld_block,
+        false_positive = FALSE,
+        false_negative = FALSE
       )
       return(result)
     }
@@ -343,21 +340,16 @@ pairwise_coloc_analysis <- function(first_gwas, second_gwas) {
     return(NULL)
   }
 
-  dynamic_priors <- calculate_dynamic_coloc_priors(nsnps)
   result <- coloc::coloc.bf_bf(
     bf1 = first_lbf,
     bf2 = second_lbf,
-    p1 = coloc_base_p1,
-    p2 = coloc_base_p2,
-    p12 = coloc_base_p12
+    p1 = coloc_p1,
+    p2 = coloc_p2,
+    p12 = coloc_p12
   )
   result$summary$h4 <- result$summary$PP.H4.abf
-  result$summary$dynamic_p1 <- coloc_base_p1
-  result$summary$dynamic_p2 <- coloc_base_p2
-  result$summary$dynamic_p12 <- coloc_base_p12
   result$summary$nsnps <- nsnps
-  coloc_results <- result$summary
-  return(coloc_results)
+  return(result$summary)
 }
 
 harmonise_gwases <- function(...) {
@@ -390,22 +382,6 @@ harmonise_gwases <- function(...) {
 
   stopifnot(identical(names(gwases[[1]]), names(gwases[[2]])))
   return(gwases)
-}
-
-calculate_dynamic_coloc_priors <- function(nsnps) {
-  nsnps <- max(1, as.numeric(nsnps))
-  target_h1 <- coloc_base_p1 * wallace_reference_nsnps
-  target_h2 <- coloc_base_p2 * wallace_reference_nsnps
-  target_h4 <- coloc_base_p12 * wallace_reference_nsnps
-
-  max_per_snp <- 0.99 / nsnps
-  p1 <- min(target_h1 / nsnps, max_per_snp)
-  p2 <- min(target_h2 / nsnps, max_per_snp)
-  p12 <- min(target_h4 / nsnps, p1, p2, 0.99 / nsnps)
-  p12 <- max(p12, .Machine$double.eps)
-
-  # return(list(p1 = p1, p2 = p2, p12 = p12))
-  return(list(p1 = coloc_base_p1, p2 = coloc_base_p2, p12 = coloc_base_p12))
 }
 
 resolve_worker_file_paths <- function(finemapped_studies) {

@@ -1,0 +1,2 @@
+study_name,file_location,trait,sample_size,category,file_type,source,name,url,doi,SNP,RSID,CHR,BP,EA,OA,P,BETA,OR,SE,EAF,N
+test-height,test_height.tsv.gz,height,234234,continuous,csv,test_height,Test height summary stats,,https://doi.org/10.1234/test.height,,,CHR,BP,EA,OA,P,BETA,,SE,EAF,

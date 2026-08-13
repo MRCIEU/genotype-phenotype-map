@@ -1,7 +1,7 @@
 ---
 params:
   ld_block: null
-  ld_blocks_file: "../../pipeline_steps/temp_all_ld_blocks.txt"
+  ld_blocks_file: "../../../pipeline_steps/temp_all_ld_blocks.txt"
   results_version: "1.0.0"
   block_list_name: "1_0_0"
 output:
@@ -19,7 +19,7 @@ library(dplyr)
 library(tidyr)
 library(vroom)
 
-source("../../pipeline_steps/constants.R")
+source("../../../pipeline_steps/constants.R")
 source("clustering_comparison_helpers.R")
 
 # LD block as ancestry/chr/start-stop (same string as pipeline / ld_block_data_dir layout)
@@ -57,7 +57,14 @@ problemsnp_file <- file.path(block_data_dir, "problematic_finemapped_snps.tsv")
 
 studies_file <- file.path(report_results_dir, "studies_processed.tsv.gz")
 studies_db_file <- file.path(report_results_dir, "studies.db")
-truthset_file <- "data/tipairs_launched_truthset.tsv"
+truthset_file <- file.path(report_results_dir, "analysis", "clustering", "tipairs_launched_truthset.tsv")
+if (!file.exists(truthset_file)) {
+  fallback_truthset <- "../data/tipairs_launched_truthset.tsv"
+  if (file.exists(fallback_truthset)) {
+    message("Using fallback truthset: ", fallback_truthset)
+    truthset_file <- fallback_truthset
+  }
+}
 
 mode_config <- data.frame(
   mode = 1:2,

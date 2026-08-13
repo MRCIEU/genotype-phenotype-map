@@ -1,17 +1,18 @@
 ---
 title: "Drug target-indication pair validation of coloc"
 author: "A. Hanson"
-format: 
-  html:
-    embed-resources: true
-    page-layout: full
+output:
+  html_document:
+    self_contained: true
     toc: true
-    toc-depth: 4
-    toc-location: left
-    code-fold: true
-execute:
-  message: FALSE
-  warning: FALSE
+    toc_depth: 4
+    toc_float: true
+    code_folding: hide
+params:
+  # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
+  results_version: "1.0.0"
+  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap.rda under data/ti_pairs/
+  recompute_cache: false
 ---
 
 The increased relative success (RS) of drug targets for diesease indications (T-I pairs) evidenced by genetic colocalisation implies that knowledge of the gene products impacted by genetic perturbations causally underlying disease can improve the likelihood of successful therapeutic intervention. The GPMAP involves several stages of amalgamating and pruning genetic evidence from GWAS studies to group shared signals across molecular and complex traits (including disease): \
@@ -25,79 +26,61 @@ If refinement of colocalisation clusters is working well, with the pruning out o
 
 ## Data import
 
-```{r}
-#| label: setup
-#| message: FALSE
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 
-library(here)
-library(dotenv)
 library(ggplot2)
 
-readRenviron(here(".env"))
-p1_user <- Sys.getenv("P1_USER")
-data_dir <- Sys.getenv("DATA_DIR")
-res_dir <- Sys.getenv("RES_DIR")
+source("../../../pipeline_steps/constants.R")
 
-p1_res_dir <- Sys.getenv("P1_RES")
-repo_dir <- Sys.getenv("REPO_DIR")
-pipeline_dir <- Sys.getenv("PIPELINE_DIR")
+versioned_results_dir <- if (grepl("^/", params$results_version)) {
+  params$results_version
+} else {
+  file.path(sub("/$", "", results_dir), params$results_version)
+}
+analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
+# Flat layout under $DATA_DIR/ti_pairs/
+ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
-#source(file.path(pipeline_dir, "pipeline_steps/constants.R"))
-
-## Extended table of T-I pairs with GPMAP evidence (from 02_GMAPsupportforTIpairs.qmd)
-ti_pairs <- data.table::fread(file = file.path(repo_dir,"scripts/drugtarget-indication-pairs/output/GPMAP_T-Ipairs_allmatchedstudies.tsv"))
-ti_pairs_unique <- data.table::fread(file = file.path(repo_dir,"scripts/drugtarget-indication-pairs/output/GPMAP_T-Ipairs_unique.tsv"))
+## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
+ti_pairs <- data.table::fread(ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+ti_pairs_unique <- data.table::fread(ti_file("GPMAP_T-Ipairs_unique.tsv"))
 ```
 
 We wish to compare the colocalisation clusters returned to users after running ingraph:infomap() to split highly connected groups of studies sharing H4 signals at a given loci, followed by pruning of outlying poorly connected studies, with the pre-split and pruned results: 
 
 ### Pre-infomap coloc clusters
 
-```{r}
-#| label: prepare-data
-
-## Pull pre-pruned clusters from server
-pre_infomap_file <- "coloc_clustered_results_no_pruning.tsv.gz"
-pre_infomap_file_local <- file.path(data_dir, "pre-infomap", pre_infomap_file)
-
-if(!file.exists(pre_infomap_file_local)){
-  message("Copying pre-infomap results from P1:")
-  system(paste0("scp ", p1_user, ":", p1_res_dir, "/1.0.0/", pre_infomap_file, " ", data_dir, "/pre-infomap/"))
+```{r prepare-data}
+## Pre-pruned clusters from the versioned results directory
+pre_infomap_file_local <- file.path(versioned_results_dir, "coloc_clustered_results_no_pruning.tsv.gz")
+if (!file.exists(pre_infomap_file_local)) {
+  stop("Missing coloc_clustered_results_no_pruning.tsv.gz in ", versioned_results_dir)
 }
 
 pre_infomap_clusters <- vroom::vroom(pre_infomap_file_local)
 
-## Filter out studies added post first submission
-# Extracted studies:
-studies_file <- "study_extractions.tsv.gz"
-studies_file_local <- file.path(data_dir, "pre-infomap", studies_file)
-
-if(!file.exists(studies_file_local)){
-  message("Copying studies extracted list from P1:")
-  system(paste0("scp ", p1_user, ":", p1_res_dir, "/1.0.0/", studies_file, " ", data_dir, "/pre-infomap/"))
+## Filter out studies added post first submission (optional exclude list)
+# studies_extracted <- vroom::vroom(file.path(versioned_results_dir, "study_extractions.tsv.gz"))
+# blocked_list <- data.table::fread("../../../pipeline_steps/data/1_0_0_block_list.csv", data.table = FALSE)
+# studies_out <- studies_extracted$study[is_study_blocked(...)] |> unique()
+# write.table(studies_out, ti_file("exclude_studies.txt"))
+exclude_file <- ti_file("exclude_studies.txt")
+if (file.exists(exclude_file)) {
+  studies_out <- read.table(exclude_file)[, 1]
+  pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(study %in% studies_out))
+} else {
+  message("No exclude_studies.txt found under ", ti_pairs_data_dir, "; skipping study exclusion")
 }
-
-#studies_extracted <- vroom::vroom(studies_file_local)
-
-# Studies to exclude:
-#blocked_list <- data.table::fread(file.path(pipeline_dir, "pipeline_steps/data/1_0_0_block_list.csv"), data.table = F)
-#studies_out <- studies_extracted$study[is_study_blocked(block_list = blocked_list, study_name = studies_extracted$study, cis_trans = studies_extracted$cis_trans)] |> unique()
-#write.table(studies_out, file.path(data_dir, "pre-infomap", "exclude_studies.txt"))
-studies_out <- read.table(file.path(data_dir, "pre-infomap", "exclude_studies.txt"))[,1]
-
-# Remove from pre-pruned clusters
-pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(study %in% studies_out))
 ```
 
 What genetic (QTL) evidence is available for each molecular target?
 
-```{r}
-#| label: molecular-targets
-
+```{r molecular-targets}
 targets <- unique(ti_pairs$target) #2221 drug targets
 
 # Using studies processed in pipeline at time of publication
-gpmap_molecular <- data.table::fread(file.path(data_dir,"studies_processed.tsv.gz")) |>
+gpmap_molecular <- data.table::fread(file.path(versioned_results_dir, "studies_processed.tsv.gz")) |>
   dplyr::filter(variant_type == "common" & gene %in% targets)
 
 matched_targets <- unique(gpmap_molecular$gene)
@@ -112,9 +95,7 @@ molecular_insight <- available_assays |> dplyr::group_by(data_type) |> dplyr::re
 molecular_insight <- lapply(split(molecular_insight, molecular_insight$data_type), function(x){x$gene})
 ```
 
-```{r}
-#| label: preinfomap-support
-
+```{r preinfomap-support}
 # Split pre_infomap_clusters df into list of studies within shared components
 pre_infomap_splitclusters <- pre_infomap_clusters |> 
   dplyr::group_by(coloc_group_id) |> dplyr::group_split()
@@ -134,6 +115,7 @@ pull_ti_preinfomap <- function(target, trait){
   # Which modes of molecular insight are available for the target?
   insight <- sapply(molecular_insight, function(x){target %in% x})
   insight <- names(insight)[insight]
+  groups_wtarget <- NULL
   
   if(length(group_ids) == 0){
     res$preinfomap_GC_support <- FALSE
@@ -170,11 +152,23 @@ pull_ti_preinfomap <- function(target, trait){
   return(list(group_summary = res, target_groups = groups_wtarget))
 }
 
-#ti_preinfomap <- mapply(FUN = pull_ti_preinfomap, target = ti_pairs$target, trait = ti_pairs$trait_gpmap, SIMPLIFY = F)
-#names(ti_preinfomap) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+preinfomap_file <- ti_file("tipairs_preinfomap.rda")
 
-#save(ti_preinfomap, file = file.path(data_dir, "pre-infomap", "tipairs_pre-infomap.rda"))
-load(file.path(data_dir,"pre-infomap", "tipairs_pre-infomap.rda")) #ti_preinfomap
+if (params$recompute_cache) {
+  ti_preinfomap <- mapply(
+    FUN = pull_ti_preinfomap,
+    target = ti_pairs$target,
+    trait = ti_pairs$trait_gpmap,
+    SIMPLIFY = FALSE
+  )
+  names(ti_preinfomap) <- paste(ti_pairs$ti_uid, ti_pairs$target, ti_pairs$trait_gpmap, sep = ":")
+  save(ti_preinfomap, file = preinfomap_file)
+} else {
+  if (!file.exists(preinfomap_file)) {
+    stop("Missing ", preinfomap_file, "; set recompute_cache = TRUE to build it")
+  }
+  load(preinfomap_file) # ti_preinfomap
+}
 
 # Genetic colocalisation (GC) support:
 gc_support_preinfomap <- do.call("rbind",lapply(ti_preinfomap, function(x){x[[1]]})) |>
@@ -184,11 +178,9 @@ gc_support_preinfomap <- do.call("rbind",lapply(ti_preinfomap, function(x){x[[1]
 
 ### Coloc pairs
 
-```{r}
-#| label: colocpairs-support
-
+```{r colocpairs-support}
 # Load pre-computed GC support based on coloc pairs (pre clustering)
-load(file.path(res_dir,"target-indication_results","gpmap_tipairwisecolocs.rda")) #ti_colocs_frompairs
+load(ti_file("gpmap_tipairwisecolocs.rda")) # ti_colocs_frompairs
 gc_support_pairs <- do.call("rbind",lapply(ti_colocs_frompairs, function(x){x[[1]]})) |>
   dplyr::mutate(ti_uid = ti_pairs$ti_uid, .before = "target") |>
   dplyr::rename("GC_support_colocpairs" = GC_support,
@@ -218,11 +210,7 @@ T-I pairs with genetic support available across: \
 2. Coloc H4<0.8 groups pre infomap cluster assignement
 3. Infomap assigned (and pruned) coloc groups \
 
-```{r}
-#| label: genetic-support
-#| fig-width: 5
-#| fig-height: 4
-
+```{r genetic-support, fig.width=5, fig.height=4}
 summary_gcsupport <- ti_pairs_unique[,c("ti_uid", "combined_max_phase", "GC_support_colocpairs", "GC_support_preinfomap", "gpmap_support")] |>
   tidyr::pivot_longer(cols = 3:5, names_to = "source", values_to = "genetic_support") |>
   dplyr::group_by(combined_max_phase, source) |> dplyr::summarise(total = dplyr::n(), supported = sum(genetic_support)) |>
@@ -253,11 +241,7 @@ summary_gcsupport |>
   guides(colour = guide_legend(nrow = 3))
 ```
 
-```{r}
-#| label: genetic-support-qtls
-#| fig-width: 6
-#| fig-height: 6
-
+```{r genetic-support-qtls, fig.width=6, fig.height=6}
 summary_gcsupport_qtls <- ti_pairs_unique[,c("ti_uid", "combined_max_phase", 
                                         "eQTL_support","sQTL_support","mQTL_support","pQTL_support",
                                         "preinfomap_eQTL_support","preinfomap_sQTL_support", "preinfomap_mQTL_support", "preinfomap_pQTL_support")] |>
@@ -300,11 +284,7 @@ summary_gcsupport_qtls |>
 
 ### Relative success
 
-```{r}
-#| label: relative-success
-#| fig-width: 5
-#| fig-height: 2
-
+```{r relative-success, fig.width=5, fig.height=2}
 # Sources of genetic support
 sources <- c("gpmap_support", "GC_support_colocpairs", "GC_support_preinfomap")
 
@@ -355,11 +335,7 @@ rel_success |>
   labs(x = "Relative success", y = "")
 ```
 
-```{r}
-#| label: relative-success-byqtl
-#| fig-width: 5
-#| fig-height: 3
-
+```{r relative-success-byqtl, fig.width=5, fig.height=3}
 # Sources of genetic support
 sources_qtls <- c("gpmap_support", "eQTL_support","sQTL_support","mQTL_support","pQTL_support",
              "GC_support_preinfomap", "preinfomap_eQTL_support","preinfomap_sQTL_support", "preinfomap_mQTL_support", "preinfomap_pQTL_support")
@@ -419,5 +395,4 @@ rel_success_qtls |>
         axis.text = element_text(size = 10),
         axis.line = element_line(colour = "grey"),
         legend.position = "none") +
-  labs(x = "Relative success", y = "")
-```
+  labs(x = "Relative success", y = "")```

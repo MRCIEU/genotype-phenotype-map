@@ -38,10 +38,13 @@ main <- function() {
     update_directories_for_worker(args$worker_guid)
   }
   paths <- ld_block_file_paths(args$ld_block, block_list = args$block_list)
-  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
 
-  ld_matrix <- vroom::vroom(paths$ld_matrix_vcor, col_names = F, show_col_types = F, altrep = F)
-  ld_matrix_eig <- readRDS(paths$ld_matrix_eig)
+  if (!file.exists(paths$standardised_studies)) {
+    message(glue::glue("{args$ld_block}: No standardised studies; writing empty imputed results."))
+    vroom::vroom_write(empty_imputed_studies(), paths$imputed_studies)
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
 
   standardised_studies <- vroom::vroom(paths$standardised_studies, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
@@ -66,29 +69,58 @@ main <- function() {
     existing_imputed_studies <- empty_imputed_studies()
   }
 
-  if (nrow(standardised_studies) > 0) {
-    imputed_studies <- apply(standardised_studies, 1, function(study) {
-      start_time <- Sys.time()
-      imputed_file <- sub("standardised", "imputed", study[["file"]])
+  expected_imputed_files <- sub("standardised", "imputed", standardised_studies$file)
+  todo_idx <- which(!expected_imputed_files %in% existing_imputed_studies$file)
 
-      if (imputed_file %in% existing_imputed_studies$file) {
-        return()
-      }
-      message("Imputing ", imputed_file)
+  if (length(todo_idx) == 0L) {
+    message(glue::glue(
+      "{args$ld_block}: All {nrow(standardised_studies)} studies already imputed; skipping."
+    ))
+    if (!file.exists(imputed_studies_file)) {
+      vroom::vroom_write(existing_imputed_studies, imputed_studies_file)
+    }
+    vroom::vroom_write(data.frame(), args$completed_output_file)
+    return()
+  }
 
-      gwas <- vroom::vroom(study["file"], show_col_types = F)
+  message(glue::glue(
+    "{args$ld_block}: Imputing {length(todo_idx)} / {nrow(standardised_studies)} studies"
+  ))
+  ld_matrix_info <- vroom::vroom(paths$ld_matrix_tsv, show_col_types = F)
+  ld_matrix <- vroom::vroom(paths$ld_matrix_vcor, col_names = F, show_col_types = F, altrep = F)
+  ld_matrix_eig <- readRDS(paths$ld_matrix_eig)
+  studies_to_impute <- standardised_studies[todo_idx, , drop = FALSE]
 
-      gwas_to_impute <- dplyr::left_join(
-        dplyr::select(ld_matrix_info, -EAF),
-        dplyr::select(gwas, -CHR, -BP, -EA, -OA),
-        by = dplyr::join_by(SNP)
+  imputed_studies <- lapply(seq_len(nrow(studies_to_impute)), function(i) {
+    study <- studies_to_impute[i, , drop = FALSE]
+    start_time <- Sys.time()
+    imputed_file <- sub("standardised", "imputed", study$file)
+    message("Imputing ", imputed_file)
+
+    gwas <- vroom::vroom(study$file, show_col_types = F)
+
+    gwas_to_impute <- dplyr::left_join(
+      dplyr::select(ld_matrix_info, -EAF),
+      dplyr::select(gwas, -CHR, -BP, -EA, -OA),
+      by = dplyr::join_by(SNP)
+    )
+
+    rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
+    gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
+
+    # Imputation is not useful or effective for sparsely populated studies, instead pad missing values
+    if (study$coverage == coverage_types$sparse) {
+      filtered_results <- list(
+        significant_rows_imputed = NA,
+        significant_rows_filtered = NA
       )
+      result <- pad_missing_values(gwas_to_impute)
+      vroom::vroom_write(result$gwas, imputed_file)
+    } else {
+      result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
 
-      rows_to_impute <- !ld_matrix_info$SNP %in% gwas$SNP
-      gwas_to_impute$EAF[rows_to_impute] <- ld_matrix_info$EAF[rows_to_impute]
-
-      # Imputation is not useful or effective for sparsely populated studies, instead pad missing values
-      if (study[["coverage"]] == coverage_types$sparse) {
+      if (result$rows_imputed == 0) {
+        message("Imputation skipped for ", imputed_file, ", falling back to standardised data")
         filtered_results <- list(
           significant_rows_imputed = NA,
           significant_rows_filtered = NA
@@ -96,65 +128,53 @@ main <- function() {
         result <- pad_missing_values(gwas_to_impute)
         vroom::vroom_write(result$gwas, imputed_file)
       } else {
-        result <- perform_imputation(imputed_file, gwas_to_impute, ld_matrix_eig)
+        verify_imputation_results(result$gwas, imputed_file)
+        filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
 
-        if (result$rows_imputed == 0) {
-          message("Imputation skipped for ", imputed_file, ", falling back to standardised data")
-          filtered_results <- list(
-            significant_rows_imputed = NA,
-            significant_rows_filtered = NA
-          )
-          result <- pad_missing_values(gwas_to_impute)
-          vroom::vroom_write(result$gwas, imputed_file)
+        if ((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) ||
+            (filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold)
+        ) {
+          vroom::vroom_write(filtered_results$gwas, imputed_file)
         } else {
-          verify_imputation_results(result$gwas, imputed_file)
-          filtered_results <- filter_imputation_results(result$gwas, ld_matrix, min(gwas$BP), max(gwas$BP))
-
-          if ((!is.na(result$b_cor) && result$b_cor >= imputation_correlation_threshold) ||
-              (filtered_results$significant_rows_filtered < imputation_significant_rows_overinflated_threshold)
-          ) {
-            vroom::vroom_write(filtered_results$gwas, imputed_file)
-          } else {
-            gwas$IMPUTED <- FALSE
-            vroom::vroom_write(gwas, imputed_file)
-          }
+          gwas$IMPUTED <- FALSE
+          vroom::vroom_write(gwas, imputed_file)
         }
       }
-
-      time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
-
-      imputation_info <- data.frame(
-        study = study[["study"]],
-        file = imputed_file,
-        ancestry = study["ancestry"],
-        chr = as.character(study[["chr"]]),
-        bp = as.numeric(study[["bp"]]),
-        p_value_threshold = as.numeric(study[["p_value_threshold"]]),
-        category = study["category"],
-        sample_size = as.numeric(study["sample_size"]),
-        cis_trans = study["cis_trans"],
-        rows_imputed = result$rows_imputed,
-        b_cor = result$b_cor,
-        se_cor = result$se_cor,
-        z_adj = result$z_adj_coef1,
-        se_adj = result$se_adj_coef1,
-        time_taken = time_taken,
-        significant_rows_imputed = filtered_results$significant_rows_imputed,
-        significant_rows_filtered = filtered_results$significant_rows_filtered,
-        ld_block = paths$ld_block,
-        variant_type = study["variant_type"],
-        coverage = study["coverage"]
-      )
-
-      return(imputation_info)
-    }) |> dplyr::bind_rows()
-
-    if (nrow(imputed_studies) > 0) {
-      imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
-        dplyr::distinct(study, .keep_all = TRUE)
-      vroom::vroom_write(imputed_studies, imputed_studies_file)
     }
-  } else {
+
+    time_taken <- as.character(hms::as_hms(difftime(Sys.time(), start_time)))
+
+    imputation_info <- data.frame(
+      study = study$study,
+      file = imputed_file,
+      ancestry = study$ancestry,
+      chr = as.character(study$chr),
+      bp = as.numeric(study$bp),
+      p_value_threshold = as.numeric(study$p_value_threshold),
+      category = study$category,
+      sample_size = as.numeric(study$sample_size),
+      cis_trans = study$cis_trans,
+      rows_imputed = result$rows_imputed,
+      b_cor = result$b_cor,
+      se_cor = result$se_cor,
+      z_adj = result$z_adj_coef1,
+      se_adj = result$se_adj_coef1,
+      time_taken = time_taken,
+      significant_rows_imputed = filtered_results$significant_rows_imputed,
+      significant_rows_filtered = filtered_results$significant_rows_filtered,
+      ld_block = paths$ld_block,
+      variant_type = study$variant_type,
+      coverage = study$coverage
+    )
+
+    return(imputation_info)
+  }) |> dplyr::bind_rows()
+
+  if (nrow(imputed_studies) > 0) {
+    imputed_studies <- dplyr::bind_rows(existing_imputed_studies, imputed_studies) |>
+      dplyr::distinct(study, .keep_all = TRUE)
+    vroom::vroom_write(imputed_studies, imputed_studies_file)
+  } else if (!file.exists(imputed_studies_file)) {
     vroom::vroom_write(existing_imputed_studies, imputed_studies_file)
   }
 
@@ -180,6 +200,8 @@ empty_imputed_studies <- function() {
       z_adj = numeric(),
       se_adj = numeric(),
       time_taken = character(),
+      significant_rows_imputed = numeric(),
+      significant_rows_filtered = numeric(),
       ld_block = character(),
       variant_type = character(),
       coverage = character()

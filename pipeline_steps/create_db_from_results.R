@@ -63,19 +63,19 @@ args <- argparser::parse_args(parser)
 
 main <- function() {
   if (file.exists(args$studies_db_file)) file.remove(args$studies_db_file)
+  if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
   if (file.exists(args$associations_full_db_file)) file.remove(args$associations_full_db_file)
   if (file.exists(args$associations_specific_db_file)) file.remove(args$associations_specific_db_file)
   if (file.exists(args$coloc_pairs_full_db_file)) file.remove(args$coloc_pairs_full_db_file)
   if (file.exists(args$coloc_pairs_significant_db_file)) file.remove(args$coloc_pairs_significant_db_file)
-  if (file.exists(args$ld_db_file)) file.remove(args$ld_db_file)
   if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
+  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), args$ld_db_file)
   associations_full_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_full_db_file)
   associations_specific_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_specific_db_file)
   coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_full_db_file)
   coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_significant_db_file)
-  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), args$ld_db_file)
   gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), args$gwas_upload_db_file)
 
   lapply(studies_db, \(table) {
@@ -105,7 +105,6 @@ main <- function() {
 
   message("Creating coloc pairs db...")
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
-
 
   DBI::dbDisconnect(studies_conn, shutdown = TRUE)
   DBI::dbDisconnect(associations_full_conn, shutdown = TRUE)
@@ -177,8 +176,63 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   return(table)
 }
 
+#' Load study_sources rows from summary_stats metadata.csv files.
+#' Keeps per-file citations out of studies_processed; only used when building the DB.
+load_summary_stats_study_sources <- function() {
+  study_list_file <- if (!is.na(TEST_RUN)) {
+    "../tests/data/study_list.csv"
+  } else {
+    "data/study_list.csv"
+  }
+  if (!file.exists(study_list_file)) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+
+  study_list <- vroom::vroom(study_list_file, show_col_types = F)
+  summary_stats_entries <- dplyr::filter(study_list, data_format == data_formats$summary_stats)
+  if (nrow(summary_stats_entries) == 0) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+
+  sources <- apply(summary_stats_entries, 1, function(entry) {
+    metadata_file <- file.path(entry[["data_location"]], "metadata.csv")
+    if (!file.exists(metadata_file)) {
+      return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+    }
+
+    metadata <- vroom::vroom(metadata_file, show_col_types = F)
+    required_cols <- c("source", "name", "url", "doi")
+    if (!all(required_cols %in% colnames(metadata))) {
+      return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+    }
+
+    return(
+      metadata |>
+        dplyr::mutate(
+          source = gsub("_", "-", source),
+          url = ifelse(is.na(url), "", as.character(url)),
+          doi = ifelse(is.na(doi), "", as.character(doi))
+        ) |>
+        dplyr::filter(!is.na(source) & source != "" & !is.na(name) & name != "") |>
+        dplyr::distinct(source, .keep_all = TRUE) |>
+        dplyr::select(source, name, url, doi)
+    )
+  }) |>
+    dplyr::bind_rows()
+
+  if (nrow(sources) == 0) {
+    return(data.frame(source = character(), name = character(), url = character(), doi = character()))
+  }
+  return(dplyr::distinct(sources, source, .keep_all = TRUE))
+}
+
 load_data_for_studies_db <- function(studies_db, studies_conn) {
-  studies_db$study_sources$data <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F) |>
+  static_sources <- vroom::vroom(file.path("data/study_sources.csv"), show_col_types = F)
+  dynamic_sources <- load_summary_stats_study_sources()
+  studies_db$study_sources$data <- dplyr::bind_rows(
+    static_sources,
+    dplyr::filter(dynamic_sources, !source %in% static_sources$source)
+  ) |>
     resolve_ids_for_table(studies_db$study_sources$existing_ids, studies_db$study_sources$persist_id_from) |>
     dplyr::select(get_table_column_names(studies_db$study_sources))
 
@@ -290,6 +344,8 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     format_rare_results(studies_db)
 
   studies_db <- format_pleiotropy_scores(studies_db)
+
+  studies_db <- load_pathway_tables(studies_db)
 
   lapply(studies_db, \(table) DBI::dbAppendTable(studies_conn, table$name, table$data))
 
@@ -1089,6 +1145,87 @@ get_table_column_names <- function(table) {
   ]
 
   return(table_column_names)
+}
+
+load_pathway_tables <- function(studies_db) {
+  gene_lookup <- data.table::as.data.table(studies_db$gene_annotations$data)[
+    , .(ensembl_id, gene_id = id)
+  ]
+
+  all_mappings <- data.table::data.table()
+
+  kegg_file <- file.path(variant_annotation_dir, "kegg_pathways_output.txt")
+  if (file.exists(kegg_file)) {
+    kegg <- data.table::fread(kegg_file, showProgress = FALSE)
+    data.table::setnames(kegg, "gene_id", "ensembl_id")
+    kegg <- gene_lookup[kegg, on = "ensembl_id", nomatch = NULL]
+    kegg <- kegg[, .(gene_id, term_id, source, description)]
+    all_mappings <- data.table::rbindlist(list(all_mappings, kegg))
+    message("Loaded ", nrow(kegg), " KEGG pathway mappings")
+  } else {
+    message("KEGG file not found: ", kegg_file)
+  }
+
+  string_file <- file.path(variant_annotation_dir, "9606.protein.enrichment.terms.v12.0.txt.gz")
+  ensp_file <- file.path(variant_annotation_dir, "ensg_to_ensp_mapping.tsv")
+  if (file.exists(string_file) && file.exists(ensp_file)) {
+    ensp_mapping <- data.table::fread(ensp_file, showProgress = FALSE)
+
+    string_terms <- data.table::fread(string_file, showProgress = FALSE)
+    data.table::setnames(string_terms, "#string_protein_id", "string_protein_id")
+
+    string_terms <- string_terms[grepl("^Reactome|^Human Phenotype", category)]
+
+    string_terms[grepl("Reactome", category), source := "Reactome"]
+    string_terms[grepl("Human Phenotype", category), source := "HP"]
+
+    string_terms[, ensp_id := sub("^9606\\.", "", string_protein_id)]
+
+    string_terms <- ensp_mapping[string_terms, on = "ensp_id", nomatch = NULL]
+    data.table::setnames(string_terms, "ensg_id", "ensembl_id")
+    string_terms <- gene_lookup[string_terms, on = "ensembl_id", nomatch = NULL]
+    string_terms <- string_terms[, .(gene_id, term_id = term, source, description)]
+
+    all_mappings <- data.table::rbindlist(list(all_mappings, string_terms))
+    message("Loaded ", nrow(string_terms), " STRING enrichment term mappings (Reactome + HP)")
+  } else {
+    message("STRING/ENSP files not found, skipping Reactome + HP terms")
+  }
+
+  all_mappings <- unique(all_mappings, by = c("gene_id", "term_id"))
+  studies_db$pathway_mappings$data <- all_mappings
+
+  if (nrow(all_mappings) == 0) {
+    message("No pathway data found")
+    studies_db$pathway_sizes$data <- data.table::data.table(
+      term_id = character(), source = character(), description = character(),
+      pathway_size = integer(), background_size = integer()
+    )
+    return(studies_db)
+  }
+
+  pathway_sizes <- all_mappings[
+    , .(pathway_size = data.table::uniqueN(gene_id)),
+    by = .(term_id, source, description)
+  ]
+  background_sizes <- all_mappings[
+    , .(background_size = data.table::uniqueN(gene_id)),
+    by = source
+  ]
+  pathway_sizes <- background_sizes[pathway_sizes, on = "source"]
+  data.table::setcolorder(
+    pathway_sizes,
+    c("term_id", "source", "description", "pathway_size", "background_size")
+  )
+  studies_db$pathway_sizes$data <- pathway_sizes
+
+  message(
+    "Pathway tables: ", nrow(all_mappings), " gene-pathway mappings across ",
+    nrow(pathway_sizes), " pathways (",
+    paste(unique(all_mappings$source), collapse = ", "), ")"
+  )
+
+  return(studies_db)
 }
 
 invisible(main())

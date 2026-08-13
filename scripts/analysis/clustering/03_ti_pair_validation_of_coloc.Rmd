@@ -43,8 +43,8 @@ analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
 ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
 ## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
-ti_pairs <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
-ti_pairs_unique <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_unique.tsv"))
+ti_pairs <- data.table::fread(ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+ti_pairs_unique <- data.table::fread(ti_file("GPMAP_T-Ipairs_unique.tsv"))
 ```
 
 We wish to compare the colocalisation clusters returned to users after running ingraph:infomap() to split highly connected groups of studies sharing H4 signals at a given loci, followed by pruning of outlying poorly connected studies, with the pre-split and pruned results: 

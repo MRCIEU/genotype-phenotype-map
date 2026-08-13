@@ -1257,7 +1257,8 @@ rel_success_cat_byphase |>
 ## Write out data
 ```{r}
 ## Write scored T-I pair tables into versioned analysis results
-data.table::fwrite(ti_pairs, file = file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"), sep = "\t")
-data.table::fwrite(ti_pairs_unique, file = file.path(analysis_dir, "GPMAP_T-Ipairs_unique.tsv"), sep = "\t")
-message("Wrote: ", file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
-message("Wrote: ", file.path(analysis_dir, "GPMAP_T-Ipairs_unique.tsv"))```
+data.table::fwrite(ti_pairs, file = ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"), sep = "\t")
+data.table::fwrite(ti_pairs_unique, file = ti_file("GPMAP_T-Ipairs_unique.tsv"), sep = "\t")
+message("Wrote: ", ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+message("Wrote: ", ti_file("GPMAP_T-Ipairs_unique.tsv"))
+```

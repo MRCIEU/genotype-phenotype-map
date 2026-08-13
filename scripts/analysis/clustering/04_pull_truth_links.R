@@ -35,7 +35,7 @@ analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
 dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
-ti_pairs <- data.table::fread(file.path(analysis_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+ti_pairs <- data.table::fread(file.path(ti_pairs_data_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
 
 ## Colocalisation group evidence (studies linked by H4>0.8) pre infomap refinement of clusters
 preinfomap_file <- file.path(ti_pairs_data_dir, "tipairs_preinfomap.rda")

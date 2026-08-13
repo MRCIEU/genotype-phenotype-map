@@ -25,6 +25,9 @@ ti_pairs/
   gpmap_matched_traits.csv
   gpmap_matched_traits_filtered_corrected.csv
   target-indicationpairs_gpmapevidence.tsv   # written by 01
+  # Scored T-I tables written by 02; read by 03–04
+  GPMAP_T-Ipairs_allmatchedstudies.tsv
+  GPMAP_T-Ipairs_unique.tsv
   # Caches written / read by 02–03
   gpmap_indications.rda
   gpmap_indications_rarevariants.rda

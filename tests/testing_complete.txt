@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: bug/crashing-worker-lower-parallel-blocks
+SUCCESS: All tests passed on branch: bug/fix-redis-stale-connection

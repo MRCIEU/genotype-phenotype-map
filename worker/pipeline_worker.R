@@ -70,6 +70,8 @@ main <- function() {
   flog.info("Starting pipeline worker")
 
   while (TRUE) {
+    gwas_info <- NULL
+
     # If the stop_processing file exists, hang forever
     stop_processing_file <- file.exists(glue::glue("{data_dir}/stop_processing"))
     if (stop_processing_file) {
@@ -133,7 +135,7 @@ main <- function() {
         Sys.sleep(5)
       },
       error = function(e) {
-        if (exists("gwas_info")) {
+        if (!is.null(gwas_info)) {
           flog.error(paste(gwas_info$metadata$guid, "Error processing message:", e$message))
           if (!is.null(e$call)) {
             flog.error(paste(gwas_info$metadata$guid, "Error call:", deparse(e$call)))
@@ -141,6 +143,23 @@ main <- function() {
         } else {
           flog.error(paste("Error processing message: ", e$message))
         }
+
+        error_call <- if (is.null(e$call)) "" else paste(deparse(e$call), collapse = " ")
+        redis_error <- grepl("redis", paste(e$message, error_call), ignore.case = TRUE)
+        if (redis_error && !is_test_run) {
+          tryCatch(
+            {
+              flog.warn("Redis communication failed. Reconnecting before polling queues again.")
+              redis_conn <<- connect_to_redis()
+            },
+            error = function(reconnect_error) {
+              flog.error(paste("Failed to reconnect to Redis:", reconnect_error$message))
+              return()
+            }
+          )
+          Sys.sleep(5)
+        }
+
         if (is_test_run) stop(e)
       }
     )

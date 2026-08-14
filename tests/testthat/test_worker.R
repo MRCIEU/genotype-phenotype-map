@@ -132,6 +132,47 @@ test_that("get_from_in_progress_queue returns message when queue has items", {
   expect_equal(result[[2]], test_payload)
 })
 
+test_that("in-progress removal reconnects after a stale Redis connection", {
+  redis_env <- new.env(parent = globalenv())
+  sys.source("worker/redis_client.R", envir = redis_env)
+
+  calls <- new.env(parent = emptyenv())
+  calls$initial <- 0
+  calls$replacement <- 0
+
+  stale_conn <- list(
+    LREM = function(queue, count, element) {
+      calls$initial <- calls$initial + 1
+      stop("Failure communicating with the Redis server")
+    }
+  )
+  replacement_conn <- list(
+    LREM = function(queue, count, element) {
+      calls$replacement <- calls$replacement + 1
+      return(1)
+    }
+  )
+  redis_env$connect_to_redis <- function(...) replacement_conn
+
+  had_global_conn <- exists("redis_conn", envir = .GlobalEnv, inherits = FALSE)
+  if (had_global_conn) {
+    previous_global_conn <- get("redis_conn", envir = .GlobalEnv, inherits = FALSE)
+  }
+  on.exit({
+    if (had_global_conn) {
+      assign("redis_conn", previous_global_conn, envir = .GlobalEnv)
+    } else if (exists("redis_conn", envir = .GlobalEnv, inherits = FALSE)) {
+      rm("redis_conn", envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+
+  redis_env$remove_from_in_progress_queue(stale_conn, "test-payload")
+
+  expect_equal(calls$initial, 1)
+  expect_equal(calls$replacement, 1)
+  expect_identical(get("redis_conn", envir = .GlobalEnv), replacement_conn)
+})
+
 # test_that("Pipeline worker processes message from in_progress queue when custom message has in_progress queue name", {
 #   redis_payload <- "/home/pipeline/tests/data/hg38_tsv_redis_message_in_progress.json"
 #   output <- system(glue::glue("Rscript worker/pipeline_worker.R --custom_message_file {redis_payload}"),

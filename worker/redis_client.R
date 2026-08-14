@@ -36,11 +36,29 @@ connect_to_redis <- function(max_retries = 5, initial_delay = 2) {
   return()
 }
 
+run_redis_command_with_reconnect <- function(redis_conn, command, operation_name) {
+  return(tryCatch(
+    command(redis_conn),
+    error = function(e) {
+      flog.warn(glue::glue(
+        "Redis {operation_name} failed: {e$message}. Reconnecting and retrying once."
+      ))
+      new_conn <- connect_to_redis()
+      assign("redis_conn", new_conn, envir = .GlobalEnv)
+      return(command(new_conn))
+    }
+  ))
+}
+
 send_to_dlq <- function(redis_conn, message) {
   if (grepl("Caught error", message, fixed = TRUE)) {
     return(invisible(NULL))
   }
-  redis_conn$LPUSH(process_gwas_dlq, message)
+  run_redis_command_with_reconnect(
+    redis_conn,
+    function(conn) conn$LPUSH(process_gwas_dlq, message),
+    "DLQ push"
+  )
   return()
 }
 
@@ -57,11 +75,19 @@ get_from_delete_queue <- function(redis_conn) {
 }
 
 add_to_in_progress_queue <- function(redis_conn, message) {
-  redis_conn$LPUSH(process_gwas_in_progress, message)
+  run_redis_command_with_reconnect(
+    redis_conn,
+    function(conn) conn$LPUSH(process_gwas_in_progress, message),
+    "in-progress queue push"
+  )
   return()
 }
 
 remove_from_in_progress_queue <- function(redis_conn, message) {
-  redis_conn$LREM(process_gwas_in_progress, 0, message)
+  run_redis_command_with_reconnect(
+    redis_conn,
+    function(conn) conn$LREM(process_gwas_in_progress, 0, message),
+    "in-progress queue removal"
+  )
   return()
 }

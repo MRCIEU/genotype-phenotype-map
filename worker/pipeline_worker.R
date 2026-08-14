@@ -24,7 +24,9 @@ parser <- argparser::add_argument(
 )
 args <- argparser::parse_args(parser)
 parallel_block_processing <- as.numeric(Sys.getenv("PIPELINE_PARALLEL_BLOCK_PROCESSING", "5"))
-memory_intensive_parallel_block_processing <- as.numeric(Sys.getenv("PIPELINE_MEMORY_INTENSIVE_PARALLEL_BLOCK_PROCESSING", "2"))
+memory_intensive_parallel_block_processing <- as.numeric(
+  Sys.getenv("PIPELINE_MEMORY_INTENSIVE_PARALLEL_BLOCK_PROCESSING", "2")
+)
 
 if (!is_test_run) {
   tryCatch(

@@ -46,7 +46,7 @@ main <- function() {
 }
 
 create_opengwas_map <- function(studies_db_file, static_web_dir) {
-  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), studies_db_file)
 
   phenotype_studies <- DBI::dbGetQuery(studies_conn, "SELECT trait_id, trait_name, study_name FROM studies
     JOIN study_sources ON studies.source_id = study_sources.id
@@ -72,7 +72,7 @@ create_opengwas_map <- function(studies_db_file, static_web_dir) {
 }
 
 create_seo_files <- function(studies_db_file, static_web_dir) {
-  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file)
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), studies_db_file)
 
   studies <- DBI::dbGetQuery(studies_conn, "SELECT * FROM studies
     WHERE data_type = 'phenotype' AND variant_type = 'common'")

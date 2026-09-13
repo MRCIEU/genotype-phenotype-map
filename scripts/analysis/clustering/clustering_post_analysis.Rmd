@@ -218,7 +218,7 @@ gap_evaluable <- evaluable_indications |>
   dplyr::filter(gap_target)
 
 studies_conn <- DBI::dbConnect(
-  duckdb::duckdb(),
+  duckdb::duckdb(shared_home = TRUE),
   studies_db_file,
   read_only = TRUE
 )

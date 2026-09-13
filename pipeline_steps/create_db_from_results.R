@@ -73,9 +73,13 @@ main <- function() {
   studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$studies_db_file)
   ld_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$ld_db_file)
   associations_full_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$associations_full_db_file)
-  associations_specific_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$associations_specific_db_file)
+  associations_specific_conn <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), args$associations_specific_db_file
+  )
   coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$coloc_pairs_full_db_file)
-  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$coloc_pairs_significant_db_file)
+  coloc_pairs_significant_conn <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), args$coloc_pairs_significant_db_file
+  )
   gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$gwas_upload_db_file)
 
   lapply(studies_db, \(table) {

@@ -323,7 +323,9 @@ test_that("Pipeline execution and file validation", {
     table_data <- DBI::dbGetQuery(ld_conn, glue::glue("SELECT count(*) as count FROM {ld_table$name}"))
     expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {ld_table$name}"))
 
-    coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), expected_db_files$coloc_pairs_full_db_file)
+    coloc_pairs_full_conn <- duckdb::dbConnect(
+      duckdb::duckdb(shared_home = TRUE), expected_db_files$coloc_pairs_full_db_file
+    )
     table_data <- DBI::dbGetQuery(
       coloc_pairs_full_conn,
       glue::glue("SELECT count(*) as count FROM {coloc_pairs_full_table$name}")

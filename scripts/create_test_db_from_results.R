@@ -11,7 +11,8 @@ library(purrr)
 library(furrr)
 library(parallel)
 
-# NOTE: currently run with Rscript create_test_db_from_results.R --study_ids 5020 54929 --results_dir /local-scratch/projects/genotype-phenotype-map/results/1.0.0
+# NOTE: currently run with Rscript create_test_db_from_results.R --study_ids 5020 54929 \
+#   -results_dir /local-scratch/projects/genotype-phenotype-map/results/1.0.0
 
 parser <- argparser::arg_parser("Create test DuckDB from pipeline results")
 parser <- argparser::add_argument(parser,
@@ -51,10 +52,18 @@ main <- function() {
   unlink(coloc_pairs_db_file)
 
   orig_studies_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), orig_studies_db_file, read_only = TRUE)
-  orig_ld_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), orig_ld_db_file, read_only = TRUE)
-  orig_associations_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), orig_associations_db_file, read_only = TRUE)
-  orig_associations_full_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), orig_associations_full_db_file, read_only = TRUE)
-  orig_coloc_pairs_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), orig_coloc_pairs_db_file, read_only = TRUE)
+  orig_ld_con <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), orig_ld_db_file, read_only = TRUE
+  )
+  orig_associations_con <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), orig_associations_db_file, read_only = TRUE
+  )
+  orig_associations_full_con <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), orig_associations_full_db_file, read_only = TRUE
+  )
+  orig_coloc_pairs_con <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), orig_coloc_pairs_db_file, read_only = TRUE
+  )
 
   studies_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), studies_db_file)
   ld_con <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), ld_db_file)

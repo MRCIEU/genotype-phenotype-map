@@ -314,30 +314,53 @@ find_associations_for_coloc_clustered_snps <- function(
 #' @return NULL
 concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
   lbfs_concatenated_file <- glue::glue("{extracted_study_dir}/gwas_with_lbfs.tsv.gz")
-  if (nrow(study_extractions) > 0) {
-    flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
-
-    lbf_files <- unique(study_extractions$file_with_lbfs)
-    lbf_files <- lbf_files[!is.na(lbf_files)]
-
-    if (length(lbf_files) > 0) {
-      if (file.exists(lbfs_concatenated_file)) unlink(lbfs_concatenated_file)
-
-      for (i in seq_along(lbf_files)) {
-        file_path <- glue::glue("{data_dir}/{lbf_files[i]}")
-        if (!file.exists(file_path)) next
-
-        dt <- data.table::fread(file_path, showProgress = FALSE)
-        if (nrow(dt) > 0) {
-          data.table::fwrite(dt, lbfs_concatenated_file,
-            append = TRUE,
-            compress = "gzip", sep = "\t"
-          )
-        }
-        rm(dt)
-        gc(verbose = FALSE)
-      }
-    }
+  if (nrow(study_extractions) == 0) {
+    flog.warn(paste(gwas_info$metadata$guid, "No study extractions found; skipping gwas_with_lbfs.tsv.gz"))
+    return(NULL)
   }
+
+  flog.info(paste(gwas_info$metadata$guid, "Concatenating file_with_lbfs files"))
+
+  lbf_files <- unique(study_extractions$file_with_lbfs)
+  lbf_files <- lbf_files[!is.na(lbf_files)]
+
+  if (length(lbf_files) == 0) {
+    flog.warn(paste(gwas_info$metadata$guid, "No file_with_lbfs paths found; skipping gwas_with_lbfs.tsv.gz"))
+    return(NULL)
+  }
+
+  if (file.exists(lbfs_concatenated_file)) unlink(lbfs_concatenated_file)
+
+  written_files <- 0
+  for (i in seq_along(lbf_files)) {
+    file_path <- lbf_files[i]
+    if (!grepl("^/", file_path)) {
+      file_path <- file.path(data_dir, file_path)
+    }
+
+    if (!file.exists(file_path)) {
+      flog.warn(paste(gwas_info$metadata$guid, "Missing file_with_lbfs file:", file_path))
+      next
+    }
+
+    dt <- data.table::fread(file_path, showProgress = FALSE)
+    if (nrow(dt) > 0) {
+      data.table::fwrite(dt, lbfs_concatenated_file,
+        append = TRUE,
+        compress = "gzip", sep = "\t"
+      )
+      written_files <- written_files + 1
+    }
+    rm(dt)
+    gc(verbose = FALSE)
+  }
+
+  if (written_files == 0 || !file.exists(lbfs_concatenated_file)) {
+    stop(paste(
+      gwas_info$metadata$guid,
+      "Failed to concatenate any file_with_lbfs files; gwas_with_lbfs.tsv.gz was not created"
+    ))
+  }
+
   return(NULL)
 }

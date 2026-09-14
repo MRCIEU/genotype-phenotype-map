@@ -1,5 +1,6 @@
 options(error = function() traceback(20))
 Sys.setenv("VROOM_CONNECTION_SIZE" = 500000)
+options(duckdb.shared_home = TRUE)
 
 data_dir <- Sys.getenv("DATA_DIR")
 gwas_upload_dir <- Sys.getenv("DATA_DIR")

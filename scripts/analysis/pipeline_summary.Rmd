@@ -119,13 +119,13 @@ subtract_data_frames <- function(df1, df2) {
 load_results_data <- function(specific_results_dir) {
   studies_db_file <- file.path(specific_results_dir, 'studies.db')
 
-  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), studies_db_file, read_only = TRUE)
   coloc_pairs_full_file <- file.path(specific_results_dir, 'coloc_pairs_full.db')
   coloc_pairs_db_file <- file.path(specific_results_dir, 'coloc_pairs.db')
-  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_file, read_only = TRUE)
-  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_db_file, read_only = TRUE)
-  associations_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'associations.db'), read_only = TRUE)
-  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), file.path(specific_results_dir, 'ld.db'), read_only = TRUE)
+  coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), coloc_pairs_full_file, read_only = TRUE)
+  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), coloc_pairs_db_file, read_only = TRUE)
+  associations_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), file.path(specific_results_dir, 'associations.db'), read_only = TRUE)
+  ld_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), file.path(specific_results_dir, 'ld.db'), read_only = TRUE)
 
   dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
   dont_print <- DBI::dbExecute(coloc_pairs_significant_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))

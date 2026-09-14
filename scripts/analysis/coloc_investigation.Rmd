@@ -16,10 +16,10 @@ associations_db_file <- file.path(latest_results_dir, 'associations.db')
 coloc_pairs_full_db_file <- file.path(latest_results_dir, 'coloc_pairs_full.db')
 ld_db_file <- file.path(latest_results_dir, 'ld.db')
 
-studies_conn <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = TRUE)
-associations_conn <- duckdb::dbConnect(duckdb::duckdb(), associations_db_file, read_only = TRUE)
-coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(), coloc_pairs_full_db_file, read_only = TRUE)
-ld_conn <- duckdb::dbConnect(duckdb::duckdb(), ld_db_file, read_only = TRUE)
+studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), studies_db_file, read_only = TRUE)
+associations_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), associations_db_file, read_only = TRUE)
+coloc_pairs_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), coloc_pairs_full_db_file, read_only = TRUE)
+ld_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), ld_db_file, read_only = TRUE)
 
 dont_print <- DBI::dbExecute(coloc_pairs_conn, glue::glue("ATTACH '{studies_db_file}' AS studies"))
 ```

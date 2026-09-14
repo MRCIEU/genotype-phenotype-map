@@ -70,13 +70,17 @@ main <- function() {
   if (file.exists(args$coloc_pairs_significant_db_file)) file.remove(args$coloc_pairs_significant_db_file)
   if (file.exists(args$gwas_upload_db_file)) file.remove(args$gwas_upload_db_file)
 
-  studies_conn <- duckdb::dbConnect(duckdb::duckdb(), args$studies_db_file)
-  ld_conn <- duckdb::dbConnect(duckdb::duckdb(), args$ld_db_file)
-  associations_full_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_full_db_file)
-  associations_specific_conn <- duckdb::dbConnect(duckdb::duckdb(), args$associations_specific_db_file)
-  coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_full_db_file)
-  coloc_pairs_significant_conn <- duckdb::dbConnect(duckdb::duckdb(), args$coloc_pairs_significant_db_file)
-  gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(), args$gwas_upload_db_file)
+  studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$studies_db_file)
+  ld_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$ld_db_file)
+  associations_full_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$associations_full_db_file)
+  associations_specific_conn <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), args$associations_specific_db_file
+  )
+  coloc_pairs_full_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$coloc_pairs_full_db_file)
+  coloc_pairs_significant_conn <- duckdb::dbConnect(
+    duckdb::duckdb(shared_home = TRUE), args$coloc_pairs_significant_db_file
+  )
+  gwas_upload_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), args$gwas_upload_db_file)
 
   lapply(studies_db, \(table) {
     DBI::dbExecute(studies_conn, table$query)
@@ -123,7 +127,7 @@ populate_existing_row_ids <- function(tables) {
   if (!file.exists(latest_studies_db_file)) {
     conn <- NULL
   } else {
-    conn <- duckdb::dbConnect(duckdb::duckdb(), latest_studies_db_file, read_only = TRUE)
+    conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), latest_studies_db_file, read_only = TRUE)
   }
 
   for (table_name in names(tables)) {
@@ -174,6 +178,50 @@ resolve_ids_for_table <- function(table, existing_ids = NULL, join_by) {
   }
   table <- table[order(table$id), ]
   return(table)
+}
+
+# Builds a gene-name -> gene_annotations.id lookup that also resolves HGNC
+# aliases (from gene_info.tsv gene_alias) and bare ENSG ids (for rows that
+# still carry a gene's old ENSG-id display name). Primary symbols always win;
+# an alias that collides with a primary symbol, or that maps to more than one
+# gene, is left unmapped to avoid wrong links. This keeps name-based joins
+# (e.g. study extractions that still carry old symbols such as BVES) pointing
+# at the right gene after gene names are re-synced to current HGNC symbols.
+build_gene_name_lookup <- function(gene_annotations) {
+  symbols <- data.frame(
+    gene_name = gene_annotations$gene,
+    gene_id = gene_annotations$id,
+    stringsAsFactors = FALSE
+  )
+  ensembl_names <- data.frame(
+    gene_name = gene_annotations$ensembl_id,
+    gene_id = gene_annotations$id,
+    stringsAsFactors = FALSE
+  )
+
+  alias_rows <- gene_annotations[
+    !is.na(gene_annotations$gene_alias) & gene_annotations$gene_alias != "",
+  ]
+  if (nrow(alias_rows) > 0) {
+    parts <- strsplit(as.character(alias_rows$gene_alias), "\\s*,\\s*")
+    alias_df <- data.frame(
+      gene_name = trimws(unlist(parts)),
+      gene_id = rep(alias_rows$id, lengths(parts)),
+      stringsAsFactors = FALSE
+    )
+    alias_df <- alias_df[alias_df$gene_name != "", ]
+    # a primary symbol always wins; drop alias names that collide with a symbol
+    alias_df <- alias_df[!alias_df$gene_name %in% symbols$gene_name, ]
+    lookup <- rbind(symbols, ensembl_names, alias_df)
+  } else {
+    lookup <- rbind(symbols, ensembl_names)
+  }
+
+  # drop names that map to more than one gene (ambiguous aliases)
+  n_per_name <- table(lookup$gene_name)
+  lookup <- lookup[lookup$gene_name %in% names(n_per_name)[n_per_name == 1], ]
+  rownames(lookup) <- NULL
+  return(tibble::as_tibble(lookup))
 }
 
 #' Load study_sources rows from summary_stats metadata.csv files.
@@ -245,6 +293,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     file.path(variant_annotation_dir, "gene_info.tsv"),
     show_col_types = F
   ) |>
+    dplyr::rename(gene_aliases = gene_alias) |>
     resolve_ids_for_table(studies_db$gene_annotations$existing_ids, studies_db$gene_annotations$persist_id_from) |>
     dplyr::select(get_table_column_names(studies_db$gene_annotations))
 
@@ -261,9 +310,17 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(ensembl_id, id) |>
     dplyr::rename(gene_id_from_ensembl_id = id)
 
+  # Name fallback (used when a study has no ensg) resolves current symbols and
+  # HGNC aliases, so old names keep linking after gene-name re-syncs
   gene_subset_gene_name <- studies_db$gene_annotations$data |>
-    dplyr::select(gene, id) |>
-    dplyr::rename(gene_id_from_name = id)
+    dplyr::select(id, ensembl_id, gene) |>
+    dplyr::left_join(
+      vroom::vroom(file.path(variant_annotation_dir, "gene_info.tsv"), show_col_types = F) |>
+        dplyr::select(ensembl_id, gene_alias),
+      by = "ensembl_id"
+    ) |>
+    build_gene_name_lookup() |>
+    dplyr::rename(gene_id_from_name = gene_id)
 
   # Remove the studies that don't have any study extractions
   studies_db$studies$data <- vroom::vroom(
@@ -273,7 +330,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
   ) |>
     dplyr::left_join(sources_subset, by = c("source" = "source")) |>
     dplyr::left_join(gene_subset_ensembl_id, by = c("ensg" = "ensembl_id")) |>
-    dplyr::left_join(gene_subset_gene_name, by = c("gene" = "gene")) |>
+    dplyr::left_join(gene_subset_gene_name, by = c("gene" = "gene_name")) |>
     dplyr::mutate(
       gene_id = dplyr::case_when(
         data_type == data_types$methylation ~ NA_integer_,
@@ -311,7 +368,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
     dplyr::select(get_table_column_names(studies_db$studies))
 
   gene_subset <- studies_db$gene_annotations$data |>
-    dplyr::select(gene, id) |>
+    dplyr::select(ensembl_id, id) |>
     dplyr::rename(gene_id = id)
 
   studies_db$variant_annotations$data <- vroom::vroom(
@@ -322,7 +379,7 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
       studies_db$variant_annotations$existing_ids,
       studies_db$variant_annotations$persist_id_from
     ) |>
-    dplyr::left_join(gene_subset, by = c("gene" = "gene")) |>
+    dplyr::left_join(gene_subset, by = c("gene" = "ensembl_id")) |>
     dplyr::mutate(snp = trimws(snp)) |>
     dplyr::mutate(rsid = sub(",.*", "", rsid)) |>
     dplyr::select(get_table_column_names(studies_db$variant_annotations))
@@ -354,9 +411,16 @@ load_data_for_studies_db <- function(studies_db, studies_conn) {
 
 
 format_study_extractions <- function(study_extractions, studies_db) {
-  gene_subset <- studies_db$gene_annotations$data |>
-    dplyr::select(gene, id) |>
-    dplyr::rename(gene_id = id)
+  # Resolves known_gene / situated_gene (symbols, sometimes outdated HGNC names)
+  # to gene ids via current symbols + aliases
+  gene_name_lookup <- studies_db$gene_annotations$data |>
+    dplyr::select(id, ensembl_id, gene) |>
+    dplyr::left_join(
+      vroom::vroom(file.path(variant_annotation_dir, "gene_info.tsv"), show_col_types = F) |>
+        dplyr::select(ensembl_id, gene_alias),
+      by = "ensembl_id"
+    ) |>
+    build_gene_name_lookup()
 
   variant_annotations_subset <- studies_db$variant_annotations$data |>
     dplyr::select(snp, display_snp, rsid, id) |>
@@ -406,9 +470,9 @@ format_study_extractions <- function(study_extractions, studies_db) {
     dplyr::rename(gene = known_gene) |>
     dplyr::left_join(studies_subset, by = c("study" = "study_name")) |>
     dplyr::left_join(ld_blocks_subset, by = "ld_block") |>
-    dplyr::left_join(gene_subset, by = c("situated_gene" = "gene")) |>
+    dplyr::left_join(gene_name_lookup, by = c("situated_gene" = "gene_name")) |>
     dplyr::rename(situated_gene_id = gene_id) |>
-    dplyr::left_join(gene_subset, by = "gene") |>
+    dplyr::left_join(gene_name_lookup, by = c("gene" = "gene_name")) |>
     dplyr::left_join(variant_annotations_subset, by = "snp") |>
     populate_missing_row_ids("id") |>
     dplyr::select(get_table_column_names(studies_db$study_extractions))

@@ -24,11 +24,12 @@ studies_db <- list(
   ),
   gene_annotations = list(
     name = "gene_annotations",
-    persist_id_from = "gene",
+    persist_id_from = "ensembl_id",
     query = "CREATE TABLE gene_annotations (
       id INTEGER PRIMARY KEY,
       ensembl_id TEXT NOT NULL,
       gene TEXT NOT NULL,
+      gene_aliases TEXT,
       description TEXT,
       gene_biotype TEXT,
       chr INTEGER NOT NULL,

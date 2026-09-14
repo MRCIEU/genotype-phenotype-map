@@ -132,7 +132,7 @@ main <- function() {
       vroom::vroom_write(coloc_results, coloc_results_file)
     }
     if (!is.na(args$worker_guid) && nrow(finemapped_studies) > 0) {
-      vroom::vroom_write(resolve_worker_file_paths(finemapped_studies), finemapped_file)
+      vroom::vroom_write(finemapped_studies, finemapped_file)
     }
     vroom::vroom_write(data.frame(), args$completed_output_file)
     return()
@@ -171,7 +171,7 @@ main <- function() {
   message(glue::glue("{args$ld_block}: Wrote {nrow(coloc_results)} pairwise coloc results"))
 
   if (!is.na(args$worker_guid)) {
-    vroom::vroom_write(resolve_worker_file_paths(finemapped_studies), finemapped_file)
+    vroom::vroom_write(finemapped_studies, finemapped_file)
   }
 
   vroom::vroom_write(data.frame(), args$completed_output_file)

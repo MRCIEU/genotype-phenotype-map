@@ -74,8 +74,10 @@ parser <- argparser::add_argument(
 args <- argparser::parse_args(parser)
 
 block_regexes <- NULL
-if (!is.na(args$block_list) && file.exists(args$block_list)) {
-  block_list <- vroom::vroom(args$block_list, show_col_types = F)
+block_list_path <- args$block_list
+if (!is.na(block_list_path) && file.exists(block_list_path)) {
+  block_list_path <- normalizePath(block_list_path)
+  block_list <- vroom::vroom(block_list_path, show_col_types = F)
   block_regexes <- block_list$study_regex
 }
 
@@ -111,7 +113,7 @@ aggregate_data_produced_by_pipeline <- function(
   studies_processed_file,
   traits_processed_file
 ) {
-  file_names <- ld_block_file_basenames(args$block_list)
+  file_names <- ld_block_file_basenames(block_list_path)
 
   message("Aggregating extracted_studies")
   extracted_studies_files <- Filter(

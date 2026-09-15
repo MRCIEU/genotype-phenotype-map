@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: bug/worker_gwas_with_lbf
+SUCCESS: All tests passed on branch: bug/pipeline-worker-path-resolution

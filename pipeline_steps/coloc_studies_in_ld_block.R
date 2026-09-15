@@ -384,31 +384,6 @@ harmonise_gwases <- function(...) {
   return(gwases)
 }
 
-resolve_worker_file_paths <- function(finemapped_studies) {
-  return(
-    finemapped_studies |>
-      dplyr::mutate(
-        file = dplyr::case_when(
-          grepl("^gwas_upload", file) ~ glue::glue("{data_dir}/{file}"),
-          grepl("^study", file) ~ glue::glue("{data_dir}/{file}"),
-          TRUE ~ file
-        ),
-        file_with_lbfs = dplyr::case_when(
-          is.na(file_with_lbfs) ~ NA_character_,
-          grepl("^gwas_upload", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
-          grepl("^study", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
-          TRUE ~ file_with_lbfs
-        ),
-        svg_file = dplyr::case_when(
-          is.na(svg_file) ~ NA_character_,
-          grepl("^gwas_upload", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
-          grepl("^study", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
-          TRUE ~ svg_file
-        )
-      )
-  )
-}
-
 load_worker_finemapped_studies <- function(ld_block, worker_guid, worker_p_value_threshold, compare_guids) {
   finemapped_file <- ld_block_file_paths(ld_block)$finemapped_studies
   if (!file.exists(finemapped_file)) {

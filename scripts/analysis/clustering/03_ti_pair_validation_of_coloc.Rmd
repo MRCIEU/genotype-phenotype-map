@@ -295,7 +295,7 @@ rel_success <- do.call("rbind", lapply(sources, FUN = function(x){
   
   # Contingency table
   tab <- table(dat[[x]], dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(source = x,
                n_supp_launched = NA,
                n_supp = NA,
@@ -347,7 +347,7 @@ rel_success_qtls <- do.call("rbind", lapply(sources_qtls, FUN = function(x){
   
   # Contingency table
   tab <- table(dat[[x]], dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(source = x,
                n_supp_launched = NA,
                n_supp = NA,
@@ -395,4 +395,5 @@ rel_success_qtls |>
         axis.text = element_text(size = 10),
         axis.line = element_line(colour = "grey"),
         legend.position = "none") +
-  labs(x = "Relative success", y = "")```
+  labs(x = "Relative success", y = "")
+```

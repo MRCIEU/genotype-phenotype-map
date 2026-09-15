@@ -91,7 +91,8 @@ main <- function() {
     return()
   }
 
-  finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id)
+  finemapped_studies <- dplyr::arrange(finemapped_studies, unique_study_id) |>
+    resolve_worker_file_paths()
   studies_to_colocalise <- load_studies_to_colocalise(finemapped_studies)
 
   run_post_coloc_clustering(

@@ -662,7 +662,7 @@ rel_success <- do.call("rbind", lapply(sources, FUN = function(x){
   
   # Contingency table
   tab <- table(dat[[x]], dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(source = x,
                n_supp_launched = NA,
                n_supp = NA,
@@ -768,7 +768,7 @@ rel_success_split <- do.call("rbind", lapply(n_qtls, FUN = function(x){
   
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(n_support = paste0(">=",x),
                RS = NA,
                n_supp_launched = NA,
@@ -817,7 +817,7 @@ rel_success_split_3 <- do.call("rbind", lapply(n_qtls, FUN = function(x){
   
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(n_support = ifelse(x<3, paste0(">=",x), paste0("=",x)),
                RS = NA,
                n_supp_launched = NA,
@@ -938,7 +938,7 @@ rel_success_ntissues <- do.call("rbind", lapply(n_tissues, FUN = function(x){
   
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(n_tissues = x,
                n_supp_launched = NA,
                n_supp = NA,
@@ -990,7 +990,7 @@ rel_success_tissuebyarea <- do.call("rbind", lapply(areas, FUN = function(x){
   tissue_RS <- do.call("rbind",lapply(unique_tissues, function(y){
     tab <- table(dat[[y]], dat$succ)
     
-    if(nrow(tab) != 2){
+    if(any(dim(tab) != 2)){
       data.frame(n_tissues = x,
                  RS = NA,
                  CI_lower = NA,
@@ -1039,7 +1039,7 @@ rel_success_genescore <- do.call("rbind", lapply(score_group, FUN = function(x){
     dplyr::filter(genescore_gene_cut %in% x)
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(source = x,
                n_supp_launched = NA,
                n_supp = NA,
@@ -1098,7 +1098,7 @@ rel_success_genescore_byphase <- do.call("rbind", lapply(score_group, FUN = func
     
     # Contingency table
     tab <- table(dat$gpmap_support, succ)
-    if(nrow(tab) != 2){
+    if(any(dim(tab) != 2)){
       outdf <- rbind(outdf,
                      data.frame(gene_score = x,
                                 phase = p,
@@ -1164,7 +1164,7 @@ rel_success_catscore <- do.call("rbind", lapply(catscore_group, FUN = function(x
     dplyr::filter(genescore_category_cut %in% x)
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(nrow(tab) != 2){
+  if(any(dim(tab) != 2)){
     data.frame(gene_score = x,
                RS = NA,
                CI_lower = NA,
@@ -1211,7 +1211,7 @@ rel_success_cat_byphase <- do.call("rbind", lapply(catscore_group, FUN = functio
     
     # Contingency table
     tab <- table(dat$gpmap_support, succ)
-    if(nrow(tab) != 2){
+    if(any(dim(tab) != 2)){
       outdf <- rbind(outdf,
                      data.frame(gene_score = x,
                                 phase = p,

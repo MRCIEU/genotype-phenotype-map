@@ -411,6 +411,32 @@ update_directories_for_worker <- function(worker_guid) {
   return()
 }
 
+# Worker finemapped study file paths are stored relative to data_dir.
+resolve_worker_file_paths <- function(finemapped_studies) {
+  return(
+    finemapped_studies |>
+      dplyr::mutate(
+        file = dplyr::case_when(
+          grepl("^gwas_upload", file) ~ glue::glue("{data_dir}/{file}"),
+          grepl("^study", file) ~ glue::glue("{data_dir}/{file}"),
+          TRUE ~ file
+        ),
+        file_with_lbfs = dplyr::case_when(
+          is.na(file_with_lbfs) ~ NA_character_,
+          grepl("^gwas_upload", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
+          grepl("^study", file_with_lbfs) ~ glue::glue("{data_dir}/{file_with_lbfs}"),
+          TRUE ~ file_with_lbfs
+        ),
+        svg_file = dplyr::case_when(
+          is.na(svg_file) ~ NA_character_,
+          grepl("^gwas_upload", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
+          grepl("^study", svg_file) ~ glue::glue("{data_dir}/{svg_file}"),
+          TRUE ~ svg_file
+        )
+      )
+  )
+}
+
 diff_time_taken <- function(start_time) {
   return(hms::as_hms(difftime(Sys.time(), start_time)))
 }

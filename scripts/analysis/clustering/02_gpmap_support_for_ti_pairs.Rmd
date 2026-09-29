@@ -13,6 +13,12 @@ params:
   results_version: "1.0.0"
   # If true, recompute expensive intermediates and overwrite caches under data/ti_pairs/
   recompute_cache: false
+  # If true, re-pull per-trait coloc data from the gpmapr API (slow). Defaults to recompute_cache
+  # when null, so cached data can be re-used while downstream intermediates are recomputed.
+  recompute_api_cache: null
+  # If false, drop trans QTL markers from the API coloc results (cis and complex-trait rows kept).
+  # Outputs are suffixed with _notrans so both modes can be compared.
+  include_trans: true
 ---
 
 ```{r setup, message=FALSE}
@@ -32,6 +38,30 @@ analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
 ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(ti_pairs_data_dir, recursive = TRUE, showWarnings = FALSE)
+
+# include_trans = FALSE drops trans QTL markers from the API coloc results post-pull and
+# writes outputs with a _notrans suffix, so both modes can be compared side by side.
+include_trans <- isTRUE(params$include_trans)
+trans_suffix <- if (include_trans) "" else "_notrans"
+# Per-trait API pulls are shared across include_trans modes unless explicitly refreshed.
+recompute_api <- if (is.null(params$recompute_api_cache)) {
+  isTRUE(params$recompute_cache)
+} else {
+  isTRUE(params$recompute_api_cache)
+}
+
+# Drop trans study rows from cached per-trait API results (keep cis and complex-trait NA rows)
+drop_trans_results <- function(trait_results) {
+  lapply(trait_results, function(x) {
+    if (is.data.frame(x$coloc_groups)) {
+      x$coloc_groups <- dplyr::filter(x$coloc_groups, is.na(cis_trans) | cis_trans != "trans")
+    }
+    if (is.data.frame(x$rare_results)) {
+      x$rare_results <- dplyr::filter(x$rare_results, is.na(cis_trans) | cis_trans != "trans")
+    }
+    return(x)
+  })
+}
 
 ## Supplementary Table1 (target indication pairs: n=1255 with supporting genetic evidence, n=24458 unsupported) from Minikel et.
 ti_pairs_minikel <- data.table::fread(ti_file("Supplement_ST01.csv"))
@@ -57,12 +87,17 @@ gpmap_traits <- unique(ti_pairs$trait_gpmap) #1421
 
 # Download GPMAP coloc cluster results for matched indications:
 
+# Raw per-trait API data is shared across include_trans modes (not suffixed)
 indications_cache <- ti_file("gpmap_indications.rda")
 indications_rare_cache <- ti_file("gpmap_indications_rarevariants.rda")
 
-if (params$recompute_cache) {
-  traits_ids <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
-  traits_ids_rare <- gpmapr::traits_api()[[1]] |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
+# Trait metadata (single cheap call); maps trait names to ids for the API pulls
+gpmapr::select_api("local")
+gpmap_all_traits <- gpmapr::all_traits()
+traits_ids <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
+traits_ids_rare <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
+
+if (recompute_api || !file.exists(indications_cache)) {
   # Pull all coloc groups with indication traits (slow)
   trait_colocs <- lapply(traits_ids$id, gpmapr::trait)
   names(trait_colocs) <- traits_ids$trait
@@ -73,6 +108,11 @@ if (params$recompute_cache) {
 } else {
   load(indications_cache) # trait_colocs
   load(indications_rare_cache) # trait_colocs_rare
+}
+
+if (!include_trans) {
+  trait_colocs <- drop_trans_results(trait_colocs)
+  trait_colocs_rare <- drop_trans_results(trait_colocs_rare)
 }
 ```
 
@@ -195,8 +235,8 @@ pull_ti_colocs <- function(target, trait){
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-ti_colocs_cache <- ti_file("gpmap_ticolocs.rda")
-if (params$recompute_cache) {
+ti_colocs_cache <- ti_file(glue::glue("gpmap_ticolocs{trans_suffix}.rda"))
+if (params$recompute_cache || recompute_api || !file.exists(ti_colocs_cache)) {
   ti_colocs <- mapply(
     FUN = pull_ti_colocs,
     target = ti_pairs$target,
@@ -312,8 +352,8 @@ pull_ti_rare <- function(target, trait){
   return(list(rare_results_summary = res, target_sharedrare = rare_wtarget))
 }
 
-ti_sharedrare_cache <- ti_file("gpmap_tisharedrare.rda")
-if (params$recompute_cache) {
+ti_sharedrare_cache <- ti_file(glue::glue("gpmap_tisharedrare{trans_suffix}.rda"))
+if (params$recompute_cache || recompute_api || !file.exists(ti_sharedrare_cache)) {
   ti_sharedrare <- mapply(
     FUN = pull_ti_rare,
     target = ti_pairs$target,
@@ -488,7 +528,10 @@ pull_ti_coloc_pairs <- function(target, trait) {
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-if (params$recompute_cache) {
+# Pairwise coloc support comes from versioned results (trans markers are not filtered here),
+# so its caches are shared across include_trans modes. Only the primary (include_trans) run
+# rebuilds them; the no-trans run re-uses the cache so the 71GB pairwise extract is not re-read.
+if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompairs_cache)) {
   write.table(
     traits_ids$trait,
     file = indications_ids_file,
@@ -1257,8 +1300,10 @@ rel_success_cat_byphase |>
 ## Write out data
 ```{r}
 ## Write scored T-I pair tables into versioned analysis results
-data.table::fwrite(ti_pairs, file = ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"), sep = "\t")
-data.table::fwrite(ti_pairs_unique, file = ti_file("GPMAP_T-Ipairs_unique.tsv"), sep = "\t")
-message("Wrote: ", ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
-message("Wrote: ", ti_file("GPMAP_T-Ipairs_unique.tsv"))
+ti_pairs_file <- ti_file(glue::glue("GPMAP_T-Ipairs_allmatchedstudies{trans_suffix}.tsv"))
+ti_pairs_unique_file <- ti_file(glue::glue("GPMAP_T-Ipairs_unique{trans_suffix}.tsv"))
+data.table::fwrite(ti_pairs, file = ti_pairs_file, sep = "\t")
+data.table::fwrite(ti_pairs_unique, file = ti_pairs_unique_file, sep = "\t")
+message("Wrote: ", ti_pairs_file)
+message("Wrote: ", ti_pairs_unique_file)
 ```

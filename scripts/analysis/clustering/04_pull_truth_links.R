@@ -24,7 +24,16 @@ parser <- argparser::add_argument(
   type = "character",
   default = "1.0.0"
 )
+parser <- argparser::add_argument(
+  parser,
+  "--include_trans",
+  help = "Set FALSE to read the _notrans outputs written by 02/03",
+  type = "logical",
+  default = TRUE
+)
 args <- argparser::parse_args(parser)
+
+trans_suffix <- if (isTRUE(args$include_trans)) "" else "_notrans"
 
 versioned_results_dir <- if (grepl("^/", args$results_version)) {
   args$results_version
@@ -35,10 +44,12 @@ analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
 dir.create(analysis_dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
-ti_pairs <- data.table::fread(file.path(ti_pairs_data_dir, "GPMAP_T-Ipairs_allmatchedstudies.tsv"))
+ti_pairs <- data.table::fread(
+  file.path(ti_pairs_data_dir, glue::glue("GPMAP_T-Ipairs_allmatchedstudies{trans_suffix}.tsv"))
+)
 
 ## Colocalisation group evidence (studies linked by H4>0.8) pre infomap refinement of clusters
-preinfomap_file <- file.path(ti_pairs_data_dir, "tipairs_preinfomap.rda")
+preinfomap_file <- file.path(ti_pairs_data_dir, glue::glue("tipairs_preinfomap{trans_suffix}.rda"))
 if (!file.exists(preinfomap_file)) {
   stop("Missing ", preinfomap_file)
 }
@@ -70,6 +81,6 @@ truth_set <- cbind(
 ) |>
   dplyr::filter(combined_max_phase == "Launched")
 
-out_file <- file.path(analysis_dir, "tipairs_launched_truthset.tsv")
+out_file <- file.path(analysis_dir, glue::glue("tipairs_launched_truthset{trans_suffix}.tsv"))
 data.table::fwrite(truth_set, out_file, sep = "\t")
 message("Wrote: ", out_file)

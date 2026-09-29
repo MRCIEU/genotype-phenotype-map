@@ -289,14 +289,24 @@ standardise_extracted_gwas <- function(gwas, ld_matrix_info, is_rare_study = F) 
   original_gwas_size <- nrow(gwas)
   gwas <- dplyr::distinct(gwas, CHR, BP, EA, OA, .keep_all = TRUE)
 
-  if (!"Z" %in% colnames(gwas)) {
-    gwas <- dplyr::mutate(gwas, SE = replace(SE, SE == 0, 0.00001), Z = BETA / SE)
-  }
-
   if (!"P" %in% colnames(gwas) && "LP" %in% colnames(gwas)) {
     gwas$LP <- as.numeric(gwas$LP)
     gwas <- dplyr::mutate(gwas, P = 10^(-LP)) |>
       dplyr::select(-LP)
+  }
+
+  if (!"Z" %in% colnames(gwas)) {
+    zero_se <- gwas$SE == 0
+    if (any(zero_se)) {
+      # Source files often round tiny SEs to 0 (common in huge-N studies).
+      # Back-derive the true SE from BETA and P instead of substituting an
+      # arbitrary sentinel, which corrupts SE, Z, and any downstream
+      # Bayes-factor/finemapping calculation that uses them.
+      derived_se <- abs(gwas$BETA[zero_se]) / qnorm(1 - gwas$P[zero_se] / 2)
+      derived_se[!is.finite(derived_se) | derived_se <= 0] <- 0.00001
+      gwas$SE[zero_se] <- derived_se
+    }
+    gwas <- dplyr::mutate(gwas, Z = BETA / SE)
   }
 
   if (is_rare_study) {

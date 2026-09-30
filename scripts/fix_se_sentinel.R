@@ -160,9 +160,11 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
         remaining <- finemapped[!finemapped$study %in% affected_studies, , drop = FALSE]
         vroom::vroom_write(remaining, paths$finemapped_studies)
       }
-      message(glue::glue(
-        "  removed {nrow(to_remove)} rows ({length(removed_unique_study_ids)} unique_study_ids) from finemapped_studies.tsv"
-      ))
+      message(
+        glue::glue(
+          "  removed {nrow(to_remove)} rows ({length(removed_unique_study_ids)} unique_study_ids) from finemapped_studies.tsv"
+        )
+      )
     }
 
     # 3. Delete the now-stale per-study finemap output files.
@@ -213,6 +215,7 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
     "Done. This script did not run the pipeline - use run_pipeline.sh/snakemake ",
     "yourself once you've reviewed the changes above."
   )
+  return(invisible())
 }
 
 # --- Entry point --------------------------------------------------------
@@ -244,6 +247,7 @@ main <- function() {
 
   affected_pairs <- resolve_affected_study_ld_blocks(studies_db_file, affected_study_ids)
   prepare_ld_blocks_for_refinemap_recoloc(affected_pairs, dry_run)
+  return(invisible())
 }
 
 main()

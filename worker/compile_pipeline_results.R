@@ -314,8 +314,17 @@ find_associations_for_coloc_clustered_snps <- function(
 #' @return NULL
 concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
   lbfs_concatenated_file <- glue::glue("{extracted_study_dir}/gwas_with_lbfs.tsv.gz")
+  lbfs_headers <- c("SNP", "CHR", "BP", "EA", "OA", "EAF", "Z", "BETA", "SE", "P", "IMPUTED", "LBF_1")
+  write_headers_only <- function(reason) {
+    flog.warn(paste(gwas_info$metadata$guid, paste0(reason, "; writing headers-only gwas_with_lbfs.tsv.gz")))
+    lbfs_conn <- gzfile(lbfs_concatenated_file)
+    writeLines(paste(lbfs_headers, collapse = "\t"), lbfs_conn)
+    close(lbfs_conn)
+    return(invisible(NULL))
+  }
+
   if (nrow(study_extractions) == 0) {
-    flog.warn(paste(gwas_info$metadata$guid, "No study extractions found; skipping gwas_with_lbfs.tsv.gz"))
+    write_headers_only("No study extractions found")
     return(NULL)
   }
 
@@ -325,7 +334,7 @@ concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
   lbf_files <- lbf_files[!is.na(lbf_files)]
 
   if (length(lbf_files) == 0) {
-    flog.warn(paste(gwas_info$metadata$guid, "No file_with_lbfs paths found; skipping gwas_with_lbfs.tsv.gz"))
+    write_headers_only("No file_with_lbfs paths found")
     return(NULL)
   }
 
@@ -356,10 +365,8 @@ concatenate_file_with_lbfs <- function(gwas_info, study_extractions) {
   }
 
   if (written_files == 0 || !file.exists(lbfs_concatenated_file)) {
-    stop(paste(
-      gwas_info$metadata$guid,
-      "Failed to concatenate any file_with_lbfs files; gwas_with_lbfs.tsv.gz was not created"
-    ))
+    write_headers_only("Failed to concatenate any file_with_lbfs files")
+    return(NULL)
   }
 
   return(NULL)

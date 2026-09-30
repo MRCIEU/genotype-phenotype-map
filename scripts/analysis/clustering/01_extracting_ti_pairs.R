@@ -58,7 +58,8 @@ term_tab <- assocs |>
 # Derive table of ingested GPMAP study traits to match
 # Retain common variant studies (colocalisation has not been run for rare exome variant studies)
 
-gpmap_traits <- gpmapr::traits_api()[[1]] |>
+gpmapr::select_api("local")
+gpmap_traits <- gpmapr::all_traits() |>
   dplyr::filter(variant_type == "Common") |>
   dplyr::filter(duplicated(trait_name) == FALSE)
 

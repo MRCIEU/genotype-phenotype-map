@@ -11,8 +11,10 @@ output:
 params:
   # Version label under $RESULTS_DIR (e.g. 1.0.0, current, latest), or an absolute results path
   results_version: "1.0.0"
-  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap.rda under data/ti_pairs/
+  # If true, recompute pre-infomap T-I support and overwrite tipairs_preinfomap[<suffix>].rda
   recompute_cache: false
+  # Must match the include_trans setting used by 02. Suffixes inputs/outputs with _notrans when false.
+  include_trans: true
 ---
 
 The increased relative success (RS) of drug targets for diesease indications (T-I pairs) evidenced by genetic colocalisation implies that knowledge of the gene products impacted by genetic perturbations causally underlying disease can improve the likelihood of successful therapeutic intervention. The GPMAP involves several stages of amalgamating and pruning genetic evidence from GWAS studies to group shared signals across molecular and complex traits (including disease): \
@@ -42,9 +44,13 @@ analysis_dir <- file.path(versioned_results_dir, "analysis", "clustering")
 # Flat layout under $DATA_DIR/ti_pairs/
 ti_file <- function(...) file.path(ti_pairs_data_dir, ...)
 
+# Must match the include_trans setting used by 02_gpmap_support_for_ti_pairs.Rmd
+include_trans <- isTRUE(params$include_trans)
+trans_suffix <- if (include_trans) "" else "_notrans"
+
 ## Extended table of T-I pairs with GPMAP evidence (from 02_gpmap_support_for_ti_pairs.Rmd)
-ti_pairs <- data.table::fread(ti_file("GPMAP_T-Ipairs_allmatchedstudies.tsv"))
-ti_pairs_unique <- data.table::fread(ti_file("GPMAP_T-Ipairs_unique.tsv"))
+ti_pairs <- data.table::fread(ti_file(glue::glue("GPMAP_T-Ipairs_allmatchedstudies{trans_suffix}.tsv")))
+ti_pairs_unique <- data.table::fread(ti_file(glue::glue("GPMAP_T-Ipairs_unique{trans_suffix}.tsv")))
 ```
 
 We wish to compare the colocalisation clusters returned to users after running ingraph:infomap() to split highly connected groups of studies sharing H4 signals at a given loci, followed by pruning of outlying poorly connected studies, with the pre-split and pruned results: 
@@ -152,7 +158,7 @@ pull_ti_preinfomap <- function(target, trait){
   return(list(group_summary = res, target_groups = groups_wtarget))
 }
 
-preinfomap_file <- ti_file("tipairs_preinfomap.rda")
+preinfomap_file <- ti_file(glue::glue("tipairs_preinfomap{trans_suffix}.rda"))
 
 if (params$recompute_cache) {
   ti_preinfomap <- mapply(

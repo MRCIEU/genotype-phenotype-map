@@ -82,7 +82,8 @@ if (!is.na(block_list_path) && file.exists(block_list_path)) {
 }
 
 main <- function() {
-  ld_blocks <- vroom::vroom("data/ld_blocks.tsv", show_col_types = F)
+  ld_blocks_file <- if (!is.na(TEST_RUN)) "../tests/data/ld_blocks.tsv" else "data/ld_blocks.tsv"
+  ld_blocks <- vroom::vroom(ld_blocks_file, show_col_types = F)
   ld_info <- construct_ld_block(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop) |>
     dplyr::filter(dir.exists(ld_block_data))
 

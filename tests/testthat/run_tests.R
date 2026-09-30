@@ -59,16 +59,45 @@ if (!args$dont_delete) {
 }
 
 message(paste("Starting tests in:", normalizePath(TEST_DIR)))
-if (!is.null(only_test)) {
-  message(paste("Running only:", only_test))
-}
+test_names <- if (!is.null(only_test)) only_test else c("pipeline", "worker")
+message(paste("Running in parallel:", paste(test_names, collapse = ", ")))
+
+log_dir <- glue::glue("{data_dir}pipeline_metadata/logs")
+dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
+
 tryCatch(
   {
-    if (!is.null(only_test)) {
-      test_file <- file.path(TEST_DIR, paste0("test_", only_test, ".R"))
-      testthat::test_file(test_file, reporter = "progress", stop_on_failure = TRUE)
-    } else {
-      testthat::test_dir(TEST_DIR, reporter = "progress", stop_on_failure = TRUE)
+    # Each test file runs in its own forked process, with output written to its own log file
+    test_jobs <- lapply(test_names, function(test_name) {
+      log_file <- glue::glue("{log_dir}/test_{test_name}.log")
+      job <- parallel::mcparallel(
+        {
+          options(cli.dynamic = FALSE)
+          log_con <- file(log_file, open = "wt")
+          sink(log_con)
+          sink(log_con, type = "message")
+          test_file <- file.path(TEST_DIR, paste0("test_", test_name, ".R"))
+          testthat::test_file(test_file, reporter = "progress", stop_on_failure = TRUE)
+        },
+        name = test_name
+      )
+      return(job)
+    })
+    test_results <- parallel::mccollect(test_jobs)
+
+    failed_tests <- c()
+    for (test_name in test_names) {
+      log_file <- glue::glue("{log_dir}/test_{test_name}.log")
+      message(glue::glue("\n===== {test_name} ({log_file}) ====="))
+      message(paste(readLines(log_file), collapse = "\n"))
+
+      result <- test_results[[test_name]]
+      if (is.null(result) || inherits(result, "try-error")) {
+        failed_tests <- c(failed_tests, test_name)
+      }
+    }
+    if (length(failed_tests) > 0) {
+      stop(paste("Failed tests:", paste(failed_tests, collapse = ", ")))
     }
 
     branch_name <- trimws(system("git rev-parse --abbrev-ref HEAD", intern = TRUE)[1])

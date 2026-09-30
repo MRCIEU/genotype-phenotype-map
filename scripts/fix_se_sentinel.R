@@ -161,9 +161,7 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
         vroom::vroom_write(remaining, paths$finemapped_studies)
       }
       message(
-        glue::glue(
-          "  removed {nrow(to_remove)} rows ({length(removed_unique_study_ids)} unique_study_ids) from finemapped_studies.tsv"
-        )
+        glue::glue("  removed {nrow(to_remove)} rows ({length(removed_unique_study_ids)} unique_study_ids)")
       )
     }
 

@@ -335,7 +335,10 @@ cluster_coloc_results <- function(
             duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
             study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
 
-            best_vertex <- duplicate_study_info$unique_study_id[which.min(duplicate_study_info$min_p)]
+            # tie-break on bp in case multiple signals share the minimum min_p (e.g. both underflowed to 0)
+            best_vertex <- duplicate_study_info$unique_study_id[
+              order(duplicate_study_info$min_p, duplicate_study_info$bp)[1]
+            ]
 
             vertices_to_remove <- setdiff(study_vertices, best_vertex)
             pruned_studies <- c(pruned_studies, vertices_to_remove)

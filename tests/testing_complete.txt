@@ -1,1 +1,1 @@
-SUCCESS: All tests passed on branch: feature/ti-pair-pipeline
+SUCCESS: All tests passed on branch: bug/lead-snp-finemaped-results

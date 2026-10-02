@@ -334,7 +334,9 @@ run_susie_finemapping <- function(gwas,
       new_bp <- as.numeric(gwas[important_row, ]$BP)
       new_snp <- gwas[important_row, ]$SNP
     } else {
-      new_bp <- gwas[which.min(gwas$P), ]$BP
+      # tie-break on |Z| in case multiple SNPs share the minimum P (e.g. both underflowed to 0)
+      min_p_row <- order(gwas$P, -abs(gwas$Z))[1]
+      new_bp <- gwas$BP[min_p_row]
     }
 
     failed_finemap_info <- process_unfinemapped_gwas(
@@ -385,8 +387,10 @@ process_unfinemapped_gwas <- function(
       dplyr::filter(chr == as.numeric(study[["chr"]]) & bp == as.numeric(study["bp"]))
 
     if (nrow(snp_entry) == 0) {
-      message("finding new snp for: ", study[["chr"]], ":", study["bp"])
-      study["snp"] <- gwas[which.min(gwas$P), ]$SNP
+      message("finding new snp for: ", study[["chr"]], ":", study[["bp"]])
+      # tie-break on |Z| in case multiple SNPs share the minimum P (e.g. both underflowed to 0)
+      min_p_row <- order(gwas$P, -abs(gwas$Z))[1]
+      study["snp"] <- gwas$SNP[min_p_row]
     } else {
       study["snp"] <- snp_entry |>
         dplyr::slice_head(n = 1) |>
@@ -464,12 +468,12 @@ split_susie_result_into_conditional_gwases <- function(
 
     conditioned_gwas <- dplyr::select(gwas, SNP, CHR, BP, BETA, SE, EAF, P, IMPUTED) |>
       dplyr::mutate(LBF = susie_result$lbf_variable[i, ]) |>
-      dplyr::mutate(LBF_P = convert_lbf_to_p_value(LBF, SE)) |>
+      dplyr::mutate(LBF_LOG_P = convert_lbf_to_log_p_value(LBF, SE)) |>
       dplyr::mutate(in_credible_set = SNP %in% credible_set_snps)
 
     # Remove problematic snps, where the LBF seems to be inflated, compared to the original p-value
     bad_snp_rows_numbers <- which(
-      conditioned_gwas$LBF_P < lowest_p_value_threshold &
+      conditioned_gwas$LBF_LOG_P < log(lowest_p_value_threshold) &
         conditioned_gwas$P > minimum_lbf_p_value_threshold
     )
     if (length(bad_snp_rows_numbers) > 0) {
@@ -488,9 +492,9 @@ split_susie_result_into_conditional_gwases <- function(
       conditioned_gwas <- conditioned_gwas[-bad_snp_rows_numbers, ]
     }
 
-    important_row <- which.min(conditioned_gwas$LBF_P)
+    important_row <- which.min(conditioned_gwas$LBF_LOG_P)
 
-    new_min_p <- min(conditioned_gwas$LBF_P, na.rm = T)
+    new_min_p <- exp(min(conditioned_gwas$LBF_LOG_P, na.rm = T))
     new_bp <- as.numeric(conditioned_gwas[important_row, ]$BP)
     new_snp <- conditioned_gwas[important_row, ]$SNP
 

@@ -1,0 +1,2 @@
+source	study	unique_study_id	ld_block	variant_type	file	old_snp	old_bp	old_min_p	old_cis_trans	new_snp	new_bp	new_min_p	new_cis_trans	orig_bp	lead_snp_changed	file_readable
+study_dir:/home/wt23152/suzuki_gpmapr	c6d2e20f-6ece-d093-78ee-37534547c466	c6d2e20f-6ece-d093-78ee-37534547c466_EUR/10/109285213-113568394_1	EUR/10/109285213-113568394	NA	/home/wt23152/suzuki_gpmapr/finemapped/EUR_10_109285213_113568394_1.tsv.gz	10:112974337_A_G	112974337	0	NA	10:112995025_C_T	112995025	0	NA	NA	TRUE	TRUE

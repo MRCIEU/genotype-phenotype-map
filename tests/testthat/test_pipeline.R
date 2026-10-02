@@ -2,6 +2,7 @@ library(testthat)
 
 setwd("../../")
 source("pipeline_steps/constants.R")
+source("pipeline_steps/gwas_calculations.R")
 
 # If you want to add more data to this test pipeline
 # smr --beqtl-summary /some/besd_file  --extract-probe probe.list  --query 1 --make-besd --out subset_of_besd_file
@@ -351,4 +352,38 @@ test_that("Pipeline execution and file validation", {
       expect_true(table_data$count == 0, info = glue::glue("Table should be empty"))
     }
   })
+})
+
+test_that("Finemapping lead SNP choice is not broken by p-value underflow", {
+  # LBF and SE values from a real affected credible set (EUR/10/109285213-113568394_1),
+  # where several SNPs' LBF-based p-values underflowed to the same value and the
+  # p-value-based lead SNP choice was arbitrary. The lead SNP must instead be
+  # chosen with log-scale p-values, which never tie
+  lbfs <- c(714.7754127384859, 736.2308094843228, 1029.8294202144846, 2437.6030432562670)
+  ses <- c(0.0041, 0.0041, 0.0037, 0.0037)
+
+  log_p_values <- convert_lbf_to_log_p_value(lbfs, ses)
+  p_values <- convert_lbf_to_p_value(lbfs, ses)
+
+  # log p-values stay finite and distinct where p-values underflow to ties
+  expect_true(all(is.finite(log_p_values)))
+  expect_equal(0L, anyDuplicated(log_p_values))
+  expect_true(anyDuplicated(p_values) > 0 || all(p_values > 0))
+
+  # the strongest SNP wins the which.min lead SNP selection
+  expect_equal(4, which.min(log_p_values))
+
+  # min_p stored in finemapped_studies.tsv stays a valid p-value
+  min_p <- exp(min(log_p_values))
+  expect_true(min_p >= 0 && min_p <= 1)
+
+  # consistent with the p-value version where no underflow occurs
+  moderate_lbfs <- c(0, 5, 10, 20)
+  moderate_log_p_values <- convert_lbf_to_log_p_value(moderate_lbfs, ses)
+  moderate_p_values <- convert_lbf_to_p_value(moderate_lbfs, ses)
+  expect_equal(moderate_p_values, exp(moderate_log_p_values))
+  expect_equal(
+    moderate_p_values < lowest_p_value_threshold,
+    moderate_log_p_values < log(lowest_p_value_threshold)
+  )
 })

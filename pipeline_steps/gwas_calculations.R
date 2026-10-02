@@ -102,6 +102,20 @@ convert_lbf_to_p_value <- function(lbf, se, prior_v = 50) {
   return(p)
 }
 
+#' Convert log Bayes Factor to log p-value
+#'
+#' @param lbf Log Bayes Factor
+#' @param se Standard error
+#' @param prior_v Prior variance
+#'
+#' @return Natural log of the two-sided p-value. Unlike convert_lbf_to_p_value,
+#'   this does not underflow to 0 for strong signals, so ranking SNPs by
+#'   significance never results in ties at exactly 0
+convert_lbf_to_log_p_value <- function(lbf, se, prior_v = 50) {
+  log_p <- log(2) + pnorm(-abs(convert_lbf_to_abs_z(lbf, se, prior_v)), log.p = TRUE)
+  return(log_p)
+}
+
 #' Calculate two-tailed p-value from BETA and SE
 #'
 #' @param beta Effect estimate

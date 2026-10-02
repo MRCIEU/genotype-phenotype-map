@@ -15,17 +15,29 @@
 #      tracking files, so a subsequent pipeline run only recomputes the
 #      affected studies instead of skipping them as "already done".
 #
+#   3. Patches study_extractions.min_p in studies.db for extractions whose
+#      lead SNP carried the sentinel, as a best guess until the rerun's
+#      results are compiled into a new studies.db (see
+#      patch_study_extractions_min_p).
+#
 # This script only edits/deletes files - it never invokes snakemake,
 # run_pipeline.sh, or any Makefile target. Triggering an actual pipeline
 # run is a separate, deliberate step you take afterwards.
 #
 # Usage:
-#   Rscript scripts/fix_se_sentinel.R <associations_db_file> [<studies_db_file>] [--dry-run]
+#   Rscript scripts/fix_se_sentinel.R <associations_db_file> [<studies_db_file>] [--dry-run] [--reuse-audit]
 #
 # associations_db_file: associations_full.db or associations_specific.db
 # studies_db_file (optional): studies.db - used to resolve affected
-#                              (study_name, ld_block) pairs for step 2. If
-#                              omitted, step 2 is skipped.
+#                              (study_name, ld_block) pairs for step 2 and
+#                              patched in step 3. If omitted, steps 2 and 3
+#                              are skipped.
+# --reuse-audit: if associations_db_file has already been repaired (no
+#                sentinel rows left), re-run steps 2 and 3 from the previous
+#                se_sentinel_repairs_audit.tsv in the working directory.
+#                Steps 2 and 3 are only safe to repeat BEFORE the affected
+#                ld_blocks have been re-finemapped: step 2 strips/deletes the
+#                affected studies' finemap and coloc results again.
 
 source("../pipeline_steps/constants.R")
 
@@ -63,6 +75,11 @@ repair_associations_db <- function(associations_db_file, dry_run) {
     )
     vroom::vroom_write(candidates[unfixable, ], "unfixable_se_sentinel_rows.tsv")
     candidates <- candidates[!unfixable, ]
+  }
+
+  # Only unfixable rows were left - don't overwrite a previous run's audit with an empty one
+  if (nrow(candidates) == 0) {
+    return(candidates)
   }
 
   vroom::vroom_write(candidates, "se_sentinel_repairs_audit.tsv")
@@ -139,6 +156,8 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
         derived_se[is.na(derived_se)] <- SENTINEL # leave genuinely unfixable rows as-is
         if (!dry_run) {
           gwas$SE[zero_se] <- derived_se
+          # finemap_rule feeds Z (not BETA / SE) into SuSiE, so Z must follow the patched SE
+          gwas$Z[zero_se] <- gwas$BETA[zero_se] / gwas$SE[zero_se]
           vroom::vroom_write(gwas, study_file)
         }
         message(glue::glue("  {relevant$study[[i]]}: patched {sum(zero_se)} SE values in {study_file}"))
@@ -146,23 +165,18 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
     }
 
     # 2. Strip affected studies out of finemapped_studies.tsv, so
-    #    finemap_studies_in_ld_block.R:79-85 no longer treats them as done,
-    #    and remember which unique_study_id values that removes.
-    removed_unique_study_ids <- character(0)
+    #    finemap_studies_in_ld_block.R:79-85 no longer treats them as done.
     if (file.exists(paths$finemapped_studies)) {
       finemapped <- vroom::vroom(
         paths$finemapped_studies,
         show_col_types = FALSE, col_types = finemapped_column_types
       )
       to_remove <- finemapped[finemapped$study %in% affected_studies, , drop = FALSE]
-      removed_unique_study_ids <- unique(to_remove$unique_study_id)
       if (!dry_run && nrow(to_remove) > 0) {
         remaining <- finemapped[!finemapped$study %in% affected_studies, , drop = FALSE]
         vroom::vroom_write(remaining, paths$finemapped_studies)
       }
-      message(
-        glue::glue("  removed {nrow(to_remove)} rows ({length(removed_unique_study_ids)} unique_study_ids)")
-      )
+      message(glue::glue("  removed {nrow(to_remove)} rows from finemapped_studies.tsv"))
     }
 
     # 3. Delete the now-stale per-study finemap output files.
@@ -179,15 +193,20 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
       }
     }
 
-    # 4. Strip any coloc pair touching a removed unique_study_id, so
+    # 4. Strip any coloc pair touching an affected study, so
     #    coloc_studies_in_ld_block.R:117-126 treats those pairs as new again.
-    if (length(removed_unique_study_ids) > 0 && file.exists(paths$coloc_pairwise)) {
+    #    Matched on study name rather than the unique_study_ids removed in
+    #    step 2: coloc_pairwise_results can hold pairs for credible sets that
+    #    are no longer in finemapped_studies.tsv, and this keeps the step
+    #    working when finemapped_studies.tsv was already stripped by a
+    #    previous run.
+    if (file.exists(paths$coloc_pairwise)) {
       coloc_results <- vroom::vroom(
         paths$coloc_pairwise,
         show_col_types = FALSE, col_types = coloc_pairwise_results_column_types
       )
-      stale_pairs <- coloc_results$unique_study_a %in% removed_unique_study_ids |
-        coloc_results$unique_study_b %in% removed_unique_study_ids
+      stale_pairs <- coloc_results$study_a %in% affected_studies |
+        coloc_results$study_b %in% affected_studies
       if (!dry_run && any(stale_pairs)) {
         vroom::vroom_write(coloc_results[!stale_pairs, , drop = FALSE], paths$coloc_pairwise)
       }
@@ -216,18 +235,71 @@ prepare_ld_blocks_for_refinemap_recoloc <- function(affected_pairs, dry_run) {
   return(invisible())
 }
 
+# --- Step 3: best-guess patch of study_extractions.min_p --------------------
+# The sentinel deflated LBF_P (convert_lbf_to_p_value takes SE), so extractions
+# whose lead SNP carried it often have min_p ~ 0. The finemap files needed to
+# recompute LBF_P properly are deleted by step 2, so as a stand-in until the
+# rerun is compiled, raise min_p to the lead SNP's marginal p from the
+# associations DB (p was never touched by the sentinel). min_p is only ever
+# raised, never lowered, so the patch is idempotent. The lead SNP itself is
+# left as-is - picking the right one needs the rerun.
+
+patch_study_extractions_min_p <- function(studies_db_file, repairs, dry_run) {
+  con <- duckdb::dbConnect(duckdb::duckdb(), studies_db_file, read_only = dry_run)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+
+  DBI::dbExecute(con, "CREATE OR REPLACE TEMP TABLE lead_snp_repairs (variant_id INTEGER, study_id INTEGER, p DOUBLE)")
+  DBI::dbAppendTable(con, "lead_snp_repairs", repairs[, c("variant_id", "study_id", "p")])
+
+  to_patch <- DBI::dbGetQuery(con, "
+    SELECT study_extractions.id, study_extractions.unique_study_id, study_extractions.study_id,
+      study_extractions.variant_id, study_extractions.min_p AS old_min_p, lead_snp_repairs.p AS new_min_p
+    FROM study_extractions
+    JOIN lead_snp_repairs
+      ON study_extractions.study_id = lead_snp_repairs.study_id
+      AND study_extractions.variant_id = lead_snp_repairs.variant_id
+    WHERE study_extractions.min_p < lead_snp_repairs.p
+  ")
+  vroom::vroom_write(to_patch, "study_extractions_min_p_repairs_audit.tsv")
+  message(
+    nrow(to_patch), " study_extractions rows have min_p below their lead SNP's p; ",
+    "audit written to study_extractions_min_p_repairs_audit.tsv"
+  )
+
+  if (!dry_run && nrow(to_patch) > 0) {
+    DBI::dbExecute(con, "
+      UPDATE study_extractions
+      SET min_p = lead_snp_repairs.p
+      FROM lead_snp_repairs
+      WHERE study_extractions.study_id = lead_snp_repairs.study_id
+        AND study_extractions.variant_id = lead_snp_repairs.variant_id
+        AND study_extractions.min_p < lead_snp_repairs.p
+    ")
+    message("study_extractions.min_p patched in place in ", studies_db_file)
+  } else if (dry_run) {
+    message("--dry-run: no changes written to ", studies_db_file)
+  }
+  return(invisible())
+}
+
 # --- Entry point --------------------------------------------------------
 
 main <- function() {
   args <- commandArgs(trailingOnly = TRUE)
   dry_run <- "--dry-run" %in% args
-  positional <- args[!args %in% c("--dry-run")]
+  reuse_audit <- "--reuse-audit" %in% args
+  positional <- args[!args %in% c("--dry-run", "--reuse-audit")]
   associations_db_file <- positional[[1]]
   studies_db_file <- if (length(positional) > 1) positional[[2]] else NA
 
   stopifnot(file.exists(associations_db_file))
 
   candidates <- repair_associations_db(associations_db_file, dry_run)
+  if (nrow(candidates) == 0 && reuse_audit) {
+    stopifnot(file.exists("se_sentinel_repairs_audit.tsv"))
+    candidates <- vroom::vroom("se_sentinel_repairs_audit.tsv", show_col_types = FALSE)
+    message("--reuse-audit: re-using ", nrow(candidates), " previous repairs from se_sentinel_repairs_audit.tsv")
+  }
   if (nrow(candidates) == 0) {
     return(invisible())
   }
@@ -245,6 +317,7 @@ main <- function() {
 
   affected_pairs <- resolve_affected_study_ld_blocks(studies_db_file, affected_study_ids)
   prepare_ld_blocks_for_refinemap_recoloc(affected_pairs, dry_run)
+  patch_study_extractions_min_p(studies_db_file, candidates, dry_run)
   return(invisible())
 }
 

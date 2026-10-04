@@ -1,7 +1,7 @@
 id_pattern,data_type,source,data_format,bespoke_parsing,data_location,ancestry,reference_build,p_value_threshold,variant_type,metadata_type,coverage,processing_complete
-*,phenotype,ebi_catalog,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/opengwas,EUR,GRCh37,5e-8,common,json,dense,FALSE
-GTEx-eQTL*,gene_expression,gtex,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,5e-8,common,json,dense,FALSE
-GTEx-sQTL*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,5e-8,common,json,dense,FALSE
-BrainMeta*,gene_expression,brain_meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
-*,phenotype,genebass,tsv,none,/local-scratch/projects/genotype-phenotype-map/test/data/input_studies/rare,EUR,GRCh38,1.5e-4,rare_exome,tsv,dense,FALSE
+*,phenotype,ebi_catalog,opengwas,none,/local-scratch/projects/genotype-phenotype-map/test/e2e/data/input_studies/opengwas,EUR,GRCh37,5e-8,common,json,dense,FALSE
+GTEx-eQTL*,gene_expression,gtex,besd,none,/local-scratch/projects/genotype-phenotype-map/test/e2e/data/input_studies/qtl,EUR,GRCh38,5e-8,common,json,dense,FALSE
+GTEx-sQTL*,splice_variant,gtex,besd,gtex_sqtl,/local-scratch/projects/genotype-phenotype-map/test/e2e/data/input_studies/qtl,EUR,GRCh38,5e-8,common,json,dense,FALSE
+BrainMeta*,gene_expression,brain_meta,besd,none,/local-scratch/projects/genotype-phenotype-map/test/e2e/data/input_studies/qtl,EUR,GRCh38,1.5e-4,common,json,dense,FALSE
+*,phenotype,genebass,tsv,none,/local-scratch/projects/genotype-phenotype-map/test/e2e/data/input_studies/rare,EUR,GRCh38,1.5e-4,rare_exome,tsv,dense,FALSE
 *,phenotype,manual,summary_stats,none,../tests/data/summary_stats,EUR,GRCh38,1.5e-4,common,csv,dense,FALSE

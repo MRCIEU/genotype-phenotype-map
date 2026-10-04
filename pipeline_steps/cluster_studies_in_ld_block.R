@@ -270,8 +270,11 @@ cluster_coloc_results <- function(
 
   modified_pruned_graph <- h4_graph
   if (h4_graph_components$no == 1) {
-    message(glue::glue("Only one component found, assigning all vertices to component 1"))
-    igraph::V(modified_pruned_graph)$component <- 1
+    message(glue::glue("Only one component found, only removing duplicate studies before assigning components"))
+    pruned_studies <- find_duplicate_study_vertices(igraph::V(modified_pruned_graph)$name, finemapped_studies)
+    if (length(pruned_studies) > 0) {
+      message(glue::glue("Removing {length(pruned_studies)} duplicate studies from same study within the component"))
+    }
   } else {
     message(glue::glue("{ld_block}: Clustering {h4_graph_components$no} components"))
 
@@ -326,25 +329,9 @@ cluster_coloc_results <- function(
           next
         }
 
-        study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% current_community_vertices)
-        study_counts <- table(study_info$study)
-        duplicate_studies <- names(study_counts[study_counts > 1])
-
-        if (length(duplicate_studies) > 0) {
-          for (duplicate_study in duplicate_studies) {
-            duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
-            study_vertices <- intersect(current_community_vertices, duplicate_study_info$unique_study_id)
-
-            # tie-break on bp in case multiple signals share the minimum min_p (e.g. both underflowed to 0)
-            best_vertex <- duplicate_study_info$unique_study_id[
-              order(duplicate_study_info$min_p, duplicate_study_info$bp)[1]
-            ]
-
-            vertices_to_remove <- setdiff(study_vertices, best_vertex)
-            pruned_studies <- c(pruned_studies, vertices_to_remove)
-            duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
-          }
-        }
+        vertices_to_remove <- find_duplicate_study_vertices(current_community_vertices, finemapped_studies)
+        pruned_studies <- c(pruned_studies, vertices_to_remove)
+        duplicate_removal_count <- duplicate_removal_count + length(vertices_to_remove)
       }
       pruned_studies <- unique(pruned_studies)
 
@@ -359,43 +346,41 @@ cluster_coloc_results <- function(
           edges = pruned_edge_ids
         )
       }
+    }
+  }
 
-      if (length(pruned_studies) > 0) {
-        graph_before_vertex_removal <- modified_pruned_graph
-        for (study in pruned_studies) {
-          if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
-          study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)
-          if (length(study_edges) > 0) {
-            for (edge in study_edges) {
-              edge_vertices <- igraph::ends(graph_before_vertex_removal, edge)
-              pruned_edges <- rbind(
-                pruned_edges,
-                data.frame(V1 = edge_vertices[1], V2 = edge_vertices[2])
-              )
-            }
-          }
-        }
-      }
-
-      message(glue::glue("Removing {length(pruned_studies)} vertices"))
-      if (length(pruned_studies) > 0) {
-        existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
-        if (length(existing_vertices_to_remove) > 0) {
-          modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
-        }
+  if (length(pruned_studies) > 0) {
+    graph_before_vertex_removal <- modified_pruned_graph
+    for (study in pruned_studies) {
+      if (!(study %in% igraph::V(graph_before_vertex_removal)$name)) next
+      study_edges <- igraph::incident_edges(graph_before_vertex_removal, study)[[1]]
+      if (length(study_edges) > 0) {
+        edge_vertices <- igraph::ends(graph_before_vertex_removal, study_edges)
+        pruned_edges <- rbind(
+          pruned_edges,
+          data.frame(V1 = edge_vertices[, 1], V2 = edge_vertices[, 2])
+        )
       }
     }
-
-    pruned_edges <- unique(pruned_edges)
-
-    graph_components <- igraph::components(modified_pruned_graph)
-    vert_out_initial <- igraph::V(modified_pruned_graph)[
-      graph_components$membership %in% which(graph_components$csize == 1)
-    ]
-    modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, vert_out_initial)
-    modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
-    igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
   }
+
+  message(glue::glue("Removing {length(pruned_studies)} vertices"))
+  if (length(pruned_studies) > 0) {
+    existing_vertices_to_remove <- intersect(pruned_studies, igraph::V(modified_pruned_graph)$name)
+    if (length(existing_vertices_to_remove) > 0) {
+      modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, existing_vertices_to_remove)
+    }
+  }
+
+  pruned_edges <- unique(pruned_edges)
+
+  graph_components <- igraph::components(modified_pruned_graph)
+  vert_out_initial <- igraph::V(modified_pruned_graph)[
+    graph_components$membership %in% which(graph_components$csize == 1)
+  ]
+  modified_pruned_graph <- igraph::delete_vertices(modified_pruned_graph, vert_out_initial)
+  modified_pruned_graph_components <- igraph::components(modified_pruned_graph)
+  igraph::V(modified_pruned_graph)$component <- modified_pruned_graph_components$membership
 
   message(glue::glue("Outputting results in {diff_time_taken(start_time)}"))
   coloc_groups <- data.frame(
@@ -417,6 +402,25 @@ cluster_coloc_results <- function(
     groups = coloc_groups,
     pruned_edges = pruned_edges
   ))
+}
+
+#' For each study with more than one credible set among the vertices, finds all but its most significant one
+find_duplicate_study_vertices <- function(vertices, finemapped_studies) {
+  study_info <- dplyr::filter(finemapped_studies, unique_study_id %in% vertices)
+  study_counts <- table(study_info$study)
+  duplicate_studies <- names(study_counts[study_counts > 1])
+
+  vertices_to_remove <- c()
+  for (duplicate_study in duplicate_studies) {
+    duplicate_study_info <- dplyr::filter(study_info, study == duplicate_study)
+
+    # tie-break on bp in case multiple signals share the minimum min_p (e.g. both underflowed to 0)
+    best_vertex <- duplicate_study_info$unique_study_id[
+      order(duplicate_study_info$min_p, duplicate_study_info$bp)[1]
+    ]
+    vertices_to_remove <- c(vertices_to_remove, setdiff(duplicate_study_info$unique_study_id, best_vertex))
+  }
+  return(vertices_to_remove)
 }
 
 mark_false_positives_and_negatives <- function(

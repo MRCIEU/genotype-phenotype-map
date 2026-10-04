@@ -457,6 +457,7 @@ split_susie_result_into_conditional_gwases <- function(
   min_ps <- c()
   unique_ids <- c()
   svg_files <- c()
+  cis_trans_values <- c()
   lbf_columns <- dplyr::select(gwas, SNP)
 
   for (i in susie_result$sets$cs_index) {
@@ -519,16 +520,16 @@ split_susie_result_into_conditional_gwases <- function(
     }
     svg_files <- c(svg_files, svg_file)
 
-    # if the new credible set's bp is less than 2MB from the original bp, mark as cis, otherwise trans
-    if (!is.na(study["cis_trans"]) && study["cis_trans"] == cis_trans$cis_only) {
-      if (abs(as.numeric(study["bp"]) - new_bp) < 1000000) {
-        study["cis_trans"] <- cis_trans$cis_only
-      } else {
-        study["cis_trans"] <- cis_trans$trans_only
-      }
+    # if the new credible set's bp is less than 1Mb from the original bp, mark as cis, otherwise trans
+    credible_set_cis_trans <- study[["cis_trans"]]
+    if (!is.na(credible_set_cis_trans) && credible_set_cis_trans == cis_trans$cis_only &&
+        abs(as.numeric(study[["bp"]]) - new_bp) >= 1000000
+    ) {
+      credible_set_cis_trans <- cis_trans$trans_only
     }
+    cis_trans_values <- c(cis_trans_values, credible_set_cis_trans)
 
-    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_P) |>
+    conditioned_gwas <- dplyr::select(conditioned_gwas, -P, -LBF_LOG_P) |>
       dplyr::select(dplyr::any_of(c("SNP", "CHR", "BP", "BETA", "SE", "EAF", "IMPUTED", "LBF")), dplyr::everything())
     vroom::vroom_write(conditioned_gwas, finemap_file)
   }
@@ -553,7 +554,7 @@ split_susie_result_into_conditional_gwases <- function(
     min_p = min_ps,
     category = rep(study[["category"]], num_credible_sets),
     sample_size = rep(sample_size, num_credible_sets),
-    cis_trans = rep(study[["cis_trans"]], num_credible_sets),
+    cis_trans = cis_trans_values,
     finemap_message = rep("success", num_credible_sets),
     first_finemap_num_results = rep(as.numeric(study[["first_finemap_num_results"]]), num_credible_sets),
     second_finemap_num_results = rep(as.numeric(study[["second_finemap_num_results"]]), num_credible_sets),

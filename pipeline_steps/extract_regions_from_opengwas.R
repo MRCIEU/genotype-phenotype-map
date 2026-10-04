@@ -59,7 +59,7 @@ convert_reference_build <- function(study,
   liftover_conversion <- available_liftover_conversions[[glue::glue("{input_reference_build}{output_reference_build}")]]
   if (is.null(liftover_conversion)) {
     stop(paste(c(
-      "Error: liftOver combination of", input_build, output_build, "not recocognised.",
+      "Error: liftOver combination of", input_reference_build, output_reference_build, "not recocognised.",
       "Reference builds must be one of:", reference_builds
     ), collapse = " "))
   }
@@ -91,7 +91,12 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
   gwasvcf::set_bcftools("/home/bcftools/bcftools")
 
   significant_hits <- gwasvcf::query_gwas(vcf_file, pval = p_value_threshold) |>
-    gwasvcf::vcf_to_tibble() |>
+    gwasvcf::vcf_to_tibble()
+  if (nrow(significant_hits) == 0) {
+    return(data.frame(RSID = character(), CHR = numeric(), BP = numeric(), P = numeric()))
+  }
+
+  significant_hits <- significant_hits |>
     dplyr::mutate(pval = 10^{
       -LP
     }, rsid = ID) |>
@@ -133,16 +138,16 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     cis_trans = character()
   )
 
-  if (nrow(clumped_snps) == 0) {
-    message(glue::glue('{study["study_location"]}: No clumped results'))
-    return(extracted_snps)
-  }
-
   dir.create(glue::glue("{study$extracted_location}/svgs"), showWarnings = F, recursive = T)
   dir.create(glue::glue("{study$extracted_location}/extracted"), showWarnings = F, recursive = T)
   dir.create(glue::glue("{study$extracted_location}/standardised"), showWarnings = F, recursive = T)
   dir.create(glue::glue("{study$extracted_location}/imputed"), showWarnings = F, recursive = T)
   dir.create(glue::glue("{study$extracted_location}/finemapped"), showWarnings = F, recursive = T)
+
+  if (nrow(clumped_snps) == 0) {
+    message(glue::glue('{study["study_location"]}: No clumped results'))
+    return(extracted_snps)
+  }
 
   ld_blocks$bcf_region <- glue::glue("{ld_blocks$chr}:{ld_blocks$start}-{ld_blocks$stop}")
   ld_blocks$string_region <- ld_block_string(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop)

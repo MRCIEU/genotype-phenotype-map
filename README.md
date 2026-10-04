@@ -42,6 +42,15 @@ make test
 
 This takes around 15 minutes and validates the pipeline and pipeline worker.
 
+There are 3 types of tests currently:
+1. Unit: tests the pipeline_steps/ code at the script level.
+2. Pipeline: tests the whole pipeline flow from front to back
+3. Worker: tests that the pipeline worker that runs on the server is functioning correctly
+
+All test data is currently located in `/local-scratch/projects/genotype-phenotype-map/test`.  As the pipeline needs
+large amounts of data to test, it is not stored inside the repository itself.  As a basic workaround for CI automation,
+`make test` writes to a file `testing_complete.txt`, which is checked by the CI pipeline before any PR is allowed to be merged.
+
 #### Linting
 
 To check and fix code style:

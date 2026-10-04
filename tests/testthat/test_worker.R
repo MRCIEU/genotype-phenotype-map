@@ -6,7 +6,7 @@ ld_block_of_interest <- "EUR/1/101384499-103762931"
 study_to_compare <- "22d5cdd8-ac0b-bb58-d2c3-c342ac8ec78b"
 
 setup({
-  real_ld_block_data_dir <- sub("/test/", "/", ld_block_data_dir)
+  real_ld_block_data_dir <- sub("/test/e2e/", "/", ld_block_data_dir)
   existing_finemapped_studies <- glue::glue("{ld_block_of_interest}/finemapped_studies.tsv")
   dir.create(glue::glue("{ld_block_data_dir}/{ld_block_of_interest}"), recursive = TRUE, showWarnings = FALSE)
   file.copy(

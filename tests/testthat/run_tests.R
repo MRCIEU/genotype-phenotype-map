@@ -5,7 +5,7 @@ parser <- argparser::arg_parser("Run tests")
 parser <- argparser::add_argument(
   parser,
   "--only",
-  help = "Run only one test file: 'worker' or 'pipeline'",
+  help = "Run only one test suite: 'worker', 'pipeline' or 'unit'",
   type = "character",
   default = NA
 )
@@ -18,20 +18,21 @@ parser <- argparser::add_argument(
 args <- argparser::parse_args(parser)
 
 only_test <- if (!is.na(args$only) && nchar(trimws(args$only)) > 0) {
-  match.arg(trimws(args$only), c("worker", "pipeline"))
+  match.arg(trimws(args$only), c("worker", "pipeline", "unit"))
 } else {
   NULL
 }
 
 TEST_DIR <- "./tests/testthat"
+UNIT_TEST_DIR <- "/local-scratch/projects/genotype-phenotype-map/test/unit/"
 OUTPUT_FILE_PATH <- "./tests/testing_complete.txt"
 
 
 # Test setup: set env vars if not already set
 Sys.setenv("TEST_RUN" = "test")
-Sys.setenv("DATA_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/data/")
-Sys.setenv("RESULTS_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/results/")
-Sys.setenv("BACKUP_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/backup/")
+Sys.setenv("DATA_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/e2e/data/")
+Sys.setenv("RESULTS_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/e2e/results/")
+Sys.setenv("BACKUP_DIR" = "/local-scratch/projects/genotype-phenotype-map/test/e2e/backup/")
 
 source("pipeline_steps/constants.R")
 
@@ -59,7 +60,15 @@ if (!args$dont_delete) {
 }
 
 message(paste("Starting tests in:", normalizePath(TEST_DIR)))
-test_names <- if (!is.null(only_test)) only_test else c("pipeline", "worker")
+test_names <- if (!is.null(only_test)) only_test else c("pipeline", "worker", "unit")
+
+if ("unit" %in% test_names && !args$dont_delete) {
+  # Cleanup previous unit test run, leaving the permanent fixtures and reference panel links in place
+  unit_dirs_to_clean <- paste0(UNIT_TEST_DIR, c("data/study", "data/ld_blocks", "data/pipeline_metadata", "results"))
+  for (unit_dir in unit_dirs_to_clean) {
+    unlink(list.files(unit_dir, full.names = TRUE), recursive = TRUE)
+  }
+}
 message(paste("Running in parallel:", paste(test_names, collapse = ", ")))
 
 log_dir <- glue::glue("{data_dir}pipeline_metadata/logs")
@@ -76,8 +85,12 @@ tryCatch(
           log_con <- file(log_file, open = "wt")
           sink(log_con)
           sink(log_con, type = "message")
-          test_file <- file.path(TEST_DIR, paste0("test_", test_name, ".R"))
-          testthat::test_file(test_file, reporter = "progress", stop_on_failure = TRUE)
+          if (test_name == "unit") {
+            testthat::test_dir(file.path(TEST_DIR, "unit"), reporter = "progress", stop_on_failure = TRUE)
+          } else {
+            test_file <- file.path(TEST_DIR, paste0("test_", test_name, ".R"))
+            testthat::test_file(test_file, reporter = "progress", stop_on_failure = TRUE)
+          }
         },
         name = test_name
       )

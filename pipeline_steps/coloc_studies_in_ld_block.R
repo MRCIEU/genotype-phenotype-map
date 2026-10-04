@@ -288,7 +288,7 @@ run_coloc_for_study_pairs <- function(study_pairs, studies_to_colocalise, coloc_
 
 get_study_pairs_to_coloc <- function(studies, existing_results, worker_guid, compare_guids) {
   studies <- dplyr::mutate(studies, id = dplyr::row_number()) |>
-    dplyr::filter(min_p <= lowest_p_value_threshold | !ignore)
+    dplyr::filter(min_p <= lowest_p_value_threshold & !ignore)
   studies <- data.table::as.data.table(studies)
 
   pairs_filtered <- studies[studies, on = .(id < id), allow.cartesian = TRUE][

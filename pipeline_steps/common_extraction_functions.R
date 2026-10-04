@@ -49,7 +49,7 @@ convert_vcf_reference_build <- function(study, vcf_file) {
   liftover_conversion <- available_liftover_conversions[[glue::glue("{input_reference_build}{output_reference_build}")]]
   if (is.null(liftover_conversion)) {
     stop(paste(c(
-      "Error: liftOver combination of", input_build, output_build, "not recocognised.",
+      "Error: liftOver combination of", input_reference_build, output_reference_build, "not recocognised.",
       "Reference builds must be one of:", reference_builds
     ), collapse = " "))
   }
@@ -93,7 +93,7 @@ convert_dataframe_reference_build <- function(gwas,
   liftover_conversion <- available_liftover_conversions[[paste0(input_reference_build, output_reference_build)]]
   if (is.null(liftover_conversion)) {
     stop(paste(c(
-      "Error: liftOver combination of", input_build, output_build, "not recocognised.",
+      "Error: liftOver combination of", input_reference_build, output_reference_build, "not recocognised.",
       "Reference builds must be one of:", reference_builds
     ), collapse = " "))
   }
@@ -180,14 +180,6 @@ standardise_columns <- function(gwas) {
     gwas <- convert_or_to_beta(gwas)
   }
 
-  if ("LOG_P" %in% gwas_columns && !"P" %in% gwas_columns) {
-    gwas <- convert_negative_log_p_to_p(gwas)
-  }
-
-  if ("Z" %in% gwas_columns && !"BETA" %in% gwas_columns) {
-    gwas <- convert_z_score_to_beta(gwas)
-  }
-
   gwas$BP <- as.numeric(gwas$BP)
   gwas$BETA <- as.numeric(gwas$BETA)
   gwas$P <- as.numeric(gwas$P)
@@ -235,6 +227,10 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
     ) {
       next
     }
+    # A numeric N is a sample size value, not a column name, and has already been set above
+    if (name == "N" && is.numeric(columns[[name]])) {
+      next
+    }
 
     # this deletes an existing column that we're about to rename, so we don't have 2 columns
     already <- name != columns[[name]]
@@ -277,7 +273,7 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
     type = "within",
     nomatch = NULL
   )
-  gwas_with_blocks <- gwas_with_blocks[!is.na(ld_block)]
+  gwas_with_blocks <- gwas_with_blocks[!is.na(ld_block) & BP < stop]
   gwas_with_blocks[, `:=`(start = NULL, end = NULL)]
   gwas_with_blocks <- tibble::as_tibble(gwas_with_blocks) |>
     dplyr::select(-dplyr::any_of(c("chr", "start", "stop", "ancestry")))

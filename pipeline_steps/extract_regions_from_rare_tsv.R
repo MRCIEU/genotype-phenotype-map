@@ -118,9 +118,21 @@ split_into_regions <- function(gwas, study, p_value_threshold) {
       ld_blocks,
       chr == as.numeric(extracted["CHR"]) & start <= bp & stop > bp & ancestry == study$ancestry
     )
-    return(ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop))
+    if (nrow(ld_block) == 0) {
+      return(NA_character_)
+    }
+    return(as.character(ld_block_string(ld_block$ancestry, ld_block$chr, ld_block$start, ld_block$stop)))
   })
   gwas$ld_block_string <- ld_block_strings
+
+  missing <- dplyr::filter(gwas, is.na(ld_block_string) & P <= p_value_threshold)
+  if (nrow(missing) > 0) {
+    missing <- data.frame(study = study$study_name, chr = missing$CHR, bp = missing$BP)
+    vroom::vroom_write(missing, glue::glue("{pipeline_metadata_dir}/missing_ld_blocks.tsv"), append = T)
+    message("Missing LD block for ", nrow(missing), " significant variants")
+  }
+  gwas <- dplyr::filter(gwas, !is.na(ld_block_string))
+  ld_block_strings <- gwas$ld_block_string
 
   extracted_regions <- lapply(unique(ld_block_strings), function(ld_block_identifier) {
     snps_in_block <- dplyr::filter(gwas, ld_block_string == ld_block_identifier) |>

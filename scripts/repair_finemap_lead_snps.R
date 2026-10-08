@@ -122,9 +122,8 @@ main <- function() {
     message("Dry run only; rerun with --apply TRUE to write the repairs")
   }
   message(paste(
-    "After applying, delete coloc_complete/clustering_complete sentinels and the coloc/",
-    "clustering outputs of the affected blocks, then rerun coloc, clustering, compile,",
-    "and the DB/static web steps"
+    "After applying, run the pipeline as normal; coloc picks up new candidate pairs and",
+    "clustering, compile, and the DB/static web steps rebuild from the repaired metadata"
   ))
   return(invisible(changed))
 }

@@ -132,6 +132,12 @@ main <- function() {
   )
   DBI::dbAppendTable(studies_con, "traits", traits)
 
+  trait_duplicates <- DBI::dbGetQuery(
+    orig_studies_con,
+    sprintf("SELECT * FROM trait_duplicates WHERE trait_id IN (%s)", paste(traits$id, collapse = ","))
+  )
+  DBI::dbAppendTable(studies_con, "trait_duplicates", trait_duplicates)
+
   study_extractions <- DBI::dbGetQuery(
     orig_studies_con,
     sprintf(

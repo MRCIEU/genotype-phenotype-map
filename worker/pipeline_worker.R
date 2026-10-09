@@ -190,6 +190,25 @@ process_message <- function(original_gwas_info, original_payload = NULL) {
       dir.create(extracted_study_dir, recursive = T, showWarnings = F)
       dir.create(ld_block_data_dir, recursive = T, showWarnings = F)
 
+      if (!is_test_run) {
+        # Upload the original metadata first so failed uploads can be rerun by the API
+        original_metadata_file <- tempfile(fileext = ".json")
+        jsonlite::write_json(original_gwas_info$metadata, original_metadata_file, auto_unbox = TRUE, pretty = TRUE)
+        upload_metadata_cmd <- paste(
+          "oci os object put",
+          "--auth", "instance_principal",
+          "--bucket-name", shQuote(oracle_bucket_name),
+          "--name", shQuote(glue::glue("gwas_upload/{original_gwas_info$metadata$guid}/study_metadata.json")),
+          "--file", shQuote(original_metadata_file),
+          "--force"
+        )
+        upload_metadata_status <- system(upload_metadata_cmd, wait = TRUE)
+        unlink(original_metadata_file)
+        if (upload_metadata_status != 0) {
+          stop(paste(original_gwas_info$metadata$guid, "Failed to upload study_metadata.json to Oracle bucket"))
+        }
+      }
+
       gwas_data <- get_gwas_data_from_oracle(original_gwas_info)
       gwas_info <- gwas_data$gwas_info
       gwas <- gwas_data$gwas
@@ -689,7 +708,8 @@ upload_results <- function(results, gwas_info) {
     "--auth", "instance_principal",
     "--bucket-name", shQuote(oracle_bucket_name),
     "--src-dir", shQuote(extracted_study_dir),
-    "--prefix", shQuote(bucket_prefix)
+    "--prefix", shQuote(bucket_prefix),
+    "--exclude", shQuote("study_metadata.json")
   )
 
   status <- system(cmd, wait = TRUE)

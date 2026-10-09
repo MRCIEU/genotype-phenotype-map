@@ -312,7 +312,8 @@ test_that("Pipeline execution and file validation", {
       info = glue::glue("File should not be empty: {expected_db_files$studies_db_file}")
     )
     studies_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), expected_db_files$studies_db_file)
-    for (table in studies_db) {
+    # trait_duplicates is loaded from a curated file in trait_cleaning/, which the test data doesn't have
+    for (table in studies_db[names(studies_db) != "trait_duplicates"]) {
       table_data <- DBI::dbGetQuery(studies_conn, glue::glue("SELECT count(*) as count FROM {table$name}"))
       expect_true(table_data$count > 0, info = glue::glue("Table should not be empty: {table$name}"))
     }

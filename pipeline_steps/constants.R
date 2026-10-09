@@ -48,6 +48,8 @@ variant_annotation_dir <- glue::glue("{data_dir}variant_annotation/")
 ti_pairs_data_dir <- glue::glue("{data_dir}ti_pairs/")
 static_web_dir <- glue::glue("{current_results_dir}static_web/")
 svg_dir <- glue::glue("{static_web_dir}svgs/")
+trait_cleaning_dir <- glue::glue("{data_dir}trait_cleaning/")
+trait_deduplication_file <- glue::glue("{trait_cleaning_dir}common_phenotypic_trait_deduplication.tsv")
 
 oracle_bucket_name <- Sys.getenv("ORACLE_BUCKET_NAME")
 server_sync_dir <- file.path(data_dir, "rsync_to_server")

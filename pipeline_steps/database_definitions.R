@@ -50,6 +50,17 @@ studies_db <- list(
       trait_category TEXT
     )")
   ),
+  trait_duplicates = list(
+    name = "trait_duplicates",
+    persist_id_from = NA,
+    query = "CREATE TABLE trait_duplicates (
+      trait_id INTEGER PRIMARY KEY,
+      duplicate_of INTEGER,
+      match_rules TEXT,
+      FOREIGN KEY (trait_id) REFERENCES traits(id),
+      FOREIGN KEY (duplicate_of) REFERENCES traits(id)
+    )"
+  ),
   studies = list(
     name = "studies",
     persist_id_from = "study_name",

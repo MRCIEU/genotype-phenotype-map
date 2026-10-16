@@ -1,7 +1,7 @@
 ---
 params:
   ld_block: null
-  ld_blocks_file: "../../../pipeline_steps/temp_all_ld_blocks.txt"
+  ld_blocks_file: "../../../pipeline_steps/data/ld_blocks.tsv"
   results_version: "1.0.0"
   n_cores: 50
 output:
@@ -48,8 +48,9 @@ if (is.character(ld_block_param) && length(ld_block_param) > 1L) {
 selected_ld_blocks <- if (use_single_ld_block) {
   trimws(ld_block_param)
 } else {
-  blocks <- readLines(ld_blocks_file, warn = FALSE)
-  blocks[nzchar(blocks)]
+  ld_blocks <- vroom::vroom(ld_blocks_file, show_col_types = FALSE) |>
+    dplyr::filter(ancestry == "EUR")
+  as.character(ld_block_string(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop))
 }
 
 comparison_files <- data.frame(

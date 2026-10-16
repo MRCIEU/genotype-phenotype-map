@@ -110,7 +110,12 @@ unique_data_types <- DBI::dbGetQuery(studies_conn, "SELECT DISTINCT data_type FR
 ## Gene pleiotropy scores
 
 ```{r pleiotropy_scores, echo=F}
-gene_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM gene_pleiotropy")
+gene_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "
+  SELECT gene_id,
+    distinct_trait_categories_cis_trans_all AS distinct_trait_categories,
+    distinct_protein_coding_genes_cis_trans_all AS distinct_protein_coding_genes
+  FROM gene_pleiotropy
+")
 
 # Fit linear model for gene pleiotropy
 lm_gene <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = gene_pleiotropy_scores)
@@ -191,7 +196,12 @@ p_gene_pleiotropy_dist <- ggplot(gene_pleiotropy_bin_counts, aes(x = protein_cod
 ggsave(p_gene_pleiotropy_dist, filename = file.path(report_analysis_dir, "pleiotropy_gene_protein_coding_genes_distribution.png"), width = 8, height = 6)
 print(p_gene_pleiotropy_dist)
 
-variant_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "SELECT * FROM variant_pleiotropy")
+variant_pleiotropy_scores <- DBI::dbGetQuery(studies_conn, "
+  SELECT variant_id,
+    distinct_trait_categories_cis_trans_all AS distinct_trait_categories,
+    distinct_protein_coding_genes_cis_trans_all AS distinct_protein_coding_genes
+  FROM variant_pleiotropy
+")
 
 # Fit linear model for SNP pleiotropy
 lm_snp <- lm(distinct_protein_coding_genes ~ distinct_trait_categories, data = variant_pleiotropy_scores)
@@ -225,7 +235,12 @@ p_variant_pleiotropy <- ggplot(variant_pleiotropy_scores, aes(x = distinct_trait
 ggsave(p_variant_pleiotropy, filename = file.path(report_analysis_dir, "variant_pleiotropy_plot.png"), width = 8, height = 6)
 print(p_variant_pleiotropy)
 
-plei <- DBI::dbGetQuery(studies_conn, "select * from variant_pleiotropy order by variant_id;")
+plei <- DBI::dbGetQuery(studies_conn, "
+  select variant_id,
+    distinct_trait_categories_cis_trans_all as distinct_trait_categories,
+    distinct_protein_coding_genes_cis_trans_all as distinct_protein_coding_genes
+  from variant_pleiotropy order by variant_id;
+")
 
 plei_summary <- plei |>
   mutate(genecat = cut(distinct_protein_coding_genes, breaks = c(0, 1, 2, 5, 10, 1000))) |>

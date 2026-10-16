@@ -50,15 +50,26 @@ studies_db <- list(
       trait_category TEXT
     )")
   ),
+  trait_proxy_groups = list(
+    name = "trait_proxy_groups",
+    persist_id_from = "name",
+    query = "CREATE TABLE trait_proxy_groups (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL
+    )"
+  ),
   trait_duplicates = list(
     name = "trait_duplicates",
     persist_id_from = NA,
     query = "CREATE TABLE trait_duplicates (
       trait_id INTEGER PRIMARY KEY,
-      duplicate_of INTEGER,
+      duplicate_group INTEGER NOT NULL,
+      is_representative BOOLEAN NOT NULL,
       match_rules TEXT,
+      proxy_group_id INTEGER,
+      proxy_rules TEXT,
       FOREIGN KEY (trait_id) REFERENCES traits(id),
-      FOREIGN KEY (duplicate_of) REFERENCES traits(id)
+      FOREIGN KEY (proxy_group_id) REFERENCES trait_proxy_groups(id)
     )"
   ),
   studies = list(
@@ -200,8 +211,14 @@ studies_db <- list(
     persist_id_from = NA,
     query = "CREATE TABLE variant_pleiotropy (
       variant_id INTEGER PRIMARY KEY NOT NULL,
-      distinct_trait_categories INTEGER NOT NULL,
-      distinct_protein_coding_genes INTEGER NOT NULL
+      distinct_trait_categories_cis_gws INTEGER NOT NULL,
+      distinct_trait_categories_cis_all INTEGER NOT NULL,
+      distinct_trait_categories_cis_trans_gws INTEGER NOT NULL,
+      distinct_trait_categories_cis_trans_all INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_gws INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_all INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_trans_gws INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_trans_all INTEGER NOT NULL
     )"
   ),
   gene_pleiotropy = list(
@@ -209,8 +226,14 @@ studies_db <- list(
     persist_id_from = NA,
     query = "CREATE TABLE gene_pleiotropy (
       gene_id INTEGER PRIMARY KEY NOT NULL,
-      distinct_trait_categories INTEGER NOT NULL,
-      distinct_protein_coding_genes INTEGER NOT NULL
+      distinct_trait_categories_cis_gws INTEGER NOT NULL,
+      distinct_trait_categories_cis_all INTEGER NOT NULL,
+      distinct_trait_categories_cis_trans_gws INTEGER NOT NULL,
+      distinct_trait_categories_cis_trans_all INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_gws INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_all INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_trans_gws INTEGER NOT NULL,
+      distinct_protein_coding_genes_cis_trans_all INTEGER NOT NULL
     )"
   ),
   pathway_mappings = list(

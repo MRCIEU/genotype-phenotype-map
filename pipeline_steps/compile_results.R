@@ -23,7 +23,7 @@ parser <- argparser::add_argument(
 parser <- argparser::add_argument(
   parser,
   "--block_list",
-  help = "TSV of study regexes to exclude from compiled output (column: study_regex)",
+  help = "CSV of study id patterns to exclude from compiled output (columns: id_pattern, cis_trans)",
   type = "character",
   default = NA
 )
@@ -73,12 +73,11 @@ parser <- argparser::add_argument(
 
 args <- argparser::parse_args(parser)
 
-block_regexes <- NULL
+block_list <- NULL
 block_list_path <- args$block_list
 if (!is.na(block_list_path) && file.exists(block_list_path)) {
   block_list_path <- normalizePath(block_list_path)
   block_list <- vroom::vroom(block_list_path, show_col_types = F)
-  block_regexes <- block_list$study_regex
 }
 
 main <- function() {
@@ -269,28 +268,40 @@ aggregate_data_produced_by_pipeline <- function(
     traits_processed <- dplyr::mutate(traits_processed, category = NA)
   }
 
-  if (!is.null(block_regexes) && length(block_regexes) > 0) {
-    extracted_studies <- extracted_studies |> dplyr::filter(!is_study_blocked(study))
-    standardised_studies <- standardised_studies |> dplyr::filter(!is_study_blocked(study))
-    imputed_studies <- imputed_studies |> dplyr::filter(!is_study_blocked(study))
-    finemapped_studies <- finemapped_studies |> dplyr::filter(!is_study_blocked(study))
-    studies_processed <- studies_processed |> dplyr::filter(!is_study_blocked(study_name))
-    traits_processed <- traits_processed |> dplyr::filter(!is_study_blocked(study_name))
+  if (!is.null(block_list) && nrow(block_list) > 0) {
+    # Extractions are blocked per study and LD block, using the cis_trans of the extraction, as the
+    # pairwise, clustered and rare results have no cis_trans column
+    blocked_extractions <- extracted_studies |>
+      dplyr::filter(is_study_blocked(block_list, study, cis_trans)) |>
+      dplyr::distinct(study, ld_block)
+    blocked_keys <- paste(blocked_extractions$study, blocked_extractions$ld_block)
+    message(glue::glue("Blocking {nrow(blocked_extractions)} study extraction(s) from {block_list_path}"))
+
+    extracted_studies <- extracted_studies |> dplyr::filter(!paste(study, ld_block) %in% blocked_keys)
+    standardised_studies <- standardised_studies |> dplyr::filter(!paste(study, ld_block) %in% blocked_keys)
+    imputed_studies <- imputed_studies |> dplyr::filter(!paste(study, ld_block) %in% blocked_keys)
+    finemapped_studies <- finemapped_studies |> dplyr::filter(!paste(study, ld_block) %in% blocked_keys)
+
+    # Whole studies are only removed by block list rows without a cis_trans
+    studies_processed <- studies_processed |>
+      dplyr::filter(!is_study_blocked(block_list, study_name, rep(NA_character_, dplyr::n())))
+    traits_processed <- traits_processed |>
+      dplyr::filter(!is_study_blocked(block_list, study_name, rep(NA_character_, dplyr::n())))
 
     coloc_pairwise_results <- coloc_pairwise_results |>
       dplyr::filter(
-        !is_study_blocked(sub("_.*", "", unique_study_a)) &
-          !is_study_blocked(sub("_.*", "", unique_study_b))
+        !paste(study_a, ld_block) %in% blocked_keys &
+          !paste(study_b, ld_block) %in% blocked_keys
       )
 
     coloc_clustered_results <- coloc_clustered_results |>
-      dplyr::filter(!is_study_blocked(sub("_.*", "", unique_study_id)))
+      dplyr::filter(!paste(sub("_.*", "", unique_study_id), ld_block) %in% blocked_keys)
 
     if (nrow(compare_rare_results) > 0 && "traits" %in% names(compare_rare_results)) {
       compare_rare_results <- compare_rare_results |>
-        dplyr::filter(vapply(strsplit(traits, ", "), function(ids) {
-          return(!any(is_study_blocked(sub("_.*", "", trimws(ids)))))
-        }, logical(1)))
+        dplyr::filter(mapply(function(ids, block) {
+          return(!any(paste(sub("_.*", "", trimws(ids)), block) %in% blocked_keys))
+        }, strsplit(traits, ", "), ld_block))
     }
   }
 
@@ -372,13 +383,6 @@ create_study_extractions <- function(pipeline_data) {
 
   all_studies <- dplyr::bind_rows(finemapped_studies, rare_studies)
   return(all_studies)
-}
-
-is_study_blocked <- function(study_name) {
-  if (length(block_regexes) == 0) {
-    return(rep(FALSE, length(study_name)))
-  }
-  return(vapply(study_name, function(s) any(vapply(block_regexes, function(p) grepl(p, s), logical(1))), logical(1)))
 }
 
 invisible(main())

@@ -274,6 +274,30 @@ sync_summary_stats <- function() {
 
   message(paste("Running:", cmd))
   status <- system(cmd, wait = TRUE)
+
+  # Rare variant studies aren't finemapped, so their standardised files (study_extractions.file) are synced instead.
+  # They are hard linked into a staging dir, as oci sync can't take a file list and the study dir is too large to filter
+  message("syncing rare variant GWAS results to Oracle bucket")
+  rare_results <- vroom::vroom(file.path(args$results_dir, "rare_results.tsv.gz"), show_col_types = F)
+  rare_files <- unique(trimws(unlist(strsplit(rare_results$files, ","))))
+
+  rare_sync_dir <- file.path(server_sync_dir, "rare_study", "")
+  unlink(rare_sync_dir, recursive = TRUE)
+  rare_sync_files <- sub(extracted_study_dir, rare_sync_dir, rare_files, fixed = TRUE)
+  for (dir in unique(dirname(rare_sync_files))) {
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  }
+  file.link(rare_files, rare_sync_files)
+
+  cmd <- paste(
+    "oci os object sync",
+    "--bucket-name", shQuote(oracle_bucket_name),
+    "--src-dir", shQuote(rare_sync_dir),
+    "--prefix", shQuote("study/")
+  )
+
+  message(paste("Running:", cmd))
+  status <- system(cmd, wait = TRUE)
   return()
 }
 

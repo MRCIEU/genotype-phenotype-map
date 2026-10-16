@@ -352,6 +352,7 @@ rule create_results_db:
    shell:
        """
        Rscript create_db_from_results.R \
+           --results_dir {version_results_dir} \
            --studies_db_file {studies_db_file} \
            --associations_full_db_file {associations_full_db_file} \
            --associations_specific_db_file {associations_specific_db_file} \

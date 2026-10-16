@@ -25,8 +25,7 @@ parser <- argparser::add_argument(
   parser,
   "--results_dir",
   help = "Results directory to be used (default: current results directory)",
-  type = "character",
-  default = as.character(latest_results_dir)
+  type = "character"
 )
 args <- argparser::parse_args(parser)
 
@@ -131,6 +130,9 @@ main <- function() {
     sprintf("SELECT * FROM traits WHERE id IN (%s)", paste(studies$trait_id, collapse = ","))
   )
   DBI::dbAppendTable(studies_con, "traits", traits)
+
+  trait_proxy_groups <- DBI::dbGetQuery(orig_studies_con, "SELECT * FROM trait_proxy_groups")
+  DBI::dbAppendTable(studies_con, "trait_proxy_groups", trait_proxy_groups)
 
   trait_duplicates <- DBI::dbGetQuery(
     orig_studies_con,

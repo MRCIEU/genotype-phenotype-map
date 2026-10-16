@@ -49,7 +49,7 @@ db_path <- function(scenario_dir, name) {
   return(file.path(scenario_dir, db_file_names[[name]]))
 }
 
-run_create_db <- function(scenario_dir) {
+run_create_db <- function(scenario_dir, ...) {
   db_args <- unlist(lapply(db_names, function(name) {
     return(c(paste0("--", name, "_db_file"), db_path(scenario_dir, name)))
   }))
@@ -57,7 +57,8 @@ run_create_db <- function(scenario_dir) {
     "create_db_from_results.R",
     "--results_dir", scenario_dir,
     db_args,
-    "--completed_output_file", file.path(scenario_dir, "create_dbs_done")
+    "--completed_output_file", file.path(scenario_dir, "create_dbs_done"),
+    ...
   ))
 }
 
@@ -111,7 +112,8 @@ test_that("create_db: every foreign key in the studies DB resolves", {
   expect_true(all(study_extractions$study_id %in% study_ids))
   expect_true(all(study_extractions$variant_id %in% variant_ids))
   expect_true(all(study_extractions$ld_block_id %in% ld_block_ids))
-  # svg and LBF file paths are stored relative to DATA_DIR
+  # extraction, svg and LBF file paths are stored relative to DATA_DIR
+  expect_false(any(startsWith(study_extractions$file, "/")))
   expect_false(any(startsWith(na.omit(study_extractions$svg_file), "/")))
   expect_false(any(startsWith(na.omit(study_extractions$file_with_lbfs), "/")))
 
@@ -180,9 +182,118 @@ test_that("create_db: opengwas source urls point at the dataset page", {
   )
 })
 
+test_that("create_db: pleiotropy scores are split by genome wide significance and cis/trans", {
+  gene_pleiotropy_query <- paste(
+    "SELECT gene_annotations.gene, gene_pleiotropy.* FROM gene_pleiotropy",
+    "JOIN gene_annotations ON gene_pleiotropy.gene_id = gene_annotations.id ORDER BY gene_annotations.gene"
+  )
+  variant_pleiotropy_query <- paste(
+    "SELECT variant_pleiotropy.* FROM variant_pleiotropy",
+    "JOIN variant_annotations ON variant_pleiotropy.variant_id = variant_annotations.id",
+    "WHERE variant_annotations.snp = '1:1237752_C_T'"
+  )
+
+  # The one coloc group holds a cis eQTL (TNFRSF4), a cis sQTL (TNFRSF18) and a phenotype, all genome wide significant
+  baseline_genes <- db_query(baseline_studies_db, gene_pleiotropy_query)
+  expect_equal(baseline_genes$gene, c("TNFRSF18", "TNFRSF4"))
+  expect_equal(baseline_genes$distinct_protein_coding_genes_cis_gws, c(1, 1))
+  expect_equal(baseline_genes$distinct_protein_coding_genes_cis_trans_all, c(1, 1))
+  expect_equal(baseline_genes$distinct_trait_categories_cis_gws, baseline_genes$distinct_trait_categories_cis_trans_all)
+  baseline_variant <- db_query(baseline_studies_db, variant_pleiotropy_query)
+  expect_equal(baseline_variant$distinct_protein_coding_genes_cis_gws, 2)
+  expect_equal(baseline_variant$distinct_protein_coding_genes_cis_trans_all, 2)
+
+  sqtl_study <- "qtl-GTEx-sQTL-v10-Brain-Cortex-chr1:1204236:1205370:clu-63--:ENSG00000186891-14"
+  scenario_dir <- prepare_results("pleiotropy", edits = list(
+    study_extractions = function(results) {
+      is_sqtl <- results$study == sqtl_study
+      results$cis_trans[is_sqtl] <- "trans"
+      results$min_p[is_sqtl] <- "1e-6"
+      return(results)
+    }
+  ))
+  result <- run_create_db(scenario_dir)
+  expect_step_succeeded(result, file.path(scenario_dir, "create_dbs_done"))
+  studies_db_file <- db_path(scenario_dir, "studies")
+
+  genes <- db_query(studies_db_file, gene_pleiotropy_query)
+  # TNFRSF18 now only has a trans QTL that is not genome wide significant
+  tnfrsf18 <- genes[genes$gene == "TNFRSF18", ]
+  expect_equal(tnfrsf18$distinct_trait_categories_cis_all, 0)
+  expect_equal(tnfrsf18$distinct_protein_coding_genes_cis_all, 0)
+  expect_equal(tnfrsf18$distinct_protein_coding_genes_cis_trans_all, 1)
+  expect_equal(tnfrsf18$distinct_trait_categories_cis_trans_gws, 0)
+  expect_equal(tnfrsf18$distinct_protein_coding_genes_cis_trans_gws, 0)
+
+  # TNFRSF4 is still cis, but the trans sQTL only counts in its cis_trans_all score
+  tnfrsf4 <- genes[genes$gene == "TNFRSF4", ]
+  expect_equal(tnfrsf4$distinct_protein_coding_genes_cis_all, 0)
+  expect_equal(tnfrsf4$distinct_protein_coding_genes_cis_trans_gws, 0)
+  expect_equal(tnfrsf4$distinct_protein_coding_genes_cis_trans_all, 1)
+  expect_equal(
+    tnfrsf4$distinct_trait_categories_cis_trans_all,
+    baseline_genes$distinct_trait_categories_cis_trans_all[baseline_genes$gene == "TNFRSF4"]
+  )
+
+  variant <- db_query(studies_db_file, variant_pleiotropy_query)
+  expect_equal(variant$distinct_protein_coding_genes_cis_gws, 1)
+  expect_equal(variant$distinct_protein_coding_genes_cis_all, 1)
+  expect_equal(variant$distinct_protein_coding_genes_cis_trans_gws, 1)
+  expect_equal(variant$distinct_protein_coding_genes_cis_trans_all, 2)
+})
+
 test_that("create_db: without KEGG or STRING files the pathway tables are empty", {
   expect_equal(db_query(baseline_studies_db, "SELECT count(*) AS n FROM pathway_mappings")$n, 0)
   expect_equal(db_query(baseline_studies_db, "SELECT count(*) AS n FROM pathway_sizes")$n, 0)
+})
+
+test_that("create_db: without a trait deduplication file the trait duplicate tables are empty", {
+  expect_equal(db_query(baseline_studies_db, "SELECT count(*) AS n FROM trait_duplicates")$n, 0)
+  expect_equal(db_query(baseline_studies_db, "SELECT count(*) AS n FROM trait_proxy_groups")$n, 0)
+})
+
+test_that("create_db: trait duplicates link to proxy groups, which keep their ids from the latest studies DB", {
+  dir.create(trait_cleaning_dir, recursive = TRUE, showWarnings = FALSE)
+  withr::defer(unlink(trait_deduplication_file))
+  # test-height and not-in-db have no traits in the DB, so the Height proxy group is left out
+  vroom::vroom_write(tibble::tribble(
+    ~trait, ~duplicate_group, ~is_representative, ~match_rules, ~proxy_group_name, ~proxy_rules,
+    "ebi-a-GCST90028992", 1, TRUE, "", "", "",
+    "ukb-wes-bm-00000297", 2, TRUE, "", "Heart disease", "icd10",
+    "ukb-wes-bm-00000040", 3, TRUE, "", "Back pain", "icd10",
+    "not-in-db", 2, FALSE, "ukb_field", "Heart disease", "icd10",
+    "test-height", 4, TRUE, "", "Height", ""
+  ), trait_deduplication_file, na = "")
+
+  # a latest studies DB holding only an older trait_proxy_groups table
+  dir.create(latest_results_dir, recursive = TRUE, showWarnings = FALSE)
+  unlink(latest_studies_db)
+  withr::defer(unlink(latest_studies_db))
+  conn <- duckdb::dbConnect(duckdb::duckdb(), latest_studies_db)
+  DBI::dbWriteTable(conn, "trait_proxy_groups", data.frame(id = 7L, name = "Heart disease"))
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+
+  scenario_dir <- prepare_results("trait_duplicates")
+  result <- run_create_db(scenario_dir)
+  expect_step_succeeded(result, file.path(scenario_dir, "create_dbs_done"))
+  studies_db_file <- db_path(scenario_dir, "studies")
+
+  proxy_groups <- db_query(studies_db_file, "SELECT * FROM trait_proxy_groups ORDER BY id")
+  expect_equal(proxy_groups$name, c("Heart disease", "Back pain"))
+  expect_equal(proxy_groups$id, c(7, 8))
+
+  trait_duplicates <- db_query(studies_db_file, paste(
+    "SELECT traits.trait, trait_duplicates.*, trait_proxy_groups.name AS proxy_group_name",
+    "FROM trait_duplicates JOIN traits ON trait_duplicates.trait_id = traits.id",
+    "LEFT JOIN trait_proxy_groups ON trait_duplicates.proxy_group_id = trait_proxy_groups.id",
+    "ORDER BY traits.trait"
+  ))
+  expect_equal(trait_duplicates$trait, c("ebi-a-GCST90028992", "ukb-wes-bm-00000040", "ukb-wes-bm-00000297"))
+  expect_equal(trait_duplicates$proxy_group_name, c(NA, "Back pain", "Heart disease"))
+  expect_true(all(trait_duplicates$is_representative))
+  # empty strings in the file are stored as NULL
+  expect_true(all(is.na(trait_duplicates$match_rules)))
+  expect_true(is.na(trait_duplicates$proxy_rules[1]))
 })
 
 test_that("create_db: ids are kept from the latest studies DB, and new rows get the next id", {
@@ -317,4 +428,50 @@ test_that("create_db: duplicate studies or study extractions fail the step", {
   result <- run_create_db(duplicate_study_dir)
   expect_step_failed(result, file.path(duplicate_study_dir, "create_dbs_done"), "duplicate study_name")
   expect_true(file.exists(file.path(duplicate_study_dir, "duplicate_studies.tsv")))
+})
+
+test_that("create_db: --studies_db_only rebuilds only the studies DB, reusing the existing LD DB", {
+  scenario_dir <- prepare_results("studies_db_only")
+  result <- run_create_db(scenario_dir)
+  expect_step_succeeded(result, file.path(scenario_dir, "create_dbs_done"))
+  unlink(file.path(scenario_dir, "create_dbs_done"))
+
+  other_dbs <- vapply(setdiff(db_names, "studies"), function(name) db_path(scenario_dir, name), character(1))
+  other_db_md5s <- tools::md5sum(other_dbs)
+
+  # a renamed trait shows the studies DB was rebuilt from the new results
+  traits_file <- file.path(scenario_dir, "traits_processed.tsv.gz")
+  traits <- read_tsv(traits_file, col_types = vroom::cols(.default = "c"))
+  traits$trait[traits$study_name == "ebi-a-GCST90028992"] <- "Eosinophil count (renamed)"
+  vroom::vroom_write(traits, traits_file, na = "NA")
+
+  result <- run_create_db(scenario_dir, "--studies_db_only")
+  expect_step_succeeded(result)
+  # the other DBs were not rebuilt, so the step is not marked complete
+  expect_false(file.exists(file.path(scenario_dir, "create_dbs_done")))
+  expect_equal(tools::md5sum(other_dbs), other_db_md5s)
+
+  studies_db_file <- db_path(scenario_dir, "studies")
+  trait_names <- db_query(studies_db_file, "SELECT DISTINCT trait_name FROM coloc_groups_wide")$trait_name
+  expect_true("Eosinophil count (renamed)" %in% trait_names)
+  coloc_groups <- db_query(studies_db_file, "SELECT * FROM coloc_groups")
+  expect_equal(nrow(coloc_groups), 3)
+  variant_ids <- db_query(studies_db_file, "SELECT id FROM variant_annotations")$id
+  expect_true(all(coloc_groups$variant_id %in% variant_ids))
+})
+
+test_that("create_db: --studies_db_only fails without an existing LD DB, leaving the studies DB in place", {
+  scenario_dir <- prepare_results("studies_db_only_no_ld")
+  studies_db_file <- db_path(scenario_dir, "studies")
+  writeLines("existing studies db", studies_db_file)
+
+  result <- run_step(
+    "create_db_from_results.R",
+    "--results_dir", scenario_dir,
+    "--studies_db_file", studies_db_file,
+    "--ld_db_file", file.path(scenario_dir, "missing_ld.db"),
+    "--studies_db_only"
+  )
+  expect_step_failed(result, error_pattern = "needs an existing LD DB")
+  expect_equal(readLines(studies_db_file), "existing studies db")
 })

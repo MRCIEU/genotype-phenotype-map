@@ -1,7 +1,7 @@
 ---
 params:
   ld_block: null
-  ld_blocks_file: "../../../pipeline_steps/temp_all_ld_blocks.txt"
+  ld_blocks_file: "../../../pipeline_steps/data/ld_blocks.tsv"
   results_version: "1.0.0"
   block_list_name: "1_0_0"
 output:
@@ -27,8 +27,9 @@ ld_blocks_file <- params$ld_blocks_file
 if (!file.exists(ld_blocks_file)) {
   stop("Missing LD block list: ", ld_blocks_file)
 }
-comparison_ld_blocks <- readLines(ld_blocks_file, warn = FALSE)
-comparison_ld_blocks <- comparison_ld_blocks[nzchar(comparison_ld_blocks)]
+ld_blocks <- vroom::vroom(ld_blocks_file, show_col_types = FALSE) |>
+  dplyr::filter(ancestry == "EUR")
+comparison_ld_blocks <- as.character(ld_block_string(ld_blocks$ancestry, ld_blocks$chr, ld_blocks$start, ld_blocks$stop))
 
 ld_block <- params$ld_block
 if (is.null(ld_block) || length(ld_block) != 1L || !nzchar(ld_block)) {
@@ -228,7 +229,7 @@ gene_pleiotropy <- DBI::dbGetQuery(
     SELECT
       ga.id AS gene_id,
       ga.gene AS target,
-      gp.distinct_trait_categories
+      gp.distinct_trait_categories_cis_trans_all AS distinct_trait_categories
     FROM gene_annotations AS ga
     LEFT JOIN gene_pleiotropy AS gp
       ON ga.id = gp.gene_id

@@ -5,6 +5,9 @@ output: html_fragment
 params:
   # Path to a pipeline results directory (contains studies.db, etc.). Empty string uses current_results_dir from constants.R.
   results_dir: "/local-scratch/projects/genotype-phenotype-map/results/1.0.0"
+  # If true, also run the chunks that draw the paper's Figure 2b-d panels
+  # (summary_b_*, summary_c_*, summary_f_*). These were previously eval=F.
+  paper_figures: true
 ---
 
 
@@ -611,7 +614,7 @@ p2b <- ggplot(variant_types_viz, aes(x = reorder(data_type, count), y = count, f
 ggsave(file.path(report_analysis_dir, 'data_type_variant_type.png'), p2b, width = 10, height = 6, dpi = 300)
 ```
 
-```{r study-extractions-by-tissue, echo=F, eval=F}
+```{r study-extractions-by-tissue, echo=F, eval=isTRUE(params$paper_figures)}
 all_coloc_groups <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT coloc_groups.*, studies.data_type, study_extractions.min_p,
   variant_annotations.feature_type, variant_annotations.consequence, variant_annotations.impact, variant_annotations.cdna_position,
   variant_annotations.cds_position, variant_annotations.protein_position, variant_annotations.amino_acids, variant_annotations.codons,
@@ -645,7 +648,13 @@ study_extractions_by_tissue <- DBI::dbGetQuery(latest_results$studies_conn, "SEL
 
 study_extractions_by_tissue <- study_extractions_by_tissue |>
   dplyr::mutate(
-    pval_bucket = dplyr::if_else(min_p <= 5e-8, "P ≤ 5e-8", "P > 5e-8"),
+    # Same buckets as Figure 2b/2d: loci are only extracted at P < 1.5e-4, so the
+    # non-GWS bucket is bounded on both sides rather than labelled "P > 5e-8".
+    pval_bucket = dplyr::case_when(
+      min_p <= 5e-8 ~ "P ≤ 5e-8",
+      min_p < 1.5e-4 ~ "5e-8 < P < 1.5e-4",
+      TRUE ~ NA_character_
+    ),
     tissue = dplyr::case_when(
       tissue == 'Whole blood' ~ 'Whole Blood',
       tissue == 'Blood' ~ 'Whole Blood',
@@ -653,7 +662,13 @@ study_extractions_by_tissue <- study_extractions_by_tissue |>
     )
   )
 
+message(
+  "Figure 2c: excluded ", sum(is.na(study_extractions_by_tissue$pval_bucket)),
+  " common-variant tissue extractions with min_p >= 1.5e-4"
+)
+
 tissue_counts <- study_extractions_by_tissue |>
+  dplyr::filter(!is.na(pval_bucket)) |>
   dplyr::group_by(tissue, pval_bucket) |>
   dplyr::summarise(count = dplyr::n(), .groups = "drop")
 
@@ -668,7 +683,7 @@ tissue_counts <- tissue_counts |>
   dplyr::left_join(tissue_totals, by = "tissue") |>
   dplyr::mutate(
     tissue = factor(tissue, levels = rev(tissue_order)),
-    pval_bucket = factor(pval_bucket, levels = c("P ≤ 5e-8", "P > 5e-8"))
+    pval_bucket = factor(pval_bucket, levels = c("P ≤ 5e-8", "5e-8 < P < 1.5e-4"))
   )
 
 # Add tissue information to all_coloc_groups
@@ -779,9 +794,9 @@ p_tissue_counts <- ggplot(tissue_counts, aes(x = reorder(tissue, total), y = cou
   scale_fill_manual(
     values = c(
       "P ≤ 5e-8" = cb_blue,
-      "P > 5e-8" = cb_orange 
+      "5e-8 < P < 1.5e-4" = cb_orange
     ),
-    breaks = c("P ≤ 5e-8", "P > 5e-8")
+    breaks = c("P ≤ 5e-8", "5e-8 < P < 1.5e-4")
   )
 
 p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, fill = coloc_status)) +
@@ -814,10 +829,15 @@ p_tissue_coloc <- ggplot(tissue_coloc_summary, aes(x = tissue, y = percentage, f
 
 ggsave(file.path(report_analysis_dir, 'summary_f_study_extractions_by_tissue_pvalue.png'), p_tissue_counts, width = 10, height = 6, dpi = 300)
 ggsave(file.path(report_analysis_dir, 'summary_g_study_extractions_by_tissue_coloc.png'), p_tissue_coloc, width = 10, height = 6, dpi = 300)
+# Plotted counts (Figure 2c), for the legend n values / Source Data
+data.table::fwrite(
+  dplyr::select(tissue_counts, tissue, pval_bucket, count, total),
+  file.path(report_analysis_dir, 'summary_f_study_extractions_by_tissue_pvalue.tsv'), sep = "\t"
+)
 ```
 
 
-```{r study-extractions-summary, echo=F, eval=F}
+```{r study-extractions-summary, echo=F, eval=isTRUE(params$paper_figures)}
 study_extractions_summary <- lapply(unique_data_types, function(this_data_type) {
   study_extractions <- dplyr::filter(latest_study_extractions, data_type == this_data_type)
   num_studies <- length(unique(study_extractions$study_id))
@@ -893,9 +913,9 @@ ggsave(file.path(report_analysis_dir, 'study_extractions_cis_trans.png'), p3a, w
 friendly_data_type_names <- unlist(data_type_names)
 
 pval_variant_levels <- c(
-  "Rare: 1.5e-4 < P < 5e-8",
+  "Rare: 5e-8 < P < 1.5e-4",
   "Rare: P ≤ 5e-8",
-  "Common: 1.5e-4 < P < 5e-8",
+  "Common: 5e-8 < P < 1.5e-4",
   "Common: P ≤ 5e-8"
 )
 
@@ -904,7 +924,7 @@ pval_variant_viz <- latest_study_extractions |>
     variant_group = dplyr::if_else(variant_type == "common", "Common", "Rare"),
     pval_bucket = dplyr::case_when(
       min_p <= 5e-8 ~ "P ≤ 5e-8",
-      min_p > 5e-8 & min_p < 1.5e-4 ~ "1.5e-4 < P < 5e-8",
+      min_p > 5e-8 & min_p < 1.5e-4 ~ "5e-8 < P < 1.5e-4",
       TRUE ~ NA_character_
     )
   ) |>
@@ -945,15 +965,20 @@ p3b <- ggplot(pval_variant_viz, aes(x = reorder(data_type_label, total), y = cou
   scale_fill_manual(
     values = c(
       "Common: P ≤ 5e-8" = cb_blue,
-      "Common: 1.5e-4 < P < 5e-8" = cb_light_blue,
+      "Common: 5e-8 < P < 1.5e-4" = cb_light_blue,
       "Rare: P ≤ 5e-8" = cb_orange,
-      "Rare: 1.5e-4 < P < 5e-8" = cb_light_orange
+      "Rare: 5e-8 < P < 1.5e-4" = cb_light_orange
     ),
     breaks = pval_variant_levels,
-    guide = guide_legend(reverse = TRUE)
+    guide = guide_legend(reverse = TRUE, nrow = 2, byrow = TRUE)
   )
 
 ggsave(file.path(report_analysis_dir, 'summary_b_study_extractions_p_value_threshold.png'), p3b, width = 10, height = 6, dpi = 300)
+# Plotted counts (Figure 2b), for the legend n values / Source Data
+data.table::fwrite(
+  dplyr::select(pval_variant_viz, data_type_label, pval_variant_category, count, total),
+  file.path(report_analysis_dir, 'summary_b_study_extractions_p_value_threshold.tsv'), sep = "\t"
+)
 
 # Prepare data for p-value threshold visualization by trait category (phenotype only)
 phenotype_pval_variant_viz <- DBI::dbGetQuery(latest_results$studies_conn, "SELECT 
@@ -969,7 +994,7 @@ phenotype_pval_variant_viz <- DBI::dbGetQuery(latest_results$studies_conn, "SELE
     variant_group = dplyr::if_else(variant_type == "common", "Common", "Rare"),
     pval_bucket = dplyr::case_when(
       min_p <= 5e-8 ~ "P ≤ 5e-8",
-      min_p > 5e-8 & min_p < 1.5e-4 ~ "1.5e-4 < P < 5e-8",
+      min_p > 5e-8 & min_p < 1.5e-4 ~ "5e-8 < P < 1.5e-4",
       TRUE ~ NA_character_
     )
   ) |>
@@ -1412,7 +1437,7 @@ if (nrow(gwas_hits_numeric) > 0) {
 }
 ```
 
-```{r phenotype_study_extractions_by_trait_category_c, echo=F, eval=F}
+```{r phenotype_study_extractions_by_trait_category_c, echo=F, eval=isTRUE(params$paper_figures)}
 # Create p-value threshold bar chart by trait category
 # Use shared trait category ordering based on molecular colocalization percentage from section (E)
 phenotype_pval_variant_viz_ordered <- phenotype_pval_variant_viz |>
@@ -1444,15 +1469,20 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
   scale_fill_manual(
     values = c(
       "Common: P ≤ 5e-8" = cb_blue,
-      "Common: 1.5e-4 < P < 5e-8" = cb_light_blue,
+      "Common: 5e-8 < P < 1.5e-4" = cb_light_blue,
       "Rare: P ≤ 5e-8" = cb_orange,
-      "Rare: 1.5e-4 < P < 5e-8" = cb_light_orange
+      "Rare: 5e-8 < P < 1.5e-4" = cb_light_orange
     ),
     breaks = pval_variant_levels,
-    guide = guide_legend(reverse = TRUE)
+    guide = guide_legend(reverse = TRUE, nrow = 2, byrow = TRUE)
   )
 
 ggsave(file.path(report_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.png'), p3b_trait, width = 10, height = 6, dpi = 300)
+# Plotted counts (Figure 2d), for the legend n values / Source Data
+data.table::fwrite(
+  dplyr::select(phenotype_pval_variant_viz_ordered, trait_category, pval_variant_category, count),
+  file.path(report_analysis_dir, 'summary_c_phenotype_study_extractions_p_value_threshold_by_trait_category.tsv'), sep = "\t"
+)
 ```
 
 ### Genome-wide phenotype hits with strong H4 support

@@ -340,12 +340,14 @@ p_variant_pleiotropy_gene_distribution <- ggplot() +
     title = "Number of trait categories by number of colocalizing genes (per variant)",
     x = "Number of distinct protein-coding genes colocalizing with the variant",
     y = "Distinct trait categories per variant",
-    caption = "Dot area: % of variants in the bin with that number of trait categories. Diamond and bars: mean and 95% CI."
+    caption = "Dot area: % of variants in the bin. Diamond and bars: mean and 95% CI."
   ) +
   guides(shape = guide_legend(order = 1), size = guide_legend(order = 2)) +
   theme_minimal() +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold", size = 11.5),
+    plot.title.position = "plot", # centre over the whole image so the long title clears the panel letter
+    plot.caption.position = "plot",
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank()
   )

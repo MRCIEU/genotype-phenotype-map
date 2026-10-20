@@ -1440,18 +1440,26 @@ if (nrow(gwas_hits_numeric) > 0) {
 ```{r phenotype_study_extractions_by_trait_category_c, echo=F, eval=isTRUE(params$paper_figures)}
 # Create p-value threshold bar chart by trait category
 # Use shared trait category ordering based on molecular colocalization percentage from section (E)
+# For this panel only, drop the explicit "NA" trait category from the ordering vector
+trait_category_levels <- rev(shared_trait_category_order[shared_trait_category_order != "NA"])
+# Categories absent from the Figure 2e ordering (no GWS phenotype colocalizations) would
+# otherwise be plotted as an unlabelled "NA" row, so they are dropped and reported here
+not_in_ordering <- phenotype_pval_variant_viz |>
+  dplyr::filter(!is.na(trait_category), trait_category != "NA", !(trait_category %in% trait_category_levels))
+if (nrow(not_in_ordering) > 0) {
+  message(
+    "Figure 2d: dropped ", sum(not_in_ordering$count), " loci in trait categories not in the Figure 2e ordering: ",
+    paste(unique(not_in_ordering$trait_category), collapse = ", ")
+  )
+}
 phenotype_pval_variant_viz_ordered <- phenotype_pval_variant_viz |>
-  dplyr::filter(!is.na(trait_category), trait_category != "NA") |>
+  dplyr::filter(!is.na(trait_category), trait_category %in% trait_category_levels) |>
   dplyr::mutate(
     pval_variant_category = factor(
       pval_variant_category,
       levels = pval_variant_levels
     ),
-    # For this panel only, drop the explicit \"NA\" trait category from the ordering vector
-    trait_category = factor(
-      trait_category,
-      levels = rev(shared_trait_category_order[shared_trait_category_order != "NA"])
-    )
+    trait_category = factor(trait_category, levels = trait_category_levels)
   )
 
 p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, y = count, fill = pval_variant_category)) +
@@ -1464,7 +1472,8 @@ p3b_trait <- ggplot(phenotype_pval_variant_viz_ordered, aes(x = trait_category, 
         legend.position = "bottom",
         axis.text = element_text(color = "black"),
         panel.grid.major.y = element_blank(),
-        panel.grid.minor = element_blank()) +
+        panel.grid.minor = element_blank(),
+        plot.margin = margin(5.5, 25, 5.5, 5.5)) + # room for the last x-axis label (1,000,000)
   scale_y_continuous(labels = scales::comma) +
   scale_fill_manual(
     values = c(

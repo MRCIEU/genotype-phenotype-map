@@ -409,6 +409,19 @@ associations_db <- list(
       associations_table_name TEXT NOT NULL
     )"
   ),
+  # general associations are appended here in batches of LD blocks, then split into associations_N tables
+  associations_staging = list(
+    name = "associations_staging",
+    query = "CREATE TABLE associations_staging (
+      variant_id INTEGER,
+      study_id INTEGER,
+      beta REAL,
+      se REAL,
+      p DOUBLE,
+      eaf REAL,
+      imputed BOOLEAN
+    )"
+  ),
   associations = list(
     name = "associations",
     query = "CREATE TABLE table_name (

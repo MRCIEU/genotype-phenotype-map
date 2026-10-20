@@ -249,7 +249,7 @@ change_column_names <- function(gwas, columns = list(), remove_extra_columns = F
   return(gwas)
 }
 
-split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshold) {
+split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshold, extract_all_blocks = FALSE) {
   ld_blocks_prepared <- ld_blocks |>
     dplyr::mutate(
       ld_block = ld_block_string(study_metadata$ancestry, chr, start, stop),
@@ -278,6 +278,8 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
   gwas_with_blocks <- tibble::as_tibble(gwas_with_blocks) |>
     dplyr::select(-dplyr::any_of(c("chr", "start", "stop", "ancestry")))
   gwas_split <- split(gwas_with_blocks, gwas_with_blocks$ld_block)
+  # with extract_all_blocks every LD block is extracted, but only if at least one passes the p value threshold
+  keep_all_blocks <- extract_all_blocks && any(gwas_with_blocks$P <= p_value_threshold, na.rm = TRUE)
 
   extracted_regions <- parallel::mclapply(gwas_split, mc.cores = 10, function(snps_in_block) {
     top_hit <- dplyr::arrange(snps_in_block, P) |>
@@ -287,7 +289,7 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
     variant_bp <- as.numeric(top_hit$BP)
     variant_chr <- as.numeric(top_hit$CHR)
 
-    if (variant_p > p_value_threshold) {
+    if (variant_p > p_value_threshold && !keep_all_blocks) {
       return(NULL)
     }
 
@@ -302,7 +304,8 @@ split_into_regions <- function(gwas, ld_blocks, study_metadata, p_value_threshol
       log_p = -log10(variant_p),
       ld_block = snps_in_block$ld_block[1],
       file = extracted_file,
-      cis_trans = NA
+      cis_trans = NA,
+      passes_p_value_threshold = variant_p <= p_value_threshold
     )
 
     return(extraction_info)

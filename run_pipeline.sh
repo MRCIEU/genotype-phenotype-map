@@ -8,8 +8,10 @@ fi
 # Defaults (env / .env can set these; CLI flags below override)
 export PIPELINE_VERSION="${PIPELINE_VERSION:-current}"
 export BLOCK_LIST="${BLOCK_LIST:-}"
+SKIP_IDENTIFY=false
 
-# Parse CLI: --version / -v, --block-list / --block_list — removed from args passed to snakemake
+# Parse CLI: --version / -v, --block-list / --block_list, --skip-identify - removed from args passed to snakemake
+# --skip-identify keeps an existing studies_to_process.tsv (e.g. from scripts/requeue_studies_for_full_extraction.R)
 SNAKEMAKE_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,6 +31,10 @@ while [ $# -gt 0 ]; do
       export BLOCK_LIST="$2"
       shift 2
       ;;
+    --skip-identify)
+      SKIP_IDENTIFY=true
+      shift
+      ;;
     *)
       SNAKEMAKE_ARGS+=("$1")
       shift
@@ -44,7 +50,11 @@ export APPTAINER_VARS="--nv -B /local-scratch -B /projects -B /local-scratch/tmp
 
 echo "Start time $(date)"
 echo "PIPELINE_VERSION=$PIPELINE_VERSION BLOCK_LIST=${BLOCK_LIST:-<empty>}"
-apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
+if [[ "$SKIP_IDENTIFY" == true ]]; then
+  echo "Skipping identify_studies_to_process.R, using the existing studies_to_process.tsv" &> $snakemake_log
+else
+  apptainer run $APPTAINER_VARS $IMAGE Rscript pipeline_steps/identify_studies_to_process.R &> $snakemake_log
+fi
 echo "-----" &>> $snakemake_log
 
 NUM_STUDIES=$(wc -l < ${DATA_DIR}/pipeline_metadata/studies_to_process.tsv)

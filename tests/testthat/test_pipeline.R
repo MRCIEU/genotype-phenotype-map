@@ -257,6 +257,48 @@ test_that("Pipeline execution and file validation", {
     }
   })
 
+  test_that("LD blocks below a study's p value threshold are imputed, but not finemapped", {
+    names <- ld_block_file_basenames()
+    studies <- vroom::vroom(expected_tsv_files$studies_file, show_col_types = FALSE)
+    extractions <- vroom::vroom(expected_tsv_files$study_extractions_file, show_col_types = FALSE)
+
+    below_threshold <- lapply(ld_info$ld_block_data, function(block_dir) {
+      extracted_file <- file.path(block_dir, names$extracted_studies)
+      if (!file.exists(extracted_file)) {
+        return(NULL)
+      }
+      extracted <- vroom::vroom(extracted_file, show_col_types = FALSE) |>
+        dplyr::select(study, ld_block, passes_p_value_threshold)
+      return(dplyr::filter(extracted, !passes_p_value_threshold))
+    }) |> dplyr::bind_rows()
+    expect_true(nrow(below_threshold) > 0, info = "Some phenotype LD blocks should be below their p value threshold")
+    below_threshold_data_types <- studies$data_type[match(below_threshold$study, studies$study_name)]
+    expect_true(
+      all(below_threshold_data_types %in% non_qtl_data_types),
+      info = "Only non-QTL studies extract every LD block"
+    )
+
+    imputed <- logical(nrow(below_threshold))
+    for (i in seq_len(nrow(below_threshold))) {
+      study <- below_threshold$study[i]
+      block_dir <- file.path(ld_block_data_dir, below_threshold$ld_block[i])
+      imputed_file <- file.path(block_dir, names$imputed_studies)
+      if (file.exists(imputed_file)) {
+        imputed[i] <- study %in% vroom::vroom(imputed_file, show_col_types = FALSE)$study
+      }
+      finemapped_file <- file.path(block_dir, names$finemapped_studies)
+      if (file.exists(finemapped_file)) {
+        finemapped <- vroom::vroom(finemapped_file, show_col_types = FALSE)
+        expect_false(study %in% finemapped$study, info = glue::glue("{study} should not be finemapped in {block_dir}"))
+      }
+      expect_false(
+        any(extractions$study == study & extractions$ld_block == below_threshold$ld_block[i]),
+        info = glue::glue("{study} should not have a study extraction in {block_dir}")
+      )
+    }
+    expect_true(any(imputed), info = "LD blocks below the p value threshold should be imputed")
+  })
+
   test_that("Coloc results are valid", {
     clustered_results_file <- file.path(
       ld_block_data_dir, coloc_block, ld_block_file_basenames()$clustered

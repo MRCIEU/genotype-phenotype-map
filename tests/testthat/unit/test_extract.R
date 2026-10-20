@@ -81,7 +81,7 @@ run_summary_stats <- function(study_row, ...) {
 
 # summary_stats ---------------------------------------------------------------------------------------------------
 
-test_that("extract summary_stats: one region per LD block with a hit, sorted by significance", {
+test_that("extract summary_stats: a phenotype with a hit extracts every LD block, sorted by significance", {
   local_block()
   study_row <- summary_stats_study(summary_stats_gwas())
 
@@ -89,7 +89,9 @@ test_that("extract summary_stats: one region per LD block with a hit, sorted by 
   expect_step_succeeded(result, extracted_output_file(study_row))
 
   extracted_snps <- read_extracted_snps(study_row)
-  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block))
+  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block, third_block))
+  expect_equal(extracted_snps$passes_p_value_threshold, c(TRUE, TRUE, FALSE))
+  expect_equal(extracted_snps$log_p[3], 3)
   expect_equal(extracted_snps$bp[1], causal_snps$bp[causal_snps$name == "causal_1"])
   expect_true(all(diff(extracted_snps$log_p) <= 0))
   expect_true(all(is.na(extracted_snps$cis_trans)))
@@ -101,10 +103,10 @@ test_that("extract summary_stats: one region per LD block with a hit, sorted by 
   }
 })
 
-test_that("extract summary_stats: the p value threshold decides which blocks are extracted", {
+test_that("extract summary_stats: the p value threshold decides which blocks pass, and if any are extracted", {
   local_block()
   thresholds <- list(genome_wide = 5e-8, default = NA, nothing = 1e-300)
-  expected_blocks <- list(genome_wide = fixture_block, default = c(fixture_block, second_block), nothing = character())
+  expected_passes <- list(genome_wide = c(TRUE, FALSE, FALSE), default = c(TRUE, TRUE, FALSE))
 
   for (name in names(thresholds)) {
     study_row <- summary_stats_study(
@@ -117,8 +119,30 @@ test_that("extract summary_stats: the p value threshold decides which blocks are
     if (name == "nothing") {
       expect_lt(file.size(extracted_output_file(study_row)), 70)
     } else {
-      expect_equal(read_extracted_snps(study_row)$ld_block, expected_blocks[[name]], info = name)
+      extracted_snps <- read_extracted_snps(study_row)
+      expect_equal(extracted_snps$ld_block, c(fixture_block, second_block, third_block), info = name)
+      expect_equal(extracted_snps$passes_p_value_threshold, expected_passes[[name]], info = name)
     }
+  }
+})
+
+test_that("extract summary_stats: QTL studies only extract the blocks that pass the p value threshold", {
+  local_block()
+  thresholds <- list(genome_wide = 5e-8, default = NA)
+  expected_blocks <- list(genome_wide = fixture_block, default = c(fixture_block, second_block))
+
+  for (name in names(thresholds)) {
+    study_row <- summary_stats_study(
+      summary_stats_gwas(),
+      study_name = paste0("unit-qtl-", name),
+      p_value_threshold = thresholds[[name]],
+      data_type = data_types$protein
+    )
+    result <- run_summary_stats(study_row)
+    expect_step_succeeded(result, extracted_output_file(study_row))
+    extracted_snps <- read_extracted_snps(study_row)
+    expect_equal(extracted_snps$ld_block, expected_blocks[[name]], info = name)
+    expect_true(all(extracted_snps$passes_p_value_threshold), info = name)
   }
 })
 
@@ -139,7 +163,7 @@ test_that("extract summary_stats: columns are renamed from the metadata column_n
   expect_step_succeeded(result, extracted_output_file(study_row))
 
   extracted_snps <- read_extracted_snps(study_row)
-  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block))
+  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block, third_block))
   extraction <- read_tsv(extracted_snps$file[1])
   expect_true(all(c("CHR", "BP", "EA", "OA", "P", "BETA", "SE", "EAF") %in% colnames(extraction)))
   expect_false(any(c("chromosome", "position", "pval") %in% colnames(extraction)))
@@ -177,7 +201,7 @@ test_that("extract summary_stats: chromosome names, P of 0 and odds ratios are s
 
   extracted_snps <- read_extracted_snps(study_row)
   # the P = 0 hit is treated as the smallest double, so it becomes the most significant region
-  expect_equal(extracted_snps$ld_block, c(second_block, fixture_block))
+  expect_equal(extracted_snps$ld_block, c(second_block, fixture_block, third_block))
   expect_equal(extracted_snps$log_p[1], -log10(.Machine$double.xmin))
   for (file in extracted_snps$file) {
     extraction <- read_tsv(file)
@@ -222,7 +246,7 @@ test_that("extract summary_stats: GRCh37 GWASes are lifted over to GRCh38", {
   expect_true(any(grepl("the GWAS lost 1 rows", result$output)))
 
   extracted_snps <- read_extracted_snps(study_row)
-  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block))
+  expect_equal(extracted_snps$ld_block, c(fixture_block, second_block, third_block))
   expect_equal(extracted_snps$bp[1], causal_snps$bp[causal_snps$name == "causal_1"])
   block_1_extraction <- read_tsv(extracted_snps$file[1])
   expect_true(all(block_1_extraction$BP %in% gwas_38$BP))
@@ -262,7 +286,10 @@ test_that("extract summary_stats: worker uploads are read from study_metadata.js
 
   result <- run_step("extract_regions_from_summary_stats.R", "--worker_guid", guid)
   expect_step_succeeded(result, file.path(worker_dir, "extracted_snps.tsv"))
-  expect_equal(read_tsv(file.path(worker_dir, "extracted_snps.tsv"))$ld_block, c(fixture_block, second_block))
+  # worker uploads only extract the blocks that pass the p value threshold
+  worker_extracted_snps <- read_tsv(file.path(worker_dir, "extracted_snps.tsv"))
+  expect_equal(worker_extracted_snps$ld_block, c(fixture_block, second_block))
+  expect_true(all(worker_extracted_snps$passes_p_value_threshold))
   expect_true(any(grepl(paste("from", guid), result$output)))
   expect_false(dir.exists(file.path(worker_dir, "svgs")))
 })
@@ -326,6 +353,14 @@ test_that("organise: extractions are merged into each LD block's extracted_studi
     reference_build = "GRCh38", ld_block = existing$ld_block, variant_type = "common", coverage = "dense"
   )
   vroom::vroom_write(existing_studies, ld_block_file_paths(fixture_block)$extracted_studies)
+  # an earlier, unflagged row for the same extracted file is replaced by the new one
+  third_extraction <- dplyr::filter(read_tsv(extracted_output_file(study_row)), ld_block == third_block)
+  stale_studies <- dplyr::mutate(
+    existing_studies,
+    study = "unit-summary-stats", file = third_extraction$file, ld_block = third_block
+  )
+  dir.create(ld_block_file_paths(third_block)$ld_block_data, recursive = TRUE, showWarnings = FALSE)
+  vroom::vroom_write(stale_studies, ld_block_file_paths(third_block)$extracted_studies)
 
   output_file <- file.path(pipeline_metadata_dir, "updated_ld_blocks_to_colocalise.tsv")
   for (run in 1:2) {
@@ -335,15 +370,21 @@ test_that("organise: extractions are merged into each LD block's extracted_studi
 
   block_1_studies <- read_tsv(ld_block_file_paths(fixture_block)$extracted_studies)
   expect_equal(sort(block_1_studies$study), c("existing-study", "unit-summary-stats"))
+  expect_true(all(block_1_studies$passes_p_value_threshold))
   block_2_studies <- read_tsv(ld_block_file_paths(second_block)$extracted_studies)
   expect_equal(block_2_studies$study, "unit-summary-stats")
-  expect_false("unit-empty" %in% c(block_1_studies$study, block_2_studies$study))
+  expect_true(block_2_studies$passes_p_value_threshold)
+  block_3_studies <- read_tsv(ld_block_file_paths(third_block)$extracted_studies)
+  expect_equal(block_3_studies$study, "unit-summary-stats")
+  expect_false(block_3_studies$passes_p_value_threshold)
+  expect_false("unit-empty" %in% c(block_1_studies$study, block_2_studies$study, block_3_studies$study))
 
   updated_blocks <- read_tsv(output_file)
-  expect_equal(updated_blocks$ld_block, c(fixture_block, second_block))
+  expect_equal(updated_blocks$ld_block, c(fixture_block, second_block, third_block))
   expect_equal(updated_blocks$data_dir, as.character(c(
     ld_block_file_paths(fixture_block)$ld_block_data,
-    ld_block_file_paths(second_block)$ld_block_data
+    ld_block_file_paths(second_block)$ld_block_data,
+    ld_block_file_paths(third_block)$ld_block_data
   )))
 })
 
@@ -471,7 +512,7 @@ run_opengwas <- function(study_row) {
   return(run_extraction("extract_regions_from_opengwas.R", study_row))
 }
 
-test_that("extract opengwas: GRCh37 VCFs are lifted over, clumped, and extracted once per LD block", {
+test_that("extract opengwas: GRCh37 VCFs are lifted over, clumped, and every LD block is extracted once", {
   local_block()
   study_row <- opengwas_study(p_value_threshold = 5e-8)
 
@@ -484,8 +525,16 @@ test_that("extract opengwas: GRCh37 VCFs are lifted over, clumped, and extracted
   expect_equal(anyDuplicated(extracted_snps$ld_block), 0)
   expect_extractions_inside_blocks(extracted_snps)
   clumped_snps <- read_tsv(file.path(study_row$extracted_location, "clumped_snps.tsv"))
-  expect_gte(nrow(clumped_snps), nrow(extracted_snps))
+  expect_gte(nrow(clumped_snps), sum(extracted_snps$passes_p_value_threshold))
   expect_true(all(clumped_snps$P <= 5e-8))
+  # blocks without a clumped hit are represented by their most significant SNP
+  unclumped <- extracted_snps[!extracted_snps$passes_p_value_threshold, ]
+  expect_gte(nrow(unclumped), 1)
+  for (i in seq_len(nrow(unclumped))) {
+    extraction <- read_tsv(unclumped$file[i])
+    expect_equal(unclumped$log_p[i], max(extraction$LP), tolerance = 1e-6)
+    expect_equal(unclumped$bp[i], extraction$BP[which.max(extraction$LP)])
+  }
   expect_true(file.exists(file.path(study_row$extracted_location, "svgs/full.zip")))
 
   # a second run reuses the lifted over VCF
@@ -493,6 +542,19 @@ test_that("extract opengwas: GRCh37 VCFs are lifted over, clumped, and extracted
   expect_step_succeeded(rerun, extracted_output_file(study_row))
   expect_true(any(grepl("already converted to hg38", rerun$output)))
   expect_equal(read_extracted_snps(study_row)$ld_block, extracted_snps$ld_block)
+})
+
+test_that("extract opengwas: QTL studies only extract the blocks with a clumped hit", {
+  local_block()
+  study_row <- opengwas_study(p_value_threshold = 5e-8, data_type = data_types$protein)
+
+  result <- run_opengwas(study_row)
+  expect_step_succeeded(result, extracted_output_file(study_row))
+  extracted_snps <- read_extracted_snps(study_row)
+  expect_gte(nrow(extracted_snps), 1)
+  expect_true(all(extracted_snps$passes_p_value_threshold))
+  clumped_snps <- read_tsv(file.path(study_row$extracted_location, "clumped_snps.tsv"))
+  expect_gte(nrow(clumped_snps), nrow(extracted_snps))
 })
 
 test_that("extract opengwas: a study with no significant hits extracts nothing", {

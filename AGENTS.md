@@ -16,7 +16,7 @@ GWAS/QTL summary-statistics pipeline: ingest studies (opengwas/besd/tsv/summary_
 ## Environment
 
 - All R/Python run inside apptainer image `docker://mrcieu/genotype-phenotype-map:1.0.0` (built from `docker/Dockerfile`). `run_pipeline.sh` builds `APPTAINER_VARS` with required bind mounts.
-- `run_pipeline.sh` loads `.env` (use `.env.pipeline_local` / `.env.pipeline_worker` as templates; `.env` is gitignored) and accepts `--version/-v` and `--block-list` args. It must run `identify_studies_to_process.R` **before** `snakemake` — the `Snakefile` reads `$DATA_DIR/pipeline_metadata/studies_to_process.tsv` at import time and exits if it is missing/empty. Snakemake's profile is the repo root (`config.yaml`).
+- `run_pipeline.sh` loads `.env` (use `.env.pipeline_local` / `.env.pipeline_worker` as templates; `.env` is gitignored) and accepts `--version/-v`, `--block-list` and `--skip-identify` args. It must run `identify_studies_to_process.R` **before** `snakemake` (`--skip-identify` keeps an existing `studies_to_process.tsv`, e.g. from `scripts/requeue_studies_for_full_extraction.R`) — the `Snakefile` reads `$DATA_DIR/pipeline_metadata/studies_to_process.tsv` at import time and exits if it is missing/empty. Snakemake's profile is the repo root (`config.yaml`).
 - The `Snakefile` does `os.chdir('pipeline_steps')`; R scripts resolve paths via `constants.R` from `DATA_DIR`/`RESULTS_DIR` env vars.
 - Setting `TEST_RUN` makes code read LD blocks from `tests/data/ld_blocks.tsv` instead of `pipeline_steps/data/ld_blocks.tsv`.
 
@@ -35,6 +35,7 @@ GWAS/QTL summary-statistics pipeline: ingest studies (opengwas/besd/tsv/summary_
 ## Architecture notes
 
 - Per-LD-block work lives under `$DATA_DIR/ld_blocks/{ancestry}/{chr}/{start}-{stop}/`, gated by `*_complete` sentinel files (e.g. `standardisation_complete`, `imputation_complete`, `finemapping_complete`, `coloc_complete`, `clustering_complete`, `compare_rare_complete`) used as Snakemake outputs. Rules skip a block by touching the sentinel when no studies are in it.
+- Common non-QTL studies with at least one significant block extract **every** LD block (`extract_all_ld_blocks()` in `constants.R`), so `associations_full.db` holds them at every coloc/rare SNP. Blocks below the study's p value threshold are flagged `passes_p_value_threshold = FALSE` in `extracted_studies.tsv`; they are standardised and imputed but not finemapped.
 - `pipeline_steps/constants.R` is the shared config/source of truth for every R script; `database_definitions.R` holds DB schemas; `gwas_calculations.R` holds shared stats code. `SVG_*`/plot helpers are in `svg_helpers.R`.
 - Results are written under `$RESULTS_DIR/<PIPELINE_VERSION>/` (`current` by default); `latest/` mirrors it.
 

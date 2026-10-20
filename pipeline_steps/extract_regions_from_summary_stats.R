@@ -81,7 +81,8 @@ main <- function() {
     ld_blocks,
     p_value_threshold,
     extracted_output_file,
-    create_full_svgs = !is_worker
+    create_full_svgs = !is_worker,
+    extract_all_blocks = !is_worker && extract_all_ld_blocks(study_metadata$data_type, study_metadata$variant_type)
   )
   return(invisible(NULL))
 }
@@ -106,6 +107,8 @@ build_study_metadata_from_studies_to_process <- function(study) {
     file_type = file_type,
     reference_build = study$reference_build,
     p_value_threshold = study$p_value_threshold,
+    data_type = study$data_type,
+    variant_type = study$variant_type,
     column_names = column_names
   ))
 }
@@ -115,7 +118,8 @@ extract_summary_stats_regions <- function(
   ld_blocks,
   p_value_threshold,
   extracted_output_file,
-  create_full_svgs = FALSE
+  create_full_svgs = FALSE,
+  extract_all_blocks = FALSE
 ) {
   if (study_metadata$file_type == extraction_file_types$vcf) {
     stop("VCF support not yet implemented")
@@ -141,7 +145,7 @@ extract_summary_stats_regions <- function(
       create_svgs_from_gwas(study_metadata, gwas_for_svg)
     }
 
-    extracted_regions <- split_into_regions(gwas, ld_blocks, study_metadata, p_value_threshold)
+    extracted_regions <- split_into_regions(gwas, ld_blocks, study_metadata, p_value_threshold, extract_all_blocks)
     vroom::vroom_write(extracted_regions, extracted_output_file)
     return(invisible(NULL))
   } else {

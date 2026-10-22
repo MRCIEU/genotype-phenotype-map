@@ -26,7 +26,7 @@ rs_from_table <- function(tab) {
   }
   rr <- epitools::riskratio(tab, method = "wald")
   est <- rr$measure[2, ]
-  data.frame(
+  return(data.frame(
     n_supp_launched = as.integer(tab[2, 2]),
     n_supp = as.integer(sum(tab[2, ])),
     n_unsupp_launched = as.integer(tab[1, 2]),
@@ -35,7 +35,7 @@ rs_from_table <- function(tab) {
     CI_lower = unname(est["lower"]),
     CI_upper = unname(est["upper"]),
     p_fisher = unname(rr$p.value[2, "fisher.exact"])
-  )
+  ))
 }
 
 # Write the numbers behind a Figure 6 panel (legend n values / Source Data) to
@@ -45,5 +45,5 @@ write_panel_table <- function(df, name, analysis_dir, trans_suffix = "") {
   out_file <- file.path(analysis_dir, paste0(name, trans_suffix, ".tsv"))
   data.table::fwrite(as.data.frame(df), out_file, sep = "\t")
   message("Wrote ", out_file)
-  invisible(out_file)
+  return(invisible(out_file))
 }

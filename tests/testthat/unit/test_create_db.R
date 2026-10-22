@@ -283,12 +283,12 @@ test_that("create_db: trait duplicates link to proxy groups, which keep their id
   expect_equal(proxy_groups$id, c(7, 8))
 
   trait_duplicates <- db_query(studies_db_file, paste(
-    "SELECT traits.trait, trait_duplicates.*, trait_proxy_groups.name AS proxy_group_name",
+    "SELECT traits.pipeline_id, trait_duplicates.*, trait_proxy_groups.name AS proxy_group_name",
     "FROM trait_duplicates JOIN traits ON trait_duplicates.trait_id = traits.id",
     "LEFT JOIN trait_proxy_groups ON trait_duplicates.proxy_group_id = trait_proxy_groups.id",
-    "ORDER BY traits.trait"
+    "ORDER BY traits.pipeline_id"
   ))
-  expect_equal(trait_duplicates$trait, c("ebi-a-GCST90028992", "ukb-wes-bm-00000040", "ukb-wes-bm-00000297"))
+  expect_equal(trait_duplicates$pipeline_id, c("ebi-a-GCST90028992", "ukb-wes-bm-00000040", "ukb-wes-bm-00000297"))
   expect_equal(trait_duplicates$proxy_group_name, c(NA, "Back pain", "Heart disease"))
   expect_true(all(trait_duplicates$is_representative))
   # empty strings in the file are stored as NULL

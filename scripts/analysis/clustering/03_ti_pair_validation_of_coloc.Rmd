@@ -79,6 +79,13 @@ if (file.exists(exclude_file)) {
 } else {
   message("No exclude_studies.txt found under ", ti_pairs_data_dir, "; skipping study exclusion")
 }
+
+if (!include_trans) {
+  trans_extractions <- data.table::fread(file.path(versioned_results_dir, "study_extractions.tsv.gz")) |>
+    dplyr::filter(cis_trans == "trans") |>
+    dplyr::pull(unique_study_id)
+  pre_infomap_clusters <- pre_infomap_clusters |> dplyr::filter(!(unique_study_id %in% trans_extractions))
+}
 ```
 
 What genetic (QTL) evidence is available for each molecular target?
@@ -187,7 +194,7 @@ gc_support_preinfomap <- do.call("rbind",lapply(ti_preinfomap, function(x){x[[1]
 
 ```{r colocpairs-support}
 # Load pre-computed GC support based on coloc pairs (pre clustering)
-load(ti_file("gpmap_tipairwisecolocs.rda")) # ti_colocs_frompairs
+load(ti_file(glue::glue("gpmap_tipairwisecolocs{trans_suffix}.rda"))) # ti_colocs_frompairs
 gc_support_pairs <- do.call("rbind",lapply(ti_colocs_frompairs, function(x){x[[1]]})) |>
   dplyr::mutate(ti_uid = ti_pairs$ti_uid, .before = "target") |>
   dplyr::rename("GC_support_colocpairs" = GC_support,

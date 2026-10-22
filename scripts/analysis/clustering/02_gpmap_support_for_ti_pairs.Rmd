@@ -19,6 +19,8 @@ params:
   # If false, drop trans QTL markers from the API coloc results (cis and complex-trait rows kept).
   # Outputs are suffixed with _notrans so both modes can be compared.
   include_trans: true
+  # gpmapr API to query: "local" (localhost:8000) or "production" (public API, 1.0.0 data)
+  api: "local"
 ---
 
 ```{r setup, message=FALSE}
@@ -93,7 +95,7 @@ indications_cache <- ti_file("gpmap_indications.rda")
 indications_rare_cache <- ti_file("gpmap_indications_rarevariants.rda")
 
 # Trait metadata (single cheap call); maps trait names to ids for the API pulls
-gpmapr::select_api("local")
+gpmapr::select_api(params$api)
 gpmap_all_traits <- gpmapr::all_traits()
 traits_ids <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
 traits_ids_rare <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
@@ -478,8 +480,8 @@ Pull pairwise coloc results for indications in the GPMAP and identify high confi
 
 ```{r coloc-pairs, message=FALSE}
 # Traits to pull:
-ti_colocs_frompairs_cache <- ti_file("gpmap_tipairwisecolocs.rda")
-pairwisecolocs_cache <- ti_file("gpmap_indications_pairwisecolocs.rda")
+ti_colocs_frompairs_cache <- ti_file(glue::glue("gpmap_tipairwisecolocs{trans_suffix}.rda"))
+pairwisecolocs_cache <- ti_file(glue::glue("gpmap_indications_pairwisecolocs{trans_suffix}.rda"))
 indications_ids_file <- ti_file("gpmap_indications_ids.txt")
 pairwise_indications_file <- ti_file("coloc_pairwise_indications.txt")
 
@@ -536,10 +538,10 @@ pull_ti_coloc_pairs <- function(target, trait) {
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-# Pairwise coloc support comes from versioned results (trans markers are not filtered here),
-# so its caches are shared across include_trans modes. Only the primary (include_trans) run
-# rebuilds them; the no-trans run re-uses the cache so the 71GB pairwise extract is not re-read.
-if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompairs_cache)) {
+# Pairwise coloc support comes from versioned results. Both modes share the pre-filtered
+# coloc_pairwise_indications.txt extract; include_trans = FALSE drops trans QTL studies and
+# writes _notrans caches.
+if (params$recompute_cache || !file.exists(ti_colocs_frompairs_cache)) {
   write.table(
     traits_ids$trait,
     file = indications_ids_file,
@@ -549,8 +551,10 @@ if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompair
   )
 
   # Prefer a pre-filtered pairwise extract if present; otherwise filter the versioned results file.
-  # Manual equivalent:
-  # zcat coloc_pairwise_results.tsv.gz | awk -F'\t' '$7 >= 0.8' | grep -F -f gpmap_indications_ids.txt
+  # Manual equivalent (PP.H4.abf is column 14 and study_a / study_b are columns 2 / 4 in the current schema):
+  # pigz -dc coloc_pairwise_results.tsv.gz |
+  #   awk -F'\t' 'NR==FNR{ids[$1];next} FNR==1 || ($14>=0.8 && (($2 in ids)||($4 in ids)))' \
+  #   gpmap_indications_ids.txt - > coloc_pairwise_indications.txt
   if (!file.exists(pairwise_indications_file)) {
     coloc_pairwise_path <- file.path(versioned_results_dir, "coloc_pairwise_results.tsv.gz")
     if (!file.exists(coloc_pairwise_path)) {
@@ -583,6 +587,13 @@ if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompair
     )
   trait_pair_colocs <- rbind(trait_pair_colocs, trait_pair_colocs_flip) |>
     dplyr::filter(study_a %in% traits_ids$trait)
+  if (!include_trans) {
+    # Drop pairs where the QTL side (study_b) is a trans extraction
+    trans_extractions <- data.table::fread(file.path(versioned_results_dir, "study_extractions.tsv.gz")) |>
+      dplyr::filter(cis_trans == "trans") |>
+      dplyr::pull(unique_study_id)
+    trait_pair_colocs <- trait_pair_colocs |> dplyr::filter(!(unique_study_b %in% trans_extractions))
+  }
   trait_pair_colocs <- trait_pair_colocs |>
     dplyr::left_join(
       study_metadata[, c("study_name", "data_type", "gene", "tissue")],

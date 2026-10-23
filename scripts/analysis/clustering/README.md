@@ -7,7 +7,9 @@ truth-set construction used to evaluate clustering methods.
 
 From `pipeline_steps/constants.R`:
 
-- `ti_pairs_data_dir` → `$DATA_DIR/ti_pairs/` (Minikel inputs, matching tables, caches)
+- `ti_pairs_data_dir` → `$DATA_DIR/ti_pairs/` (Minikel inputs, matching tables, caches). Override with
+  `TI_PAIRS_DATA_DIR` to keep caches for different results versions apart (e.g. `$DATA_DIR/ti_pairs_1.0.0/`,
+  `$DATA_DIR/ti_pairs_current/`); the caches are not keyed by results version.
 - Versioned pipeline artefacts → `$RESULTS_DIR/<results_version>/`
 - Analysis outputs → `$RESULTS_DIR/<results_version>/analysis/clustering/`
 
@@ -49,9 +51,10 @@ ti_pairs/
 
 | Script | Cadence | Purpose |
 |--------|---------|---------|
+| `00_build_preinfomap_clusters.R` | Once per results version | Build `coloc_clustered_results_no_pruning.tsv.gz` (read by 03) from the components of each LD block's `unpruned_graph` in `igraph_clustered_results.rds` |
 | `01_extracting_ti_pairs.R` | Once (or when trait–MeSH matching changes) | Build `target-indicationpairs_gpmapevidence.tsv` |
-| `02_gpmap_support_for_ti_pairs.Rmd` | Re-run when clusters / results version change | Score GC support; write `GPMAP_T-Ipairs_*.tsv`. `recompute_cache` controls derived caches; `recompute_api_cache` controls the slow `gpmapr::trait()` pulls (defaults to `recompute_cache`); `include_trans = FALSE` drops trans QTL markers post-pull and writes `*_notrans` outputs. |
-| `03_ti_pair_validation_of_coloc.Rmd` | Re-run per clustering comparison | Compare pairwise / pre-infomap / final clusters. `recompute_cache` controls `tipairs_preinfomap[<suffix>].rda`; `include_trans` must match 02. |
+| `02_gpmap_support_for_ti_pairs.Rmd` | Re-run when clusters / results version change | Score GC support; write `GPMAP_T-Ipairs_*.tsv`. `recompute_cache` controls derived caches; `recompute_api_cache` controls the slow `gpmapr::trait()` pulls (defaults to `recompute_cache`); `include_trans = FALSE` drops trans QTL markers (API results and pairwise colocs) and writes `*_notrans` outputs. `api` selects the gpmapr API: `"local"` (localhost:8000) or `"production"` (public API, 1.0.0 data; also the source of gene pleiotropy scores). |
+| `03_ti_pair_validation_of_coloc.Rmd` | Re-run per clustering comparison | Compare pairwise / pre-infomap / final clusters. `recompute_cache` controls `tipairs_preinfomap[<suffix>].rda`; `include_trans` must match 02 (FALSE also drops trans studies from the pre-infomap clusters). |
 | `04_pull_truth_links.R` | After 02+03 | Write `tipairs_launched_truthset[<suffix>].tsv`. Pass `--include_trans FALSE` for the no-trans set. |
 
 ### Clustering method comparison
@@ -67,6 +70,14 @@ ti_pairs/
 
 ```bash
 cd scripts/analysis/clustering
+
+# The current coloc_pairwise_results.tsv.gz is too large to fread; pre-filter it into the cache dir
+# (02 uses coloc_pairwise_indications.txt when present). PP.H4.abf is column 14 in the current schema.
+pigz -dc $RESULTS_DIR/current/coloc_pairwise_results.tsv.gz |
+  awk -F'\t' 'NR==FNR{ids[$1];next} FNR==1 || ($14>=0.8 && (($2 in ids)||($4 in ids)))' \
+  $TI_PAIRS_DATA_DIR/gpmap_indications_ids.txt - > $TI_PAIRS_DATA_DIR/coloc_pairwise_indications.txt
+
+Rscript 00_build_preinfomap_clusters.R --results_version current
 
 Rscript 01_extracting_ti_pairs.R --results_version 1.0.0
 

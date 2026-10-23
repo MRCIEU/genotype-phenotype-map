@@ -41,11 +41,11 @@ studies_db <- list(
   ),
   traits = list(
     name = "traits",
-    persist_id_from = "trait",
+    persist_id_from = "pipeline_id",
     query = glue::glue("CREATE TABLE traits (
       id INTEGER PRIMARY KEY,
       data_type TEXT NOT NULL,
-      trait TEXT NOT NULL,
+      pipeline_id TEXT NOT NULL,
       trait_name TEXT NOT NULL,
       trait_category TEXT
     )")
@@ -82,7 +82,7 @@ studies_db <- list(
       trait_id INTEGER NOT NULL,
       ancestry TEXT NOT NULL,
       sample_size INTEGER NOT NULL,
-      category TEXT NOT NULL,
+      variable_type TEXT NOT NULL,
       probe TEXT,
       tissue TEXT,
       cell_type TEXT,
@@ -436,7 +436,7 @@ gwas_upload_db <- list(
       name TEXT NOT NULL,
       sample_size INTEGER NOT NULL,
       ancestry TEXT NOT NULL,
-      category TEXT NOT NULL,
+      variable_type TEXT NOT NULL,
       is_published BOOLEAN NOT NULL,
       doi TEXT,
       should_be_added BOOLEAN,
@@ -444,7 +444,8 @@ gwas_upload_db <- list(
       status TEXT NOT NULL,
       failure_reason TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP
+      updated_at TIMESTAMP,
+      message TEXT
     )"
   ),
   study_extractions = list(
@@ -469,10 +470,10 @@ gwas_upload_db <- list(
     name = "coloc_pairs",
     query = "CREATE TABLE coloc_pairs (
       gwas_upload_id INTEGER NOT NULL,
-      existing_study_extraction_id_a INTEGER,
-      study_extraction_id_a INTEGER,
-      existing_study_extraction_id_b INTEGER,
-      study_extraction_id_b INTEGER,
+      existing_study_extraction_a_id INTEGER,
+      upload_study_extraction_a_id INTEGER,
+      existing_study_extraction_b_id INTEGER,
+      upload_study_extraction_b_id INTEGER,
       ld_block_id INTEGER NOT NULL,
       h3 REAL CHECK (h3 BETWEEN 0 AND 1),
       h4 REAL CHECK (h4 BETWEEN 0 AND 1),
@@ -487,7 +488,7 @@ gwas_upload_db <- list(
       gwas_upload_id INTEGER NOT NULL,
       coloc_group_id INTEGER NOT NULL,
       existing_study_extraction_id INTEGER,
-      study_extraction_id INTEGER,
+      upload_study_extraction_id INTEGER,
       variant_id INTEGER NOT NULL,
       ld_block_id INTEGER NOT NULL,
       h4_connectedness REAL CHECK (h4_connectedness BETWEEN 0 AND 1),

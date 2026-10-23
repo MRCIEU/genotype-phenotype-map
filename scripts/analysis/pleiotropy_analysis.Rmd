@@ -242,39 +242,122 @@ plei <- DBI::dbGetQuery(studies_conn, "
   from variant_pleiotropy order by variant_id;
 ")
 
-plei_summary <- plei |>
-  mutate(genecat = cut(distinct_protein_coding_genes, breaks = c(0, 1, 2, 5, 10, 1000))) |>
-  filter(!is.na(genecat)) |>
-  mutate(genecat = case_when(
-    genecat == "(0,1]" ~ "1",
-    genecat == "(1,2]" ~ "2",
-    genecat == "(2,5]" ~ "3-5",
-    genecat == "(5,10]" ~ "6-10",
-    genecat == "(10,1e+03]" ~ "10+"
-  )) |>
-  mutate(genecat = factor(genecat, levels = c("1", "2", "3-5", "6-10", "10+"))) |>
-  group_by(genecat) |>
-  summarise(m = mean(distinct_trait_categories), s = sd(distinct_trait_categories),
-            n = n(), se = s / sqrt(n), lci = m - 1.96 * se, uci = m + 1.96 * se,
-            .groups = 'drop') |>
-  mutate(n_label = paste0("n=", scales::comma(n)))
+# Figure 3e: trait-category pleiotropy by number of colocalizing genes (per variant).
+# The unit is one candidate variant (one per colocalization group) that colocalizes with
+# >= 1 protein-coding gene. Shown as the full distribution (dot area = % of variants in
+# the bin with that many trait categories) with the mean and 95% CI overlaid, instead of
+# a bar of means (journal policy on bar charts). The outcome is a small, zero-heavy
+# integer, so box plots would collapse onto 0/1.
+gene_bin_levels <- c("1", "2", "3-5", "6-10", ">10")
 
-p_variant_pleiotropy_gene_distribution <- ggplot(plei_summary, aes(x = genecat, y = m)) +
-  geom_bar(stat = "identity", fill = cb_blue, color = "black", alpha = 0.7) +
-  geom_errorbar(aes(ymin = lci, ymax = uci), width = 0.2) +
-  geom_text(aes(y = 0, label = n_label), vjust = -0.5, size = 8 / .pt, color = "black") +
-  labs(
-    title = "Mean number of trait categories by number of colocalizing genes (per variant)",
-    x = "Number of distinct protein-coding genes colocalizing with the variant (binned)",
-    y = "Mean distinct trait categories per variant",
-    caption = "Bars: mean number of distinct trait categories among variants in each gene-count"
+plei_binned <- plei |>
+  filter(distinct_protein_coding_genes >= 1, !is.na(distinct_trait_categories)) |>
+  mutate(genecat = cut(distinct_protein_coding_genes,
+                       breaks = c(0, 1, 2, 5, 10, Inf),
+                       labels = gene_bin_levels))
+
+plei_summary <- plei_binned |>
+  group_by(genecat) |>
+  summarise(
+    n = n(),
+    mean = mean(distinct_trait_categories),
+    sd = sd(distinct_trait_categories),
+    sem = sd / sqrt(n),
+    lci = mean - qnorm(0.975) * sem,
+    uci = mean + qnorm(0.975) * sem,
+    median = median(distinct_trait_categories),
+    q1 = unname(quantile(distinct_trait_categories, 0.25)),
+    q3 = unname(quantile(distinct_trait_categories, 0.75)),
+    min = min(distinct_trait_categories),
+    max = max(distinct_trait_categories),
+    .groups = "drop"
+  )
+
+plei_distribution <- plei_binned |>
+  count(genecat, distinct_trait_categories, name = "n_variants") |>
+  group_by(genecat) |>
+  mutate(pct_of_bin = 100 * n_variants / sum(n_variants)) |>
+  ungroup()
+
+# Trend test on the unbinned variant-level data: Spearman's rank correlation between the
+# number of colocalizing protein-coding genes and the number of distinct trait categories.
+# Two-sided P from the t approximation, computed on the log scale so very small values do
+# not underflow to 0. 95% CI via Fisher's z with the Fieller et al. (1957) standard error.
+# Note: candidate variants in LD / sharing genes are not fully independent.
+n_variants_total <- nrow(plei_binned)
+spearman_rho <- cor(plei_binned$distinct_protein_coding_genes,
+                    plei_binned$distinct_trait_categories, method = "spearman")
+spearman_df <- n_variants_total - 2
+spearman_t <- spearman_rho * sqrt(spearman_df / (1 - spearman_rho^2))
+spearman_log10_p <- (log(2) + pt(-abs(spearman_t), df = spearman_df, log.p = TRUE)) / log(10)
+spearman_ci <- tanh(atanh(spearman_rho) + c(-1, 1) * qnorm(0.975) * 1.06 / sqrt(n_variants_total - 3))
+format_log10_p <- function(log10_p) {
+  exponent <- floor(log10_p)
+  sprintf("%.2f x 10^%d", 10^(log10_p - exponent), exponent)
+}
+plei_trend_test <- data.frame(
+  test = "Spearman rank correlation (two-sided)",
+  n_variants = n_variants_total,
+  rho = spearman_rho,
+  rho_lci = spearman_ci[1],
+  rho_uci = spearman_ci[2],
+  t = spearman_t,
+  df = spearman_df,
+  log10_p = spearman_log10_p,
+  p = format_log10_p(spearman_log10_p)
+)
+print(plei_summary)
+print(plei_trend_test)
+
+x_labels <- paste0(as.character(plei_summary$genecat), "\n(n = ", scales::comma(plei_summary$n), ")")
+summary_offset <- 0.3 # draw the mean/CI just to the right of each bin's dots
+
+p_variant_pleiotropy_gene_distribution <- ggplot() +
+  geom_point(
+    data = plei_distribution,
+    aes(x = as.numeric(genecat), y = distinct_trait_categories, size = pct_of_bin),
+    colour = cb_blue, alpha = 0.6
   ) +
+  geom_errorbar(
+    data = plei_summary,
+    aes(x = as.numeric(genecat) + summary_offset, ymin = lci, ymax = uci),
+    width = 0.12, linewidth = 0.5, colour = "black"
+  ) +
+  geom_point(
+    data = plei_summary,
+    aes(x = as.numeric(genecat) + summary_offset, y = mean, shape = "Mean (95% CI)"),
+    size = 2.4, fill = "white", colour = "black", stroke = 0.7
+  ) +
+  scale_size_area(name = "% of variants\nin bin", max_size = 12, breaks = c(1, 5, 25, 50)) +
+  scale_shape_manual(name = NULL, values = c("Mean (95% CI)" = 23)) +
+  scale_x_continuous(
+    breaks = as.numeric(plei_summary$genecat),
+    labels = x_labels,
+    expand = expansion(add = 0.5)
+  ) +
+  scale_y_continuous(breaks = scales::breaks_pretty(n = 8)) +
+  labs(
+    title = "Number of trait categories by number of colocalizing genes (per variant)",
+    x = "Number of distinct protein-coding genes colocalizing with the variant",
+    y = "Distinct trait categories per variant",
+    caption = "Dot area: % of variants in the bin. Diamond and bars: mean and 95% CI."
+  ) +
+  guides(shape = guide_legend(order = 1), size = guide_legend(order = 2)) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 11.5)
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 11.5),
+    plot.title.position = "plot", # centre over the whole image so the long title clears the panel letter
+    plot.caption.position = "plot",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
   )
 ggsave(p_variant_pleiotropy_gene_distribution, filename = file.path(report_analysis_dir, "variant_pleiotropy_gene_distribution.png"), width = 8, height = 6)
 print(p_variant_pleiotropy_gene_distribution)
+
+# Numbers behind Figure 3e (legend n values / Source Data)
+data.table::fwrite(plei_summary, file.path(report_analysis_dir, "variant_pleiotropy_gene_distribution_summary.tsv"), sep = "\t")
+data.table::fwrite(plei_distribution, file.path(report_analysis_dir, "variant_pleiotropy_gene_distribution_counts.tsv"), sep = "\t")
+data.table::fwrite(plei_trend_test, file.path(report_analysis_dir, "variant_pleiotropy_gene_distribution_trend_test.tsv"), sep = "\t")
 
 coloc_group_members <- DBI::dbGetQuery(sig_coloc_pairs_conn, "
   SELECT cg.coloc_group_id, cg.study_extraction_id, cg.ld_block_id

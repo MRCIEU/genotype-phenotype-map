@@ -476,6 +476,13 @@ create_study_metadata_files <- function(gwas_info) {
     pretty = TRUE
   )
 
+  # GPMap API 1.1.0 sends the study's variable_type; messages queued by earlier versions call it category.
+  variable_type <- gwas_info$metadata$variable_type
+  if (is.null(variable_type)) variable_type <- gwas_info$metadata$category
+  if (is.null(variable_type) || !tolower(variable_type) %in% unlist(study_categories)) {
+    stop(paste(gwas_info$metadata$guid, "has no valid variable_type:", deparse(variable_type)))
+  }
+
   study_to_process <- data.frame(
     data_type = data_types$phenotype,
     data_format = gwas_info$metadata$file_type,
@@ -484,7 +491,7 @@ create_study_metadata_files <- function(gwas_info) {
     trait = gwas_info$metadata$name,
     ancestry = gwas_info$metadata$ancestry,
     sample_size = gwas_info$metadata$sample_size,
-    category = gwas_info$metadata$category,
+    category = tolower(variable_type),
     study_location = gwas_info$metadata$file_location,
     extracted_location = extracted_study_dir,
     reference_build = gwas_info$metadata$reference_build,

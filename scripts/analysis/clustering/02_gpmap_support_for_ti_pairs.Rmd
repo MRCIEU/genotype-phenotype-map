@@ -19,6 +19,8 @@ params:
   # If false, drop trans QTL markers from the API coloc results (cis and complex-trait rows kept).
   # Outputs are suffixed with _notrans so both modes can be compared.
   include_trans: true
+  # gpmapr API to query: "local" (localhost:8000) or "production" (public API, 1.0.0 data)
+  api: "local"
 ---
 
 ```{r setup, message=FALSE}
@@ -27,6 +29,7 @@ knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 library(ggplot2)
 
 source("../../../pipeline_steps/constants.R")
+source("relative_success_helpers.R") # rs_from_table(), write_panel_table()
 
 versioned_results_dir <- if (grepl("^/", params$results_version)) {
   params$results_version
@@ -92,7 +95,7 @@ indications_cache <- ti_file("gpmap_indications.rda")
 indications_rare_cache <- ti_file("gpmap_indications_rarevariants.rda")
 
 # Trait metadata (single cheap call); maps trait names to ids for the API pulls
-gpmapr::select_api("local")
+gpmapr::select_api(params$api)
 gpmap_all_traits <- gpmapr::all_traits()
 traits_ids <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Common")
 traits_ids_rare <- gpmap_all_traits |> dplyr::filter(trait %in% gpmap_traits, variant_type == "Rare Exome")
@@ -423,6 +426,13 @@ summary_gcsupport |> dplyr::filter(source == "gpmap_support") |>
         axis.ticks.x = element_line()) +
   labs(x = "P(GC) versus phase (%)", y = "")
 
+# Figure 6a numbers: unit = T-I pair; point = % with GC support; Wilson score 95% CI
+write_panel_table(
+  summary_gcsupport |> dplyr::filter(source == "gpmap_support") |>
+    dplyr::select(combined_max_phase, supported, total, per_supported, CI_lower, CI_upper),
+  "fig6a_pgc_by_phase", analysis_dir, trans_suffix
+)
+
 # P(success):P(failure) for supported targets
 ti_pairs_unique[,c("ti_uid","succ", "minikel_support", "gpmap_support")] |>
   tidyr::pivot_longer(cols = 3:4, names_to = "source", values_to = "genetic_support") |>
@@ -470,8 +480,8 @@ Pull pairwise coloc results for indications in the GPMAP and identify high confi
 
 ```{r coloc-pairs, message=FALSE}
 # Traits to pull:
-ti_colocs_frompairs_cache <- ti_file("gpmap_tipairwisecolocs.rda")
-pairwisecolocs_cache <- ti_file("gpmap_indications_pairwisecolocs.rda")
+ti_colocs_frompairs_cache <- ti_file(glue::glue("gpmap_tipairwisecolocs{trans_suffix}.rda"))
+pairwisecolocs_cache <- ti_file(glue::glue("gpmap_indications_pairwisecolocs{trans_suffix}.rda"))
 indications_ids_file <- ti_file("gpmap_indications_ids.txt")
 pairwise_indications_file <- ti_file("coloc_pairwise_indications.txt")
 
@@ -528,10 +538,10 @@ pull_ti_coloc_pairs <- function(target, trait) {
   return(list(coloc_summary = res, target_colocs = coloc_wtarget))
 }
 
-# Pairwise coloc support comes from versioned results (trans markers are not filtered here),
-# so its caches are shared across include_trans modes. Only the primary (include_trans) run
-# rebuilds them; the no-trans run re-uses the cache so the 71GB pairwise extract is not re-read.
-if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompairs_cache)) {
+# Pairwise coloc support comes from versioned results. Both modes share the pre-filtered
+# coloc_pairwise_indications.txt extract; include_trans = FALSE drops trans QTL studies and
+# writes _notrans caches.
+if (params$recompute_cache || !file.exists(ti_colocs_frompairs_cache)) {
   write.table(
     traits_ids$trait,
     file = indications_ids_file,
@@ -541,8 +551,10 @@ if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompair
   )
 
   # Prefer a pre-filtered pairwise extract if present; otherwise filter the versioned results file.
-  # Manual equivalent:
-  # zcat coloc_pairwise_results.tsv.gz | awk -F'\t' '$7 >= 0.8' | grep -F -f gpmap_indications_ids.txt
+  # Manual equivalent (PP.H4.abf is column 14 and study_a / study_b are columns 2 / 4 in the current schema):
+  # pigz -dc coloc_pairwise_results.tsv.gz |
+  #   awk -F'\t' 'NR==FNR{ids[$1];next} FNR==1 || ($14>=0.8 && (($2 in ids)||($4 in ids)))' \
+  #   gpmap_indications_ids.txt - > coloc_pairwise_indications.txt
   if (!file.exists(pairwise_indications_file)) {
     coloc_pairwise_path <- file.path(versioned_results_dir, "coloc_pairwise_results.tsv.gz")
     if (!file.exists(coloc_pairwise_path)) {
@@ -575,6 +587,13 @@ if ((params$recompute_cache && include_trans) || !file.exists(ti_colocs_frompair
     )
   trait_pair_colocs <- rbind(trait_pair_colocs, trait_pair_colocs_flip) |>
     dplyr::filter(study_a %in% traits_ids$trait)
+  if (!include_trans) {
+    # Drop pairs where the QTL side (study_b) is a trans extraction
+    trans_extractions <- data.table::fread(file.path(versioned_results_dir, "study_extractions.tsv.gz")) |>
+      dplyr::filter(cis_trans == "trans") |>
+      dplyr::pull(unique_study_id)
+    trait_pair_colocs <- trait_pair_colocs |> dplyr::filter(!(unique_study_b %in% trans_extractions))
+  }
   trait_pair_colocs <- trait_pair_colocs |>
     dplyr::left_join(
       study_metadata[, c("study_name", "data_type", "gene", "tissue")],
@@ -703,27 +722,14 @@ rel_success <- do.call("rbind", lapply(sources, FUN = function(x){
   dat <- ti_pairs_unique |> dplyr::filter(combined_max_phase != "Preclinical")
   dat <- dat |> dplyr::filter(dat[[x]] == TRUE | gpmap_support == FALSE) # No GC support from other means as denominator
   
-  # Contingency table
+  # Contingency table (rows: support FALSE/TRUE; NA = no data for this modality, dropped)
   tab <- table(dat[[x]], dat$succ)
-  if(any(dim(tab) != 2)){
-    data.frame(source = x,
-               n_supp_launched = NA,
-               n_supp = NA,
-               RS = NA,
-               CI_lower = NA,
-               CI_upper = NA)
-  }else{
-    # Relative success and CI with epitools
-    RS <- epitools::riskratio(tab, method = "wald")
-    out <- RS$measure[2,]
-    data.frame(source = x,
-               n_supp_launched = tab[2,2],
-               n_supp = sum(tab[2,]),
-               RS = out["estimate"],
-               CI_lower = out["lower"],
-               CI_upper = out["upper"])
-  }
+  # RS, Wald 95% CI, counts for supported and comparison groups, exact P (see relative_success_helpers.R)
+  cbind(data.frame(source = x), rs_from_table(tab))
 })) |> na.exclude()
+
+# Figure 6b numbers (comparison group = phase I+ pairs without GC support whose target has data for the modality)
+write_panel_table(rel_success, "fig6b_rs_by_qtl_type", analysis_dir, trans_suffix)
 
 support_names = c("gpmap_support" = "Any QTL colocalisation",
                   "gpmap_support_any" = "GPMAP support (common and rare)",
@@ -856,29 +862,20 @@ rel_success_split_3 <- do.call("rbind", lapply(n_qtls, FUN = function(x){
     dplyr::rowwise() |>
     dplyr::mutate(n_support = sum(dplyr::c_across(eQTL_support:pQTL_support), na.rm = T))
   
-  dat <- dat |> dplyr::filter(n_support >= x | gpmap_support == FALSE) 
-  
+  dat <- dat |> dplyr::filter(n_support >= x | gpmap_support == FALSE)
+
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(any(dim(tab) != 2)){
-    data.frame(n_support = ifelse(x<3, paste0(">=",x), paste0("=",x)),
-               RS = NA,
-               n_supp_launched = NA,
-               RS = NA,
-               CI_lower = NA,
-               CI_upper = NA)
-  }else{
-    # Relative success and CI with epitools
-    RS <- epitools::riskratio(tab, method = "wald")
-    out <- RS$measure[2,]
-    data.frame(n_support = ifelse(x<3, paste0(">=",x), paste0("=",x)),
-               n_supp_launched = tab[2,2],
-               n_supp = sum(tab[2,]),
-               RS = out["estimate"],
-               CI_lower = out["lower"],
-               CI_upper = out["upper"])
-  }
+  # RS, Wald 95% CI, counts for supported and comparison groups, exact P (see relative_success_helpers.R)
+  cbind(data.frame(n_support = ifelse(x<3, paste0(">=",x), paste0("=",x))), rs_from_table(tab))
 })) |> na.exclude()
+
+# Figure 6c numbers (groups are cumulative: >=1 includes >=2 and =3; comparison group =
+# phase I+ pairs for these targets without GC support)
+write_panel_table(
+  rel_success_split_3 |> dplyr::mutate(n_target_genes = length(ems_genes)),
+  "fig6c_rs_by_n_modalities", analysis_dir, trans_suffix
+)
 
 rel_success_split_3 |> dplyr::mutate(n_support = factor(n_support, levels = n_support)) |>
   ggplot(aes(x = RS, y = as.factor(n_support))) +
@@ -981,25 +978,12 @@ rel_success_ntissues <- do.call("rbind", lapply(n_tissues, FUN = function(x){
   
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(any(dim(tab) != 2)){
-    data.frame(n_tissues = x,
-               n_supp_launched = NA,
-               n_supp = NA,
-               RS = NA,
-               CI_lower = NA,
-               CI_upper = NA)
-  }else{
-    # Relative success and CI with epitools
-    RS <- epitools::riskratio(tab, method = "wald")
-    out <- RS$measure[2,]
-    data.frame(n_tissues = x,
-               n_supp_launched = tab[2,2],
-               n_supp = sum(tab[2,]),
-               RS = out["estimate"],
-               CI_lower = out["lower"],
-               CI_upper = out["upper"])
-  }
+  # RS, Wald 95% CI, counts for supported and comparison groups, exact P (see relative_success_helpers.R)
+  cbind(data.frame(n_tissues = x), rs_from_table(tab))
 })) |> na.exclude()
+
+# Figure 6d numbers (comparison group = all phase I+ pairs without GC support)
+write_panel_table(rel_success_ntissues, "fig6d_rs_by_n_tissues", analysis_dir, trans_suffix)
 
 rel_success_ntissues |>
   ggplot(aes(x = RS, y = factor(n_tissues, levels = n_tissues))) +
@@ -1082,29 +1066,21 @@ rel_success_genescore <- do.call("rbind", lapply(score_group, FUN = function(x){
     dplyr::filter(genescore_gene_cut %in% x)
   # Contingency table
   tab <- table(dat$gpmap_support, dat$succ)
-  if(any(dim(tab) != 2)){
-    data.frame(source = x,
-               n_supp_launched = NA,
-               n_supp = NA,
-               RS = NA,
-               CI_lower = NA,
-               CI_upper = NA)
-  }else{
-    # Relative success and CI with epitools
-    RS <- epitools::riskratio(tab, method = "wald")
-    out <- RS$measure[2,]
-    data.frame(gene_score = x,
-               n_supp_launched = tab[2,2],
-               n_supp = sum(tab[2,]),
-               RS = out["estimate"],
-               CI_lower = out["lower"],
-               CI_upper = out["upper"])
-  }})) |> na.exclude()
+  # RS, Wald 95% CI, counts for supported and comparison groups, exact P (see relative_success_helpers.R)
+  cbind(data.frame(gene_score = x), rs_from_table(tab))
+})) |> na.exclude()
 
 score_names = c("(-Inf,1]" = "0-1",
                   "(1,5]" = "2-5",
-                  "(5,15]" = "6-15", 
+                  "(5,15]" = "6-15",
                   "(15,200]" = ">15")
+
+# Figure 6e numbers (comparison group = phase I+ pairs without GC support whose target is
+# in the SAME pleiotropy-score bin; targets without a pleiotropy score are excluded)
+write_panel_table(
+  rel_success_genescore |> dplyr::mutate(gene_score_label = score_names[gene_score], .after = gene_score),
+  "fig6e_rs_by_pleiotropy", analysis_dir, trans_suffix
+)
 
 rel_success_genescore |>
   ggplot(aes(x = RS, y = factor(gene_score, levels = levels(ti_pairs_unique$genescore_gene_cut)))) +
@@ -1139,30 +1115,10 @@ rel_success_genescore_byphase <- do.call("rbind", lapply(score_group, FUN = func
     ## Phase success
     succ <- dat[[p]]
     
-    # Contingency table
+    # Contingency table (pairs that never entered this phase are NA and dropped)
     tab <- table(dat$gpmap_support, succ)
-    if(any(dim(tab) != 2)){
-      outdf <- rbind(outdf,
-                     data.frame(gene_score = x,
-                                phase = p,
-                                n_supp_launched = NA,
-                                n_supp = NA,
-                                RS = NA,
-                                CI_lower = NA,
-                                CI_upper = NA))
-    }else{
-      # Relative success and CI with epitools
-      RS <- epitools::riskratio(tab, method = "wald")
-      out <- RS$measure[2,]
-      outdf <- rbind(outdf,
-                     data.frame(gene_score = x,
-                                phase = p,
-                                n_supp_launched = tab[2,2],
-                                n_supp = sum(tab[2,]),
-                                RS = out["estimate"],
-                                CI_lower = out["lower"],
-                                CI_upper = out["upper"]))
-    }
+    # RS, Wald 95% CI, counts for supported and comparison groups, exact P (see relative_success_helpers.R)
+    outdf <- rbind(outdf, cbind(data.frame(gene_score = x, phase = p), rs_from_table(tab)))
   }
   return(outdf)
 })) |> na.exclude()
@@ -1171,6 +1127,17 @@ phase_names = c("succ_p_1" = "Pre-I",
                 "succ_1_2" = "I-II",
                 "succ_2_3" = "II-III",
                 "succ_3_a" = "III-Launch")
+
+# Figure 6f numbers. Here "success" = progressing to the next phase, so the *_launched
+# columns are renamed *_progressed. Comparison group = pairs entering that phase without
+# GC support whose target is in the same pleiotropy-score bin.
+write_panel_table(
+  rel_success_genescore_byphase |>
+    dplyr::mutate(gene_score_label = score_names[gene_score], .after = gene_score) |>
+    dplyr::mutate(phase_label = phase_names[phase], .after = phase) |>
+    dplyr::rename(n_supp_progressed = n_supp_launched, n_unsupp_progressed = n_unsupp_launched),
+  "fig6f_rs_by_pleiotropy_and_phase", analysis_dir, trans_suffix
+)
 
 rel_success_genescore_byphase |>
   dplyr::mutate(gene_score = factor(gene_score, levels = score_group),

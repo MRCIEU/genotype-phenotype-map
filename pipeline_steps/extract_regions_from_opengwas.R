@@ -29,8 +29,10 @@ main <- function() {
 
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
 
-  metadata <- jsonlite::fromJSON(glue::glue("{study$study_location}/{study$study_name}.json"))
-  vcf_file <- glue::glue("{study$study_location}/{study$study_name}.vcf.gz")
+  # study_name has "_" replaced with "-", so opengwas files are named after the original directory
+  study_file_prefix <- basename(study$study_location)
+  metadata <- jsonlite::fromJSON(glue::glue("{study$study_location}/{study_file_prefix}.json"))
+  vcf_file <- glue::glue("{study$study_location}/{study_file_prefix}.vcf.gz")
   clumped_hits_file <- glue::glue("{args$extracted_study_location}/clumped_snps.tsv")
 
   if (study$reference_build == reference_builds$GRCh37) {

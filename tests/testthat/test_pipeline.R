@@ -270,7 +270,9 @@ test_that("Pipeline execution and file validation", {
       extracted <- vroom::vroom(extracted_file, show_col_types = FALSE) |>
         dplyr::select(study, ld_block, passes_p_value_threshold)
       return(dplyr::filter(extracted, !passes_p_value_threshold))
-    }) |> dplyr::bind_rows()
+    }) |>
+      dplyr::bind_rows()
+
     expect_true(nrow(below_threshold) > 0, info = "Some phenotype LD blocks should be below their p value threshold")
     below_threshold_data_types <- studies$data_type[match(below_threshold$study, studies$study_name)]
     expect_true(

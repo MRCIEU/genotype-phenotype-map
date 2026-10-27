@@ -132,7 +132,13 @@ main <- function() {
   create_wide_tables(studies_conn)
 
   message("Creating associations db...")
-  load_data_into_associations_db(associations_full_conn, associations_specific_conn, studies_db, all_relevant_snps)
+  load_data_into_associations_db(
+    associations_full_conn,
+    associations_specific_conn,
+    studies_db,
+    all_relevant_snps,
+    staging_db_file = paste0(args$associations_full_db_file, ".staging")
+  )
 
   message("Creating coloc pairs db...")
   load_data_into_coloc_pairs_db(coloc_pairs_full_conn, coloc_pairs_significant_conn, studies_db)
@@ -1066,76 +1072,119 @@ load_data_into_associations_db <- function(
   associations_conn,
   associations_specific_conn,
   studies_db,
-  all_relevant_snps
+  all_relevant_snps,
+  staging_db_file
 ) {
+  association_chunk_size <- 5000000
+  ld_block_batch_size <- 100
+
   all_joined_snps <- dplyr::bind_rows(all_relevant_snps$association_snps, all_relevant_snps$study_extractions_snps)
   relevant_snps_per_ld_block <- split(all_joined_snps, all_joined_snps$ld_block)
 
-  associations <- parallel::mclapply(names(relevant_snps_per_ld_block), mc.cores = 15, \(current_ld_block) {
-    gc()
-    relevant_snps <- relevant_snps_per_ld_block[[current_ld_block]]
-    study_extractions_snps <- all_relevant_snps$study_extractions_snps[
-      all_relevant_snps$study_extractions_snps$ld_block == current_ld_block
-    ]
-    association_snps <- all_relevant_snps$association_snps[
-      all_relevant_snps$association_snps$ld_block == current_ld_block
-    ]
-    message(
-      "Processing ld_block: ", current_ld_block, " - ",
-      nrow(study_extractions_snps), " study extraction SNPs, ",
-      nrow(association_snps), " association SNPs"
-    )
+  # General associations are too many to hold in memory at once, so each batch of LD blocks is appended to a
+  # staging DB, which is then split into associations_N tables by variant_id. The staging DB is a separate file,
+  # as DuckDB does not shrink a DB file after a table is dropped
+  if (file.exists(staging_db_file)) file.remove(staging_db_file)
+  staging_conn <- duckdb::dbConnect(duckdb::duckdb(shared_home = TRUE), staging_db_file)
+  staging_table_name <- associations_db$associations_staging$name
+  DBI::dbExecute(staging_conn, associations_db$associations_staging$query)
 
-    associations <- extract_associations_for_ld_block(
-      current_ld_block,
-      study_extractions_snps,
-      association_snps,
-      studies_db
+  ld_blocks_with_snps <- names(relevant_snps_per_ld_block)
+  ld_block_batches <- split(ld_blocks_with_snps, ceiling(seq_along(ld_blocks_with_snps) / ld_block_batch_size))
+
+  specific_associations <- lapply(seq_along(ld_block_batches), function(batch_number) {
+    message("Extracting associations for LD block batch ", batch_number, " of ", length(ld_block_batches))
+    associations <- parallel::mclapply(ld_block_batches[[batch_number]], mc.cores = 15, \(current_ld_block) {
+      gc()
+      relevant_snps <- relevant_snps_per_ld_block[[current_ld_block]]
+      study_extractions_snps <- all_relevant_snps$study_extractions_snps[
+        all_relevant_snps$study_extractions_snps$ld_block == current_ld_block
+      ]
+      association_snps <- all_relevant_snps$association_snps[
+        all_relevant_snps$association_snps$ld_block == current_ld_block
+      ]
+      message(
+        "Processing ld_block: ", current_ld_block, " - ",
+        nrow(study_extractions_snps), " study extraction SNPs, ",
+        nrow(association_snps), " association SNPs"
+      )
+
+      associations <- extract_associations_for_ld_block(
+        current_ld_block,
+        study_extractions_snps,
+        association_snps,
+        studies_db
+      )
+      return(associations)
+    })
+
+    associations <- associations[!sapply(associations, is.null)]
+    associations <- data.table::rbindlist(associations, fill = TRUE)
+    if (nrow(associations) == 0) {
+      return(NULL)
+    }
+
+    associations <- flip_alleles(associations, associations$flipped)
+    associations <- associations[, .(variant_id, study_id, beta = BETA, se = SE, imputed, p, eaf = EAF, general)]
+    associations <- unique(associations, by = c("variant_id", "study_id", "general"))
+
+    original_num_rows <- nrow(associations)
+    associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
+    message("Removed ", original_num_rows - nrow(associations), " rows with missing values")
+
+    DBI::dbAppendTable(
+      staging_conn,
+      staging_table_name,
+      associations[general == TRUE, .(variant_id, study_id, beta, se, p, eaf, imputed)]
     )
-    return(associations)
+    return(associations[general == FALSE, .(variant_id, study_id, beta, se, imputed, p, eaf)])
   })
 
-  associations <- associations[!sapply(associations, is.null)]
-  associations <- data.table::rbindlist(associations, fill = TRUE)
-
-  associations <- flip_alleles(associations, associations$flipped)
-  associations <- associations[, .(variant_id, study_id, beta = BETA, se = SE, imputed, p, eaf = EAF, general)]
-  associations <- unique(associations, by = c("variant_id", "study_id", "general"))
-
-  original_num_rows <- nrow(associations)
-  associations <- associations[!is.na(beta) & !is.na(se) & !is.na(p) & !is.na(eaf)]
-  message("Removed ", original_num_rows - nrow(associations), " rows with missing values")
-
-  associations <- unique(associations, by = c("variant_id", "study_id", "general"))
-  associations <- associations[order(variant_id, study_id)]
-  associations_general <- associations[general == TRUE, .(variant_id, study_id, beta, se, imputed, p, eaf)]
-  associations_specific <- associations[general == FALSE, .(variant_id, study_id, beta, se, imputed, p, eaf)]
-
   # Writing specific associations to specific DB
+  associations_specific <- data.table::rbindlist(specific_associations)
+  associations_specific <- unique(associations_specific, by = c("variant_id", "study_id"))
+  associations_specific <- associations_specific[order(variant_id, study_id)]
   create_table_query <- sub("table_name", associations_db$associations$name, associations_db$associations$query)
   DBI::dbExecute(associations_specific_conn, create_table_query)
   DBI::dbAppendTable(associations_specific_conn, associations_db$associations$name, associations_specific)
 
-  # Writing general associations to full DB
-  association_chunk_info <- split_large_dataframe_into_chunks(associations_general, "variant_id")
+  # Writing general associations to full DB, in chunks of whole variants
+  variant_counts <- DBI::dbGetQuery(staging_conn, glue::glue(
+    "SELECT variant_id, COUNT(*) AS n FROM {staging_table_name} GROUP BY variant_id ORDER BY variant_id"
+  ))
+  DBI::dbDisconnect(staging_conn, shutdown = TRUE)
+  variant_counts$chunk <- (cumsum(variant_counts$n) - 1) %/% association_chunk_size + 1
+  association_chunks <- variant_counts |>
+    dplyr::group_by(chunk) |>
+    dplyr::summarise(start_variant_id = min(variant_id), stop_variant_id = max(variant_id)) |>
+    dplyr::mutate(associations_table_name = paste0("associations_", chunk))
+
   DBI::dbExecute(associations_conn, associations_db$associations_metadata$query)
   DBI::dbAppendTable(
-    associations_conn, associations_db$associations_metadata$name,
-    data.frame(
-      start_variant_id = association_chunk_info$dataframe_metadata$start_variant_id,
-      stop_variant_id = association_chunk_info$dataframe_metadata$end_variant_id,
-      associations_table_name = glue::glue("associations_{seq_len(nrow(association_chunk_info$dataframe_metadata))}")
-    )
+    associations_conn,
+    associations_db$associations_metadata$name,
+    dplyr::select(association_chunks, start_variant_id, stop_variant_id, associations_table_name)
   )
 
-  lapply(seq_along(association_chunk_info$dataframe_chunks), function(i) {
-    table_chunk_name <- glue::glue("associations_{i}")
+  DBI::dbExecute(associations_conn, glue::glue("ATTACH '{staging_db_file}' AS staging (READ_ONLY)"))
+  lapply(seq_len(nrow(association_chunks)), function(i) {
+    table_chunk_name <- association_chunks$associations_table_name[i]
     create_table_query <- sub("table_name", table_chunk_name, associations_db$associations$query)
     DBI::dbExecute(associations_conn, create_table_query)
-    DBI::dbAppendTable(associations_conn, table_chunk_name, association_chunk_info$dataframe_chunks[[i]])
-    message("Added ", nrow(association_chunk_info$dataframe_chunks[[i]]), " rows to ", table_chunk_name)
+    # a SNP on the boundary of 2 LD blocks can be extracted from both, so only one row per variant and study is kept
+    num_rows <- DBI::dbExecute(associations_conn, glue::glue(
+      "INSERT INTO {table_chunk_name} (variant_id, study_id, beta, se, p, eaf, imputed)
+      SELECT DISTINCT ON (variant_id, study_id) variant_id, study_id, beta, se, p, eaf, imputed
+      FROM staging.{staging_table_name}
+      WHERE variant_id BETWEEN {association_chunks$start_variant_id[i]} AND {association_chunks$stop_variant_id[i]}
+      ORDER BY variant_id, study_id"
+    ))
+    message("Added ", num_rows, " rows to ", table_chunk_name)
     return()
   })
+
+  DBI::dbExecute(associations_conn, "DETACH staging")
+  file.remove(staging_db_file)
   return()
 }
 
@@ -1265,41 +1314,6 @@ extract_associations_for_ld_block <- function(ld_block, study_extractions_snps, 
       return(NULL)
     }
   ))
-}
-
-
-split_large_dataframe_into_chunks <- function(dataframe, specific_id) {
-  chunk_size <- 5000000
-  num_chunks <- ceiling(nrow(dataframe) / chunk_size)
-  dataframe_size <- nrow(dataframe)
-  start_id <- paste0("start_", specific_id)
-  stop_id <- paste0("end_", specific_id)
-
-  dataframe_metadata_per_chunk <- lapply(seq_len(num_chunks), function(i) {
-    start_boundary <- (i - 1) * chunk_size + 1
-    stop_boundary <- min(i * chunk_size, dataframe_size)
-    id_at_start_boundary <- dataframe[[specific_id]][start_boundary]
-    id_at_stop_boundary <- dataframe[[specific_id]][stop_boundary]
-
-    dataframe_chunk <- dataframe[start_boundary:stop_boundary, ]
-    result_list <- list(
-      dataframe_chunk = dataframe_chunk,
-      chunk_number = i
-    )
-    result_list[[start_id]] <- id_at_start_boundary
-    result_list[[stop_id]] <- id_at_stop_boundary
-    return(result_list)
-  })
-  dataframe_chunks <- lapply(dataframe_metadata_per_chunk, function(x) x$dataframe_chunk)
-
-  dataframe_metadata <- data.frame(
-    sapply(dataframe_metadata_per_chunk, function(x) x$chunk_number),
-    sapply(dataframe_metadata_per_chunk, function(x) x[[start_id]]),
-    sapply(dataframe_metadata_per_chunk, function(x) x[[stop_id]])
-  )
-  names(dataframe_metadata) <- c("chunk_number", start_id, stop_id)
-
-  return(list(dataframe_chunks = dataframe_chunks, dataframe_metadata = dataframe_metadata))
 }
 
 

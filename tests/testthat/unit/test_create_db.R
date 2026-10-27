@@ -150,6 +150,24 @@ test_that("create_db: associations have no missing values", {
   }
 })
 
+test_that("create_db: general associations are split into tables of whole variants, and staging is removed", {
+  full_db <- db_path(baseline_dir, "associations_full")
+  metadata <- db_query(full_db, "SELECT * FROM associations_metadata ORDER BY start_variant_id")
+  tables <- db_query(full_db, "SELECT table_name FROM information_schema.tables")$table_name
+  expect_true(all(metadata$associations_table_name %in% tables))
+  expect_false(any(c("associations_staging", "associations") %in% tables))
+  expect_false(file.exists(paste0(full_db, ".staging")))
+
+  # variant ranges don't overlap, and every row is inside its table's range
+  expect_true(all(utils::head(metadata$stop_variant_id, -1) < utils::tail(metadata$start_variant_id, -1)))
+  for (i in seq_len(nrow(metadata))) {
+    chunk <- db_query(full_db, glue::glue("SELECT variant_id, study_id FROM {metadata$associations_table_name[i]}"))
+    expect_gt(nrow(chunk), 0)
+    expect_true(all(chunk$variant_id >= metadata$start_variant_id[i] & chunk$variant_id <= metadata$stop_variant_id[i]))
+    expect_equal(anyDuplicated(chunk), 0)
+  }
+})
+
 test_that("create_db: LD correlations are sign-flipped to match flipped variants", {
   ld <- db_query(db_path(baseline_dir, "ld"), "SELECT * FROM ld")
   expect_gt(nrow(ld), 0)

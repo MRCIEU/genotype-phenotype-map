@@ -101,6 +101,23 @@ test_that("finemap: a GWAS with no signal uses its lowest P value SNP", {
   expect_equal(finemapped$min_p, null_gwas$P[min_p_row])
 })
 
+test_that("finemap: LD blocks extracted below a study's p value threshold are not finemapped", {
+  paths <- local_block()
+  imputed <- dplyr::bind_rows(
+    place_imputed("study_a", study_a),
+    place_imputed("study_null", read_fixture_gwas("study_null_imputed"))
+  )
+  write_index(imputed, "imputed")
+  write_index(dplyr::mutate(imputed, passes_p_value_threshold = c(TRUE, FALSE)), "extracted")
+
+  result <- run_finemap(paths)
+  expect_step_succeeded(result, paths$finemapping_complete)
+
+  finemapped <- read_finemapped(paths)
+  expect_equal(unique(finemapped$study), "study_a")
+  expect_length(list.files(file.path(extracted_study_dir, "study_null", "finemapped")), 0)
+})
+
 test_that("finemap: small, tiny and sparse GWASes are not finemapped", {
   paths <- local_block()
   small <- study_a[seq(1, 800, by = 2), ]

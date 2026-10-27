@@ -935,8 +935,8 @@ p_coloc_group_size <- ggplot(coloc_group_count_data, aes(x = num_studies, y = co
   scale_x_continuous() +
   scale_y_log10() +
   labs(
-    title = "Number of traits in colocilization group",
-    x = "Number of traits in colocilization group",
+    title = "Number of traits per colocalisation group",
+    x = "Number of traits per colocalisation group",
     y = "Frequency (log scale)",
     caption = paste("Mean:", round(mean(coloc_groups_sizes$num_studies), 2),
                     "| Median:", round(median(coloc_groups_sizes$num_studies), 2))

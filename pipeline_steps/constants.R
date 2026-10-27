@@ -88,6 +88,12 @@ qtl_data_types <- c(
   data_types$methylation
 )
 
+# Common non-QTL studies extract every LD block (if at least one passes their p value threshold), so the
+# associations DB holds their beta/se at every coloc SNP, not only where they are significant
+extract_all_ld_blocks <- function(data_type, variant_type) {
+  return(data_type %in% non_qtl_data_types & variant_type == variant_types$common)
+}
+
 data_type_names <- list(
   splice_variant = "sQTL",
   transcript = "tQTL",

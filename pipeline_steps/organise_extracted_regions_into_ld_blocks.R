@@ -34,6 +34,12 @@ main <- function() {
     return(data.table::fread(file))
   }) |> dplyr::bind_rows()
 
+  # Only full LD block extractions flag blocks below the p value threshold; every other extraction passed it
+  if (!"passes_p_value_threshold" %in% names(all_extracted_snps)) {
+    all_extracted_snps$passes_p_value_threshold <- TRUE
+  }
+  all_extracted_snps$passes_p_value_threshold <- dplyr::coalesce(all_extracted_snps$passes_p_value_threshold, TRUE)
+
   if (!is.na(args$worker_guid)) {
     all_extracted_snps$study_name <- args$worker_guid
   } else {
@@ -63,7 +69,8 @@ main <- function() {
       reference_build = reference_builds$GRCh38,
       ld_block = paths$ld_block,
       variant_type = merged_data$variant_type,
-      coverage = merged_data$coverage
+      coverage = merged_data$coverage,
+      passes_p_value_threshold = merged_data$passes_p_value_threshold
     )
 
     if (!dir.exists(paths$ld_block_data)) dir.create(paths$ld_block_data, recursive = T)
@@ -71,8 +78,14 @@ main <- function() {
 
     if (file.exists(extracted_studies_file)) {
       existing_extracted_studies <- vroom::vroom(extracted_studies_file, show_col_types = F)
+      if (!"passes_p_value_threshold" %in% names(existing_extracted_studies)) {
+        existing_extracted_studies$passes_p_value_threshold <- TRUE
+      }
       extracted_studies <- rbind(existing_extracted_studies, extracted_studies)
-      extracted_studies <- extracted_studies[!duplicated(extracted_studies), ]
+      # a re-extracted study replaces its earlier row for the same extracted file
+      extracted_studies <- extracted_studies[
+        !duplicated(extracted_studies[, c("study", "file")], fromLast = TRUE),
+      ]
     }
 
     vroom::vroom_write(extracted_studies, extracted_studies_file)

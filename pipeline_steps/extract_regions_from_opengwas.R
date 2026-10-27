@@ -29,8 +29,10 @@ main <- function() {
 
   p_value_threshold <- ifelse(is.na(study$p_value_threshold), lowest_p_value_threshold, study$p_value_threshold)
 
-  metadata <- jsonlite::fromJSON(glue::glue("{study$study_location}/{study$study_name}.json"))
-  vcf_file <- glue::glue("{study$study_location}/{study$study_name}.vcf.gz")
+  # study_name has "_" replaced with "-", so opengwas files are named after the original directory
+  study_file_prefix <- basename(study$study_location)
+  metadata <- jsonlite::fromJSON(glue::glue("{study$study_location}/{study_file_prefix}.json"))
+  vcf_file <- glue::glue("{study$study_location}/{study_file_prefix}.vcf.gz")
   clumped_hits_file <- glue::glue("{args$extracted_study_location}/clumped_snps.tsv")
 
   if (study$reference_build == reference_builds$GRCh37) {
@@ -40,7 +42,8 @@ main <- function() {
   clumped_snps <- find_clumped_hits(study, vcf_file, p_value_threshold)
   vroom::vroom_write(clumped_snps, clumped_hits_file)
 
-  extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps)
+  extract_all_blocks <- extract_all_ld_blocks(study$data_type, study$variant_type)
+  extracted_snps <- extract_clumped_regions(study, vcf_file, clumped_snps, extract_all_blocks)
   create_svgs(study, vcf_file)
 
   vroom::vroom_write(extracted_snps, args$extracted_output_file)
@@ -128,14 +131,15 @@ find_clumped_hits <- function(study, vcf_file, p_value_threshold) {
   return(clumped_snps)
 }
 
-extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
+extract_clumped_regions <- function(study, vcf_file, clumped_snps, extract_all_blocks = FALSE) {
   extracted_snps <- data.frame(
     chr = character(),
     bp = numeric(),
     log_p = numeric(),
     ld_block = character(),
     file = character(),
-    cis_trans = character()
+    cis_trans = character(),
+    passes_p_value_threshold = logical()
   )
 
   dir.create(glue::glue("{study$extracted_location}/svgs"), showWarnings = F, recursive = T)
@@ -184,6 +188,25 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     return(data.frame())
   }
 
+  clumped_snps$passes_p_value_threshold <- TRUE
+  if (extract_all_blocks) {
+    unclumped_blocks <- dplyr::filter(
+      ld_blocks,
+      ancestry == study$ancestry & !bcf_region %in% clumped_snps$bcf_region
+    )
+    clumped_snps <- dplyr::bind_rows(clumped_snps, data.frame(
+      CHR = as.numeric(unclumped_blocks$chr),
+      BP = NA_real_,
+      P = NA_real_,
+      bcf_region = unclumped_blocks$bcf_region,
+      region_start = unclumped_blocks$start,
+      region_stop = unclumped_blocks$stop,
+      string_region = unclumped_blocks$string_region,
+      passes_p_value_threshold = FALSE
+    ))
+    message(glue::glue("num to extract including blocks without a clumped hit: {nrow(clumped_snps)}"))
+  }
+
   regions_file <- withr::local_tempfile()
   vroom::vroom_write(
     dplyr::select(clumped_snps, CHR, region_start, region_stop),
@@ -192,14 +215,17 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
     col_names = F
   )
 
+  # written to a file, as extracting every LD block returns most of the VCF
+  extracted_regions_file <- withr::local_tempfile()
   bcf_query <- glue::glue(
     "/home/bcftools/bcftools query ",
     "--regions-file {regions_file} ",
     '--format "[%ID]\t[%CHROM]\t[%POS]\t[%ALT]\t[%REF]\t[%AF]\t[%ES]\t[%SE]\t[%LP]" ',
+    "--output {extracted_regions_file} ",
     "{vcf_file}"
   )
-  extracted_regions <- system(bcf_query, wait = T, intern = T)
-  extracted_regions <- data.table::fread(text = extracted_regions)
+  system(bcf_query, wait = T)
+  extracted_regions <- data.table::fread(extracted_regions_file)
   colnames(extracted_regions) <- c("RSID", "CHR", "BP", "EA", "OA", "EAF", "BETA", "SE", "LP")
 
   extracted_snp_info <- apply(clumped_snps, 1, function(clump) {
@@ -210,19 +236,33 @@ extract_clumped_regions <- function(study, vcf_file, clumped_snps) {
         BP <= as.numeric(clump["region_stop"])
     )
 
+    passes_p_value_threshold <- as.logical(clump[["passes_p_value_threshold"]])
+    region_bp <- clump[["BP"]]
+    region_p <- as.numeric(clump[["P"]])
+    # LD blocks without a clumped hit are represented by their most significant SNP
+    if (!passes_p_value_threshold) {
+      if (nrow(extracted_region) == 0) {
+        return(NULL)
+      }
+      top_hit <- extracted_region[which.max(as.numeric(extracted_region$LP)), ]
+      region_bp <- format(top_hit$BP, scientific = FALSE)
+      region_p <- 10^-as.numeric(top_hit$LP)
+    }
+
     extracted_file <- glue::glue(
-      '{study$extracted_location}extracted/{study$ancestry}_{clump["CHR"]}_{clump["BP"]}.tsv.gz'
+      '{study$extracted_location}extracted/{study$ancestry}_{clump["CHR"]}_{region_bp}.tsv.gz'
     )
     extracted_file <- gsub(" ", "", extracted_file)
     vroom::vroom_write(extracted_region, extracted_file)
 
     extraction_info <- data.frame(
       chr = as.character(clump[["CHR"]]),
-      bp = as.numeric(clump[["BP"]]),
-      log_p = -log10(as.numeric(clump[["P"]])),
+      bp = as.numeric(region_bp),
+      log_p = -log10(region_p),
       ld_block = clump[["string_region"]],
       file = extracted_file,
-      cis_trans = NA
+      cis_trans = NA,
+      passes_p_value_threshold = passes_p_value_threshold
     )
     return(extraction_info)
   }) |> dplyr::bind_rows()

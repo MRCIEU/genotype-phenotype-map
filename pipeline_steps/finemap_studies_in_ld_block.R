@@ -62,6 +62,15 @@ main <- function() {
   imputed_studies <- vroom::vroom(paths$imputed_studies, show_col_types = F) |>
     dplyr::filter(variant_type == variant_types$common)
 
+  # LD blocks below a study's p value threshold are only extracted for the associations DB, so aren't finemapped
+  if (file.exists(paths$extracted_studies)) {
+    extracted_studies <- vroom::vroom(paths$extracted_studies, show_col_types = F)
+    if ("passes_p_value_threshold" %in% names(extracted_studies)) {
+      below_threshold_studies <- extracted_studies$study[!extracted_studies$passes_p_value_threshold]
+      imputed_studies <- dplyr::filter(imputed_studies, !study %in% below_threshold_studies)
+    }
+  }
+
   block_list <- NULL
   if (!is.null(args$block_list) && !is.na(args$block_list) && file.exists(args$block_list)) {
     block_list <- vroom::vroom(args$block_list, show_col_types = FALSE)

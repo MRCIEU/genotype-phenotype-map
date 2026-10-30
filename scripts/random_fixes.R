@@ -1634,7 +1634,6 @@ create_svgs_for_all_phenotypes <- function() {
 
   studies <- vroom::vroom(glue::glue(results_dir, "latest/studies_processed.tsv.gz"), show_col_types = F) |>
     dplyr::filter(data_type == "phenotype" & variant_type == "common")
-  # dplyr::filter(study_name == "ebi-a-GCST90002384")
 
   lapply(seq_len(nrow(studies)), function(i) {
     study <- studies[i, ]
@@ -2318,4 +2317,4 @@ print_alleles_to_flip <- function() {
 }
 
 
-dedupe_studies_processed()
+create_svgs_for_all_phenotypes()

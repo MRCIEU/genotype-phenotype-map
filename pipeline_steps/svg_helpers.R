@@ -1,5 +1,9 @@
 source("../pipeline_steps/gwas_calculations.R")
 
+# Full trait svgs cap -log10 p at svg_max_lp, and squash the y axis above svg_lp_compression_start
+svg_max_lp <- 300
+svg_lp_compression_start <- 50
+
 create_svg_for_ld_block <- function(gwas, file_name, ld_block, is_sparse = FALSE) {
   # if (file.exists(file_name)) return()
   if (is_sparse || nrow(gwas) < 1000) {
@@ -105,7 +109,9 @@ create_svgs_from_gwas <- function(study, gwas) {
   plot_height <- 500
   plot_width <- 1250
 
-  max_lp_y_axis <- min(300, max(10, max(gwas$LP, na.rm = TRUE)))
+  gwas <- dplyr::mutate(gwas, LP = pmin(LP, svg_max_lp))
+  max_lp_y_axis <- max(10, max(gwas$LP, na.rm = TRUE))
+  compressed_max_lp <- compress_lp(max_lp_y_axis)
 
   # Pad GWAS with BP 1 at the start of each chromosome, so we get consistent CHR sizes
   padded_chrs <- gwas[1, ][rep(1, 22), ]
@@ -197,6 +203,9 @@ create_svgs_from_gwas <- function(study, gwas) {
     }) |>
     dplyr::ungroup()
 
+  gwas <- dplyr::mutate(gwas, LP = compress_lp(LP))
+  gwas_area <- dplyr::mutate(gwas_area, LP = compress_lp(LP))
+
   # Create optimized Manhattan plot with lines
   p <- ggplot2::ggplot(mapping = ggplot2::aes(x = BP_cumulative, y = LP)) +
     # Add area with larger bins
@@ -211,7 +220,7 @@ create_svgs_from_gwas <- function(study, gwas) {
     ggplot2::scale_color_manual(values = c("#7F7F7F")) +
     ggplot2::scale_fill_manual(values = c("#7F7F7F")) +
     ggplot2::scale_x_continuous(expand = c(0, 0)) +
-    ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max_lp_y_axis)) +
+    ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, compressed_max_lp)) +
     ggplot2::theme_void() +
     ggplot2::theme(
       legend.position = "none",
@@ -255,7 +264,7 @@ create_svgs_from_gwas <- function(study, gwas) {
       ggplot2::scale_color_manual(values = c("#7F7F7F")) +
       ggplot2::scale_fill_manual(values = c("#7F7F7F")) +
       ggplot2::scale_x_continuous(expand = c(0, 0)) +
-      ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, max_lp_y_axis)) +
+      ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(0, compressed_max_lp)) +
       ggplot2::theme_void() +
       ggplot2::theme(
         legend.position = "none",
@@ -297,13 +306,30 @@ create_svgs_from_gwas <- function(study, gwas) {
     ) |>
     dplyr::select(CHR, bp_start = bp_cumulative_start, bp_end = bp_cumulative_end, pixel_start, pixel_end)
 
+  if (max_lp_y_axis > svg_lp_compression_start) {
+    y_axis_scale <- "log_compressed"
+    tick_lps <- c(seq(0, svg_lp_compression_start, by = 10), 100, 200, 300)
+  } else {
+    y_axis_scale <- "linear"
+    tick_lps <- pretty(c(0, max_lp_y_axis))
+  }
+  tick_lps <- tick_lps[tick_lps <= max_lp_y_axis]
+  y_axis_ticks <- data.frame(
+    lp = tick_lps,
+    pixel = lp_to_pixel(compress_lp(tick_lps), 0, compressed_max_lp, plot_height)
+  )
+
   metadata <- list(
     x_axis = x_axis_metadata,
     y_axis = list(
-      max_lp = max(10, max(gwas$LP)),
-      min_lp = min(gwas$LP),
-      min_lp_pixel = lp_to_pixel(min(gwas$LP), min(gwas$LP), max(10, max(gwas$LP)), plot_height),
-      max_lp_pixel = lp_to_pixel(max(10, max(gwas$LP)), min(gwas$LP), max(10, max(gwas$LP)), plot_height)
+      max_lp = max_lp_y_axis,
+      min_lp = 0,
+      min_lp_pixel = lp_to_pixel(0, 0, compressed_max_lp, plot_height),
+      max_lp_pixel = lp_to_pixel(compressed_max_lp, 0, compressed_max_lp, plot_height),
+      scale = y_axis_scale,
+      compression_start_lp = svg_lp_compression_start,
+      compressed_max_lp = compressed_max_lp,
+      ticks = y_axis_ticks
     ),
     svg_width = plot_width,
     svg_height = plot_height
@@ -340,6 +366,9 @@ prepare_svg_files_for_use <- function(studies_db_file, do_all = FALSE) {
 
   lapply(seq_len(nrow(new_studies)), function(i) {
     study <- new_studies[i, , drop = FALSE]
+    # Remove old links first, so do_all picks up re-rendered files (zip rewrites full.zip as a new file)
+    unlink(glue::glue("{svg_dir}/traits/{study$trait_id}_svgs.zip"))
+    unlink(glue::glue("{svg_dir}/traits/{study$trait_id}_metadata.json"))
     file.link(
       glue::glue("{extracted_study_dir}{study$study_name}/svgs/full.zip"),
       glue::glue("{svg_dir}/traits/{study$trait_id}_svgs.zip")
@@ -421,4 +450,14 @@ lp_to_pixel <- function(lp, min_lp, max_lp, height_pixels = 500, margin_ratio = 
   plot_height <- height_pixels - (2 * margin)
 
   return(height_pixels - margin - (position_ratio * plot_height))
+}
+
+# Linear up to svg_lp_compression_start, then natural log above it (continuous with slope 1 at the join)
+compress_lp <- function(lp) {
+  compressed <- dplyr::if_else(
+    lp <= svg_lp_compression_start,
+    lp,
+    svg_lp_compression_start + svg_lp_compression_start * log(lp / svg_lp_compression_start)
+  )
+  return(compressed)
 }

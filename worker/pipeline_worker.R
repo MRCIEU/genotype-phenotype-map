@@ -701,7 +701,19 @@ get_gwas_data_from_oracle <- function(gwas_info) {
     stop("Caught error: VCF support not yet implemented")
   } else {
     gwas_info$metadata$file_type <- extraction_file_types$csv
-    gwas <- vroom::vroom(local_file_path, show_col_types = F)
+    gwas <- tryCatch(
+      vroom::vroom(local_file_path, show_col_types = F),
+      error = function(e) {
+        if (grepl("Could not guess the delimiter", conditionMessage(e), fixed = TRUE)) {
+          stop(paste(
+            "Caught error: Problems with delimiter. The file is read using the R package vroom,",
+            "which could not detect a consistent delimiter in the first 20 lines.",
+            "Please check the file uses a single delimiter (e.g. tab or comma) and standard line endings."
+          ))
+        }
+        stop(e)
+      }
+    )
   }
 
   return(list(gwas_info = gwas_info, gwas = gwas))
